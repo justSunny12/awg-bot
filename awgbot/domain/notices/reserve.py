@@ -420,18 +420,20 @@ TAIL_LINES_MAX = 5
 # (таблица, колонка) → как назвать правку в строке Т-Ж4 (по схеме); остальные — общей строкой без значений
 _TAIL_FIELDS = {
     ("clients", "name"): "имя", ("clients", "tg_id"): "Telegram-аккаунт", ("clients", "device_limit"): "устройств не больше",
-    ("clients", "activation_status"): "активация", ("clients", "routing_allowed"): "РФ-доступ",
+    ("clients", "activation_status"): "вход", ("clients", "routing_allowed"): "РФ-доступ",
     ("client_subscription", "period_end"): "срок до", ("client_subscription", "period_start"): "период с",
     ("client_subscription", "status"): "подписка", ("client_quota", "traffic_limit"): "квота",
     ("client_quota", "bonus_bytes"): "бонус", ("devices", "name"): "имя устройства", ("devices", "routing_on"): "РФ-доступ",
     ("device_traffic", "traffic_limit"): "лимит трафика",
 }
 _TAIL_DATES = ("period_end", "period_start")
+_TAIL_TAKEN = {"tg_id": "этот Telegram-аккаунт уже у другого профиля", "invite_code": "такой код приглашения уже есть",
+               "public_key": "такой ключ уже у другого устройства"}
 _TAIL_BYTES = ("traffic_limit", "bonus_bytes")
 _TAIL_FLAGS = ("routing_allowed", "routing_on")
 
 
-_TAIL_WORDS = {"activation_status": {"pending": "ждёт входа", "active": "активен"},
+_TAIL_WORDS = {"activation_status": {"pending": "не выполнен", "active": "выполнен"},
                "status": {"active": "активна", "expired": "истекла"}}
 
 
@@ -472,7 +474,7 @@ def tail_line(d: dict, profile: str, device: str, taken_by: str, reserve: str, v
     if kind == "unique":
         made = f"заведённый на {_n(reserve)}" if variant != "c9" else "заведённый здесь"
         return (f"{subject} — его адрес занял {taken_by}, {made}. Выдай «{device}» конфигурацию заново"
-                if col == "address" else f"{subject}: не встало — значение уже занято ({_e(col) or 'уникальное'})")
+                if col == "address" else f"{subject}: не встало — {_TAIL_TAKEN.get(col, 'такое значение уже занято')}")
     if kind == "delete":
         tail = ". Выдай конфигурацию заново" if table == "devices" else ""   # закрытого ключа после отката нет
         return f"{subject}: удаление не перенесено — {where} его успели поменять{tail}"

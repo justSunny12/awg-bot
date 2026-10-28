@@ -282,8 +282,8 @@ class ReserveFollowMixin:
             log.warning("резерв: журнал отстаёт от бота на «%s»: применено %s, у него %s", self.reserve_peer_name(),
                         applied, last)
             view = self.reserve_follow_view()
-            why = (f"здесь — по {timeutil.parse_iso(view['at']).strftime('%H:%M')}" if view.get("at") else
-                   "здесь отстают")
+            why = (f"данные по {timeutil.fmt_clock_ui(timeutil.parse_iso(view['at']))}" if view.get("at") else
+                   "отстают")
             return [("notify", [Notification(tg_id=int(config.ADMIN_ID), silent=True,
                                              text=rn.follow_stalled(self.reserve_peer_name(), why))])]
         if told and not lag and last <= applied:
