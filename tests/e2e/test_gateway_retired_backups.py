@@ -28,9 +28,10 @@ def _stale(rec):
                                 GwCB(action="backup!"), GwCB(action="restore!"), GwCB(action="restore_drop"),
                                 GwCB(action="tgl", val="app.scheduler.backup_enabled"),
                                 GwCB(action="cyc", val="app.scheduler.backup_channel"),
-                                GwCB(action="edit", val="backup_when")], ids=lambda c: c.pack())
+                                GwCB(action="edit", val="backup_when"), GwCB(action="backup/open")],
+                         ids=lambda c: c.pack())
 async def test_old_backup_buttons_are_stale(tmp_path, cb):
-    rec = await harness.take(_shot(f"gw.retired.{cb.action}", press=[cb]), tmp_path)
+    rec = await harness.take(_shot(f"gw.retired.{cb.action.replace('/', '_')}", press=[cb]), tmp_path)
     assert _stale(rec), [c.head for c in rec.everything]
 
 

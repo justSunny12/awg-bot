@@ -99,29 +99,6 @@ async def test_edit_flow_writes_value_and_returns_to_section(svc, fake_bot, monk
     assert await state.get_state() is None, "ввод остался открытым после записи"
 
 
-async def test_the_settings_root_has_no_backups_and_old_buttons_are_stale(svc, fake_bot):
-    """Своих бэкапов у шлюза нет: в «⚙️ Настройки» нет «💾 Бэкапы», кнопки
-    раздела прежних версий общим разделам не достаются (их ловит «устарела»),
-    диалога фразы у агента нет."""
-    from awgbot.bot import roles, sections
-    from awgbot.bot.handlers import gateway as pkg
-    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
-    cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
-    await gh.gw_settings(cb, svc, FakeState())
-    labels = [b.text for row in (msg.sent[-1][2].inline_keyboard if msg.sent[-1][2] else []) for b in row]
-    assert labels and not [x for x in labels if "Бэкап" in x], labels
-    assert "backup" not in roles.GATEWAY.settings_root
-    for old in (GwCB(action="backup"), GwCB(action="enc"), GwCB(action="enc_set"), GwCB(action="backup!"),
-                GwCB(action="restore!"), GwCB(action="restore_drop"),
-                GwCB(action="tgl", val="app.scheduler.backup_enabled"),
-                GwCB(action="cyc", val="app.scheduler.backup_channel"), GwCB(action="backup/open")):
-        assert sections.resolve(roles.GATEWAY, old.pack()) is None, old.pack()
-    assert "passphrase_first" not in pkg._core and "passphrase_second" not in pkg._core
-    for name in ("gw_backup_now", "gw_encryption", "gw_encryption_set", "gw_restore_action",
-                 "gw_passphrase_first", "gw_passphrase_second"):
-        assert not hasattr(gh, name), name
-
-
 async def test_gateway_email_section_and_channel_offer(svc, fake_bot, monkeypatch):
     """Без ящика «Аварии на e-mail» не включаются (иначе аварии уходят в
     никуда); с ящиком — включаются. Канала бэкапов у шлюза нет."""

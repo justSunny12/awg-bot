@@ -131,18 +131,23 @@ def test_a_code_ending_in_the_mark_stays_whole(code):
     ("extend-4", ("extend", 4)), ("gw-2", ("gw", 2)), ("cl-5", ("cl", 5)), ("dev-7", ("dev", 7)),
     ("migration-3", ("migration_cl", 3)),
     ("cl-x", None), ("gw-", None), ("whatever", None), ("refresh", None), ("list-drift-2", None), ("sub", None),
+    ("cl-", None), ("dev-5-x", None), ("Cabcdefghijk", None), ("", None),
 ])
 def test_the_admin_grammar_is_what_it_was(payload, want):
     """Разборщик админа переехал без изменения поведения: шапка главной,
-    карточки и уведомления открывают те же экраны."""
+    карточки и уведомления открывают те же экраны; мусор и коды приглашений
+    (12 знаков с C/F) — не ссылка."""
     assert links.parse_admin(payload) == want
 
 
 @pytest.mark.parametrize("payload, want", [
     ("sub", ("sub", 0)), ("rf", ("rf", 0)), ("dev-7", ("dev", 7)),
     ("dev-x", None), ("cl-5", None), ("online", None), ("CTEST0000001", None), ("dev-7-t", None),
+    ("dev-", None), ("dev12", None), ("sub-1", None), ("F1a2b3c4d5e6", None), ("", None),
 ])
 def test_the_client_grammar_is_what_it_was(payload, want):
+    """Коды приглашений — 12 знаков без «-»: разбор ссылки их не трогает, они
+    уходят в активацию как раньше."""
     assert links.parse_client(payload) == want
 
 

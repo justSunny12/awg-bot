@@ -190,20 +190,6 @@ def test_device_limit_keyboard_labels_and_exit():
     assert vals == [10, 50, 100, 0, -1], "«∞» — val=0, «✏️ Другое» — val=-1"
 
 
-# ── ссылки /start пользователя и гостя ───────────────────────────────────────
-
-@pytest.mark.parametrize("payload, link", [
-    ("sub", ("sub", 0)), ("rf", ("rf", 0)), ("dev-12", ("dev", 12)),
-    ("dev-", None), ("dev-x1", None), ("dev12", None), ("sub-1", None),
-    ("C1a2b3c4d5e6", None), ("F1a2b3c4d5e6", None), ("", None),
-])
-def test_parse_link_tells_screens_from_codes(payload, link):
-    """Коды приглашений — 12 знаков без «-»: разбор ссылки их не трогает, они
-    уходят в активацию как раньше."""
-    from awgbot.bot.handlers.client import parse_link
-    assert parse_link(payload) == link
-
-
 def test_volumes_switch_to_terabytes_from_a_terabyte():
     """Объёмы от терабайта — в ТБ, единица одна на пару «из»; ниже — ГБ, как
     было; безлимит — «0 ГБ (безлимит)», а не пусто."""

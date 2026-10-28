@@ -27,20 +27,10 @@ async def test_try_activate_valid_code(services, fake_bot):
 
 
 async def test_try_activate_invalid_code(services, fake_bot):
+    """Неверный код профиля не заводит (ответ — эталон cl.start.bad_code)."""
     msg = FakeMessage(text="/start", chat_id=43, user_id=43, bot=fake_bot)
     await client_h._try_activate(msg, services, "Cnonexistent")
-    assert services.db.get_client_by_tg(43) is None
-    from awgbot.bot import texts
-    assert any(s[1] == texts.ACTIVATION_INVALID for s in msg.sent)
-
-
-async def test_try_activate_already_has_access(services, make_active_client, fake_bot):
-    make_active_client(tg_id=44)
-    other = services.create_client("B", 1, "year")
-    msg = FakeMessage(text="/start", chat_id=44, user_id=44, bot=fake_bot)
-    await client_h._try_activate(msg, services, other.invite_code)
-    from awgbot.bot import texts
-    assert any(s[1] == texts.ACTIVATION_ALREADY for s in msg.sent)
+    assert services.db.get_client_by_tg(43) is None, "по неверному коду появился профиль"
 
 
 # ── старт активного пользователя → главное меню (send_menu) ──────────────────

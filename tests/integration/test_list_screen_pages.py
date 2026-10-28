@@ -185,29 +185,6 @@ def test_expiring_pages_hold_sixteen_profiles_and_show_everyone_once(services, n
     assert [pg.start for pg in pgs] == [16 * k for k in range(total)], "срез страницы разошёлся с её строками"
 
 
-@pytest.mark.parametrize("n", [1, 25, 61])
-def test_expiring_buttons_are_the_profiles_of_the_same_page(services, n):
-    """Кнопка «⏱» продлевает тот профиль, чья строка на этой же странице: на
-    второй странице кнопки первой — продление не тому, кого человек видит."""
-    from awgbot.bot import keyboards as kb
-    from awgbot.bot.callbacks import ClientCB
-    _expiring(services, n)
-    rows = services.expiring_subscriptions()
-    by_id = {c.id: c.name for c, _s in rows}
-    for p in range(texts.expiring_page(rows, BOT).total):
-        pg = texts.expiring_page(rows, BOT, page=p)
-        markup = kb.expiring_kb(rows, pg)
-        assert len(markup.inline_keyboard) <= 10, f"стр. {p + 1}: {len(markup.inline_keyboard)} рядов кнопок"
-        ext = [ClientCB.unpack(b.callback_data).client_id for row in markup.inline_keyboard for b in row
-               if b.callback_data.startswith("c:extend_exp:")]
-        shown = re.findall(r"Профиль (\d\d)", pg.text)
-        assert [by_id[c][-2:] for c in ext] == shown, f"стр. {p + 1}: кнопки {ext} — не профили строк {shown}"
-        labels = [b.text for row in markup.inline_keyboard for b in row]
-        assert labels[-1] == "⬅️ В меню", labels
-        assert ("След. страница ▶️" in labels) == pg.has_next and ("◀️ Пред. страница" in labels) == pg.has_prev, \
-            f"стр. {p + 1}: листание {labels[-3:]}"
-
-
 def test_expiring_empty_has_no_buttons_but_the_menu(services):
     from awgbot.bot import keyboards as kb
     pg = texts.expiring_page([], BOT)

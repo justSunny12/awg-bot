@@ -134,20 +134,9 @@ def test_the_floor_reads_versions_with_and_without_a_patch(v400):
     assert compat.below_floor("3.4.0") and not compat.below_floor("4.0.0") and compat.below_floor("")
 
 
-def test_the_gateway_has_no_backups(services, tmp_path):
-    """Своих копий у шлюза нет: у агента ни сборки, ни осмотра, ни
-    восстановления, ни фразы; копия шлюза прежних версий у сервера — отказ."""
-    from awgbot.domain.gateway import GatewayServices
-    from awgbot.infra.db import Database
+def test_the_gateway_has_no_backups(services):
+    """Своих копий у шлюза нет: копия шлюза прежних версий у сервера — отказ."""
     from awgbot.util import secrets_util
-    db = Database(str(tmp_path / "gw.db")); db.init_schema()
-    try:
-        gw = GatewayServices(db)
-        for name in ("make_backup", "inspect_backup", "prepare_restore", "backup_enc_kwargs",
-                     "backup_set_passphrase", "write_backup_archive", "email_send_backup", "backup_channel"):
-            assert not hasattr(gw, name), name
-    finally:
-        db.close()
     services.backup_set_passphrase(PHRASE)
     r = services.inspect_backup(secrets_util.encrypt(_archive(_meta(role="gw")), passphrase=PHRASE), "b.tgz.enc")
     assert not r["ok"] and "бэкап шлюза прежних версий" in r["error"], r

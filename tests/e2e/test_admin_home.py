@@ -23,7 +23,6 @@ from aiogram.filters import CommandObject
 
 from awgbot.bot import texts
 from awgbot.bot.handlers import admin as ah
-from awgbot.bot.handlers.admin.panel import parse_link
 from awgbot.core import config
 from awgbot.util import timeutil
 from tests.conftest import FakeMessage, FakeState
@@ -81,20 +80,6 @@ def test_home_routing_line_is_silent_without_gateways():
 
 
 # ── ссылки ───────────────────────────────────────────────────────────────────
-
-@pytest.mark.parametrize("payload, link", [
-    ("online", ("online", 0)), ("expiring", ("expiring", 0)), ("unassigned", ("unassigned", 0)),
-    ("upd", ("upd", 0)), ("traffic", ("traffic", 0)), ("traffic_local", ("traffic", 0)),
-    ("traffic-7", ("traffic_dev", 7)), ("traffic_local-7", ("traffic_dev", 7)),
-    ("traffic_local-7-t", ("traffic_dev", 7)), ("cl-12", ("cl", 12)), ("dev-5", ("dev", 5)),
-    ("gw-2", ("gw", 2)), ("extend-3", ("extend", 3)), ("rsv", ("set_rsv", 0)),
-    ("cl-", None), ("cl-abc", None), ("dev-5-x", None), ("Cabcdefghijk", None), ("", None),
-])
-def test_parse_link_maps_payloads_to_screens(payload, link):
-    """Разбор ссылки шапки и уведомлений: известные виды — на свои экраны;
-    мусор и коды приглашений (12 знаков с C/F) — не ссылка."""
-    assert parse_link(payload) == link
-
 
 async def test_link_extend_remembers_to_return_to_the_expiring_list(services, fake_bot, make_active_client):
     """«extend-<id>» (из списка истекающих прежнего образца): после продления —
