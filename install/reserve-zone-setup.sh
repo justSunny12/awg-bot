@@ -22,7 +22,8 @@
 #                             делит загрузку по ним, а не по сайтам назначения)
 #   INSTALL_DIR=/opt/awg-bot  где код (ExecStart юнита гостя)
 #   RSV_RUN=/run/awg-bot-guest  хранилище гостя в памяти; RSV_STORE_SIZE=32M — его размер
-#   RSV_VAR=/var/lib/awg-bot-guest  на диске только rep.bin (шифротекст под K)
+#   RSV_VAR=/var/lib/awg-bot-guest  на диске только шифротекст под K: rep.bin
+#                             (снимок базы гостя) или jrn/ (журнал данных гостя)
 #   RSV_STATE_DIR=/run/awg-bot/rsv  state.json, open.status, guest.sock
 #   RSV_LINKS_DIR=/var/lib/awg-bot/reserve/links  конфиги сторон постоянных линков
 #   RSV_SELFTEST_PORT=45999   порт пробы --selftest
@@ -132,8 +133,9 @@
 #                 утилиты conntrack — строка ВНИМАНИЕ
 #   --teardown    остановить бота основы и dnsmasq зоны, снять клоны, veth и
 #                 правило iif awggr-h (без
-#                 пересылки) — состояние idle; хранилище и rep.bin остаются
-#   --wipe        хранилище гостя, rep.bin, журнал гостя — прочь; CAKE —
+#                 пересылки) — состояние idle; хранилище, rep.bin и jrn/ остаются
+#   --wipe        хранилище гостя, $VAR целиком (rep.bin, журнал данных гостя
+#                 jrn/), журнал гостя в journald — прочь; CAKE —
 #                 прежняя дисциплина; зона остаётся оболочкой. В фазе relay
 #                 фаза и адрес основы остаются (пересылка хвоста живёт до
 #                 конца relay), сбрасывается только порт вебхука

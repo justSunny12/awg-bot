@@ -18,10 +18,12 @@ take_tg{}, blocks{addrs}, stop{} (гость пишет финальный сн�
 
 Журнал (jrn1, services/reserve/journal): гость → резерв — свои записи `jev`,
 `jcnt` (уходят основе как есть), `jneed` (событий основы не хватает —
-резерв досылает из хранилища), `released{line, epoch, last}` на возврат
-вместо реплики; в hello/online — `jrn` (эпоха и номера). Резерв → гость —
-записи основы (`jev`, `jcnt`), её ответы на записи гостя (`jack`, `jneed`,
-`jstale`, `jcack`) и передача бота `released{epoch, last}`.
+резерв досылает из хранилища), хвост `jtail` (С9) и ответ на хвост основы
+`jtail_ok`, `released{line, epoch, last}` на возврат вместо реплики; в
+hello/online — `jrn` (эпоха и номера). Резерв → гость — записи основы
+(`jev`, `jcnt`), её ответы на записи гостя (`jack`, `jneed`, `jstale`,
+`jcack`, `jtail_ok`), её хвост после аварии `jtail`, передача бота
+`released{epoch, last}` и `takeover{}` (основа бота не передала — эпоха гостю).
 """
 from __future__ import annotations
 
