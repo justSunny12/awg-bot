@@ -367,6 +367,9 @@ class ReserveInboundMixin:
         if str(inn.get("state") or "") == "releasing":
             return []                                         # реплика ещё в пути (гость останавливается) — ждать
         if str(inn.get("state") or "") not in ("serving", "taking"):
+            jrn = self.reserve_guest_journal_release()
+            if jrn:
+                return jrn                                    # журнал данных гостя на диске — основе, без реплики
             # зоны нет (перезагрузка резерва посреди обслуживания, teardown мимо бота): что есть на
             # диске — rep.bin под K основы — отдать, иначе released без реплики; основа вернёт
             # пользователей без слияния, а не будет просить вечно

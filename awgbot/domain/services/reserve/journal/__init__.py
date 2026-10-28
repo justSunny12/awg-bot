@@ -17,6 +17,9 @@ journal — эпоха и следование (журнал данных рез
   записей гостя;
 - `handover` — передача права записи при переезде кнопкой и возврате без
   реплики и слияния;
+- `tail` — хвост старой эпохи: отправка бывшим держателем, перебазирование у
+  держателя, `jtail_ok` со списком спорного, Т-Ж4/Т-Ж5 (только у основы), отказ
+  обновления, пока хвост не пришёл;
 - `guestj` — бот основы на резерве с журналом: свой журнал данных на диске,
   записи основе, следование до передачи бота, возврат без реплики.
 
@@ -28,13 +31,14 @@ from .epoch import ReserveEpochMixin
 from .follow import ReserveFollowMixin
 from .guestj import ReserveGuestJournalMixin
 from .handover import ReserveHandoverMixin
+from .tail import ReserveTailMixin
 from .keep import ReserveKeepMixin
 from .route import ReserveJournalRouteMixin
 from .ship import ReserveShipMixin
 
 
 class ReserveJournalMixin(ReserveEpochMixin, ReserveFollowMixin, ReserveShipMixin, ReserveKeepMixin,
-                          ReserveJournalRouteMixin, ReserveGuestJournalMixin, ReserveHandoverMixin):
+                          ReserveJournalRouteMixin, ReserveGuestJournalMixin, ReserveHandoverMixin, ReserveTailMixin):
     """Эпоха, следование, доставка и хранение журнала."""
 
 

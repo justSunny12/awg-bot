@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from ...gateway_link.common import log
 
-_ACKS = ("jack", "jneed", "jstale", "jcack")
+_ACKS = ("jack", "jneed", "jstale", "jcack", "jtail", "jtail_ok")
 
 
 def _schema(kind: str, body: dict) -> dict:
@@ -58,6 +58,10 @@ class ReserveJournalRouteMixin:
             self._jrn_stale_in(int(body["e"]))
         elif kind == "jcack" and str(body.get("side") or "") == "a":
             self._jrn_cack_in(int(body["s"]))
+        elif kind == "jtail":
+            return self.reserve_tail_in(body)                 # хвост бота на резерве (С9) — держатель здесь
+        elif kind == "jtail_ok":
+            return self.reserve_tail_ok_in(body)              # мой хвост перебазирован ботом на резерве
         return []
 
     def _jrn_stale_in(self, e: int) -> None:
@@ -72,7 +76,8 @@ class ReserveJournalRouteMixin:
         if str(peer.get("inn") or "") == "serving":
             fork = int((peer.get("jrn_keep") or {}).get("guest_fork") or 0) or int(meta_now["acked"])
             meta = self.db.jrn_adopt(int(e), why="эпоха больше моей у резерва", fork_i=fork)
-            if meta is not None:
+            if meta is not None and (peer.get("jrn_keep") or {}).get("guest_fork"):
+                self.reserve_tail_finalize(fork)
                 log.warning("резерв: эпоха %s у бота на «%s» — здесь следование", meta["epoch"], self.reserve_peer_name())
         else:
             log.warning("резерв: «%s» знает эпоху %s моей линии, но моих не несёт", self.reserve_peer_name(), e)
@@ -88,7 +93,7 @@ class ReserveJournalRouteMixin:
             return []
         if kind == "jneed":
             return self._keep_serve_guest(int(body.get("from") or 0))
-        if kind not in ("jev", "jcnt"):
+        if kind not in ("jev", "jcnt", "jtail", "jtail_ok"):
             return []
         return [("send", kind, _schema(kind, body))]
 

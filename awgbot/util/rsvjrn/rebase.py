@@ -1,0 +1,295 @@
+"""
+rebase.py — часть пакета rsvjrn (см. __init__): перебазирование хвоста старой
+эпохи поверх базы держателя.
+
+Хвост — события бывшего держателя после точки расхождения (`jrn_tail`). Журнала
+новой эпохи для сравнения нет (подтверждённые события удаляются), поэтому
+сравнение — по значениям: у события есть прежние значения колонок (`o`) — то,
+что было на этом месте до правки хвоста. Для каждой изменённой колонки:
+
+| в базе держателя сейчас | итог |
+|---|---|
+| прежнее значение хвоста | правка хвоста применяется |
+| новое значение хвоста | уже так — ничего |
+| другое | **спорное**: остаётся значение держателя |
+
+- маска блокировок — побитно: бит, поставленный или снятый хвостом, ставится,
+  если держатель этот бит не менял (менял так же — тоже не спор);
+- вставка — как есть; `id` занят — новый `id` и перенос ссылок в следующих
+  событиях хвоста; конфликт уникальности (адрес, ключ, `tg_id`, приглашение)
+  — спорное;
+- удаление — если строка у держателя та же, что была; иначе спорное;
+- правка строки, которой у держателя уже нет, — спорное;
+- `month`, `period` — пропуск: сбросы по времени держатель делает сам;
+- `tmerge` — обе строки на месте — сложить; иначе пропуск.
+
+Применённое пишется обычным соединением держателя — захват превращает его в
+события его эпохи, и они идут второй стороне обычным порядком. Отчёт — полный
+список спорного (`Report.disputed`), без обрезки: строки и снимок списка
+делает основа.
+"""
+from __future__ import annotations
+
+import sqlite3
+from dataclasses import dataclass, field
+
+from .apply import Event, _counter_op
+from .classes import MASK_COLUMNS
+
+# уникальные значения, за которые спорят строки хвоста и держателя
+UNIQUE: dict[str, tuple[str, ...]] = {"devices": ("address", "public_key"), "clients": ("tg_id", "invite_code")}
+# ссылки на id: при вставке под новым id — перенос в следующих событиях хвоста
+REFS: dict[str, list[tuple[str, str]]] = {
+    "clients": [("devices", "client_id"), ("devices", "holder_client_id"), ("client_subscription", "client_id"),
+                ("client_quota", "client_id"), ("client_grace", "client_id"), ("client_pause", "client_id"),
+                ("client_routing_domains", "client_id")],
+    "devices": [("device_traffic", "device_id"), ("device_friend", "device_id"), ("migration_cohort", "device_id"),
+                ("devices", "twin_of")],
+}
+REMAPPED = ("clients", "devices")
+
+
+@dataclass
+class Report:
+    moved: int = 0
+    skipped: int = 0
+    disputed: list[dict] = field(default_factory=list)
+
+
+def _q(name: str) -> str:
+    return '"' + name.replace('"', '""') + '"'
+
+
+def _where(k: dict) -> tuple[str, list]:
+    return " AND ".join(f"{_q(c)} IS ?" for c in k), list(k.values())
+
+
+def _remap(table: str, values: dict, id_map: dict) -> dict:
+    out = dict(values)
+    for parent, refs in REFS.items():
+        for t, c in refs:
+            if t == table and out.get(c) is not None:
+                try:
+                    out[c] = id_map[parent].get(int(out[c]), out[c])
+                except (TypeError, ValueError):
+                    pass
+    if table in REMAPPED and out.get("id") is not None:
+        try:
+            out["id"] = id_map[table].get(int(out["id"]), out["id"])
+        except (TypeError, ValueError):
+            pass
+    return out
+
+
+def _row(conn, table: str, k: dict):
+    where, args = _where(k)
+    conn.row_factory = sqlite3.Row
+    try:
+        return conn.execute(f"SELECT * FROM main.{_q(table)} WHERE {where}", args).fetchone()
+    finally:
+        conn.row_factory = None
+
+
+def _client_of(conn, table: str, k: dict, vals: dict) -> int | None:
+    """Профиль, к которому относится строка (для строки отчёта)."""
+    if table == "clients":
+        return _int(k.get("id"))
+    for col in ("client_id",):
+        if vals.get(col) is not None:
+            return _int(vals[col])
+        if k.get(col) is not None:
+            return _int(k[col])
+    dev = vals.get("device_id", k.get("device_id")) if table != "devices" else k.get("id")
+    if dev is not None:
+        row = conn.execute("SELECT client_id FROM main.devices WHERE id = ?", (dev,)).fetchone()
+        return _int(row[0]) if row else None
+    return None
+
+
+def _int(v) -> int | None:
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _taken_by(conn, table: str, vals: dict) -> dict | None:
+    """Чья строка держателя заняла уникальное значение вставки хвоста."""
+    for col in UNIQUE.get(table, ()):
+        v = vals.get(col)
+        if v is None:
+            continue
+        conn.row_factory = sqlite3.Row
+        try:
+            row = conn.execute(f"SELECT * FROM main.{_q(table)} WHERE {_q(col)} = ?", (v,)).fetchone()
+        finally:
+            conn.row_factory = None
+        if row is not None:
+            keys = row.keys()
+            return {"col": col, "id": row["id"], "name": row["name"] if "name" in keys else "",
+                    "client_id": row["client_id"] if "client_id" in keys else row["id"]}
+    return None
+
+
+def _mask(base: int, mine: int, cur: int) -> tuple[int, bool]:
+    """Побитно: биты, которые хвост менял (base → mine), — его, если держатель их не менял
+    по-другому; (итог, был ли спор)."""
+    base, mine, cur = int(base or 0), int(mine or 0), int(cur or 0)
+    tail_bits = base ^ mine
+    holder_bits = base ^ cur
+    clash = tail_bits & holder_bits & (mine ^ cur)
+    result = (cur & ~tail_bits) | (mine & tail_bits)
+    result = (result & ~clash) | (cur & clash)
+    return result, bool(clash)
+
+
+def rebase(conn: sqlite3.Connection, events: list[Event], *, epoch: int = 0, fork: int = 0) -> Report:
+    """Перенести хвост поверх базы держателя одной транзакцией (каждое событие — своей
+    точкой сохранения: спорное и не вставшее не отменяют остального)."""
+    rpt = Report()
+    id_map: dict[str, dict[int, int]] = {t: {} for t in REMAPPED}
+    tables = {r[0] for r in conn.execute("SELECT name FROM main.sqlite_master WHERE type = 'table'")}
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        for ev in sorted(events, key=lambda x: x.i):
+            conn.execute("SAVEPOINT jrn_rb")
+            try:
+                n = _one(conn, ev, id_map, tables, rpt)
+                conn.execute("RELEASE jrn_rb")
+            except sqlite3.IntegrityError as e:
+                conn.execute("ROLLBACK TO jrn_rb")
+                conn.execute("RELEASE jrn_rb")
+                vals = _remap(ev.t, dict(ev.c or {}), id_map)
+                tb = _taken_by(conn, ev.t, vals) if ev.op == "I" else None
+                rpt.disputed.append({"kind": "unique", "table": ev.t, "key": dict(ev.k), "op": ev.op,
+                                     "client_id": _client_of(conn, ev.t, ev.k, vals), "col": tb["col"] if tb else "",
+                                     "tail": {k: vals.get(k) for k in ("name", "address", "tg_id")
+                                              if vals.get(k) is not None}, "kept": None,
+                                     "taken_by": tb, "why": str(e)[:160], "i": ev.i})
+                continue
+            if n:
+                rpt.moved += 1
+        conn.execute("COMMIT")
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+    return rpt
+
+
+def _one(conn, ev: Event, id_map: dict, tables: set, rpt: Report) -> bool:
+    """Одно событие хвоста; True — что-то применено."""
+    if ev.op in ("month", "period"):
+        rpt.skipped += 1                                     # сбросы по времени держатель делает сам
+        return False
+    if ev.op == "tmerge":
+        src = id_map["devices"].get(int(ev.k["src"]), int(ev.k["src"]))
+        dst = id_map["devices"].get(int(ev.k["dst"]), int(ev.k["dst"]))
+        have = {r[0] for r in conn.execute("SELECT device_id FROM main.device_traffic WHERE device_id IN (?, ?)",
+                                            (src, dst))}
+        if have != {src, dst}:
+            rpt.skipped += 1
+            return False
+        _counter_op(conn, Event(i=ev.i, e=ev.e, t=ev.t, op="tmerge", k={"src": src, "dst": dst}))
+        return True
+    if ev.t not in tables:
+        rpt.skipped += 1
+        return False
+    k = _remap(ev.t, dict(ev.k), id_map)
+    if ev.op == "I":
+        return _insert(conn, ev, k, id_map, rpt)
+    if ev.op == "U":
+        return _update(conn, ev, k, id_map, rpt)
+    if ev.op == "D":
+        return _delete(conn, ev, k, rpt)
+    rpt.skipped += 1
+    return False
+
+
+def _insert(conn, ev: Event, k: dict, id_map: dict, rpt: Report) -> bool:
+    vals = _remap(ev.t, {**(ev.c or {}), **k}, id_map)
+    cols = {r[1] for r in conn.execute(f"PRAGMA main.table_info({_q(ev.t)})")}
+    vals = {c: v for c, v in vals.items() if c in cols}
+    if ev.t in REMAPPED and vals.get("id") is not None and \
+            conn.execute(f"SELECT 1 FROM main.{_q(ev.t)} WHERE id = ?", (vals["id"],)).fetchone():
+        old = int(ev.k.get("id"))
+        vals.pop("id")                                       # id занят строкой держателя — новый
+        _ins(conn, ev.t, vals)
+        id_map[ev.t][old] = int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
+        return True
+    if ev.t not in REMAPPED and k and _row(conn, ev.t, k) is not None:
+        # строка с этим ключом у держателя уже есть (профиль один, подписка одна) — как правка
+        return _update(conn, Event(i=ev.i, e=ev.e, t=ev.t, op="U", k=ev.k, c=ev.c, o={}), k, id_map, rpt)
+    _ins(conn, ev.t, vals)
+    return True
+
+
+def _ins(conn, table: str, vals: dict) -> None:
+    names = list(vals)
+    conn.execute(f"INSERT INTO main.{_q(table)} ({', '.join(_q(c) for c in names)}) "
+                 f"VALUES ({', '.join('?' for _ in names)})", [vals[c] for c in names])
+
+
+def _update(conn, ev: Event, k: dict, id_map: dict, rpt: Report) -> bool:
+    row = _row(conn, ev.t, k)
+    c = _remap(ev.t, dict(ev.c or {}), id_map)
+    o = dict(ev.o or {})
+    if row is None:
+        rpt.disputed.append({"kind": "gone", "table": ev.t, "key": dict(ev.k), "op": "U",
+                             "client_id": _client_of(conn, ev.t, k, c), "col": "", "tail": None, "kept": None,
+                             "taken_by": None, "i": ev.i})
+        return False
+    have = set(row.keys())
+    sets: dict = {}
+    masks = MASK_COLUMNS.get(ev.t, ())
+    for col, mine in c.items():
+        if col in k or col not in have:
+            continue
+        if o and col in o and o[col] == mine:
+            continue                                         # хвост эту колонку не менял
+        cur = row[col]
+        if cur == mine:
+            continue
+        base = o.get(col, cur) if o else None
+        if col in masks and base is not None:
+            res, clash = _mask(base, mine, cur)
+            if res != cur:
+                sets[col] = res
+            if clash:
+                rpt.disputed.append(_dispute(conn, ev, k, c, col, mine, cur))
+            continue
+        if o and col in o and cur == base:
+            sets[col] = mine
+        else:
+            rpt.disputed.append(_dispute(conn, ev, k, c, col, mine, cur))
+    if not sets:
+        return False
+    where, args = _where(k)
+    conn.execute(f"UPDATE main.{_q(ev.t)} SET {', '.join(f'{_q(x)} = ?' for x in sets)} WHERE {where}",
+                 list(sets.values()) + args)
+    return True
+
+
+def _delete(conn, ev: Event, k: dict, rpt: Report) -> bool:
+    row = _row(conn, ev.t, k)
+    if row is None:
+        return False
+    o = dict(ev.o or {})
+    changed = [col for col, v in o.items() if col in row.keys() and row[col] != v and col not in k]
+    if changed:
+        rpt.disputed.append({"kind": "delete", "table": ev.t, "key": dict(ev.k), "op": "D",
+                             "client_id": _client_of(conn, ev.t, k, dict(row)), "col": changed[0],
+                             "tail": None, "kept": row[changed[0]], "taken_by": None, "i": ev.i,
+                             "name": row["name"] if "name" in row.keys() else ""})
+        return False
+    where, args = _where(k)
+    conn.execute(f"DELETE FROM main.{_q(ev.t)} WHERE {where}", args)
+    return True
+
+
+def _dispute(conn, ev: Event, k: dict, vals: dict, col: str, tail, kept) -> dict:
+    name = ""
+    if ev.t in ("clients", "devices"):
+        row = _row(conn, ev.t, k)
+        name = row["name"] if row is not None and "name" in row.keys() else ""
+    return {"kind": "column", "table": ev.t, "key": dict(ev.k), "op": ev.op, "client_id": _client_of(conn, ev.t, k, vals),
+            "col": col, "tail": tail, "kept": kept, "taken_by": None, "i": ev.i, "name": name}

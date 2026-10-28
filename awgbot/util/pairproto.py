@@ -131,9 +131,16 @@ PAIR_KINDS: dict[str, tuple[str, dict]] = {
                             "blob": (_S, MAX_BLOB)}),
     "jack":         (BOTH, {"line": (_S, 16), "e": (_I, None), "i": (_I, None)}),
     "jneed":        (BOTH, {"line": (_S, 16), "from": (_I, None)}),
-    "jstale":       (BOTH, {"line": (_S, 16), "e": (_I, None)}),
+    "jstale":       (BOTH, {"line": (_S, 16), "e": (_I, None), "F": (_I, None)}),
     "jcnt":         (BOTH, {"line": (_S, 16), "side": (_S, 1), "s": (_I, None), "blob": (_S, MAX_BLOB)}),
     "jcack":        (BOTH, {"line": (_S, 16), "side": (_S, 1), "s": (_I, None)}),
+    # хвост старой эпохи: бывший держатель → держатель (события под K частями); ответ — числа и,
+    # если перебазировал бот основы на резерве, полный список спорного под K (частями)
+    "jtail":        (BOTH, {"line": (_S, 16), "e": (_I, None), "F": (_I, None), "part": (_I, None), "parts": (_I, None),
+                            "blob": (_S, MAX_BLOB)}),
+    "jtail_ok":     (BOTH, {"line": (_S, 16), "e": (_I, None), "F": (_I, None), "moved": (_I, None),
+                            "disputed_n": (_I, None), "more": (_I, None), "part": (_I, None), "parts": (_I, None),
+                            "blob": (_S, MAX_BLOB)}),
 }
 
 GUEST_KINDS: dict[str, tuple[str, dict]] = {
@@ -168,6 +175,7 @@ OPTIONAL: dict[str, frozenset] = {"st": frozenset({"healthy", "can_return", "in_
                                   "need": frozenset({"m_gen"}), "state": frozenset({"reason"}),
                                   "go": frozenset({"ttl", "k", "sealed", "oid", "epoch"}), "go_req": frozenset({"ttl"}),
                                   "pkg": frozenset({"jrn"}), "released": frozenset({"epoch", "last"}),
+                                  "jstale": frozenset({"F"}),
                                   # hello обычной сессии несёт только nonce (и seen); поля сопряжения — у hello с pair
                                   "hello": frozenset({"pair", "eph", "name", "version", "caps", "gen", "ports", "seen", "bot", "gw"})}
 

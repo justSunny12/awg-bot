@@ -37,7 +37,7 @@ log = logging.getLogger(__name__)
 
 MAX_LINE = 64 * 1024 * 1024 + 1024     # реплика шифротекстом в одной строке
 _BACKOFF = (2, 5, 10, 20, 30)
-JRN_KINDS = ("jev", "jcnt", "jack", "jneed", "jstale", "jcack")
+JRN_KINDS = ("jev", "jcnt", "jack", "jneed", "jstale", "jcack", "jtail", "jtail_ok")
 
 
 def _dumps(kind: str, body: dict | None = None) -> bytes:

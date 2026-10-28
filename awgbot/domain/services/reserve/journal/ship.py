@@ -146,6 +146,11 @@ class ReserveShipMixin:
             self.reserve_pkg_mark()                           # плановый снимок: у резерва больше мегабайта событий
         if str(keep.get("line") or "") == line and cnt_bn > self.db.jrn_counts_bn():
             self.db.jrn_counts_raise(cnt_bn)                  # счёт пачек — не ниже принятого резервом
+        if str(keep.get("line") or "") == line and keep.get("guest_fork"):
+            try:
+                self.reserve_tail_finalize(int(keep["guest_fork"]))   # точка гостя пришла — отложенный хвост готовить
+            except (TypeError, ValueError):
+                pass
         if s.get("ok"):
             return
         s["ok"] = True
@@ -215,7 +220,7 @@ class ReserveShipMixin:
         s = self._jrn_sess()
         if not s.get("ok") or s.get("hold"):
             return []
-        acts: list[tuple] = []
+        acts: list[tuple] = self.reserve_tail_out() + self.reserve_follow_lag_tick()
         meta = self.db.jrn_meta()
         now = time.monotonic()
         acked = int(meta["acked"])

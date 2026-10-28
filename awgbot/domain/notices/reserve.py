@@ -409,3 +409,109 @@ def gateway_case4(reserve: str, since: str, seen: list) -> str:
 def gateway_move_failed(reserve: str, since: str, reason: str) -> str:
     """Т-РА5."""
     return f"⚠️ Сервер AWG не отвечает с {_when(since)}, переезд на {_n(reserve)} не состоялся: {_e(reason)}"
+
+
+# ── хвост старой эпохи (журнал данных, Т-Ж4…Т-Ж6) ─────────────────────────────
+# Строки собираются готовыми к разметке: профиль и устройство — уже ссылками или
+# экранированным текстом (их собирает journal/tail), значения — экранируются здесь.
+
+TAIL_LINES_MAX = 5
+
+# (таблица, колонка) → как назвать правку в строке Т-Ж4
+_TAIL_FIELDS = {
+    ("clients", "name"): "имя", ("clients", "tg_id"): "Telegram-аккаунт", ("clients", "device_limit"): "устройств не больше",
+    ("clients", "block_reason"): "блокировка", ("clients", "kind"): "вид профиля",
+    ("client_subscription", "period_end"): "срок до", ("client_subscription", "period_start"): "период с",
+    ("client_subscription", "status"): "подписка", ("client_quota", "limit_bytes"): "квота",
+    ("client_pause", "until"): "пауза до", ("devices", "name"): "имя устройства", ("devices", "block_reason"): "блокировка",
+    ("device_traffic", "traffic_limit"): "лимит трафика",
+}
+
+
+def _tail_value(table: str, col: str, v) -> str:
+    if v is None or v == "":
+        return "—"
+    if col in ("period_end", "period_start", "until") and isinstance(v, str):
+        return _e(_date_yy(v))
+    if col == "name":
+        return f"«{_e(v)}»"
+    return _e(v)
+
+
+def tail_where(variant: str, reserve: str) -> str:
+    """Где осталось значение, которое победило: в аварии и при возврате — на резерве, в С9 — здесь."""
+    return "здесь" if variant == "c9" else f"на {_n(reserve)}"
+
+
+def tail_line(d: dict, profile: str, device: str, taken_by: str, reserve: str, variant: str) -> str:
+    """Строка Т-Ж4 по записи спорного (rsvjrn.rebase): profile — имя профиля (ссылкой или
+    экранированным текстом), device — экранированное имя устройства (строка про
+    устройство), taken_by — «устройство «Pixel» профиля Анна» (кто занял уникальное)."""
+    where = tail_where(variant, reserve)
+    kind, table, col = str(d.get("kind") or ""), str(d.get("table") or ""), str(d.get("col") or "")
+    if device:
+        subject = f"устройство «{device}»" + (f" профиля {profile}" if profile else "")
+    else:
+        subject = f"профиль {profile or '?'}"
+    if kind == "unique":
+        made = "заведённый там" if variant != "c9" else "заведённый здесь"
+        return (f"{subject} — его адрес занял {taken_by}, {made}. Выдай «{device}» конфигурацию заново"
+                if col == "address" else f"{subject}: не встало — значение уже занято ({_e(col) or 'уникальное'})")
+    if kind == "delete":
+        return f"{subject}: удаление не перенесено — {where} его успели поменять"
+    if kind == "gone":
+        return f"{subject}: правка не перенесена — {where} этой записи уже нет"
+    field = _TAIL_FIELDS.get((table, col), col)
+    return (f"{subject}: {field} {_tail_value(table, col, d.get('tail'))} — {where} осталось "
+            f"{_tail_value(table, col, d.get('kept'))}")
+
+
+def _tail_head(variant: str, reserve: str, n: int) -> str:
+    word = f"{n} {_plural(n, 'правка', 'правки', 'правок')}"
+    if variant == "c9":
+        return (f"⚠️ Не перенесены {word} бота на {_n(reserve)}, сделанные после потери связи: здесь те же поля "
+                "успели поменять по-своему")
+    return (f"⚠️ Не перенесены {word}, сделанные здесь перед переездом на {_n(reserve)}: те же поля там успели "
+            "поменять по-своему")
+
+
+def tail_disputed(variant: str, reserve: str, lines: list[str], total: int) -> str:
+    """Т-Ж4: хвост старой эпохи со спорным — пять строк и «и ещё N»."""
+    shown = lines[:TAIL_LINES_MAX]
+    text = _tail_head(variant, reserve, total) + "".join(f"\n• {line}" for line in shown)
+    rest = int(total) - len(shown)
+    if rest > 0:
+        text += f"\n… и ещё {rest}"
+    return text
+
+
+def tail_moved(variant: str, reserve: str, n: int) -> str:
+    """Т-Ж5: хвост перенесён целиком."""
+    if variant == "c9":
+        return f"ℹ️ Правки бота на {_n(reserve)} после потери связи перенесены сюда: {int(n)}"
+    return f"ℹ️ Правки, сделанные здесь перед переездом на {_n(reserve)}, перенесены туда: {int(n)}"
+
+
+def follow_stalled(reserve: str, why: str) -> str:
+    """Т-Ж6: основа в следовании перестала догонять бот на резерве."""
+    return f"⚠️ Данные здесь перестали догонять бот на {_n(reserve)}: {_e(why)} — возврат подождёт"
+
+
+def follow_ok(reserve: str) -> str:
+    return f"🟢 Данные здесь снова идут за ботом на {_n(reserve)}"
+
+
+def _date_yy(iso: str) -> str:
+    """Дата с годом двумя цифрами: «15.11.26»; ISO-дата без времени — тоже."""
+    from datetime import date
+    try:
+        return timeutil.parse_iso(iso).strftime("%d.%m.%y")
+    except (ValueError, TypeError):
+        try:
+            return date.fromisoformat(str(iso)[:10]).strftime("%d.%m.%y")
+        except ValueError:
+            return str(iso)
+
+
+def _plural(n: int, one: str, few: str, many: str) -> str:
+    return timeutil._plural_ru(int(n), (one, few, many))

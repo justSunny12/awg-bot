@@ -41,6 +41,7 @@ class ReserveScreenMixin:
                         "has_token": bool(dns.get("token")), "check_ok": dns.get("check_ok"),
                         "checked_at": str(dns.get("checked_at") or ""), "check_why": str(dns.get("check_why") or "")},
                 "ready": settings.get_bool("app.reserve.ready", False),
+                "jrn_capable": self._jrn_caps_safe(),
                 "invite_live": live and inv.get("role") != "acceptor",
                 "accepting": live and inv.get("role") == "acceptor"}
 
@@ -74,7 +75,14 @@ class ReserveScreenMixin:
                 "mem_free": int(ps.get("mem_free") or 0), "here": self._online_count(), "there": int(ps.get("there") or 0),
                 "force_why": self.reserve_force_check() if self.reserve_out() == "away" else "пользователи не у резерва",
                 "await_merge": bool(out.get("await_merge")),
+                "jrn_on": self.reserve_jrn_on(), "jrn_follow": self.reserve_follow_view(),
                 "self_admin": self.reserve_self_peer_admin()}
+
+    def _jrn_caps_safe(self) -> bool:
+        try:
+            return "jrn1" in self._jrn_caps()
+        except Exception:                                     # noqa: BLE001
+            return False
 
     def _reserve_traffic_view(self) -> dict:
         tr = self.rsv_get("rsv_traffic")

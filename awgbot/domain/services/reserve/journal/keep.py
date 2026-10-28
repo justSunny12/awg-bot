@@ -121,6 +121,14 @@ class ReserveKeepMixin:
         except (TypeError, ValueError):
             return 0
 
+    def _keep_guest_last(self) -> int:
+        if not self._keep_guest():
+            return 0
+        try:
+            return int((self.__dict__.get("_rsv_guest_jrn") or {}).get("last") or 0)
+        except (TypeError, ValueError):
+            return 0
+
     def _keep_guest_e(self) -> int:
         """Эпоха моего гостя (его hello/online), если он поднят; иначе 0."""
         if not self._keep_guest():

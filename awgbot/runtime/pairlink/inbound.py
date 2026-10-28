@@ -202,6 +202,12 @@ class InboundMixin:
     async def _in_jcack(self, sess: _Session, body: dict) -> None:
         await self._actions(await asyncio.to_thread(self.services.reserve_jrn_in, "jcack", body))
 
+    async def _in_jtail(self, sess: _Session, body: dict) -> None:
+        await self._actions(await asyncio.to_thread(self.services.reserve_jrn_in, "jtail", body))
+
+    async def _in_jtail_ok(self, sess: _Session, body: dict) -> None:
+        await self._actions(await asyncio.to_thread(self.services.reserve_jrn_in, "jtail_ok", body))
+
     async def _in_pkg_ok(self, sess: _Session, body: dict) -> None:
         await asyncio.to_thread(self.services.reserve_pkg_ok, int(body["gen"]), str(body["fp"]))
 

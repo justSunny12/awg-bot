@@ -70,6 +70,14 @@ _HOST_KEYS = ("routing_active_gateway", "routing_manual_hold", "email_check")
 STATE_DECISION: tuple[str, ...] = tuple(k for k in GUEST_STATE if k not in _HOST_KEYS)
 
 
+
+def _masks() -> dict[str, tuple[str, ...]]:
+    return {t: tuple(c for c, k in spec.items() if k == MASK) for t, spec in TABLES.items()
+            if isinstance(spec, dict) and MASK in spec.values()}
+
+
+MASK_COLUMNS: dict[str, tuple[str, ...]] = _masks()       # маски — побитно при перебазировании
+
 def class_of(table: str, column: str) -> str | None:
     """Класс колонки; None — таблицы или колонки в реестре нет."""
     spec = TABLES.get(table)

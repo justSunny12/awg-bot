@@ -65,6 +65,43 @@ class ReserveHandoverMixin:
         return [("guest", "released", {"line": self.reserve_keep_line(), "epoch": int(rel["epoch"]),
                                        "last": int(rel["last"])})]
 
+    def reserve_guest_journal_release(self) -> list[tuple]:
+        """Возврат, а гостя нет (резерв перезагрузился посреди обслуживания): его журнал
+        данных на диске — основе как есть (записи под её K, номера подряд от точки
+        расхождения), затем `released{epoch, last}`; основа применит и возьмёт эпоху."""
+        from awgbot.util.rsvjrn import event
+        from .ship import EV_BYTES
+        line = self.reserve_keep_line()
+        if not line:
+            return []
+        st = self.guest_jrn_store()
+        recs = [r for r in st.events() if event.head(r).line == line]
+        cnts = [r for r in st.counts("b") if event.head(r).line == line]
+        if not recs:
+            return []                                         # своих событий гость не оставил — прежний ответ
+        acts: list[tuple] = []
+        group: list[bytes] = []
+        size = 0
+        for r in recs + [b""]:
+            h = event.head(r) if r else None
+            if group and (not r or size + len(r) > EV_BYTES or h.e != event.head(group[0]).e
+                          or h.n != event.head(group[-1]).n + 1):
+                g0 = event.head(group[0])
+                acts.append(("send", "jev", {"line": line, "e": g0.e, "from": g0.n, "n": len(group),
+                                             "blob": b"".join(group).hex()}))
+                group, size = [], 0
+            if r:
+                group.append(r)
+                size += len(r)
+        for r in cnts:
+            acts.append(("send", "jcnt", {"line": line, "side": "b", "s": event.head(r).n, "blob": r.hex()}))
+        last = event.head(recs[-1]) if recs else None
+        if last is not None:
+            acts.append(("send_released", {"gen": int(self.rsv_get("rsv_pkg_in").get("gen") or 0), "blob": "",
+                                           "epoch": last.e, "last": last.n}))
+        log.warning("резерв: гостя нет — основе журнал данных гостя с диска: событий %d, пачек %d", len(recs), len(cnts))
+        return acts
+
     def reserve_guest_released_jrn(self, body: dict) -> list[tuple]:
         """Возврат с журналом: гость передал право записи (`released{epoch, last}`) — основе."""
         inn = self._inn()
@@ -82,6 +119,9 @@ class ReserveHandoverMixin:
         if out.get("state") != "returning" or out.get("step") != "back_req":
             log.info("резерв: released вне возврата — пропущен")
             return []
+        if self.db.jrn_meta()["role"] == "holder":
+            # «вернуть без резерва» (С9): эпоха и так здесь, правки бота на резерве — хвостом (jtail)
+            return self._jrn_back_take(int(epoch), int(last))
         applied = int(self.db.jrn_meta()["applied"])
         if applied < int(last):
             # не догнала: эпоху не беру, пока правки бота на резерве не применены (он ждёт и досылает)

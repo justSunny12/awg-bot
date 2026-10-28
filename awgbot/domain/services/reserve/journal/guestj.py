@@ -87,6 +87,7 @@ class ReserveGuestJournalMixin:
                 out += self._gj_counts(now)
         if meta["role"] != "holder":
             out += self._gj_catch_up(s, meta, now)
+        out += [(a[1], a[2]) for a in self.reserve_tail_out() if a[0] == "guest_send"]
         return out
 
     def _gj_events(self, s: dict, epoch: int, now: float) -> list[tuple[str, dict]]:
@@ -176,7 +177,8 @@ class ReserveGuestJournalMixin:
                 meta_now = self.db.jrn_meta()
                 if meta_now["role"] == "holder" and epoch_sane(e, int(meta_now["epoch"])):
                     meta = self.db.jrn_adopt(e, why="основа взяла эпоху", fork_i=int(meta_now["acked"]))
-                    if meta is not None:
+                    if meta is not None and body.get("F") is not None:
+                        self.reserve_tail_finalize(int(body["F"]))   # точка расхождения — у основы
                         log.warning("гость: эпоха %s у основы — здесь следование, мои правки после — хвост", meta["epoch"])
                 return []
             if kind == "jcack" and str(body.get("side") or "") == "b":
@@ -188,6 +190,11 @@ class ReserveGuestJournalMixin:
                 return self._gj_catch_up(s, self.db.jrn_meta(), time.monotonic())
             if kind == "takeover":
                 return self._gj_takeover()
+            if kind == "jtail":                                # хвост основы после аварии — держатель здесь
+                return [(a[1], a[2]) for a in self.reserve_tail_in(body) if a[0] == "guest_send"]
+            if kind == "jtail_ok":                             # мой хвост (С9) основа перебазировала
+                self.reserve_tail_ok_in(body)
+                return []
         except (KeyError, TypeError, ValueError) as e:
             log.warning("гость: «%s» не того вида: %s", kind, e)
         return []
@@ -208,10 +215,11 @@ class ReserveGuestJournalMixin:
 
     # ── возврат ─────────────────────────────────────────────────────────────
     def guest_jrn_drained(self) -> bool:
-        """Основа подтвердила все мои события эпохи, которую я держал."""
+        """Основа подтвердила все мои события эпохи, которую я держал, и мой хвост (С9:
+        основа взяла эпоху раньше) перебазирован."""
         meta = self.db.jrn_meta()
         own = int(self._gj().get("own_e") or 0) or int(meta["epoch"])
-        return not self.db.jrn_events_after(int(meta["acked"]), 1, epoch=own)
+        return not self.db.jrn_events_after(int(meta["acked"]), 1, epoch=own) and not self.reserve_tail_pending()
 
     def guest_jrn_release(self) -> dict:
         """Возврат: решений больше не пишу (следование), основе — до какого номера моё."""

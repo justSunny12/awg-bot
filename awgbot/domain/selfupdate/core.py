@@ -271,6 +271,8 @@ class SelfUpdateCoreMixin:
         значение — id хода или команды: удержание другого шаг снимает."""
         if hasattr(self, "reserve_refuse_if_away"):
             self.reserve_refuse_if_away()
+        if hasattr(self, "reserve_refuse_update_if_waiting"):
+            self.reserve_refuse_update_if_waiting()           # ждём правки бота на резерве или свой хвост
         reason = self.update_block_reason(release)
         if reason:
             raise updates.UpdateError(reason)

@@ -96,6 +96,37 @@ class JrnMixin:
             return None
         return self._jrn_meta_set(why, role="holder")
 
+    def jrn_tail_held(self) -> bool:
+        """Хвост отложен: точка расхождения ещё не известна."""
+        return bool(self._connection().execute("SELECT 1 FROM jrn_tail WHERE state = 'hold' LIMIT 1").fetchone())
+
+    def jrn_tail_finalize(self, fork: int) -> int:
+        """Точка расхождения известна (fork — последний номер, который есть у держателя): события
+        хвоста по fork у него есть — прочь из хвоста, в базе остаются; после — откатить в базе
+        (rsvjrn.apply.undo под applying = 1, база — на точке расхождения) и отдать к отправке;
+        применённое — fork. Одной транзакцией. Число откаченных."""
+        import logging
+        from awgbot.util.rsvjrn.apply import Event, undo
+        fork = int(fork)
+        log = logging.getLogger("awgbot.db")
+        with self._tx() as c:
+            c.execute("DELETE FROM jrn_tail WHERE state = 'hold' AND i <= ?", (fork,))
+            rows = c.execute("SELECT i, e, t, op, k, c, o, at FROM jrn_tail WHERE state = 'hold' ORDER BY i").fetchall()
+            if rows:
+                c.execute("UPDATE jrn_meta SET applying = 1 WHERE id = 1")
+                try:
+                    lost = undo(c.connection, [Event.from_row(tuple(r)) for r in rows])
+                finally:
+                    c.execute("UPDATE jrn_meta SET applying = 0 WHERE id = 1")
+                for ev, why in lost:
+                    log.warning("журнал: событие хвоста %s (%s %s) не откатилось: %s", ev.i, ev.op, ev.t, why)
+                c.execute("UPDATE jrn_tail SET state = 'wait' WHERE state = 'hold'")
+            c.execute("UPDATE jrn_meta SET applied = ? WHERE id = 1 AND applied < ?", (fork, fork))
+            self._tx_note(self._TX_COUNTERS)
+        if rows:
+            log.warning("журнал: хвост старой эпохи после %s — %d событий откачено, уйдут держателю", fork, len(rows))
+        return len(rows)
+
     def _jrn_meta_set(self, why: str, **fields) -> dict:
         """Переход эпохи одной транзакцией с synchronous = FULL. Уход в следование от
         чужого держателя: свои события, которых резерв не подтвердил, — в хвост старой
@@ -111,8 +142,9 @@ class JrnMixin:
                     # события держателя пойдут с fork_i + 1: применённое — по точку расхождения
                     fields["applied"] = int(fields["fork_i"])
                 if fields.get("holder") == "peer" and fields.get("role") == "follower" and not keep_own:
+                    # хвост — отложен (hold): откат и отправка — когда известна точка расхождения
                     c.execute("INSERT OR REPLACE INTO jrn_tail (i, e, t, op, k, c, o, at, state) "
-                              "SELECT i, e, t, op, k, c, o, at, 'wait' FROM jrn_events "
+                              "SELECT i, e, t, op, k, c, o, at, 'hold' FROM jrn_events "
                               "WHERE i > (SELECT acked FROM jrn_meta WHERE id = 1) "
                               "AND e = (SELECT epoch FROM jrn_meta WHERE id = 1)")
                     c.execute("DELETE FROM jrn_events WHERE i > (SELECT acked FROM jrn_meta WHERE id = 1) "
@@ -302,3 +334,35 @@ class JrnMixin:
                         "SELECT COALESCE((SELECT value FROM server_state WHERE key = 'last_monthly_reset'), ?), "
                         "?, ?, ?, ?, ?, ? FROM jrn_meta WHERE id = 1 AND capture = 1 AND applying = 0",
                         [(month, *r) for r in rows])
+
+    # ── хвост старой эпохи ────────────────────────────────────────────────────
+
+    def jrn_tail_rows(self, states: tuple[str, ...] = ("wait", "sent")) -> list:
+        """События хвоста (свои, после точки расхождения) — по порядку."""
+        from awgbot.util.rsvjrn.apply import Event
+        marks = ", ".join("?" for _ in states)
+        rows = self._connection().execute(f"SELECT i, e, t, op, k, c, o, at FROM jrn_tail WHERE state IN ({marks}) "
+                                          "ORDER BY i", tuple(states)).fetchall()
+        return [Event.from_row(tuple(r)) for r in rows]
+
+    def jrn_tail_mark(self, state: str) -> None:
+        with self._tx() as c:
+            c.execute("UPDATE jrn_tail SET state = ? WHERE state IN ('wait', 'sent')", (str(state),))
+            self._tx_note(self._TX_COUNTERS)
+
+    def jrn_tail_drop(self) -> None:
+        with self._tx() as c:
+            c.execute("DELETE FROM jrn_tail")
+            self._tx_note(self._TX_COUNTERS)
+
+    def jrn_rebase(self, events: list):
+        """Хвост второй стороны — поверх моей базы (держатель): rsvjrn.rebase обычным
+        соединением — перенесённое захватывается событиями моей эпохи."""
+        from awgbot.core import access_cache
+        from awgbot.util.rsvjrn import rebase
+        conn = self._connection()
+        if conn.in_transaction:
+            conn.commit()
+        res = rebase.rebase(conn, events)
+        access_cache.invalidate_all()
+        return res

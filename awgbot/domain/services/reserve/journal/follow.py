@@ -17,7 +17,7 @@ from awgbot.util import timeutil
 
 from ...gateway_link.common import log
 from ..away import AWAY_REFUSED
-from ...types import ServiceError
+from ...types import Notification, ServiceError
 
 
 def _e(s) -> str:
@@ -86,7 +86,8 @@ class ReserveFollowMixin:
         meta = self.db.jrn_meta()
         if meta["role"] != "follower" or meta["holder"] != "peer":
             if e_body < int(meta["epoch"]):
-                return [("send", "jstale", {"line": line, "e": int(meta["epoch"])})]
+                # точка расхождения — с какого номера моя эпоха: бывшему держателю — для хвоста
+                return [("send", "jstale", {"line": line, "e": int(meta["epoch"]), "F": int(meta["fork_i"])})]
             log.info("резерв: события эпохи %s от «%s», а эпоха здесь — пропущены", e_body, self.reserve_peer_name())
             return []
         if not epoch_sane(e_body, int(meta["epoch"])):
@@ -100,6 +101,10 @@ class ReserveFollowMixin:
             return [("send", "jneed", {"line": line, "from": int(meta["applied"]) + 1})]
         if any(ev.e != e_body for ev in evs):
             return [("send", "jneed", {"line": line, "from": int(meta["applied"]) + 1})]
+        if evs and self.db.jrn_tail_held() and evs[0].i > int(meta["applied"]) + 1:
+            # мой хвост отложен: первое событие держателя называет точку расхождения
+            self.reserve_tail_finalize(evs[0].i - 1)
+            meta = self.db.jrn_meta()
         applied = int(meta["applied"])
         evs = [ev for ev in evs if ev.i > applied]
         if evs and [ev.i for ev in evs] != list(range(applied + 1, applied + 1 + len(evs))):
@@ -224,6 +229,56 @@ class ReserveFollowMixin:
         except Exception as e:                                # noqa: BLE001
             log.info("резерв: пир удалённого устройства не снят: %s", e)
             return 0
+
+    # ── отставание (Т-Ж1, Т-Ж2, Т-Ж6) ───────────────────────────────────────
+    FOLLOW_LAG_S = 60
+
+    def _follow_lag(self) -> tuple[bool, int, int]:
+        """(отстаю ли дольше FOLLOW_LAG_S, применено, последнее у бота на резерве)."""
+        import time
+        meta = self.db.jrn_meta()
+        applied = int(meta["applied"])
+        try:
+            last = int((self.reserve_peer_state().get("jrn_keep") or {}).get("guest_last") or 0)
+        except (TypeError, ValueError):
+            last = 0
+        now = time.monotonic()
+        if last <= applied:
+            self.__dict__.pop("_follow_lag_since", None)
+            return False, applied, last
+        since = self.__dict__.setdefault("_follow_lag_since", now)
+        return now - since > self.FOLLOW_LAG_S, applied, last
+
+    def reserve_follow_view(self) -> dict:
+        """Строка карточки в отъезде с журналом: «идут за ботом … по <время>» или «догоняют»."""
+        if not self.reserve_following() or not self.reserve_jrn_moved():
+            return {}
+        lag, applied, _last = self._follow_lag()
+        at = ""
+        rows = self.db.jrn_events_after(max(0, applied - 1), 1)
+        if rows and rows[0].i == applied:
+            at = rows[0].at
+        return {"lag": lag, "at": at}
+
+    def reserve_follow_lag_tick(self) -> list[tuple]:
+        """Т-Ж6: отставание дольше минуты — один раз на расхождение; догнал — 🟢."""
+        from awgbot.domain.notices import reserve as rn
+        if not self.reserve_following() or not self.reserve_jrn_moved():
+            return []
+        lag, applied, last = self._follow_lag()
+        told = bool(self.rsv_get("rsv_follow").get("lag_told"))
+        if lag and not told:
+            self.rsv_update("rsv_follow", lag_told=True)
+            log.warning("резерв: журнал отстаёт от бота на «%s»: применено %s, у него %s", self.reserve_peer_name(),
+                        applied, last)
+            why = f"применено по {applied}, у бота на {self.reserve_peer_name()} — по {last}"
+            return [("notify", [Notification(tg_id=int(config.ADMIN_ID), silent=True,
+                                             text=rn.follow_stalled(self.reserve_peer_name(), why))])]
+        if told and not lag and last <= applied:
+            self.rsv_update("rsv_follow", lag_told=False)
+            return [("notify", [Notification(tg_id=int(config.ADMIN_ID), silent=True,
+                                             text=rn.follow_ok(self.reserve_peer_name()))])]
+        return []
 
     # ── отказ базы ──────────────────────────────────────────────────────────
     def reserve_refusal(self, exc: BaseException) -> ServiceError | None:

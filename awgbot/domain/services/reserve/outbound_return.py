@@ -66,7 +66,7 @@ class ReserveReturnMixin:
 
     def reserve_force_dialog_data(self) -> dict:
         return {"name": self.reserve_peer_name(), "since": self.reserve_down_since(), "record": self.reserve_dns_name(),
-                "own": self.reserve_own_ip(), "manual": not self.reserve_dns_automatic()}
+                "own": self.reserve_own_ip(), "manual": not self.reserve_dns_automatic(), "jrn": self.reserve_jrn_moved()}
 
     def reserve_force_home(self) -> list[tuple]:
         """Рычаг: запись на себя (API — если автоматически), deleteWebhook и поллинг;
@@ -299,6 +299,8 @@ class ReserveReturnMixin:
         self.db.set_state("move_notified", "")              # «переподключи VPN» — заново на следующий переезд
         tr = self._reserve_traffic_view().get("out") or ""
         notes = [Notification(tg_id=int(config.ADMIN_ID), text=rn.returned_home(name, dict(out.get("merge_report") or {}), tr))]
+        if hasattr(self, "reserve_tail_notes"):
+            notes += self.reserve_tail_notes()                # Т-Ж4/Т-Ж5 — мой хвост после аварии, сразу за Т-РУ5б
         # чем открыт пакет — по СВОЕЙ отметке: K отдан мной (`go`) — прямая цела; иначе
         # резерв собрал M по долям или по коду, и слово резерва тут не спрашивается
         kind = str(out.get("kind") or "")

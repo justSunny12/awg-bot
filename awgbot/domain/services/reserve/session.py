@@ -129,6 +129,7 @@ class ReserveSessionMixin:
         if keep:
             if self._keep_guest_e():
                 keep["guest_e"], keep["guest_fork"] = self._keep_guest_e(), self._keep_guest_fork()
+                keep["guest_last"] = self._keep_guest_last()
             out["keep"] = keep
         return out
 

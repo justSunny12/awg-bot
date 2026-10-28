@@ -159,6 +159,48 @@ def apply(conn: sqlite3.Connection, events: list[Event]) -> Applied:
     return out
 
 
+def undo(conn: sqlite3.Connection, events: list[Event]) -> list[tuple[Event, str]]:
+    """Откатить свои события (хвост старой эпохи) в базе по прежним значениям — в уже
+    открытой транзакции с applying = 1 (зовущий ставит и снимает): база — снова на
+    точке расхождения, события держателя лягут без столкновений, а хвост вернётся
+    после перебазирования его событиями. Сбросы и сложения счётчиков не откатываются
+    (они не решения о строках). Не откатившееся — в ответ (строкой журнала)."""
+    lost: list[tuple[Event, str]] = []
+    cols_cache: dict[str, list[str]] = {}
+    for ev in sorted(events, key=lambda x: x.i, reverse=True):
+        if ev.op in COUNTER_OPS:
+            continue
+        if ev.t not in cols_cache:
+            cols_cache[ev.t] = _columns(conn, ev.t)
+        have = set(cols_cache[ev.t])
+        if not have:
+            continue
+        k = {c: v for c, v in ev.k.items() if c in have}
+        where, args = _where(k)
+        try:
+            conn.execute("SAVEPOINT jrn_undo")
+            if ev.op == "U" and where:
+                back = {c: v for c, v in (ev.o or {}).items() if c in have and c not in k
+                        and (ev.c or {}).get(c) != v}
+                if back:
+                    sets = ", ".join(f"{_q(c)} = ?" for c in back)
+                    conn.execute(f"UPDATE main.{_q(ev.t)} SET {sets}{where}", list(back.values()) + args)
+            elif ev.op == "I" and where:
+                conn.execute(f"DELETE FROM main.{_q(ev.t)}{where}", args)
+            elif ev.op == "D":
+                vals = {**{c: v for c, v in (ev.o or {}).items() if c in have}, **k}
+                if vals and not (where and conn.execute(f"SELECT 1 FROM main.{_q(ev.t)}{where}", args).fetchone()):
+                    names = ", ".join(_q(c) for c in vals)
+                    conn.execute(f"INSERT INTO main.{_q(ev.t)} ({names}) VALUES ({', '.join('?' for _ in vals)})",
+                                 list(vals.values()))
+            conn.execute("RELEASE jrn_undo")
+        except sqlite3.Error as e:
+            conn.execute("ROLLBACK TO jrn_undo")
+            conn.execute("RELEASE jrn_undo")
+            lost.append((ev, str(e)))
+    return lost
+
+
 def events_after(conn: sqlite3.Connection, after: int) -> list[Event]:
     """Свои события с номером больше after — по порядку (отправка, хвост)."""
     return [Event.from_row(r) for r in conn.execute(

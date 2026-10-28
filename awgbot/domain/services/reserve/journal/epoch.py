@@ -111,6 +111,8 @@ class ReserveEpochMixin:
             if meta is not None:
                 self.rsv_update("rsv_out", jrn_report=None)   # сводка эпохи для Т-РУ5б — с начала следования
                 self.db.jrn_seen_reset(f"{self.db.jrn_line()}:b")   # новый гость — счёт его пачек заново
+                if fork:                                      # точка гостя известна — хвост готовить сразу
+                    self.reserve_tail_finalize(fork)
                 log.warning("резерв: эпоха %s у «%s» — здесь следование (%s)", meta["epoch"],
                             self.reserve_peer_name(), why)
         else:

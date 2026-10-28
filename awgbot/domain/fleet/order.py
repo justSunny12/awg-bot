@@ -84,6 +84,8 @@ class FleetOrderMixin:
         (всплывашкой): идёт ход, цель сменилась, сервер не на сборке из выпуска."""
         if hasattr(self, "reserve_refuse_if_away"):
             self.reserve_refuse_if_away()
+        if hasattr(self, "reserve_refuse_update_if_waiting"):
+            self.reserve_refuse_update_if_waiting()           # ждём правки бота на резерве или свой хвост
         with _LOCK:
             run = self.fleet_run()
             if run.get("state") in ACTIVE_RUN:
