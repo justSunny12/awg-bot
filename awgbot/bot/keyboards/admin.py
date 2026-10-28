@@ -12,7 +12,7 @@ from awgbot.bot.callbacks import (
     ReassignCB, RoutingCB, SetCB, BroadcastCB)
 from awgbot.bot import texts as _texts
 
-from .common import (BTN_CANCEL, _btn_suffix, _manual_block_button, confirm, notify_toggle, to_menu, MAX_ROWS)
+from .common import (BTN_CANCEL, _btn_suffix, _manual_block_button, confirm, notify_toggle, MAX_ROWS)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -298,39 +298,37 @@ def block_kb(target: str, ref: int, *, pause: bool | None, notify: bool) -> Inli
 # ── списки главной ───────────────────────────────────────────────────────────
 
 def _paged_to_menu(screen: str, pg, back) -> InlineKeyboardMarkup:
+    """pg — страница экрана-списка (bot/lists/page.Page): ряд листания, когда
+    страниц больше одной, и «⬅️ В меню»."""
     from .common import page_row
-    nav = page_row(screen, 0, pg, back) if pg is not None else []
-    return ui.rows(nav or None, ui.to_menu(Menu(action="main")))
+    return ui.rows(page_row(screen, 0, pg, back) or None, ui.to_menu(Menu(action="main")))
 
 
-def online_devices_kb(pg=None) -> InlineKeyboardMarkup:
-    """Ряд листания (страниц больше одной) и «⬅️ В меню»."""
+def online_devices_kb(pg) -> InlineKeyboardMarkup:
     return _paged_to_menu("online", pg, Menu(action="online"))
 
 
-def traffic_profiles_kb(pg=None) -> InlineKeyboardMarkup:
+def traffic_profiles_kb(pg) -> InlineKeyboardMarkup:
     return _paged_to_menu("traffic", pg, Menu(action="traffic"))
 
 
-def traffic_devices_kb(pg=None, client_id: int = 0) -> InlineKeyboardMarkup:
+def traffic_devices_kb(pg, client_id: int) -> InlineKeyboardMarkup:
     from .common import page_row
-    nav = page_row("traffic_dev", client_id, pg, ClientCB(action="traffic", client_id=client_id)) \
-        if pg is not None and client_id else []
+    nav = page_row("traffic_dev", client_id, pg, ClientCB(action="traffic", client_id=client_id))
     return ui.rows(nav or None, ui.back(Menu(action="traffic")))
 
 
-def expiring_kb(rows=(), pg=None) -> InlineKeyboardMarkup:
+def expiring_kb(rows, pg) -> InlineKeyboardMarkup:
     """«⏱ Имя» по два в ряд — продлить прямо из списка: те же профили, что в
-    строках страницы (pg — bot/lists/page.Page); листание и «В меню»."""
+    строках страницы (срез pg.start:pg.stop — bot/lists/page.Page); листание
+    и «В меню»."""
     from .common import page_row
-    rows = list(rows)
-    items = rows[pg.start:pg.stop] if pg is not None else rows[:2 * (MAX_ROWS - 1)]   # по два в ряд, ряд «В меню»
     buttons = []
-    for c, _secs in items:
+    for c, _secs in list(rows)[pg.start:pg.stop]:
         name = c.name if len(c.name) <= 15 else c.name[:14] + "…"
         buttons.append((f"⏱ {name}", ClientCB(action="extend_exp", client_id=c.id)))
-    nav = page_row("expiring", 0, pg, Menu(action="expiring")) if pg is not None else []
-    return ui.rows(*ui.grid(buttons, 2), nav or None, ui.to_menu(Menu(action="main")))
+    return ui.rows(*ui.grid(buttons, 2), page_row("expiring", 0, pg, Menu(action="expiring")) or None,
+                   ui.to_menu(Menu(action="main")))
 
 
 def invite_menu(plain_text: str, link: str, client_id: int) -> InlineKeyboardMarkup:

@@ -91,7 +91,8 @@ async def render(services, kind: str, *, role: str, ref: int = 0, key: str = "",
     начинается (хвост второй группы ведёт к ней, а не на первую страницу);
     страница запоминается. Группы нет — страница из памяти, как без якоря."""
     from awgbot.bot import paging
-    from awgbot.bot.callbacks import ListCB, PageCB
+    from awgbot.bot.callbacks import ListCB
+    from awgbot.bot.keyboards.common import page_nav
     from . import page as pages
     k = kind_for(kind, role)
     if k is None:
@@ -107,7 +108,7 @@ async def render(services, kind: str, *, role: str, ref: int = 0, key: str = "",
     if not view.rows:
         return view.empty or ui.head(view.title), ui.rows(*back_rows)
     now = "сейчас" if (view.live and new) else ""
-    probe = ui.head(view.title, meta=[view.count, "стр. 99 из 99", now, view.at])
+    probe = ui.head(view.title, meta=[view.count, pages.label(98, 99), now, view.at])
     widest = max((pages.visible(view.rows[i]) for i in view.labels), default=0)
     chunks = pages.split(view.rows, pages.visible(probe) + 2 + (widest + 1 if view.labels else 0), view.sep,
                          pages.MAX_ROWS - 1 if view.labels else pages.MAX_ROWS,     # место под повтор подписи
@@ -127,7 +128,7 @@ async def render(services, kind: str, *, role: str, ref: int = 0, key: str = "",
         target = view.anchors[anchor - 1]
         cur = next((n for n, sp in enumerate(spans) if target in sp), cur)
         paging.remember(chat_id, screen_name(kind), int(ref or 0), cur)
-    head = ui.head(view.title, meta=[view.count, f"стр. {cur + 1} из {total}" if total > 1 else "", now, view.at])
+    head = ui.head(view.title, meta=[view.count, pages.label(cur, total), now, view.at])
     body = [view.rows[i] for i in spans[cur]]
     first = spans[cur][0] if spans[cur] else 0
     if body and first not in view.labels:
@@ -136,11 +137,7 @@ async def render(services, kind: str, *, role: str, ref: int = 0, key: str = "",
             body.insert(0, view.rows[label])
     text = head + "\n\n" + view.sep.join(body)
     back = ListCB(kind=kind, ref=int(ref or 0), key=str(key or ""), new=1 if new else 0).pack()
-    nav = []
-    if cur > 0:
-        nav.append(ui.btn(_prev(), PageCB(screen=screen_name(kind), ref=int(ref or 0), page=cur - 1, back=back)))
-    if cur < total - 1:
-        nav.append(ui.btn(_next(), PageCB(screen=screen_name(kind), ref=int(ref or 0), page=cur + 1, back=back)))
+    nav = page_nav(screen_name(kind), int(ref or 0), cur, cur > 0, cur < total - 1, back)
     return text, ui.rows(nav or None, *back_rows)
 
 
@@ -151,16 +148,6 @@ def _menu(role: str) -> tuple:
         from awgbot.bot.callbacks import FriendCB
         return ui.to_menu(FriendCB(action="refresh"))
     return ui.to_menu(roles.current().cb.menu())
-
-
-def _prev() -> str:
-    from awgbot.bot.keyboards.common import PREV_LABEL
-    return PREV_LABEL
-
-
-def _next() -> str:
-    from awgbot.bot.keyboards.common import NEXT_LABEL
-    return NEXT_LABEL
 
 
 async def open_link(message, services, role: str, client, link) -> bool:

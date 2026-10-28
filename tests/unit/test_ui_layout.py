@@ -240,16 +240,35 @@ def test_profile_card_rows():
     assert ["📱 Устройства: 6"] in rows and not any(r[0].startswith("🔴 Устройство") for r in rows), rows
 
 
-@pytest.mark.parametrize("n, shown", [(0, 0), (1, 1), (17, 17), (18, 18), (19, 18), (40, 18)])
-def test_expiring_list_takes_up_to_nine_rows_of_two(n, shown):
-    """«Истекают»: по два профиля в ряд и ряд «В меню» — до восемнадцати
-    профилей в десяти рядах; дальше — не больше, чтобы экран не перерос
-    правило."""
-    rows = kba.expiring_kb([(_cli(i + 1, f"Профиль {i + 1}"), 3600) for i in range(n)]).inline_keyboard
+@pytest.mark.parametrize("n, shown", [(0, 0), (1, 1), (15, 15), (16, 16), (17, 16), (40, 16)])
+def test_expiring_list_takes_up_to_eight_rows_of_two_plus_paging(n, shown):
+    """«Истекают»: по два профиля в ряд, ряд листания и «В меню» — до
+    шестнадцати профилей страницы в десяти рядах; кнопки — профили той же
+    страницы текста (срез Page), дальше — следующая страница."""
+    from awgbot.bot import texts
+    from awgbot.util import timeutil
+    items = [(_cli(i + 1, f"Профиль {i + 1}", period_end=timeutil.to_iso(timeutil.now())), 3600) for i in range(n)]
+    pg = texts.expiring_page(items)
+    rows = kba.expiring_kb(items, pg).inline_keyboard
     names = [b.text for r in rows for b in r if b.text.startswith("⏱ ")]
     assert len(names) == shown, (n, len(names))
     assert len(rows) <= kbm.MAX_ROWS, len(rows)
     assert all(len(r) <= 2 for r in rows), [[b.text for b in r] for r in rows]
+
+
+def test_gateways_with_many_slots_and_a_long_body_stay_within_ten_rows():
+    """«🛰 Шлюзы»: слоты режутся на страницы тем же page_slice, что и прочие
+    списки кнопок, — при длинном теле (переключение, автопереключение, три
+    сопряжения, SMB) и двух рядах хвоста экран не выходит за десять рядов."""
+    from awgbot.bot.keyboards import routing as kbr
+    states = [{"gateway": SimpleNamespace(id=i, label="", lan_mode=0), "device": SimpleNamespace(name=f"Gw{i}"),
+               "active": i == 1, "preferred": False, "unavailable": False} for i in range(1, 31)]
+    joins = [{"slot": 40 + k, "name": f"j{k}", "id": f"id{k}"} for k in range(3)]
+    for page in (0, 5, 99):
+        rows = kbr.gateways_kb(states, smb_on=True, joins=joins, page=page).inline_keyboard
+        assert len(rows) <= kbm.MAX_ROWS, (page, [[b.text for b in r] for r in rows])
+        labels = [b.text for r in rows for b in r]
+        assert kbm.PREV_LABEL in labels or kbm.NEXT_LABEL in labels, labels
 
 
 def test_edit_submenu_rows():

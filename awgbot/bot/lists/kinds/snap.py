@@ -21,26 +21,22 @@ ROLES = ("admin", "client", "invited")
 async def snap(services, ref: int, key: str, chat_id: int) -> View | None:
     from awgbot.util import timeutil
     data = await call(services.db.list_snap_get, key, chat_id) if key else None
-    back = _back(services, data)
+    back = _back(data)
     if data is None:
         return View(title="", empty=tl.SNAP_GONE, back=back, live=False)
-    if data.get("stale"):
-        try:
-            at = timeutil.fmt_dt_ui(timeutil.parse_iso(str(data.get("at") or "")))
-        except ValueError:
-            at = ""
-        return View(title="", empty=tl.snap_stale(at), back=back, live=False)
-    rows = [str(r) for r in data.get("rows") or []]
     try:
         at = timeutil.fmt_dt_ui(timeutil.parse_iso(str(data.get("at") or "")))
     except ValueError:
         at = ""
+    if data.get("stale"):
+        return View(title="", empty=tl.snap_stale(at, str(data.get("why") or "")), back=back, live=False)
+    rows = [str(r) for r in data.get("rows") or []]
     n = int(data.get("n") or len(rows))
     return View(title=str(data.get("title") or ""), rows=rows, count=str(n) if n else "", back=back, live=False,
                 empty=tl.SNAP_GONE, at=f"на {at}" if at else "")
 
 
-def _back(services, data: dict | None) -> tuple | None:
+def _back(data: dict | None) -> tuple | None:
     """«⬅️ Назад» на экран-источник (колбэк в снимке); без него — None: «⬅️ В меню»
     роли того, кто смотрит, подставит экран (bot/lists render)."""
     from awgbot.bot import ui

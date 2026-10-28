@@ -85,6 +85,15 @@ def test_a_row_longer_than_the_page_is_clipped_not_dropped():
     assert flat[1].endswith("…") and _units(flat[1]) <= pages.BUDGET - 20, _units(flat[1])
 
 
+def test_a_short_row_with_too_many_entities_loses_its_tags_without_a_false_ellipsis():
+    """Строка короче бюджета, но с сущностями сверх предела страницы: теги
+    снимаются, а «…» не ставится — ничего не отрезано."""
+    row = " ".join(f"<code>a{i}</code>" for i in range(pages.MAX_ENTITIES + 1))
+    got = sum(pages.split([row], 10), [])
+    assert got == [html.escape(html.unescape(_TAGS.sub("", row)), quote=False)], got[0][-40:]
+    assert not got[0].endswith("…")
+
+
 def test_an_empty_list_is_one_empty_page():
     assert pages.split([], 10) == [[]]
 

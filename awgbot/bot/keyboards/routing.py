@@ -132,15 +132,13 @@ def gateways_kb(states, *, enabled: bool = True, provisioned: bool = True, awake
         body.append((f"{_tick(smb_on)} SMB в туннеле", GwSlotCB(action="smb_ask")))
     tail = [[("👥 Кому доступен", SetCB(sec="rt_users", act="open")), ("⚙️ Параметры", SetCB(sec="rt_params", act="open"))],
             menu]
-    from .common import MAX_ROWS, page_nav
-    room = MAX_ROWS - len(body) - len(tail)              # рядов под слоты
-    if len(slot_rows) > room:                            # страницы: ряд листания — под слотами
-        per = max(1, room - 1)
-        pages = (len(slot_rows) + per - 1) // per
-        cur = min(max(int(page or 0), 0), pages - 1)
-        shown = slot_rows[cur * per:(cur + 1) * per]
-        nav = page_nav("rt_gw", 0, cur, cur > 0, cur < pages - 1, SetCB(sec="rt").pack())
-        slot_rows = [*shown, nav]
+    from .common import page_nav, page_slice
+    # ряды слотов — в том, что осталось от постоянных рядов; не влезли — страницы,
+    # ряд листания под слотами (правило десяти рядов — одно, в page_slice)
+    chunk, cur, prev, nxt = page_slice(slot_rows, page, len(body) + len(tail))
+    slot_rows = [r for _i, r in chunk]
+    if prev or nxt:
+        slot_rows.append(page_nav("rt_gw", 0, cur, prev, nxt, SetCB(sec="rt").pack()))
     return ui.rows(*slot_rows, *body, *tail)
 
 

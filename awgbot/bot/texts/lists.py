@@ -76,6 +76,11 @@ TUNADDR_EMPTY = "ℹ️ Адресов в туннеле нет — сервер
 SNAP_GONE = "📋 Этого списка больше нет"
 
 
-def snap_stale(at: str) -> str:
-    return (f"📋 Список от {at} больше не хранится — списки событий бот хранит 30 дней" if at
-            else "📋 Этот список больше не хранится — списки событий бот хранит 30 дней")
+def snap_stale(at: str, why: str = "") -> str:
+    """Снимка больше нет: протух (срок — из хранилища) или вытеснен новыми
+    (why == "evicted" — в чате держится не больше PER_CHAT снимков)."""
+    from awgbot.infra.db import listsnap
+    head = f"📋 Список от {at} больше не хранится" if at else "📋 Этот список больше не хранится"
+    if why == "evicted":
+        return f"{head} — бот держит {listsnap.PER_CHAT} последних списков чата"
+    return f"{head} — списки событий бот хранит {listsnap.TTL_S // 86400} дней"
