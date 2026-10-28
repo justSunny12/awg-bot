@@ -355,6 +355,23 @@ ver_lt() {   # $1 < $2 по X.Y.Z.P
     [[ -n "$1" && -n "$2" && "$1" != "$2" ]] \
         && [[ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n1)" == "$1" ]]
 }
+# Минимум обновления поставки (UPDATE_FROM в awgbot/core/compat.py, читается так же, как её
+# версия): установка ниже сначала обновляется на него — шагов перехода с версий ниже в
+# поставке нет. Тот же отказ даст и `awg-bot update`; здесь он раньше, в меню.
+src_update_from() {
+    if [[ -n "${SRC_ROOT:-}" ]]; then
+        sed -nE 's/^UPDATE_FROM *= *"([0-9][0-9.]*)".*/\1/p' "$SRC_ROOT/awgbot/core/compat.py" 2>/dev/null | head -n1
+    else
+        tar -xzOf "$TGZ" --wildcards '*awgbot/core/compat.py' 2>/dev/null \
+            | sed -nE 's/^UPDATE_FROM *= *"([0-9][0-9.]*)".*/\1/p' | head -n1
+    fi
+}
+update_from_why() {   # update_from_why HAVE NEW — причина отказа, если установка HAVE ниже минимума поставки NEW; иначе пусто
+    local from; from="$(src_update_from)"
+    if [[ -n "$1" && -n "$from" ]] && ver_lt "$1" "$from"; then
+        printf 'с v%s сразу на v%s нельзя — сначала обнови до v%s (её поставка — в выпусках на GitHub), затем повтори' "$1" "$2" "$from"
+    fi
+}
 wipe_previous() {
     # Снять прошлую установку целиком, вместе с данными и настройками — то же,
     # что awg-bot uninstall с ответами «да» на все вопросы, плюс всё, что бот
@@ -473,6 +490,9 @@ if [[ -n "${JOIN_TOKEN:-}" && -x "$INSTALL_DIR/venv/bin/python" ]]; then
         trap - EXIT
         exec "$INSTALL_DIR/awg-bot.sh" join                # токен — в AWG_JOIN_TOKEN
     fi
+    # агент ниже минимума поставки — сначала выпуск-минимум (пока поставка ещё на месте)
+    why="$(update_from_why "$have_ver" "$JOIN_VER")"
+    [[ -z "$why" ]] || die "$why"
     if [[ -z "$TGZ" ]]; then
         TGZ="$(mktemp -d)/awg-bot.tgz"
         tar czf "$TGZ" -C "$SRC_ROOT" .
@@ -507,9 +527,13 @@ if [[ -x "$INSTALL_DIR/venv/bin/python" ]]; then
                    | sed -nE 's/^__version__ *= *"([^"]+)".*/\1/p' | head -n1)"
     fi
     newer=0; ver_lt "$have_ver" "$new_ver" && newer=1
+    # установка ниже минимума поставки — пункт 1 говорит, какой выпуск нужен сначала
+    from_why=""; [[ "$newer" -eq 1 ]] && from_why="$(update_from_why "$have_ver" "$new_ver")"
     printf '\n%s[install]%s awg-bot уже установлен в %s: версия %s, в поставке %s. Что делаем?\n' \
         "$c_info" "$c_off" "$INSTALL_DIR" "${have_ver:-?}" "${new_ver:-?}" >&2
-    if [[ "$newer" -eq 1 ]]; then
+    if [[ -n "$from_why" ]]; then
+        printf '  1) Обновить до %s сразу нельзя: %s\n' "$new_ver" "$from_why" >&2
+    elif [[ "$newer" -eq 1 ]]; then
         printf '  1) Обновить до %s, сохранив данные и настройки\n' "$new_ver" >&2
     else
         printf '  1) Обновление не нужно: установлена та же или более новая версия\n' >&2
@@ -524,6 +548,7 @@ if [[ -x "$INSTALL_DIR/venv/bin/python" ]]; then
                 [[ "$inst_role" == "gateway" ]] && hint=". Настройки установленному агенту присылает сервер AWG по каналу конфигурации"
                 die "обновление не требуется: установлена ${have_ver:-?}, в поставке ${new_ver:-?}$hint"
             fi
+            [[ -z "$from_why" ]] || die "$from_why"
             if [[ -z "$TGZ" ]]; then
                 # поставка распакована, архива рядом нет — awg-bot update ждёт архив
                 TGZ="$(mktemp -d)/awg-bot.tgz"

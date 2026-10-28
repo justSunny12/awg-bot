@@ -120,6 +120,7 @@ class _Host:
                                 / "awgbot-resolver.conf")
         self.root_home = self.root / "root"
         self.tar_version = ""          # что «лежит» в архиве поставки
+        self.tar_from = ""             # её минимум обновления (UPDATE_FROM); пусто — поставка без него
         self.tmpdir = tmp_path / "tmpdir"; self.tmpdir.mkdir()
         for name, body in {
             "systemctl": 'echo "systemctl $*" >> "$CALLS"',
@@ -134,7 +135,9 @@ class _Host:
             "tar": (
                 'echo "tar $*" >> "$CALLS"\n'
                 'case "$1" in\n'
-                '  -xzOf) [ -n "$TAR_VERSION" ] && printf \'__version__ = "%s"\\n\' "$TAR_VERSION"; exit 0 ;;\n'
+                # версия поставки и её минимум обновления (compat.py) — по имени запрошенного файла
+                '  -xzOf) case "$*" in *compat.py) [ -n "$TAR_FROM" ] && printf \'UPDATE_FROM = "%s"\\n\' "$TAR_FROM" ;;\n'
+                '           *) [ -n "$TAR_VERSION" ] && printf \'__version__ = "%s"\\n\' "$TAR_VERSION" ;; esac; exit 0 ;;\n'
                 '  czf) : > "$2"; exit 0 ;;\n'
                 'esac\nexit 2'),
         }.items():
@@ -195,14 +198,17 @@ class _Host:
             (self.root_home / "awg-gw-bundle-slot1.sh").write_text("#!/bin/sh\n")
             (self.root_home / "notes.txt").write_text("чужое\n")
 
-    def unpacked_delivery(self, version: str) -> Path:
+    def unpacked_delivery(self, version: str, update_from: str = "") -> Path:
         src = self.tmp / "delivery"
-        (src / "awgbot").mkdir(parents=True)
+        (src / "awgbot" / "core").mkdir(parents=True)
         (src / "awgbot" / "__version__.py").write_text(f'__version__ = "{version}"\n')
+        if update_from:
+            (src / "awgbot" / "core" / "compat.py").write_text(f'UPDATE_FROM = "{update_from}"\n')
         return src
 
-    def archive(self, version: str) -> Path:
+    def archive(self, version: str, update_from: str = "") -> Path:
         self.tar_version = version
+        self.tar_from = update_from
         tgz = self.tmp / "awg-bot.tgz"
         tgz.write_text("архив")
         return tgz
@@ -237,7 +243,7 @@ class _Host:
             "echo CONTINUE_FRESH_INSTALL\n"
         )
         env = {"PATH": f"{self.bin}:/usr/bin:/bin", "CALLS": str(self.log),
-               "TAR_VERSION": self.tar_version, "TMPDIR": str(self.tmpdir)}
+               "TAR_VERSION": self.tar_version, "TAR_FROM": self.tar_from, "TMPDIR": str(self.tmpdir)}
         return subprocess.run(["bash", "-c", prog], capture_output=True, text=True,
                               timeout=30, env=env)
 
@@ -312,6 +318,32 @@ def test_same_or_older_delivery_refuses_to_update(host, have, new):
     assert host.updates() == [], f"update запущен вопреки версии: {host.calls()}"
     assert host.snapshot() == before
     assert "CONTINUE_FRESH_INSTALL" not in r.stdout
+
+
+@pytest.mark.parametrize("how", ["archive", "unpacked"])
+def test_an_install_below_the_update_from_of_the_delivery_is_refused_in_the_menu(host, how):
+    """Хост 3.4.1, поставка 4.1.0 с UPDATE_FROM 4.0.0: пункт 1 называет выпуск,
+    который нужен сначала, выбор 1 — отказ, update не зовётся. Минимум читается
+    и из архива, и из распакованной поставки."""
+    host.installed("3.4.1", "client")
+    kw = {"tgz": host.archive("4.1.0", "4.0.0")} if how == "archive" \
+        else {"src_root": host.unpacked_delivery("4.1.0", "4.0.0")}
+    before = host.snapshot()
+    r = host.run(["1"], **kw)
+    assert r.returncode != 0, r.stderr
+    assert "1) Обновить до 4.1.0 сразу нельзя: с v3.4.1 сразу на v4.1.0 нельзя — сначала обнови до v4.0.0" in r.stderr, \
+        r.stderr
+    assert "[install:ОШИБКА] с v3.4.1 сразу на v4.1.0 нельзя" in r.stderr
+    assert host.updates() == [] and host.snapshot() == before
+    assert "CONTINUE_FRESH_INSTALL" not in r.stdout
+
+
+def test_an_install_at_the_update_from_is_offered_the_update_as_before(host):
+    host.installed("4.0.0", "client")
+    tgz = host.archive("4.1.0", "4.0.0")
+    r = host.run(["1"], tgz=tgz)
+    assert r.returncode == 0 and "1) Обновить до 4.1.0, сохранив данные и настройки" in r.stderr, r.stderr
+    assert host.updates() == [f"awg-bot update {tgz} KEEP=1 JOIN=<unset>"]
 
 
 def test_refused_update_on_gateway_says_where_the_configuration_comes_from(host):
@@ -565,7 +597,7 @@ def _run_update(tmp_path: Path, keep: str | None, answers: str = "y") -> subproc
     src = flat()
     prog = (
         "set -euo pipefail\n"
-        'DATA_DIR=/x; ENV_FILE=/x/env\n'
+        'INSTALL_DIR=/x; DATA_DIR=/x; ENV_FILE=/x/env\n'
         "log() { echo \"LOG $*\"; }\n"
         "die() { echo \"DIE $*\"; exit 1; }\n"
         "require_root() { :; }; require_installed() { :; }; update_lock() { :; }\n"
@@ -573,7 +605,7 @@ def _run_update(tmp_path: Path, keep: str | None, answers: str = "y") -> subproc
         # распаковка и проверка версии поставки идут ДО вопросов об удалении
         # данных (отказ «откат невозможен» — раньше вопросов): поставка подставная
         'tar() { mkdir -p "$4/x/awgbot"; : > "$4/x/awgbot/__main__.py"; }\n'   # tar xzf <tgz> -C <dir> …
-        "chown() { :; }; compat_floor() { :; }; tree_version() { echo 3.4.0; }; note_installed_digest() { :; }\n"
+        "chown() { :; }; compat_floor() { :; }; update_from() { :; }; tree_version() { echo 3.4.0; }; note_installed_digest() { :; }\n"
         f'confirm() {{ echo "ASKED $1"; [[ "{answers}" == y ]]; }}\n'
         'ensure_python() { echo "WIPE=$wipe"; exit 0; }\n'
         + _func(src, "cmd_update") +

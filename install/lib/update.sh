@@ -62,6 +62,17 @@ cmd_update() {
         rm -rf "$tmp"
         die "откат ниже $floor невозможен — только чистая установка"
     fi
+    # Минимум обновления новой поставки (UPDATE_FROM там же): установка ниже
+    # сначала идёт на него — шагов перехода с версий ниже в поставке нет, и
+    # прыжок через минимум оставил бы conf и обвязку прежней раскладки без
+    # единой ошибки. Сторож — здесь, прежним скриптом: вторая половина
+    # исполняется уже новым кодом, когда прежний уже отодвинут.
+    local have from
+    have="$(tree_version "$INSTALL_DIR")"; from="$(update_from "$src")"
+    if [[ -n "$have" && -n "$from" ]] && version_lt "$have" "$from"; then
+        rm -rf "$tmp"
+        die "с v$have сразу на v$newver нельзя — сначала обнови до v$from (её поставка — в выпусках на GitHub): sudo awg-bot update <архив v$from>"
+    fi
     note_installed_digest "$tgz" "$newver"     # архив из выпуска — бэкапы будут знать выпуск
     if declare -F reserve_busy_guard >/dev/null 2>&1; then reserve_busy_guard "обновление"; fi
 
@@ -165,6 +176,10 @@ note_installed_digest() {  # note_installed_digest TGZ VER — архив сов
 
 compat_floor() {  # compat_floor [DIR] — версия совместимости кода в DIR (по умолчанию — установленного); пусто — не прочитана
     sed -n 's/^COMPAT_FLOOR *= *"\([0-9][0-9.]*\)".*/\1/p' "${1:-$INSTALL_DIR}/awgbot/core/compat.py" 2>/dev/null | head -n1
+}
+
+update_from() {  # update_from [DIR] — минимум обновления кода в DIR (UPDATE_FROM: с какой версии на него прыгают); пусто — не прочитан
+    sed -n 's/^UPDATE_FROM *= *"\([0-9][0-9.]*\)".*/\1/p' "${1:-$INSTALL_DIR}/awgbot/core/compat.py" 2>/dev/null | head -n1
 }
 
 tree_version() {  # tree_version DIR — версия поставки в каталоге (awgbot/__version__.py); пусто — не прочитана

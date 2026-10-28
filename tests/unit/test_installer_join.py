@@ -132,7 +132,7 @@ def test_a_broken_token_is_refused_before_the_network(tmp_path):
 
 
 def _existing(tmp_path, have: str, want: str, answer: str, role: str = "gateway", *, tty: bool = True,
-              yes: bool = False, state: str = ""):
+              yes: bool = False, state: str = "", update_from: str = ""):
     """Фрагмент «агент уже стоит» с командой подключения: подставной
     awg-bot.sh пишет, чем его позвали; tty — есть ли терминал для вопроса
     (подменён дескриптором 3); state — файл сопряжения агента."""
@@ -151,6 +151,9 @@ def _existing(tmp_path, have: str, want: str, answer: str, role: str = "gateway"
     (etc / "conf" / "app.yaml").write_text(f'role: "{role}"\n' if role == "gateway" else "", encoding="utf-8")
     src_root = tmp_path / "src"; src_root.mkdir()
     (src_root / "x").write_text("x", encoding="utf-8")
+    if update_from:                                       # минимум обновления поставки (UPDATE_FROM)
+        (src_root / "awgbot" / "core").mkdir(parents=True)
+        (src_root / "awgbot" / "core" / "compat.py").write_text(f'UPDATE_FROM = "{update_from}"\n', encoding="utf-8")
     ans = tmp_path / "answers"; ans.write_text(answer + "\n", encoding="utf-8")
     jf = tmp_path / "join.json"
     if state:
@@ -161,7 +164,7 @@ def _existing(tmp_path, have: str, want: str, answer: str, role: str = "gateway"
         "c_info=''; c_off=''\n"
         "log() { printf '[install] %s\\n' \"$*\"; }\n"
         "die() { printf '[install:ОШИБКА] %s\\n' \"$*\" >&2; exit 1; }\n"
-        + _func(src, "ver_of") +
+        + "".join(_func(src, f) for f in ("ver_of", "ver_lt", "src_update_from", "update_from_why")) +
         f'JOIN_TOKEN="AWGJ1.DUMMY"; export AWG_JOIN_TOKEN="$JOIN_TOKEN"; JOIN_VER="{want}"; TGZ=""; SRC_ROOT="{src_root}"\n'
         f'JOIN_ID="0123456789abcdef"; JOIN_STATE_FILE="{jf}"; ASSUME_YES={int(yes)}\n'
         + (f'exec 3<"{ans}"\n' if tty else "") + frag + "echo CONTINUE_INSTALL\n")
@@ -184,6 +187,17 @@ def test_an_installed_agent_of_another_release_is_updated_and_then_joins(tmp_pat
     r, calls = _existing(tmp_path, "3.3.1", "3.4.0", "y")
     assert r.returncode == 0, r.stderr
     assert len(calls) == 1 and calls[0].startswith("awg-bot update ") and "JOIN=AWGJ1.DUMMY" in calls[0], calls
+
+
+def test_an_installed_agent_below_the_update_from_of_the_release_is_refused_before_the_update(tmp_path):
+    """Агент ниже минимума выпуска токена (UPDATE_FROM поставки): шагов перехода
+    в поставке нет — отказ с подсказкой, какой выпуск нужен сначала; update и
+    join не зовутся."""
+    r, calls = _existing(tmp_path, "3.4.1", "4.1.0", "y", update_from="4.0.0")
+    assert r.returncode != 0 and calls == [], (r.stderr, calls)
+    assert "с v3.4.1 сразу на v4.1.0 нельзя — сначала обнови до v4.0.0" in r.stderr, r.stderr
+    r, calls = _existing(tmp_path / "ok", "4.0.2", "4.1.0", "y", update_from="4.0.0")
+    assert r.returncode == 0 and len(calls) == 1 and calls[0].startswith("awg-bot update "), (r.stderr, calls)
 
 
 def test_no_means_nothing_changes(tmp_path):
