@@ -338,6 +338,7 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
     settings.on_change("email.poll_interval_sec", _email_hook)
 
     pkg.add_update_check(scheduler, services, bot, run_date=now, tag="update_check")
+    pkg.add_listsnap_nightly(scheduler, services, bot)       # снимки списков и «Скрыть»: такт после полуночи
 
     # имена Telegram-аккаунтов: разово на старте (после обновления они пусты у
     # всех) и раз в сутки для тех, кто давно не писал; в сеть — с джиттером

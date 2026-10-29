@@ -29,7 +29,7 @@ CTL_TICK_SECONDS = 5
 # задания гостя — сторож-тест сверяет с планировщиком
 GUEST_JOBS: tuple[str, ...] = ("poll", "expiry", "monthly", "monthly_catchup", "purge_history", "email_resume",
                                "tg_names", "tg_names_startup", "guest_monitor", "guest_snapshot", "guest_ctl",
-                               "guest_routing", "routing_liveness")
+                               "guest_routing", "routing_liveness", "listsnap_nightly", "listsnap_startup")
 
 
 def setup_guest_scheduler(services, bot, db, on_ctl_tick=None) -> AsyncIOScheduler:
@@ -161,4 +161,6 @@ def setup_guest_scheduler(services, bot, db, on_ctl_tick=None) -> AsyncIOSchedul
         "email.poll_interval_sec": ("email_resume", _trig_email),
     }.items():
         settings.on_change(_key, _make_reschedule(_job_id, _factory))
+    from awgbot.runtime.scheduler.listsnap import add_listsnap_nightly
+    add_listsnap_nightly(scheduler, services, bot)          # записи и снимки — в базе зоны
     return scheduler

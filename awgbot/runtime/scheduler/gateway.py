@@ -129,4 +129,6 @@ def setup_gateway_scheduler(services, bot):
         misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
 
     scheduler.start()
+    from awgbot.runtime.scheduler.listsnap import add_listsnap_nightly
+    add_listsnap_nightly(scheduler, services, bot)          # снимки списков и «Скрыть»: такт после полуночи
     return scheduler

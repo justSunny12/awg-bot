@@ -1,6 +1,7 @@
 """Планировщик бота основы на резерве (runtime/scheduler/guest.py): ровно
-задания данных пользователей, три своих и два РФ-доступа в зоне (сверка
-маршрутизации и живость слотов); хостовых заданий нет.
+задания данных пользователей, три своих, два РФ-доступа в зоне (сверка
+маршрутизации и живость слотов) и такт снимков списков (своя база зоны);
+хостовых заданий нет.
 
 Цена ошибки: задание хоста (бэкапы, набор обновлений, метрики железа,
 доставка шлюзам, доступ по SSH) в гостевом планировщике — бот основы на
@@ -26,6 +27,8 @@ CORE = {"poll", "expiry", "monthly", "monthly_catchup", "purge_history", "email_
 OWN = {"guest_monitor", "guest_snapshot", "guest_ctl"}
 # РФ-доступ пользователей основы в зоне — тем же кодом, что на основе
 ROUTING = {"guest_routing", "routing_liveness"}
+# снимки списков и «Скрыть» в базе зоны: такт после полуночи и догон на старте
+LISTSNAP = {"listsnap_nightly", "listsnap_startup"}
 HOST_JOBS = {"backup", "monitor", "fleet", "gwjoin", "migration_watch", "ssh_access", "hostmetrics", "gw_delivery",
              "resource_alerts", "update_check"}
 
@@ -42,7 +45,7 @@ def _ids(sched) -> set[str]:
 
 
 def test_the_guest_scheduler_has_exactly_the_client_data_jobs_its_own_ones_and_routing(guest_sched):
-    want = CORE | OWN | ROUTING
+    want = CORE | OWN | ROUTING | LISTSNAP
     assert _ids(guest_sched) == want, f"лишнее/пропавшее: {_ids(guest_sched) ^ want}"
     assert set(GUEST_JOBS) == want, "перечень GUEST_JOBS разошёлся с планировщиком"
 

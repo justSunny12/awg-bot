@@ -24,7 +24,8 @@ services синхронны → зовём через asyncio.to_thread, что�
 Части: common — общее обеих ролей (проверка обновлений, уведомление о версии,
 имена Telegram-аккаунтов, назначенный момент месяца, MANDATORY); backup —
 копия сервера AWG по расписанию и по событию (add_server_backup); client — планировщик основной роли
-(setup_scheduler); gateway — планировщик роли gateway (setup_gateway_scheduler).
+(setup_scheduler); gateway — планировщик роли gateway (setup_gateway_scheduler);
+listsnap — такт снимков списков и кнопки «Скрыть» после полуночи, у всех трёх ботов.
 """
 
 from __future__ import annotations
@@ -36,12 +37,13 @@ from .common import (log, notify_update_available, TG_NAME_MAX_AGE_DAYS, refresh
                      planned_moment_passed, _UPDATE_JITTER,
                      update_check_trigger, update_check_hook, add_update_check)
 from .backup import monthly_backup, event_backup, BACKUP_JITTER, backup_trigger, add_server_backup
+from .listsnap import add_listsnap_nightly, LISTSNAP_JITTER
 from .jobs import core_jobs
 from .client import setup_scheduler
 from .gateway import setup_gateway_scheduler
 from .guest import setup_guest_scheduler
 
-__all__ = ["setup_scheduler", "setup_gateway_scheduler", "send_notifications", "log",
+__all__ = ["setup_scheduler", "add_listsnap_nightly", "LISTSNAP_JITTER", "setup_gateway_scheduler", "send_notifications", "log",
            "notify_update_available", "TG_NAME_MAX_AGE_DAYS", "refresh_tg_names", "MANDATORY",
            "planned_moment_passed", "monthly_backup", "_UPDATE_JITTER", "BACKUP_JITTER",
            "update_check_trigger", "update_check_hook", "add_update_check", "backup_trigger",
