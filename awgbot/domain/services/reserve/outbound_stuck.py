@@ -74,6 +74,6 @@ class ReserveStuckMixin:
             return [("live",), ("notify", [Notification(tg_id=int(config.ADMIN_ID), text=rn.webhook_stuck_removed(name))])]
         journal = bool(self.reserve_jrn_on())                 # пара без журнала — реплика, как прежде
         log.warning("резерв: пользователи возвращены без данных с «%s» — %s, когда он выйдет на связь%s", name,
-                    "его изменения перенесутся" if journal else "его реплика вольётся",
+                    "его изменения перенесутся" if journal else "изменения из его реплики применятся",
                     "; конфликтующие записи будут отброшены" if journal else "")
         return [("live",), ("notify", [Notification(tg_id=int(config.ADMIN_ID), text=rn.forced_home(name, journal))])]

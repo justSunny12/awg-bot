@@ -101,7 +101,7 @@ def test_tj3_without_the_journal_the_old_line_stays(mv):
     rm.go_away(mv.svc, kind="dead")
     mv.svc.rsv_update("rsv_out", await_merge=True)
     text = _screen(mv.svc)
-    assert "└ ⏳ жду реплику «Beta» — она вольётся, когда он выйдет на связь" in text, text
+    assert "└ ⏳ жду реплику «Beta» — изменения из неё применятся, когда он выйдет на связь" in text, text
 
 
 def test_tj8_the_details_say_the_data_go_as_edits(duo):

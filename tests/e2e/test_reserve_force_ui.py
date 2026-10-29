@@ -100,7 +100,7 @@ async def test_a_confirmation_that_came_too_late_is_refused_loudly(ui):
 async def test_the_card_says_it_waits_for_the_replica_while_the_mark_stands(ui):
     ui.svc.reserve_set_out("home", await_merge=True, kind="dead")
     text, labels = await _card(ui)
-    assert "⏳ жду реплику «Beta»" in text and "вольётся" in text, text
+    assert "⏳ жду реплику «Beta»" in text and "изменения из неё применятся" in text, text
     assert FORCE not in labels
     ui.svc.reserve_set_out("home", await_merge=False)
     text, _labels_ = await _card(ui)

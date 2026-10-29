@@ -106,7 +106,7 @@ def test_after_force_home_and_an_empty_reserve_the_own_tail_is_moved_here(duo):
     assert (duo.a.db.get_state("rsv_tail_keys") or "") == "", "отложенные ключи хвоста не сняты"
     assert _priv(duo.a.db, ids["vera_dev"]) == "DUMMY-priv-vera", "закрытый ключ устройства из хвоста не вернулся"
     texts = [n.text for n in rm.notices(acts)]
-    tj5 = [t for t in texts if t.startswith("ℹ️ Правки, сделанные здесь перед переездом на «Beta», перенесены после возврата: ")]
+    tj5 = [t for t in texts if t.startswith("ℹ️ Изменения, сделанные здесь перед переездом на «Beta», перенесены после возврата: ")]
     assert len(tj5) == 1, texts
     assert rm.notices(duo.a.reserve_out_tick()) == [], "Т-Ж5 повторилось на следующем такте"
 

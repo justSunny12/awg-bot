@@ -436,7 +436,7 @@ def test_a_tail_never_taken_by_the_guest_is_moved_by_the_primary_after_the_retur
     assert not duo.a.db.jrn_tail_rows(), "хвост остался"
     texts = [n.text for n in notes]
     head, n = texts[1].rsplit(": ", 1)
-    assert head == "ℹ️ Правки, сделанные здесь перед переездом на «Beta», перенесены после возврата" and int(n) >= 1, \
+    assert head == "ℹ️ Изменения, сделанные здесь перед переездом на «Beta», перенесены после возврата" and int(n) >= 1, \
         f"Т-Ж5 своего хвоста не вторым сообщением или не тем вариантом: {texts}"
     assert notes[1].silent
 

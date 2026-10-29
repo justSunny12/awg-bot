@@ -149,7 +149,7 @@ def test_five_disputes_have_no_more():
 @pytest.mark.parametrize("variant, want", [
     ("crash", "ℹ️ Изменения, сделанные здесь перед переездом на «Beta», перенесены туда: 4"),
     ("c9", "ℹ️ Изменения от бота на «Beta» после потери связи перенесены сюда: 12"),
-    ("self", "ℹ️ Правки, сделанные здесь перед переездом на «Beta», перенесены после возврата: 4"),
+    ("self", "ℹ️ Изменения, сделанные здесь перед переездом на «Beta», перенесены после возврата: 4"),
 ])
 def test_tj5_variants(variant, want):
     assert rn.tail_moved(variant, "Beta", 12 if variant == "c9" else 4) == want

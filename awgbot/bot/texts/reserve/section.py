@@ -225,7 +225,7 @@ def card_text(d: dict) -> str:
             lines.append("└ ⚠️ " + _e(in_why))
         if d.get("await_merge"):
             lines.append(f"└ 🟡 изменения из бота на {_n(name)} придут, когда он выйдет на связь" if d.get("jrn_moved")
-                         else f"└ ⏳ жду реплику {_n(name)} — она вольётся, когда он выйдет на связь")
+                         else f"└ ⏳ жду реплику {_n(name)} — изменения из неё применятся, когда он выйдет на связь")
         if d.get("code_open"):
             lines.append(f"└ 🆘 {_n(name)} и его шлюзы не отвечают — жду аварийный код его админа")
         elif d.get("auto_block"):
