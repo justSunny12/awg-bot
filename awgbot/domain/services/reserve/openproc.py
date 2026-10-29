@@ -56,9 +56,11 @@ class ReserveOpenProcMixin:
             port = int(plan.get("webhook_port") or 0)
         except ValueError:
             port = 0
+        from awgbot.infra import quoprobe
         return {"set_record": kind != "button", "tg_take": False, "webhook_port": port, "self_host": own_host(),
                 "target_ip": self.reserve_own_ip(), "tg_pool": list(nftguard.tg_pool()),
-                "channel_port": int(settings.get_int("app.routing.link_channel_port", 8787) or 8787)}
+                "channel_port": int(settings.get_int("app.routing.link_channel_port", 8787) or 8787),
+                "probe_port": int(quoprobe.port())}
 
     def _rsvopen_launch(self, payload: dict, keep_stdin: bool = False) -> None:
         """Временный юнит с песочницей (systemd-run); без systemd — просто процесс.

@@ -1,0 +1,204 @@
+"""
+leader.py — часть пакета quorum (см. __init__): ответчик и счёт «да» у лидера
+своей линии — правило `util/quorum/leader`.
+
+Лидер — основа дома (ответчик на втором адресе интерфейса AWG) или бот
+основы на резерве (ответчик на втором адресе клона в зоне; состав и v ему
+говорит бот резерва по локальному каналу — `quorum{l, g, members}`, он
+отвечает `qcount{y, v, r}`). Проба — JSON внутри туннеля зонда; ответчик
+сверяет узел с адресом источника, считает «да» только со своей эпохой и
+действующим поколением, в ответ кладёт роль, счёт и справку (устройств с
+рукопожатием за 5 мин без зондов, идёт ли трафик). На этапе зондов (4.2.0)
+лишение кворума и возврат к лидерству — только строка журнала и карточка
+(решений нет); правило лидера с `jrn_fence`/`jrn_unfence` — этап решения.
+"""
+from __future__ import annotations
+
+import time
+
+from awgbot.core import config
+from awgbot.util import probenet, timeutil
+from awgbot.util.quorum import members as qm
+from awgbot.util.quorum.leader import Leader
+from awgbot.util.quorum.probe import Info, Probe
+
+from ...gateway_link.common import log
+
+INFO_EVERY_S = 30                # дамп интерфейса для справки — не чаще
+HS_FRESH_S = 300                 # устройство «на связи» — рукопожатие за столько
+
+
+class ReserveQuorumLeaderMixin:
+
+    @property
+    def _qleader(self) -> Leader | None:
+        return self.__dict__.get("_rsv_qleader")
+
+    def _quorum_leader_setup(self) -> Leader | None:
+        """Машина лидера по текущему составу; None — я не лидер своей линии
+        (пары нет, кворум не включён, пользователи у резерва)."""
+        if getattr(self, "guest", False):
+            q = self.__dict__.get("_guest_quorum") or {}
+            l, g, members = str(q.get("l") or ""), int(q.get("g") or 0), list(q.get("members") or [])
+            if not l or not members:
+                self.__dict__.pop("_rsv_qleader", None)
+                return None
+            leader_host = probenet.other_side(l)              # клон живёт у второй стороны
+        else:
+            m = self.reserve_quorum_mine()
+            if m is None or not self.reserve_quorum_active() or self.reserve_quorum_leader_host() != m.l:
+                self.__dict__.pop("_rsv_qleader", None)
+                return None
+            l, g, members, leader_host = m.l, int(m.g), list(m.members), m.l
+        try:
+            comp = qm.Members.make(l, g, members)
+            voters = comp.voters(leader_host)
+        except ValueError:
+            self.__dict__.pop("_rsv_qleader", None)
+            return None
+        ld = self._qleader
+        now = time.monotonic()
+        if ld is None or ld.l != l:
+            ld = Leader(l, len(voters), self.reserve_quorum_epoch(), candidate=probenet.other_side(leader_host),
+                        timing=self.reserve_quorum_timing(), voters=voters)
+            ld.gen.bump(g, now, ld.timing.grace_s)
+            self.__dict__["_rsv_qleader"] = ld
+            log.info("кворум: ответчик линии %s — голосующих %d, поколение %s", l, len(voters), g)
+        else:
+            if tuple(ld.voters) != tuple(voters) or ld.gen.g != g:
+                ld.set_members(voters, len(voters), g, now)
+            ld.set_epoch(self.reserve_quorum_epoch())
+        return ld
+
+    def reserve_quorum_responder_addr(self) -> tuple[str, int] | None:
+        """(адрес, порт) ответчика, если я лидер своей линии; иначе None."""
+        from awgbot.infra import quoprobe
+        if getattr(self, "guest", False):
+            q = self.__dict__.get("_guest_quorum") or {}
+            if not q.get("l") or not q.get("members"):
+                return None
+            return probenet.responder_addr(str(q["l"]), clone=True), int(q.get("port") or quoprobe.port())
+        m = self.reserve_quorum_mine()
+        if m is None or not self.reserve_quorum_active() or self.reserve_quorum_leader_host() != m.l:
+            return None
+        return probenet.responder_addr(m.l), int(self.reserve_probes().get(m.l, {}).get("port") or quoprobe.port())
+
+    # ── проба ───────────────────────────────────────────────────────────────
+    def reserve_quorum_probe_in(self, data: bytes, src: str) -> bytes | None:
+        """Датаграмма пробы с адреса `src` → ответ (или None: не проба, чужой узел,
+        я не лидер)."""
+        ld = self._quorum_leader_setup()
+        if ld is None:
+            return None
+        p = Probe.parse(data)
+        if p is None or p.l != ld.l:
+            return None
+        if probenet.node_of_addr(ld.l, src) != p.n:
+            log.info("кворум: проба узла %s с адреса %s — не его адрес, не считаю", p.n, src)
+            return None
+        now = time.monotonic()
+        act = ld.probe_in(p, now)
+        if act == "ignore":
+            return None
+        if act == "adopt" and not self.__dict__.get("_quo_adopt_told"):
+            self.__dict__["_quo_adopt_told"] = True
+            log.warning("кворум: проба %s несёт эпоху %s, у меня %s — эпоху держит другая сторона", p.n, p.e, ld.epoch)
+        return ld.reply_for(p, now, self._quorum_info()).encode()
+
+    def _quorum_info(self) -> Info:
+        """Справка в ответ пробы: устройств с рукопожатием за 5 мин (без зондов), рос ли
+        приём за минуту; дамп — не чаще раза в 30 с."""
+        from awgbot.infra import awg
+        cache = self.__dict__.setdefault("_quo_info", {})
+        now = time.monotonic()
+        if cache.get("at") and now - cache["at"] < INFO_EVERY_S:
+            return cache["info"]
+        hs, rx = 0, 0
+        try:
+            for p in awg.show_dump(config.AWG_INTERFACE):
+                if probenet.is_probe(str(p.get("ip") or "")):
+                    continue
+                if p.get("hs") and time.time() - int(p["hs"]) <= HS_FRESH_S:
+                    hs += 1
+                rx += int(p.get("rx") or 0)
+        except Exception as e:                                # noqa: BLE001
+            log.info("кворум: справка не снята: %s", e)
+        prev_rx, prev_at = cache.get("rx"), cache.get("rx_at")
+        flow = bool(prev_rx is not None and rx > prev_rx and now - float(prev_at or now) <= 90)
+        info = Info(hs=hs, flow=flow, at=timeutil.now_iso())
+        cache.update(at=now, info=info, rx=rx, rx_at=now)
+        return info
+
+    # ── такт ────────────────────────────────────────────────────────────────
+    def reserve_quorum_leader_tick(self, now: float | None = None) -> list[tuple]:
+        """Такт лидера: счёт «да», лишение кворума и возврат (на этапе зондов — только
+        журнал и карточка). Действия — для исполнителя runtime."""
+        ld = self._quorum_leader_setup()
+        if ld is None:
+            return []
+        now = time.monotonic() if now is None else now
+        act = ld.tick(now)
+        y = ld.yes_count(now)
+        if act == "fence":
+            log.warning("кворум: «%s» без кворума — да %d из %d (%s)", self._quorum_my_name(), y, ld.v, self._quorum_views_brief(ld, now))
+            self.__dict__["_quo_fenced_since"] = timeutil.now_iso()
+        elif act == "unfence":
+            log.info("кворум: «%s» — лидер, да %d из %d", self._quorum_my_name(), y, ld.v)
+            self.__dict__["_quo_fenced_since"] = ""
+        return []
+
+    def _quorum_my_name(self) -> str:
+        return str(config.SERVER_NAME or self.reserve_quorum_side() or "")
+
+    @staticmethod
+    def _quorum_views_brief(ld: Leader, now: float) -> str:
+        parts = []
+        for n in ld.voters:
+            s = ld.seen.get(n)
+            if s is None or now - s.at > ld.timing.yes_window_s:
+                parts.append(f"{n} молчит")
+            else:
+                parts.append(f"{n} {s.w}")
+        return ", ".join(parts)
+
+    def reserve_quorum_count(self) -> dict:
+        """Счёт лидера для карточки и `qcount`: {y, v, t, role, fenced_since, voters:
+        {узел: {w, e, g, age}}}; пусто — я не лидер."""
+        ld = self._qleader
+        if ld is None:
+            return {}
+        now = time.monotonic()
+        voters = {}
+        for n in ld.voters:
+            s = ld.seen.get(n)
+            voters[n] = ({"w": s.w, "e": s.e, "g": s.g, "age": int(now - s.at)} if s is not None else {"w": "", "age": -1})
+        return {"l": ld.l, "y": ld.yes_count(now), "v": ld.v, "t": qm.threshold(ld.v), "role": ld.role(),
+                "fenced_since": str(self.__dict__.get("_quo_fenced_since") or ""), "voters": voters}
+
+    # ── бот основы на резерве ───────────────────────────────────────────────
+    def reserve_quorum_guest_in(self, body: dict) -> None:
+        """`quorum{l, g, members, port}` от бота резерва по локальному каналу — состав
+        для счёта «да» на клоне."""
+        self.__dict__["_guest_quorum"] = {"l": str(body.get("l") or ""), "g": int(body.get("g") or 0),
+                                          "members": [str(m) for m in (body.get("members") or [])][:64],
+                                          "port": int(body.get("port") or 0)}
+
+    def reserve_quorum_qcount_body(self) -> dict | None:
+        """`qcount{y, v, r}` гость → бот резерва; None — счёта нет."""
+        c = self.reserve_quorum_count()
+        if not c:
+            return None
+        return {"y": int(c["y"]), "v": int(c["v"]), "r": str(c["role"])}
+
+    def reserve_quorum_for_guest(self) -> dict | None:
+        """Сторона бота резерва: состав линии основы для её бота у меня — по `st.quo`
+        второй стороны (её линия) и моей записи зондов; None — нечего."""
+        from awgbot.infra import quoprobe
+        peer = self.reserve_quorum_peer_line()
+        if not peer.get("l") or not peer.get("members"):
+            return None
+        return {"l": str(peer["l"]), "g": int(peer.get("g") or 0), "members": list(peer["members"]), "port": quoprobe.port()}
+
+    def reserve_quorum_qcount_in(self, body: dict) -> None:
+        self.__dict__["_guest_qcount"] = {"y": int(body.get("y") or 0), "v": int(body.get("v") or 0),
+                                          "r": str(body.get("r") or ""), "at": timeutil.now_iso()}

@@ -35,6 +35,11 @@ class SnapshotMixin:
                 return False
             snap = gwsnapshot.apply_delta(stored, gwsnapshot.sanitize(patch))
         now = timeutil.now()
+        if hasattr(self, "reserve_quorum_snapshot_in"):
+            try:
+                self.reserve_quorum_snapshot_in(int(slot_id), snap.get("quo"))   # кворум: взгляд шлюза из снимка
+            except Exception as e:                            # noqa: BLE001
+                log.info("кворум: поле quo снимка слота %s не разобрано: %s", slot_id, e)
         with self.db.transaction():
             self.db.set_state(self._gwlink_key(self._GWLINK_SNAP_KEY, slot_id),
                               json.dumps(snap, ensure_ascii=False))

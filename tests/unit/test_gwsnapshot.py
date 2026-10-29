@@ -34,7 +34,7 @@ VERDICTS = ("peer_nets", "egress_ok",
 # rsv — резерв глазами шлюза (связь по линку к резерву, поколение доли,
 # пересылка, последнее слово резерва, взгляд на сервер): его кладёт монитор
 # агента поверх collect(), и только при разделе reserve документа
-RESERVE = ("rsv",)
+RESERVE = ("rsv", "quo")          # резерв и кворум глазами шлюза
 
 # Всё, что решает сам агент и о чём он говорит в своём чате. Появление любого
 # из этих имён в снимке означает, что на ВПС завели второй источник правды.
@@ -357,7 +357,7 @@ def test_sanitize_cuts_monsters_and_drops_everything_it_does_not_know():
     assert out["lan_addr"] == "192.168.1.10"
     assert gwsnapshot.sanitize({"lan_addr": "ШЛЮЗ; rm -rf /"})["lan_addr"] == "", "в команды роутера — только IPv4"
     assert out["cfg"] == {"gen": 7, "env": "", "link": "a" * 16, "uplink": "", "mail": "",
-                          "token": "", "server": "", "reserve": ""}, "отпечатки — только hex по 16 знаков, лишнее отброшено"
+                          "token": "", "server": "", "reserve": "", "quorum": ""}, "отпечатки — только hex по 16 знаков, лишнее отброшено"
     assert set(out["agent_bot"]) == {"username", "name"} and len(out["agent_bot"]["name"]) == 64
     assert set(out["bundle"]) == set(BUNDLE), "неизвестные ключи внутри bundle отброшены"
     assert len(out["bundle"]["lan_subnets"]) == 512, "длина значения не ограничена"

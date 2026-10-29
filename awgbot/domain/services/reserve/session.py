@@ -112,7 +112,16 @@ class ReserveSessionMixin:
                 "voters": self._voters_body(), "admin_id": int(config.ADMIN_ID), "admin_opened": bool(peer_admin.get("opened")),
                 "mem_free": self.reserve_mem_free_mb(), "online": int(self.__dict__.get("_rsv_guest_online") or 0),
                 "in_by": str(self.rsv_get("rsv_in").get("by") or ""), "zone": str(self._my_side().get("zone") or ""),
-                **({"jrn": jrn} if (jrn := self._jrn_st_part()) else {})}
+                **({"jrn": jrn} if (jrn := self._jrn_st_part()) else {}),
+                **({"quo": quo} if (quo := self._quo_st_part()) else {})}
+
+    def _quo_st_part(self) -> dict:
+        """Кворум в `st`: своя линия, поколение состава, включён ли (quorum/members)."""
+        try:
+            return self.reserve_quorum_st_part() if hasattr(self, "reserve_quorum_st_part") else {}
+        except Exception as e:                                # noqa: BLE001
+            log.info("резерв: поле quo в st не собралось: %s", e)
+            return {}
 
     def _jrn_st_part(self) -> dict:
         """Журнал в `st`: своя линия (эпоха, держатель, применённое, подтверждённое) и что
@@ -186,7 +195,7 @@ class ReserveSessionMixin:
         """Отпечаток смены `st`: без памяти и онлайна; у журнала — только линии, эпохи и
         снимок (номера растут с каждой правкой — st на каждую пачку был бы лишним)."""
         import json
-        out = {k: v for k, v in body.items() if k not in ("mem_free", "online", "jrn")}
+        out = {k: v for k, v in body.items() if k not in ("mem_free", "online", "jrn")}   # quo — в отпечатке: смена состава нужна второй стороне
         jrn = body.get("jrn") or {}
         out["jrn"] = {"mine": {k: (jrn.get("mine") or {}).get(k) for k in ("line", "e", "holder")},
                       "keep": {k: (jrn.get("keep") or {}).get(k) for k in ("line", "e", "snap_i", "guest_e")}}
@@ -231,7 +240,8 @@ class ReserveSessionMixin:
             jrn = body.get("jrn") if isinstance(body.get("jrn"), dict) else {}
             keep = jrn.get("keep") if isinstance(jrn.get("keep"), dict) else None
             mine = jrn.get("mine") if isinstance(jrn.get("mine"), dict) else None
-            self.rsv_update("rsv_peer_state", jrn_keep=dict(keep or {}))
+            quo = body.get("quo") if isinstance(body.get("quo"), dict) else {}
+            self.rsv_update("rsv_peer_state", jrn_keep=dict(keep or {}), jrn_mine=dict(mine or {}), quo=dict(quo or {}))
             self.reserve_jrn_keep_in(keep)
             self.reserve_keep_mine_in(mine)
             row = self.reserve_peer() or {}
@@ -309,6 +319,8 @@ class ReserveSessionMixin:
         self.rsv_update("rsv_peer_state", session=True, session_at=timeutil.now_iso(), confirmed=True)
         self.rsv_update("rsv_view", slots_sent=[], slots_at="")
         self._jrn_sess_reset()                                # журнал: ничего не слать до сверки по st резерва
+        if hasattr(self, "reserve_qprobe_reset"):
+            self.reserve_qprobe_reset()                       # кворум: конфиг зонда второй стороне заново
         return self.reserve_liveness_word()
 
     def reserve_pair_confirm_tick(self) -> list[Notification]:

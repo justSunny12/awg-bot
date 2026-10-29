@@ -73,6 +73,9 @@ def gateway_panel(st, upd: dict | None = None, chan: dict | None = None, pending
     rsv_line = reserve_panel_line(getattr(st, "rsv", None) or {})
     if rsv_line:
         parts.append(rsv_line)
+    quo_line = quorum_panel_line(getattr(st, "quo", None) or {})
+    if quo_line:
+        parts.append(quo_line)
     mark = getattr(st, "mark_status", "") or ""
     if mark and mark != "confirmed":
         # Статусы производит ровно один источник — routing-gw-setup.sh:
@@ -171,6 +174,27 @@ def reserve_panel_line(rsv: dict) -> str:
         tail = f" · через резервный линк {updown_brief(rx, tx)}" if rx + tx else ""
         return f"🛟 Резерв {name}: пользователи на нём" + (f" с {since}" if since else "") + tail
     return f"🛟 Резерв {name}: на связи" + (" · часть ключа есть" if rsv.get("share") else " · части ключа ещё нет")
+
+
+def quorum_panel_line(quo: dict) -> str:
+    """Т-К17: «🗳 Голосую о «Alpha»: вижу» / «не вижу с 14:05 — голос у «Beta»» /
+    «— «Beta» не на связи, голос не дошёл»; «🗳 «Alpha» видят 2 из 3» из ответа. Пусто — раздела нет."""
+    if not quo:
+        return ""
+    from awgbot.util import timeutil
+    name = f"«{_e(quo.get('name') or 'сервер AWG')}»"
+    w = quo.get("w") or ""
+    if w in ("see", "held"):
+        y, v = int(quo.get("y") or 0), int(quo.get("v") or 0)
+        return f"🗳 Голосую о {name}: вижу" + (f" · видят {y} из {v}" if v else "")
+    if w in ("uns", "sus"):
+        try:
+            since = timeutil.fmt_clock_ui(timeutil.parse_iso(str(quo.get("since") or "")))
+        except (ValueError, TypeError):
+            since = ""
+        tail = " — голос у резерва" if quo.get("reserve_online") else " — резерв не на связи, голос не дошёл"
+        return f"🗳 Голосую о {name}: не вижу" + (f" с {since}" if since else "") + (tail if w == "uns" else "")
+    return f"🗳 Голосую о {name}: ещё нет ответа"
 
 
 def _lan_fault(c) -> str:

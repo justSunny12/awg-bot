@@ -92,7 +92,7 @@ PAIR_KINDS: dict[str, tuple[str, dict]] = {
                             "in": (_S, 16), "pkg": (_D, None), "voters": (_L, MAX_LIST), "admin_id": (_I, None),
                             "admin_opened": (_B, None), "gw": (_B, None),
                             "healthy": (_B, None), "can_return": (_B, None), "in_kind": (_S, 16), "mem_free": (_I, None), "online": (_I, None), "in_by": (_S, 8),
-                            "zone": (_S, 120), "jrn": (_D, None)}),
+                            "zone": (_S, 120), "jrn": (_D, None), "quo": (_D, None)}),
     "ping":         (BOTH, {"n": (_S, 32)}),
     "pong":         (BOTH, {"n": (_S, 32)}),
     "slots":        (BOTH, {"slots": (_L, MAX_LIST)}),
@@ -123,6 +123,17 @@ PAIR_KINDS: dict[str, tuple[str, dict]] = {
     "evict":        (BOTH, {}),
     "view":         (BOTH, {"case": (_S, 8), "since": (_S, 32), "voters": (_L, MAX_LIST)}),
     "gone":         (BOTH, {}),
+    # кворум резерва (quo1): состав линии и подтверждение, конфиг зонда второму серверу, точки и
+    # ящики ключа, взгляд голосующего, эпоха и роль держателя, плановая пауза лидера
+    "qmem":         (BOTH, {"l": (_S, 1), "g": (_I, None), "members": (_L, MAX_LIST)}),
+    "qmem_ok":      (BOTH, {"l": (_S, 1), "g": (_I, None)}),
+    "qprobe":       (BOTH, {"l": (_S, 1), "g": (_I, None), "conf": (_S, 4096)}),
+    "qkeys":        (BOTH, {"l": (_S, 1), "m_gen": (_I, None), "q_gen": (_I, None), "t": (_I, None), "x": (_I, None),
+                            "y": (_S, 64), "qbox": (_S, 256), "c_gen": (_I, None), "cy": (_S, 64), "cbox": (_S, 256)}),
+    "qkeys_ok":     (BOTH, {"l": (_S, 1), "q_gen": (_I, None), "c_gen": (_I, None)}),
+    "qview":        (BOTH, {"l": (_S, 1), "g": (_I, None), "w": (_S, 8), "since": (_S, 32), "e": (_I, None), "i": (_D, None)}),
+    "qstate":       (BOTH, {"l": (_S, 1), "e": (_I, None), "holder": (_S, 8), "r": (_S, 8)}),
+    "qpause":       (BOTH, {"l": (_S, 1), "until": (_S, 32)}),
     # журнал данных (jrn1, util/rsvjrn): линия — db_line базы, чьи это данные; записи — под K
     # с открытым заголовком (rsvjrn.event). jev/jack/jneed/jstale — события держателя линии,
     # jcnt/jcack — пачки счётчиков стороны a (основа) или b (клон на резерве)
@@ -153,9 +164,18 @@ GUEST_KINDS: dict[str, tuple[str, dict]] = {
     "view":   (RESERVE, {"seen": (_S, 32), "voters": (_L, MAX_LIST), "in": (_S, 16), "pkg_gen": (_I, None)}),
     "need":   (RESERVE, {"case": (_S, 8), "since": (_S, 32), "m_gen": (_I, None)}),
     "share":  (GATEWAY, {"share": (_S, 64), "m_gen": (_I, None)}),
-    "state":  (RESERVE, {"state": (_S, 16), "move": (_I, None), "reason": (_S, MAX_REASON)}),
+    "state":  (RESERVE, {"state": (_S, 16), "move": (_I, None), "reason": (_S, MAX_REASON), "e": (_I, None)}),
     "ping":   (BOTH, {"n": (_S, 32)}),                    # проба по подозрению — с любой стороны
     "pong":   (BOTH, {"n": (_S, 32)}),
+    # кворум (quo1): взгляд шлюза, опрос и слова кандидата, точка ключа кворума, пауза, эпоха
+    "qview":  (GATEWAY, {"l": (_S, 1), "g": (_I, None), "w": (_S, 8), "since": (_S, 32), "e": (_I, None), "i": (_D, None)}),
+    "qask":   (RESERVE, {"l": (_S, 1), "g": (_I, None)}),
+    "qtake":  (RESERVE, {"l": (_S, 1), "e": (_I, None)}),
+    "qrel":   (RESERVE, {"l": (_S, 1), "e": (_I, None)}),
+    "qneed":  (RESERVE, {"l": (_S, 1), "q_gen": (_I, None), "since": (_S, 32)}),
+    "qshare": (GATEWAY, {"l": (_S, 1), "q_gen": (_I, None), "x": (_I, None), "y": (_S, 64)}),
+    "qpause": (RESERVE, {"l": (_S, 1), "until": (_S, 32)}),
+    "qstate": (RESERVE, {"l": (_S, 1), "e": (_I, None), "holder": (_S, 8), "r": (_S, 8)}),
 }
 
 _SIDES = {
@@ -174,8 +194,8 @@ def kinds_for(proto: str) -> dict[str, tuple[str, dict]]:
 
 # поля, которых может не быть (добавлены внутри линии; отсутствие — ложь/пусто)
 OPTIONAL: dict[str, frozenset] = {"st": frozenset({"healthy", "can_return", "in_kind", "mem_free", "online", "in_by", "zone",
-                                                     "jrn"}),
-                                  "need": frozenset({"m_gen"}), "state": frozenset({"reason"}),
+                                                     "jrn", "quo"}),
+                                  "need": frozenset({"m_gen"}), "state": frozenset({"reason", "e"}), "qview": frozenset({"i"}),
                                   "go": frozenset({"ttl", "k", "sealed", "oid"}), "go_req": frozenset({"ttl"}),
                                   "pkg": frozenset({"jrn"}), "released": frozenset({"epoch", "last"}),
                                   "jstale": frozenset({"F"}),

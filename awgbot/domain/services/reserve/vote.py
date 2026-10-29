@@ -105,6 +105,8 @@ class ReserveVoteMixin:
             return self.reserve_vote_eval()
         if kind == "share":
             return self._share_in(int(slot), str(body.get("share") or ""), int(body.get("m_gen") or 0))
+        if kind in ("qview", "qshare") and hasattr(self, "reserve_quorum_guest_in_kind"):
+            return self.reserve_quorum_guest_in_kind(int(slot), kind, body)
         return []
 
     # ── такт ────────────────────────────────────────────────────────────────

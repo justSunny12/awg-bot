@@ -67,6 +67,11 @@ class ReserveUnpairMixin:
                 self.reserve_pkg_in_drop()                    # пакет и доля второй стороны — прочь
             except Exception as e:                            # noqa: BLE001
                 log.warning("резерв: пакет второй стороны не снят при удалении пары: %s", e)
+            if hasattr(self, "reserve_quorum_drop"):
+                try:
+                    self.reserve_quorum_drop()                # кворум: зонды, второй адрес, пространство — прочь
+                except Exception as e:                        # noqa: BLE001
+                    log.warning("резерв: кворум не снят при удалении пары: %s", e)
             try:
                 import shutil
                 from awgbot.core import config as _cfg

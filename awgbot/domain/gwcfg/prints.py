@@ -96,6 +96,25 @@ def uplink_print(conf_text: str, pubkey: str = "", prev_pubkey: str = "") -> str
     return section_print("uplink", f"{canon}pubkey={norm(pubkey)}\nprev_pubkey={norm(prev_pubkey)}\n")
 
 
+def quorum_print(sec: dict | None) -> str:
+    """Отпечаток раздела quorum: линия, поколение, состав, порог, порт, канонические конфиги
+    зондов, точка (номер и поколение), эпоха. Раздела нет — пусто."""
+    if not sec or not sec.get("l"):
+        return ""
+    probes = sec.get("probes") or {}
+    canon = []
+    for key in ("h", "r"):
+        try:
+            canon.append(f"{key}:" + (wgconf.canonical(wgconf.parse(str(probes.get(key) or "")), "rsvlink") if probes.get(key) else ""))
+        except wgconf.WgConfError:
+            return ""
+    point = sec.get("point") or {}
+    text = (f"l={norm(sec.get('l'))}\ng={int(sec.get('g') or 0)}\nmembers={','.join(str(m) for m in (sec.get('members') or []))}\n"
+            f"t={int(sec.get('t') or 0)}\nport={int(sec.get('port') or 0)}\n" + "\n".join(canon)
+            + f"\npoint={int(point.get('x') or 0)}:{norm(point.get('y'))}:{int(point.get('q_gen') or 0)}\ne={int(sec.get('e') or 0)}\n")
+    return section_print("quorum", text)
+
+
 def reserve_print(sec: dict | None) -> str:
     """Отпечаток раздела reserve: канонический конфиг линка к резерву, доля
     (точка и поколение), состояние пересылки с номером переезда, адрес основы.

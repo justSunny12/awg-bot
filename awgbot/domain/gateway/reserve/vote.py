@@ -17,7 +17,7 @@ from awgbot.util import timeutil
 
 from ..base import log
 
-GW_CAPS: tuple[str, ...] = ("rsv1",)
+GW_CAPS: tuple[str, ...] = ("rsv1", "quo1")          # quo1 — кворум: зонды, взгляды, точка ключа кворума
 
 
 class ReserveVoteMixin:
@@ -68,6 +68,8 @@ class ReserveVoteMixin:
             return self._view_notice(cur)
         if kind == "need":
             return self._reserve_need_in(str(body.get("case") or ""), str(body.get("since") or ""), int(body.get("m_gen") or 0))
+        if kind.startswith("q") and hasattr(self, "quorum_guest_in"):
+            return self.quorum_guest_in(kind, body)           # кворум: qask, qtake, qrel, qneed, qpause, qstate
         return []
 
     def _moved_notice(self, actions: list[tuple]) -> list[tuple]:

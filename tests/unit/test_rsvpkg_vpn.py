@@ -246,9 +246,15 @@ def test_a_package_with_probes_in_the_live_conf_builds_seals_opens_and_checks(ho
     opened = seal.open_parts(blob, k)["vpn"]
     checked = vpn.check(opened)
     conf = vpn.clone_conf(checked["ifaces"][0])
-    assert "169.254.88." not in conf, f"блок зондов попал в конфиг клона ({how}):\n{conf}"
+    # 4.2.0: пиры-зонды едут отдельным полем и ставятся на клон (его ответчик — следующий адрес
+    # после второго адреса основы); адрес интерфейса клона — подсеть пользователей
+    probes = checked["ifaces"][0].get("probes") or []
+    assert {p["pub"] for p in probes} == _PROBE_KEYS, f"пиры-зонды не доехали полем probes ({how})"
+    # линия a (.1) — клон на .2, линия b (.65, формы через запятую) — на .66
+    assert checked["ifaces"][0]["probe_resp"] in ("169.254.88.2/26", "169.254.88.66/26"), checked["ifaces"][0].get("probe_resp")
     assert conf.startswith("[Interface]\nAddress = 10.8.1.1/24\n")
-    assert conf.count("[Peer]") == 2
+    assert conf.count("[Peer]") == 2 + len(probes)
+    assert all(f"AllowedIPs = {p['ip']}/32" in conf for p in probes), "у зонда на клоне — ровно один /32 из блока"
 
 
 def test_block_peers_are_ordinary_users_when_the_users_subnet_covers_the_block():

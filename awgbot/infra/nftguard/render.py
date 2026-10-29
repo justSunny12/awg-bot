@@ -57,7 +57,7 @@ def render(spec: pkg.GuardSpec) -> str:
         # VPN-транзитом (связь подсетей — его часть); при открытой политике
         # хоста закрыть остальные пары можно только здесь.
         # Второе — частные адреса назначения не уходят к провайдеру (ниже).
-        rules = _quarantine_forward(spec) + _pair_forward(spec) + _wan_private_drop(spec) + _guest_forward(spec)
+        rules = _quarantine_forward(spec) + _pair_forward(spec) + _probe_forward(spec) + _wan_private_drop(spec) + _guest_forward(spec)
         if spec.peer_link_block:
             links = nftjson.ifs(spec.peer_link_block)
             if spec.peer_link_ifs:
@@ -72,7 +72,7 @@ def render(spec: pkg.GuardSpec) -> str:
                      "        type filter hook forward priority filter; policy accept;",
                      *rules,
                      "    }"]
-        q_in = _quarantine_input(spec) + _pair_input(spec) + _guest_input(spec)
+        q_in = _quarantine_input(spec) + _pair_input(spec) + _probe_input(spec) + _guest_input(spec)
         if q_in:
             # карантин сопряжения и линк пары — и без фильтра: на сам ВПС с них
             # только канал своей паре (у стороны ВПС AllowedIPs = 0.0.0.0/0)
@@ -108,6 +108,7 @@ def render(spec: pkg.GuardSpec) -> str:
         '        iifname "lo" accept',
         *_quarantine_input(spec),
         *_pair_input(spec),
+        *_probe_input(spec),
         "        ip protocol icmp accept",
         "        meta l4proto ipv6-icmp accept",
     ]
@@ -154,6 +155,7 @@ def render(spec: pkg.GuardSpec) -> str:
             "        type filter hook forward priority filter; policy drop;",
             *_quarantine_forward(spec),
             *_pair_forward(spec),
+            *_probe_forward(spec),
             "        ct state established,related accept",
             "        ct state invalid drop",
         ]
@@ -233,6 +235,23 @@ def _pair_forward(spec) -> list[str]:
         return []
     q = nftjson.ifs([spec.pair_if])
     return [f"        iifname {q} drop", f"        oifname {q} drop"]
+
+
+def _probe_input(spec) -> list[str]:
+    """Кворум резерва: на хост с интерфейса AWG — только пробы зондов своей линии к
+    ответчику (udp на его порт), всё прочее с блока зондов — прочь."""
+    if not spec.probe_if or not spec.probe_resp4 or not spec.probe_port:
+        return []
+    q = nftjson.ifs([spec.probe_if])
+    return [f"        iifname {q} ip saddr {spec.probe_net4} ip daddr {spec.probe_resp4} udp dport {int(spec.probe_port)} accept",
+            f"        ip saddr {spec.probe_block4} drop"]
+
+
+def _probe_forward(spec) -> list[str]:
+    """Пересылки с блока зондов нет вовсе: у зонда нет выхода в интернет по построению."""
+    if not spec.probe_if or not spec.probe_resp4:
+        return []
+    return [f"        ip saddr {spec.probe_block4} drop"]
 
 
 def _guest_sets(spec) -> list[str]:

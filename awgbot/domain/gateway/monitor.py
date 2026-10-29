@@ -269,6 +269,11 @@ class MonitorMixin:
         except Exception as e:                            # noqa: BLE001
             log.warning("gateway: резерв в снимке: %s", e)
             st.rsv = {}
+        try:
+            st.quo = self.quorum_panel_view() if hasattr(self, "quorum_panel_view") else {}
+        except Exception as e:                            # noqa: BLE001
+            log.warning("gateway: кворум в снимке: %s", e)
+            st.quo = {}
         if st.rsv:
             # Т-РА2: «резервный линк — «Beta» на связи» / «не отвечает с 13:58»
             name = f"«{st.rsv.get('name') or 'резерв'}»"
@@ -365,6 +370,10 @@ class MonitorMixin:
             snap["rsv"] = self.reserve_snapshot() if hasattr(self, "reserve_snapshot") else None
         except Exception:                                     # noqa: BLE001
             snap["rsv"] = None
+        try:
+            snap["quo"] = self.quorum_snapshot() if hasattr(self, "quorum_snapshot") else None
+        except Exception:                                     # noqa: BLE001
+            snap["quo"] = None
         return snap
 
     def cached_status(self, max_age_seconds: float) -> GwStatus | None:

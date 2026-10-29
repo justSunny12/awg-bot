@@ -94,6 +94,12 @@ class GuardSpec:
     relay_to: str = ""                                        # «адрес:порт» основы: пересылка хвоста UDP (relay)
     relay_udp_port: int = 0                                   # порт, который пересылается
     relay_udp_ports: list[int] = field(default_factory=list)  # все порты клонов — каждый на тот же порт основы
+    # кворум резерва: ответчик на втором адресе интерфейса AWG (блок util/probenet)
+    probe_if: str = ""                                        # интерфейс AWG с ответчиком (awg0)
+    probe_net4: str = ""                                      # подблок линии (источники проб)
+    probe_resp4: str = ""                                     # адрес ответчика
+    probe_port: int = 0                                       # порт ответчика (udp)
+    probe_block4: str = "169.254.88.0/24"                     # весь блок зондов: прочее с него — drop
 
 
 def enabled() -> bool:

@@ -87,7 +87,11 @@
 #                 монтирует бот резерва в пространстве хоста (из песочницы
 #                 юнита открытия смонтированное хосту не видно); заполняет
 #                 процесс открытия до --take
-#   --take        переезд: хранилище гостя в памяти ($RUN), veth ×2 (awggv —
+#   --take        переезд (GUEST_PROBE_ADDR — второй адрес клона cidr для ответчика кворума,
+#                 GUEST_PROBE_NET — подблок линии, GUEST_PROBE_PORT — порт ответчика, 8789:
+#                 в таблицу зоны — вход к ответчику только с подблока, пересылки с блока зондов
+#                 169.254.88.0/24 нет; состояние — probe_addr/probe_net/probe_port):
+#                 хранилище гостя в памяти ($RUN), veth ×2 (awggv —
 #                 бот основы и пользователи наружу; awggr — РФ-трафик пользователей
 #                 основы к шлюзам резерва: на awggr-h proxy ARP и
 #                 `ip rule iif awggr-h lookup $RF_TABLE pref 150`; маршрут в
@@ -285,6 +289,8 @@ zone_nft() {   # zone_nft "клоны" — таблица зоны; NETMAP от�
 
 zone_nft_load() {   # таблица зоны: вход — только канал с линков, DNS и ICMP с клона, вебхук с veth; пересылка — см. §3.2
     local chan="${GUEST_CHANNEL_PORT:-8787}" ifaces="${1:-}" iface="${1%% *}" nm="${2:-}" whp pair
+    local paddr pnet pport; paddr="$(state_get probe_addr)"; pnet="$(state_get probe_net)"; pport="$(state_get probe_port)"
+    case "$pport" in ''|*[!0-9]*) pport=8789 ;; esac
     # «iface» — первый интерфейс (его правила именные), «ifset» — все клоны одним набором nft
     local ifset=""; [ -n "$ifaces" ] && ifset="{ $(printf '"%s", ' $ifaces | sed 's/, $//') }"
     whp="$(state_get webhook_port 2>/dev/null)"; case "$whp" in ''|*[!0-9]*) whp="" ;; esac
@@ -306,11 +312,13 @@ table inet awg_guest {
         iifname "awglink*" drop
 $( [ -n "$iface" ] && [ -n "$whp" ] && printf '        iifname "%s" ip daddr %s tcp dport %s accept\n' "$VN" "$ZONE_V" "$whp" )
 $( [ -n "$iface" ] && printf '        iifname %s udp dport 53 accept\n        iifname %s tcp dport 53 accept\n' "$ifset" "$ifset" )
+$( [ -n "$iface" ] && [ -n "$paddr" ] && [ -n "$pnet" ] && printf '        iifname %s ip saddr %s ip daddr %s udp dport %s accept\n        ip saddr 169.254.88.0/24 drop\n' "$ifset" "$pnet" "${paddr%/*}" "$pport" )
     }
     chain forward {
         type filter hook forward priority filter; policy drop;
         ct state established,related accept
         ct state invalid drop
+        ip saddr 169.254.88.0/24 drop
 $( [ -n "$iface" ] && cat <<EOF2
         iifname $ifset oifname $ifset ip saddr @admin4 accept
         iifname $ifset oifname $ifset drop
@@ -581,7 +589,10 @@ cmd_take() {
     fi
     miss="$(netmap_miss "$nm" $named)"
     [ -z "$nm" ] || [ -z "$miss" ] || say "ВНИМАНИЕ: NETMAP не на все клоны — без блока: $miss (подсеть не влезает в пул или свободного блока нет)"
-    state_write admin="${GUEST_ADMIN:-}" netmap="$nm" netmap_why="$why" netmap_miss="$miss"
+    state_write admin="${GUEST_ADMIN:-}" netmap="$nm" netmap_why="$why" netmap_miss="$miss" \
+        probe_addr="${GUEST_PROBE_ADDR:-}" probe_net="${GUEST_PROBE_NET:-}" probe_port="${GUEST_PROBE_PORT:-8789}"
+    # ответчик кворума бота основы — второй адрес клона (тем же /26, что у основы: маршрут на подблок)
+    [ -n "${GUEST_PROBE_ADDR:-}" ] && { nsx ip addr replace "$GUEST_PROBE_ADDR" dev "$iface" || say "ВНИМАНИЕ: второй адрес клона $GUEST_PROBE_ADDR не встал"; }
     zone_nft "$ifaces" || die "nft отверг таблицу зоны"
     # ответы на блоки пула — через veth в зону (иначе хост увёл бы их маршрутом по умолчанию)
     for pair in $(state_get netmap); do ip route replace "${pair#*=}" via "$ZONE_V" dev "$VH"; done
@@ -682,7 +693,7 @@ cmd_relay() {
 cmd_teardown() {
     need_root
     guest_stop
-    state_write phase=idle iface= ifaces= ports= port= relay_to= webhook_port= netmap= netmap_why= netmap_miss=
+    state_write phase=idle iface= ifaces= ports= port= relay_to= webhook_port= netmap= netmap_why= netmap_miss= probe_addr= probe_net=
     say "teardown: ok"
 }
 cmd_wipe() {

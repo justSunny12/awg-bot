@@ -192,7 +192,18 @@ class CfgMixin:
         link = self.gwcfg_link_conf(gw, env)
         return {"env": env, "link": {"conf": link} if link else None, "uplink": self.gwcfg_uplink(gw),
                 "mail": self.gwcfg_mail(), "token": self.gwcfg_token(gw),
-                "server": self.gwcfg_server(), "reserve": self._gwcfg_reserve_safe(gw)}
+                "server": self.gwcfg_server(), "reserve": self._gwcfg_reserve_safe(gw),
+                "quorum": self._gwcfg_quorum_safe(gw)}
+
+    def _gwcfg_quorum_safe(self, gw) -> dict | None:
+        """Раздел `quorum` — у сервера с парой и шлюза в составе линии (reserve/quorum)."""
+        if not hasattr(self, "gwcfg_quorum"):
+            return None
+        try:
+            return self.gwcfg_quorum(gw)
+        except Exception as e:                            # noqa: BLE001
+            log.warning("документ конфигурации: слот %s, раздел quorum не собрался: %s", gw.id, e)
+            return None
 
     def _gwcfg_reserve_safe(self, gw) -> dict | None:
         """Раздел `reserve` — у сервера с парой и стороной зоны для слота (reserve/gwside)."""
@@ -226,6 +237,8 @@ class CfgMixin:
                 out[name] = gwcfg.server_print(sec.get("name", ""))
             elif name == "reserve":
                 out[name] = gwcfg.reserve_print(sec)
+            elif name == "quorum":
+                out[name] = gwcfg.quorum_print(sec)
         return out
 
     # ── поколение и документ ─────────────────────────────────────────────────

@@ -17,7 +17,7 @@ LINK_CONTRACT = "1"                            # штамп «контракт �
 # Разделы — в порядке применения на агенте: имя сервера, env+link одной
 # транзакцией, почта, токен, аплинк. Фразы бэкапов в документе нет: у шлюза
 # своих копий нет, его настройки — в бэкапе сервера AWG.
-SECTIONS = ("server", "env", "link", "mail", "token", "uplink", "reserve")
+SECTIONS = ("server", "env", "link", "mail", "token", "uplink", "reserve", "quorum")
 
 # Ключи раздела env — те же имена, что у строк Environment= юнита обвязки.
 ENV_KEYS = ("CLIENT_SUBNET", "ADMIN_IPS", "LAN_MODE", "LAN_SUBNETS", "RESOLVER",
@@ -38,6 +38,7 @@ HUMAN = {
     "token": "токен бота",
     "server": "имя сервера",
     "reserve": "постоянный линк к резерву и доля ключа переезда",
+    "quorum": "голосование о сервере AWG (зонды кворума)",
 }
 
 
@@ -119,6 +120,16 @@ def parse(msg: dict) -> dict:
                                       "share": {"x": _int(share.get("x")), "y": _hex(share.get("y")),
                                                 "gen": _int(share.get("gen"))},
                                       "link": {"conf": _s(link.get("conf"), _MAX_CONF)}}
+    quorum = src.get("quorum")
+    if isinstance(quorum, dict):
+        probes = quorum.get("probes") if isinstance(quorum.get("probes"), dict) else {}
+        point = quorum.get("point") if isinstance(quorum.get("point"), dict) else {}
+        out["sections"]["quorum"] = {"l": norm(quorum.get("l"))[:1], "g": _int(quorum.get("g")),
+                                     "members": [norm(m)[:4] for m in (quorum.get("members") or []) if isinstance(m, str)][:64],
+                                     "t": _int(quorum.get("t")), "port": _int(quorum.get("port")), "e": _int(quorum.get("e")),
+                                     "probes": {k: _s(probes.get(k), _MAX_CONF) for k in ("h", "r") if probes.get(k)},
+                                     "point": {"x": _int(point.get("x")), "y": _hex(point.get("y")),
+                                               "q_gen": _int(point.get("q_gen"))}}
     return out
 
 

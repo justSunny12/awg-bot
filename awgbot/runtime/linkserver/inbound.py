@@ -107,6 +107,12 @@ class InboundMixin:
             # проба живости сервера по подозрению шлюза (резерв): ответ тем же нонсом
             await self.send(gw.id, "pong", {"n": str(msg.get("n") or "")[:32]})
             return
+        if kind in ("qview", "qshare"):
+            # кворум: взгляд своего шлюза на мою линию, точка ключа кворума
+            if hasattr(self.services, "reserve_quorum_link_in"):
+                from awgbot.runtime import rsvactions
+                await rsvactions.run(await asyncio.to_thread(self.services.reserve_quorum_link_in, gw.id, kind, msg))
+            return
         if kind == "lists_ack":
             if msg.get("ok"):
                 sess.lists_have = str(msg.get("hash") or "")[:64]

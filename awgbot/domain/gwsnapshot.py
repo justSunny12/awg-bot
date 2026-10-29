@@ -48,7 +48,7 @@ BUNDLE_FIELDS = tuple(_gwlink.snap_field(k) for k in _gwlink.BUNDLE_KEYS)
 # lan_addr — адрес шлюза в его локальной сети (интерфейс VPN-транзита): ВПС
 # подставляет его в настройку роутера вместо плейсхолдера. Локальное чтение,
 # как и всё остальное; агент без транзита шлёт пустую строку.
-FIELDS = FACT_FIELDS + ("peer_nets", "egress_ok", "lan_addr", "rev", "ts", "boot_id", "rsv")
+FIELDS = FACT_FIELDS + ("peer_nets", "egress_ok", "lan_addr", "rev", "ts", "boot_id", "rsv", "quo")
 _LAN_ADDR_RE = re.compile(r"^\d{1,3}(\.\d{1,3}){3}$")
 
 _CONTRACT_RE = re.compile(r"^#\s*awg-bot:\s*контракт линка\s+(\d+)", re.M)
@@ -73,7 +73,7 @@ def boot_id() -> str:
 
 
 _USERNAME_RE = re.compile(r"[A-Za-z0-9_]{1,32}")   # username Telegram — и только он идёт в ссылку
-_CFG_SECTIONS = ("env", "link", "uplink", "mail", "token", "server", "reserve")   # = gwcfg.SECTIONS, сверяет тест
+_CFG_SECTIONS = ("env", "link", "uplink", "mail", "token", "server", "reserve", "quorum")   # = gwcfg.SECTIONS, сверяет тест
 
 
 def collect(*, mark_status: str, egress_ok: bool | None,
@@ -225,6 +225,16 @@ def sanitize(raw: dict) -> dict:
                       "primary": _clean_str(rsv.get("primary", ""))[:16]}
     elif "rsv" in src and src["rsv"] is None:
         out["rsv"] = None
+    quo = src.get("quo")
+    if isinstance(quo, dict):
+        # кворум глазами шлюза: взгляд на основу, поколение состава, известная эпоха
+        w = _clean_str(quo.get("w", ""))
+        out["quo"] = {"w": w if w in ("see", "sus", "uns", "new", "held") else "",
+                      "since": _clean_str(quo.get("since", ""))[:40],
+                      "g": int(quo.get("g") or 0) if str(quo.get("g") or "0").isdigit() else 0,
+                      "e": int(quo.get("e") or 0) if str(quo.get("e") or "0").isdigit() else 0}
+    elif "quo" in src and src["quo"] is None:
+        out["quo"] = None
     return out
 
 

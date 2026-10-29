@@ -37,7 +37,7 @@ def test_document_names_are_the_unit_names():
 def test_the_document_carries_no_backup_phrase():
     """Своих копий у шлюза нет: ни раздела фразы, ни подсказки «куда уходят
     бэкапы» в почте, ни её проверок."""
-    assert gwcfg.SECTIONS == ("server", "env", "link", "mail", "token", "uplink", "reserve")
+    assert gwcfg.SECTIONS == ("server", "env", "link", "mail", "token", "uplink", "reserve", "quorum")
     assert "backup" not in gwcfg.HUMAN
     parsed = gwcfg.parse({"gen": 1, "hash": "ab" * 8, "env": ENV, "backup": {"phrase": "DUMMY phrase long"},
                           "mail": {**MAIL, "backup": "email"}})

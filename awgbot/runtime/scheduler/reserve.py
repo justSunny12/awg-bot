@@ -45,6 +45,13 @@ def setup_reserve_jobs(scheduler, services, bot) -> None:
             await rsvactions.run(await asyncio.to_thread(services.reserve_vote_tick))
         except Exception as e:                           # noqa: BLE001
             log.warning("резерв: такт голосования: %s", e)
+        try:
+            # кворум: ответчик на втором адресе интерфейса AWG, зонды в awg-quo, пробы и взгляды —
+            # сокеты держит runtime/quorum, действия исполняет rsvactions
+            from awgbot.runtime import quorum as _quorum, rsvactions
+            await _quorum.tick(services, rsvactions.run)
+        except Exception as e:                           # noqa: BLE001
+            log.warning("кворум: такт: %s", e)
 
     scheduler.add_job(job_liveness, IntervalTrigger(seconds=5, timezone=config.TZ),
                       id="rsv_liveness", max_instances=1, coalesce=True,
@@ -92,6 +99,7 @@ def setup_reserve_jobs(scheduler, services, bot) -> None:
             srv = await guestctl.ensure(services)
             if srv is not None and srv.connected():
                 await srv.push_state()
+                await srv.push_quorum()
         except Exception as e:                           # noqa: BLE001
             log.warning("резерв: локальный канал гостя: %s", e)
 

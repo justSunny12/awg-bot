@@ -191,6 +191,19 @@ class CfgApplyMixin:
                     changed.append("reserve")
                 if res.get("note"):
                     notes.append(res["note"])
+        # 8. кворум: зонды к серверу и клону, состав, точка — молча; раздела нет — зонды снимаются
+        if hasattr(self, "quorum_apply"):
+            try:
+                res = self.quorum_apply(checked.get("quorum"))
+            except Exception as e:                        # noqa: BLE001 — скрипт зондов, файлы
+                failed["quorum"] = str(e)[:200]
+            else:
+                if "quorum" in checked:
+                    applied.append("quorum")
+                if res.get("changed"):
+                    changed.append("quorum")
+                if res.get("note"):
+                    notes.append(res["note"])
         if not failed:
             with self.db.transaction():
                 self.db.set_state(self._CFG_GEN_KEY, str(gen))

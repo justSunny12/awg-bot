@@ -7,9 +7,12 @@ vpn.py — часть VPN пакета: интерфейсы AWG основы и
 (`PreUp`/`PostUp`/`PreDown`/`PostDown`), `Table`, `DNS`, пути и комментарии не
 передаются никогда: пакет — данные, а конфиг клона резерв собирает сам из
 проверенных полей (`clone_conf`). Пир с адресом вне подсети интерфейса
-отбрасывается — этим же отсекаются и пиры-зонды кворума резерва (их адреса в
-блоке util/probenet, вне подсети пользователей); адрес интерфейса из блока
-не берётся (`probenet.primary_addr`).
+отбрасывается — пиры-зонды кворума резерва (ровно один /32 из блока
+util/probenet в AllowedIPs) едут отдельным полем `probes` (открытый ключ, PSK,
+адрес) и ставятся на клон (его ответчик слушает на втором адресе клона —
+`probe_resp`, второй адрес интерфейса основы из блока с номером хоста на один
+больше); адрес интерфейса из блока не берётся (`probenet.primary_addr`).
+Прежний разбор незнакомые поля пропускает.
 """
 from __future__ import annotations
 
@@ -24,6 +27,7 @@ _B64 = re.compile(r"[A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]=\Z")
 _OBF_VALUE = re.compile(r"[0-9]{1,10}(-[0-9]{1,10})?\Z")       # число или диапазон, ничего больше
 _EXCLUDED_OBF = ("I1", "I2", "I3", "I4", "I5")
 MAX_PEERS = 4096
+MAX_PROBES = 64
 
 
 class VpnPartError(ValueError):
@@ -79,19 +83,35 @@ def iface_part(name: str, conf_text: str) -> dict:
     mtu = str(_extract_param(header, "MTU") or "").strip()
     if mtu.isdigit():
         out["mtu"] = int(mtu)
+    addrs = probenet.iface_addrs(header)
+    rule = probenet.rule_on(probenet.user_nets(addrs))
+    probes: list[dict] = []
     for p in peers[:MAX_PEERS]:
         ip = _peer_ip(p["lines"])
+        allowed = [ln.split("=", 1)[1] for ln in p["lines"] if ln.strip().startswith("AllowedIPs")]
+        pub, psk = p.get("pubkey") or "", _peer_psk(p["lines"])
+        if rule and probenet.in_block(allowed) and len(probenet.values(allowed)) == 1 and ip \
+                and _B64.match(pub) and (not psk or _B64.match(psk)):
+            probes.append({"pub": pub, "psk": psk, "ip": ip})      # пир-зонд кворума — на клон отдельным полем
+            continue
         try:
-            # адрес вне подсети интерфейса — не в клон; так же отсекаются пиры-зонды кворума (блок
-            # util/probenet вне подсети пользователей — а если подсеть его накрывает, это устройства)
+            # адрес вне подсети интерфейса — не в клон (если подсеть накрывает блок зондов, это устройства)
             if not ip or ipaddress.ip_address(ip) not in net:
                 continue
         except ValueError:
             continue
-        pub, psk = p.get("pubkey") or "", _peer_psk(p["lines"])
         if not (_B64.match(pub) and (not psk or _B64.match(psk))):
             continue
         out["peers"].append({"pub": pub, "psk": psk, "ip": ip})
+    if rule:
+        second = next((a for a in addrs if probenet.is_probe(a)), "")
+        if second and probes:
+            try:
+                si = ipaddress.ip_interface(second)
+                out["probe_resp"] = f"{si.ip + 1}/{si.network.prefixlen}"   # ответчик клона — следующий адрес
+                out["probes"] = probes[:MAX_PROBES]
+            except ValueError:
+                pass
     return out
 
 
@@ -150,6 +170,20 @@ def _check(part: dict) -> dict:
                 _key(p["psk"], "PresharedKey")
             if ipaddress.ip_address(str(p.get("ip", ""))) not in net:
                 raise VpnPartError("адрес пира вне подсети интерфейса")
+        if "probes" in i or "probe_resp" in i:
+            # пиры-зонды кворума: только адреса блока util/probenet, не больше MAX_PROBES; ответчик — из блока
+            if not isinstance(i.get("probes"), list) or len(i["probes"]) > MAX_PROBES or not probenet.is_probe(str(i.get("probe_resp", ""))):
+                raise VpnPartError("пиры-зонды не того вида")
+            if not str(i["probe_resp"]).endswith("/26"):
+                raise VpnPartError("адрес ответчика клона не того вида")
+            for p in i["probes"]:
+                if not isinstance(p, dict):
+                    raise VpnPartError("пир-зонд не того вида")
+                _key(p.get("pub", ""), "PublicKey")
+                if p.get("psk"):
+                    _key(p["psk"], "PresharedKey")
+                if not probenet.is_probe(str(p.get("ip", ""))) or "/" in str(p.get("ip", "")):
+                    raise VpnPartError("адрес пира-зонда вне блока зондов")
     for k in ("admin", "dns", "upstreams"):
         if not isinstance(part.get(k, []), list):
             raise VpnPartError(f"{k}: не список")
@@ -172,10 +206,10 @@ def clone_conf(iface: dict) -> str:
         if v and _OBF_VALUE.match(v):                     # только число или диапазон — лишней директиве взяться неоткуда
             lines.append(f"{k} = {v}")
     out = "\n".join(lines)
-    for p in iface.get("peers", []):
+    for p in list(iface.get("peers", [])) + list(iface.get("probes", []) if iface.get("probe_resp") else []):
         block = ["[Peer]", f"PublicKey = {p['pub']}"]
         if p.get("psk"):
             block.append(f"PresharedKey = {p['psk']}")
-        block.append(f"AllowedIPs = {p['ip']}/32")
+        block.append(f"AllowedIPs = {p['ip']}/32")       # у зонда — ровно один /32 из блока: инвариант записи
         out += "\n\n" + "\n".join(block)
     return out + "\n"

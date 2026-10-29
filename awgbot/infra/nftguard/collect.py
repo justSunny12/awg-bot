@@ -169,7 +169,32 @@ def build_spec(admin_ips, channel_extra=(), transit_links=()) -> pkg.GuardSpec:
         quarantine_pairs=quarantine_pairs(pkg.quarantine_ifaces(links)),
         **pair_link(),
         **guest_zone(),
+        **quorum_probe(),
     )
+
+
+def quorum_probe() -> dict:
+    """Ответчик кворума — из конфига интерфейса AWG, без БД: второй адрес из блока
+    зондов (util/probenet) отдельной строкой `Address`; его нет — полей нет."""
+    from awgbot.util import probenet
+    try:
+        text = Path(f"{config.AWG_DIR}/{config.AWG_INTERFACE}.conf").read_text(encoding="utf-8")
+    except OSError:
+        return {}
+    for a in probenet.iface_addrs(text):
+        if probenet.is_probe(a):
+            try:
+                iface = ipaddress.ip_interface(a)
+            except ValueError:
+                continue
+            try:
+                from awgbot.infra import quoprobe
+                port = quoprobe.port()
+            except Exception:                              # noqa: BLE001
+                port = 8789
+            return {"probe_if": config.AWG_INTERFACE, "probe_net4": str(iface.network), "probe_resp4": str(iface.ip),
+                    "probe_port": int(port)}
+    return {}
 
 
 def zone_link_ports() -> list[int]:

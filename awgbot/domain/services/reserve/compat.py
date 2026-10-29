@@ -19,7 +19,8 @@ from awgbot.core.compat import COMPAT_FLOOR, version_key
 # возможности основного бота в паре (контракт канала, не версия)
 # seal1 — ключ пакета при переезде кнопкой принимается только конвертом к разовому ключу
 # процесса открытия (`go_req` → `open_eph` → `go{sealed}`)
-CAPS: tuple[str, ...] = ("pair1", "pkg2", "zone1", "guest1", "vote1", "keys1", "peer1", "hook1", "seal1")
+# quo1 — кворум: состав линии, зонды, взгляды и решения по большинству (концепт «кворум», 4.2.0)
+CAPS: tuple[str, ...] = ("pair1", "pkg2", "zone1", "guest1", "vote1", "keys1", "peer1", "hook1", "seal1", "quo1")
 # журнал данных (util/rsvjrn): события вместо пакета на каждое изменение, снимок `pkg3`, возврат
 # без слияния — объявляется, только если у SQLite есть JSON-функции и захват событий встал
 JOURNAL_CAPS: tuple[str, ...] = ("pkg3", "jrn1")

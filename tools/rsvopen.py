@@ -449,7 +449,8 @@ def run(data: dict) -> int:
             rsvzone.write_private(rsvzone.RUN_DIR / "awg" / f"{x['name']}.conf", pkgvpn.clone_conf(x))
         rsvzone.take(pkgvpn.clone_conf(iface), iface=iface["name"], addr=iface["addr"], dns=list(vpn.get("dns") or []),
                      upstreams=list(vpn.get("upstreams") or []), admin=list(vpn.get("admin") or []),
-                     channel_port=int(data.get("channel_port") or 0), extra=[(x["name"], x["addr"]) for x in extra])
+                     channel_port=int(data.get("channel_port") or 0), extra=[(x["name"], x["addr"]) for x in extra],
+                     probe_addr=str(iface.get("probe_resp") or ""), probe_port=int(data.get("probe_port") or 0))
         _step("clone_up", iface=iface["name"], port=iface["port"], ifaces=",".join([iface["name"]] + [x["name"] for x in extra]), **jinfo)
     except (rsvzone.ZoneError, OpenError, OSError) as e:
         return _fail(f"зона: {e}")

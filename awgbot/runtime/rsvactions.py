@@ -55,6 +55,12 @@ async def _one(act: tuple) -> None:
         srv = guestctl.server()
         if srv is None or not await srv.send(act[1], act[2] if len(act) > 2 else None):
             log.info("резерв: гостю «%s» не ушло — канала нет", act[1])
+    elif kind == "guestctl":
+        # бот основы на резерве → бот резерва по локальному каналу (кворум: qcount)
+        from awgbot.runtime.pairlink import guestctl
+        c = guestctl.client()
+        if c is None or not await c.send(act[1], act[2] if len(act) > 2 else None):
+            log.info("резерв: боту резерва «%s» не ушло — канала нет", act[1])
     elif kind == "gw":
         from awgbot.runtime.pairlink import guest
         srv = guest.server()

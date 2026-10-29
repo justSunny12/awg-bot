@@ -233,6 +233,8 @@ def check_doc(parsed: dict, *, link_cidr: str, address: str = "", fixed: dict | 
         out["uplink"] = check_uplink(sections["uplink"])
     if "reserve" in sections:
         out["reserve"] = check_reserve(sections["reserve"])
+    if "quorum" in sections:
+        out["quorum"] = check_quorum(sections["quorum"])
     return out
 
 
@@ -272,6 +274,50 @@ def check_reserve(sec: dict) -> dict:
             "state": state, "move": int(sec.get("move") or 0), "self": host, "name": str(sec.get("name") or "")[:64],
             "slot": int(sec.get("slot") or 0), "record": norm(sec.get("record"))[:253], "peer_host": norm(sec.get("peer_host"))[:253],
             "chan": int(sec.get("chan") or 0) if 0 <= int(sec.get("chan") or 0) <= 65535 else 0}
+
+
+def check_quorum(sec: dict) -> dict:
+    """Раздел quorum: линия a|b, поколение и порог, состав узлами (a, b, a1…), порт
+    ответчика, конфиги зондов (белый список rsvlink без Table, один Peer, /32
+    ответчика в блоке util/probenet), точка ключа кворума (2…254, 16 байт hex)."""
+    from awgbot.util import probenet
+    if not isinstance(sec, dict):
+        raise CfgError("quorum — не словарь")
+    l = norm(sec.get("l"))
+    if l not in ("a", "b"):
+        raise CfgError("quorum: линия — a или b")
+    members = [str(m) for m in (sec.get("members") or [])]
+    if not members or any(not re.fullmatch(r"[ab]([1-9][0-9]?)?", m) for m in members):
+        raise CfgError("quorum: состав не того вида")
+    probes = {}
+    for key, conf_text in (sec.get("probes") or {}).items():
+        if key not in ("h", "r"):
+            continue
+        try:
+            conf = wgconf.parse(str(conf_text or ""))
+            wgconf.check_keys(conf, "rsvlink")
+        except wgconf.WgConfError as e:
+            raise CfgError(f"конфиг зонда {key}: {e}") from None
+        allowed = norm(conf.get("Peer", "AllowedIPs"))
+        addr = norm(conf.get("Interface", "Address"))
+        if "," in allowed or not allowed.endswith("/32") or not probenet.is_probe(allowed) or not probenet.is_probe(addr):
+            raise CfgError(f"конфиг зонда {key}: адреса не из блока зондов")
+        if not norm(conf.get("Peer", "Endpoint")):
+            raise CfgError(f"конфиг зонда {key}: нет Endpoint")
+        if norm(conf.get("Interface", "Table")):
+            raise CfgError(f"конфиг зонда {key}: Table не нужен")
+        probes[key] = wgconf.render(conf, "rsvlink")
+    if "h" not in probes:
+        raise CfgError("quorum: нет конфига зонда к серверу")
+    point = sec.get("point") or {}
+    x, y, q_gen = int(point.get("x") or 0), str(point.get("y") or ""), int(point.get("q_gen") or 0)
+    if y and (not 2 <= x <= 254 or not _HEX32_RE.match(y) or q_gen <= 0):
+        raise CfgError("quorum: точка ключа кворума не того вида")
+    port = int(sec.get("port") or 0)
+    if port and not 1 <= port <= 65535:
+        raise CfgError("quorum: порт вне 1–65535")
+    return {"l": l, "g": int(sec.get("g") or 0), "members": members, "t": int(sec.get("t") or 0), "port": port,
+            "e": int(sec.get("e") or 0), "probes": probes, "point": {"x": x, "y": y, "q_gen": q_gen} if y else {}}
 
 
 def check_link_rekey(conf_text: str, standing_text: str) -> wgconf.Conf:

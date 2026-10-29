@@ -199,6 +199,12 @@ async def _one(services, act: tuple) -> None:
         lc = linkclient.ensure(services)
         if lc is not None and getattr(lc, "_writer", None) is not None:
             await lc._send("ping", {"n": str(act[1])})      # noqa: SLF001 — проба живости по каналу конфигурации
+    elif kind == "link":
+        # слово своему серверу по каналу конфигурации (кворум: qview, qshare)
+        from awgbot.runtime import linkclient
+        lc = linkclient.ensure(services)
+        if lc is not None and getattr(lc, "_writer", None) is not None:
+            await lc._send(str(act[1]), dict(act[2] if len(act) > 2 else {}))      # noqa: SLF001
     elif kind == "open":
         from awgbot.infra.gwguard import rsv as rsvlink
         await asyncio.to_thread(rsvlink.open_forward, list(act[1]))
@@ -227,3 +233,14 @@ async def tick(services, bot=None) -> None:
     if c is not None and not c.online and any(a[0] == "guest" for a in actions):
         c.wake()
     await run_actions(services, actions)
+    if c is not None:
+        services.__dict__["_quo_reserve_online"] = bool(c.online)
+    try:
+        # кворум: зонды в awg-quo, пробы и взгляд голосующего (runtime/quorum)
+        from awgbot.runtime import quorum as _quorum
+
+        async def _act(acts) -> None:
+            await run_actions(services, acts)
+        await _quorum.tick(services, _act)
+    except Exception as e:                                # noqa: BLE001
+        log.warning("кворум (шлюз): такт: %s", e)

@@ -1161,6 +1161,9 @@ cmd_post_uninstall() {
     warn "ДАННЫЕ: в $DATA_DIR — БД с приватными ключами устройств; в $ETC_DIR — секреты."
     confirm "Удалить $ETC_DIR (секреты + конфиг)?" n && { rm -rf "$ETC_DIR"; ok "удалён $ETC_DIR"; }
     confirm "Удалить $DATA_DIR (БД + бэкапы — НЕОБРАТИМО)?" n && { rm -rf "$DATA_DIR"; ok "удалён $DATA_DIR"; }
+    # пространство зондов кворума резерва (обе роли) и его конфиги — работа бота, прочь
+    ip netns del awg-quo 2>/dev/null || true
+    rm -rf /var/lib/awg-gw/quorum
     if [[ "${AWG_ROLE:-}" == "gateway" ]]; then
         # Обвязка шлюза — целиком работа бота: линк до сервера AWG, юнит
         # реассерта, таблицы (в них же SSH-фильтр шлюза), /etc/awg-gw,

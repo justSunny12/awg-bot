@@ -209,6 +209,7 @@ def card_text(d: dict) -> str:
                 lines.append(f"└ ⚠️ {_n(g['name'])} не на связи с {_n(name)}" + (f" с {_e(_when(since))}" if since else ""))
         if d.get("peer_case_line"):
             lines.append("└ " + _e(d["peer_case_line"]))
+        lines += quorum_mine_lines(d.get("quorum") or {})
         if d.get("move_why") and out_ok:
             lines.append("└ перевести кнопкой нельзя: " + _e(d["move_why"]))
         if d.get("out_relay_until"):
@@ -223,6 +224,7 @@ def card_text(d: dict) -> str:
         lines.append(f"📥 Пользователи {_n(name)}: на его сервере")
         if not in_ok and in_why:
             lines.append("└ ⚠️ " + _e(in_why))
+        lines += quorum_peer_lines(d.get("quorum") or {})
         if d.get("await_merge"):
             lines.append(f"└ 🟡 изменения из бота на {_n(name)} придут, когда он выйдет на связь" if d.get("jrn_moved")
                          else f"└ ⏳ жду реплику {_n(name)} — изменения из неё применятся, когда он выйдет на связь")
@@ -256,6 +258,87 @@ def card_text(d: dict) -> str:
     lines += ["", details("▸ подробнее: Свои цифры каждый сервер считает сам; месяц — по часовому поясу своей "
                           f"стороны. Возврат пользователей: {ret}. {path}")]
     return "\n".join(lines)
+
+
+# ── кворум: блок голосов карточки (Т-К1…Т-К3, Т-К20; на вычитку) ───────────
+
+_W = {"see": "видит", "held": "видит", "uns": "не видит", "sus": "сомневается", "new": "ещё не смотрел", "silent": "молчит"}
+
+
+def _quorum_off_why(codes: list, peer: str) -> str:
+    for c in codes or []:
+        if c == "peer_old":
+            return f"у {peer} нет v4.2.0 — переезды по прежним правилам"
+        if c == "no_gateways":
+            return "у этого сервера нет шлюзов с агентом v4.2.0 — переезд только кнопкой и по аварийному коду"
+        if c.startswith("timing:"):
+            return "цифры времени не сходятся (reserve.quorum в app.yaml)"
+        if c.startswith("overlap:"):
+            return f"блок зондов <code>169.254.88.0/24</code> пересекается с <code>{_e(c[8:])}</code>"
+        if c.startswith("slot:"):
+            return f"«Шлюз {_e(c[5:])}»: номер слота больше 58 — в голосовании не участвует"
+        if c == "not_acked":
+            return "состав голосующих ждёт подтверждения"
+    return "голосующих нет"
+
+
+def quorum_mine_lines(q: dict) -> list[str]:
+    """Строки блока «📤» о голосах за этот сервер."""
+    if not q:
+        return []
+    peer = _n(q.get("peer_name") or "резерв")
+    if not q.get("on"):
+        return ["└ 🗳 Голосование не включено: " + _quorum_off_why(q.get("why") or [], peer)]
+    mine = q.get("mine") or {}
+    if not mine:
+        return []
+    v, t = int(mine.get("v") or 0), int(mine.get("t") or 0)
+    out = []
+    if mine.get("leader_here") and "y" in mine:
+        y = int(mine.get("y") or 0)
+        if mine.get("role") == "fenced" and not q.get("observe"):
+            since = _when(mine.get("fenced_since") or "")
+            out.append(f"└ ⚠️ Без кворума{(' с ' + _e(since)) if since else ''} — этот сервер видят {y} из {v}: бот не принимает "
+                       "решений и не отвечает пользователям, VPN работает")
+        else:
+            out.append(f"└ 🗳 Этот сервер видят {y} из {v} — пользователи переедут, если не увидят {t}")
+    elif not mine.get("leader_here") and "y" in mine:
+        out.append(f"└ 🗳 Бот на {peer} видят {int(mine.get('y') or 0)} из {v}")
+    else:
+        out.append(f"└ 🗳 Голосующих о этом сервере: {v}, порог переезда — {t}")
+    rows = []
+    for vt in (mine.get("voters") or [])[:10]:
+        w = "silent" if vt.get("silent") and vt.get("w") not in ("uns", "sus") else (vt.get("w") or "silent")
+        since = _when(vt.get("since") or "")
+        rows.append(f"{_n(vt.get('name') or vt.get('node') or '?')} — {_W.get(w, w)}" + (f" с {_e(since)}" if since and w in ("uns", "silent") else ""))
+    if rows:
+        out.append("└ " + " · ".join(rows))
+    return out
+
+
+def quorum_peer_lines(q: dict) -> list[str]:
+    """Строки блока «📥» о голосах за второй сервер (мой взгляд и взгляды его шлюзов)."""
+    if not q or not q.get("peer"):
+        return []
+    p = q["peer"]
+    peer = _n(q.get("peer_name") or "резерв")
+    if not p.get("active"):
+        return []
+    w = p.get("my_w") or ""
+    if w in ("see", "held"):
+        y, v = int(p.get("y") or 0), int(p.get("yv") or p.get("v") or 0)
+        others = [g for g in p.get("gw_views") or [] if g.get("w") in ("see", "held")]
+        tail = f" — {y} из {v}" if v else ""
+        return [f"└ 🗳 {peer} вижу я" + (f" и {', '.join(_n(g['name']) for g in others)}" if others else "") + tail]
+    if w in ("uns", "sus"):
+        since = _when(p.get("my_since") or "")
+        unseen = [g for g in p.get("gw_views") or [] if g.get("w") == "uns"]
+        seen = [g for g in p.get("gw_views") or [] if g.get("w") in ("see", "held")]
+        if not unseen and seen:
+            return [f"└ 🟡 Этот сервер не видит {peer}{(' с ' + _e(since)) if since else ''}, а его шлюзы видят — похоже, дело в сети этого сервера"]
+        n = 1 + len(unseen)
+        return [f"└ 🟡 {peer} не видят {n} из {int(p.get('v') or 0)}{(' с ' + _e(since)) if since else ''}"]
+    return []
 
 
 def unpair_dialog(name: str) -> str:

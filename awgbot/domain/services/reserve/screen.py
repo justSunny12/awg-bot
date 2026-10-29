@@ -71,7 +71,16 @@ class ReserveScreenMixin:
                 "await_merge": bool(out.get("await_merge")),
                 "jrn_on": self.reserve_jrn_on(), "jrn_moved": self.reserve_jrn_moved(),
                 "jrn_follow": self.reserve_follow_view(),
-                "self_admin": self.reserve_self_peer_admin()}
+                "self_admin": self.reserve_self_peer_admin(),
+                "quorum": self._quorum_card_safe()}
+
+    def _quorum_card_safe(self) -> dict:
+        try:
+            return self.reserve_quorum_card() if hasattr(self, "reserve_quorum_card") else {}
+        except Exception as e:                                # noqa: BLE001
+            from ..gateway_link.common import log
+            log.info("кворум: блок карточки не собрался: %s", e)
+            return {}
 
     def _reserve_traffic_view(self) -> dict:
         tr = self.rsv_get("rsv_traffic")

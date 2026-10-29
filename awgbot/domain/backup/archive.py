@@ -37,9 +37,12 @@ def _strip_foreign_share(con) -> None:
     2. Снимки списков событий (`list_snap:…`, экран «весь список») — следы
        интерфейса, а не данные.
     3. Эпоха и журнал данных (`jrn_*`) — о живом процессе: восстановленная база
-       стартует держателем, сверка с резервом даст снимок со сбросом."""
+       стартует держателем, сверка с резервом даст снимок со сбросом.
+    4. Кворум (`rsv_quorum`, `rsv_probes`, `rsv_qkeys`, `rsv_qlog`): закрытые ключи
+       зондов и точки второй стороны в копию не идут; восстановленный сервер
+       собирает состав, зонды и ключи кворума заново."""
     from awgbot.infra.db import listsnap
-    for key in ("rsv_pkg_in", "rsv_guest_links", "rsv_jrn_in", "rsv_jrn_out"):
+    for key in ("rsv_pkg_in", "rsv_guest_links", "rsv_jrn_in", "rsv_jrn_out", "rsv_quorum", "rsv_probes", "rsv_qkeys", "rsv_qlog"):
         try:
             con.execute("DELETE FROM server_state WHERE key = ?", (key,))
             con.commit()

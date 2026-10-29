@@ -46,7 +46,9 @@ reserve — взаимный резерв серверов AWG на сторон
 - `tgpool` — пул адресов Telegram для порта вебхука: анонсы AS Telegram,
   обучение по SYN, Т-РУ25;
 - `journal` — эпоха линии данных и следование основы, пока её пользователи у
-  резерва (пакет).
+  резерва (пакет);
+- `quorum` — кворум: состав линии, пиры-зонды и конфиги зондов, ответчик и
+  счёт «да», свои пробы и взгляды, слова каналов, данные карточки (пакет).
 """
 from __future__ import annotations
 
@@ -70,6 +72,7 @@ from .outbound_stuck import ReserveStuckMixin
 from .package import ReservePackageMixin
 from .pairing import ReservePairingMixin
 from .peeradmin import ReservePeerAdminMixin
+from .quorum import ReserveQuorumMixin
 from .rfblock import ReserveRfBlockMixin
 from .rfzone import ReserveRfZoneMixin
 from .tgpool import ReserveTgPoolMixin
@@ -88,7 +91,7 @@ class ReserveMixin(ReserveStateMixin, ReserveKeysMixin, ReserveInviteMixin, Rese
                    ReserveTrafficMixin, ReserveAwayMixin, ReserveGwSideMixin, ReserveZoneLinksMixin, ReserveVoteMixin,
                    ReserveRfBlockMixin, ReserveRfZoneMixin, ReserveTgPoolMixin, ReserveMergeOpsMixin,
                    ReserveCodeWindowMixin, ReserveReturnMixin, ReserveOpenProcMixin, ReserveJournalMixin,
-                   ReserveInboundBackMixin, ReserveStuckMixin):
+                   ReserveInboundBackMixin, ReserveStuckMixin, ReserveQuorumMixin):
     """Резерв серверов: всё о паре — в одном месте сервисов."""
 
 

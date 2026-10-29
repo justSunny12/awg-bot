@@ -141,6 +141,7 @@ class GuestCtlServer:
                 await asyncio.to_thread(self.services.reserve_guest_jrn_seen, msg["jrn"])
             if kind == "hello":
                 await self.push_state(force=True)
+                await self.push_quorum(force=True)
                 from awgbot.runtime import rsvactions      # передача бота, пришедшая, пока гостя не было на связи
                 await rsvactions.run(await asyncio.to_thread(self.services.reserve_guest_hello_jrn))
         elif kind == "back_req":
@@ -161,6 +162,10 @@ class GuestCtlServer:
                 self._words.append(("replica", self.replica))
         elif kind == "blocks":
             self._words.append(("blocks", [str(a) for a in (msg.get("addrs") or [])][:4096]))
+        elif kind == "qcount":
+            # кворум: счёт «да» лидера на клоне — для карточки и st второй стороне
+            if hasattr(self.services, "reserve_quorum_qcount_in"):
+                await asyncio.to_thread(self.services.reserve_quorum_qcount_in, msg)
         elif kind in JRN_KINDS:
             from awgbot.runtime import rsvactions
             await rsvactions.run(await asyncio.to_thread(self.services.reserve_guest_jrn_word, kind, msg))
@@ -179,6 +184,25 @@ class GuestCtlServer:
             return True
         except (ConnectionError, OSError):
             return False
+
+    async def push_quorum(self, force: bool = False) -> bool:
+        """Кворум: состав линии основы — её боту у меня (ответчик на клоне); по смене."""
+        if not hasattr(self.services, "reserve_quorum_for_guest"):
+            return False
+        try:
+            body = await asyncio.to_thread(self.services.reserve_quorum_for_guest)
+        except Exception as e:                               # noqa: BLE001
+            log.warning("локальный канал гостя: состав кворума не собрался: %s", e)
+            return False
+        if body is None:
+            return False
+        packed = json.dumps(body, sort_keys=True)
+        if not force and packed == getattr(self, "_quorum_sent", ""):
+            return True
+        if await self.send("quorum", body):
+            self._quorum_sent = packed
+            return True
+        return False
 
     async def push_state(self, force: bool = False) -> bool:
         """Состояние основы глазами резерва — гостю; по смене или force."""
@@ -276,6 +300,10 @@ class GuestCtlClient:
         elif kind == "blocks":
             self.blocks = [str(a) for a in (msg.get("addrs") or [])][:4096]
             await asyncio.to_thread(self.services.guest_apply_blocks, self.blocks)
+        elif kind == "quorum":
+            # кворум: состав линии и порт ответчика на клоне — от бота резерва
+            if hasattr(self.services, "reserve_quorum_guest_in"):
+                await asyncio.to_thread(self.services.reserve_quorum_guest_in, msg)
         elif kind in JRN_KINDS or kind in ("released", "takeover"):
             for k, body in await asyncio.to_thread(self.services.guest_jrn_in, kind, msg):
                 await self.send(k, body)

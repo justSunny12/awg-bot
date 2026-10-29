@@ -183,6 +183,34 @@ class InboundMixin:
     async def _in_ask_no(self, sess: _Session, body: dict) -> None:
         await self._actions(await asyncio.to_thread(self.services.reserve_ask_no_in, str(body["reason"])))
 
+    async def _in_quorum(self, kind: str, body: dict) -> None:
+        """Кворум (quo1): qprobe, qview, qstate, qmem, qmem_ok, qkeys, qkeys_ok, qpause — одним входом домена."""
+        await self._actions(await asyncio.to_thread(self.services.reserve_quorum_pair_in, kind, body))
+
+    async def _in_qprobe(self, sess: _Session, body: dict) -> None:
+        await self._in_quorum("qprobe", body)
+
+    async def _in_qview(self, sess: _Session, body: dict) -> None:
+        await self._in_quorum("qview", body)
+
+    async def _in_qstate(self, sess: _Session, body: dict) -> None:
+        await self._in_quorum("qstate", body)
+
+    async def _in_qmem(self, sess: _Session, body: dict) -> None:
+        await self._in_quorum("qmem", body)
+
+    async def _in_qmem_ok(self, sess: _Session, body: dict) -> None:
+        await self._in_quorum("qmem_ok", body)
+
+    async def _in_qkeys(self, sess: _Session, body: dict) -> None:
+        await self._in_quorum("qkeys", body)
+
+    async def _in_qkeys_ok(self, sess: _Session, body: dict) -> None:
+        await self._in_quorum("qkeys_ok", body)
+
+    async def _in_qpause(self, sess: _Session, body: dict) -> None:
+        await self._in_quorum("qpause", body)
+
     async def _in_view(self, sess: _Session, body: dict) -> None:
         await self.notes(await asyncio.to_thread(self.services.reserve_view_in, str(body["case"]), str(body["since"]),
                                                  list(body.get("voters") or [])))

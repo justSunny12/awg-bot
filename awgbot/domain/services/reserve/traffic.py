@@ -62,20 +62,22 @@ class ReserveTrafficMixin:
         ifaces = str(st.get("ifaces") or st.get("iface") or "").split()
         if not ifaces:
             return None, None
-        out = b""
+        from awgbot.util import probenet
+        rx = tx = 0
         for iface in ifaces:                                  # все клоны (окно переезда профилей — два)
             try:
-                proc = netns.run_in(netns.path_of(rsvzone.ZONE), ["awg", "show", iface, "transfer"], timeout=10)
+                proc = netns.run_in(netns.path_of(rsvzone.ZONE), ["awg", "show", iface, "dump"], timeout=10)
             except (OSError, subprocess.SubprocessError) as e:
                 log.info("резерв: счётчики клона не прочитаны: %s", e)
                 return None, None
             if proc.returncode != 0:
                 return None, None
-            out += proc.stdout
-        rx = tx = 0
-        for line in out.decode(errors="replace").splitlines():
-            parts = line.split()
-            if len(parts) >= 3 and parts[1].isdigit() and parts[2].isdigit():
-                rx += int(parts[1])
-                tx += int(parts[2])
+            # дамп: pub psk endpoint allowed_ips hs rx tx …; пиры-зонды кворума (адрес из блока) — не трафик пользователей
+            for line in proc.stdout.decode(errors="replace").splitlines()[1:]:
+                f = line.split("\t")
+                if len(f) >= 7 and f[5].isdigit() and f[6].isdigit():
+                    if probenet.is_probe(f[3].split(",")[0]):
+                        continue
+                    rx += int(f[5])
+                    tx += int(f[6])
         return rx, tx
