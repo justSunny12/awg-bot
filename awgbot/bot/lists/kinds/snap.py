@@ -3,7 +3,7 @@
 всех ролей; открыть снимок можно только из чата, где он создан (роль
 создателя лежит в снимке справочно, экран её не сверяет).
 
-Шапка — «<заголовок> · <N> · стр. k из m · на 27.10 14:05 (UTC+3)»: данные
+Шапка — «<заголовок> · <N> · стр. k из m · от 27.10 14:05 (UTC+3)»: данные
 на момент события, а не открытия. «⬅️ Назад» — на экран-источник, если
 снимок его знает, иначе «⬅️ В меню» роли того, кто смотрит. Протухший или
 вытесненный — «📋 Список от … больше не хранится», чужой или несуществующий —
@@ -33,7 +33,7 @@ async def snap(services, ref: int, key: str, chat_id: int) -> View | None:
     rows = [str(r) for r in data.get("rows") or []]
     n = int(data.get("n") or len(rows))
     return View(title=str(data.get("title") or ""), rows=rows, count=str(n) if n else "", back=back, live=False,
-                empty=tl.SNAP_GONE, at=f"на {at}" if at else "")
+                empty=tl.SNAP_GONE, at=f"от {at}" if at else "")
 
 
 def _back(data: dict | None) -> tuple | None:

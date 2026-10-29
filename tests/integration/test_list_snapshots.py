@@ -352,14 +352,14 @@ async def test_the_head_is_title_count_page_and_time_of_the_event(db, clock):
     clock.advance(3 * DAY)                                  # открыли позже — время в шапке всё равно события
     text, _ = await _open(db, key)
     head = text.split("\n", 1)[0]
-    assert head == f"⚠️ <b>Не добавлено</b> · 52 · стр. 1 из 2 · на {timeutil.fmt_dt_ui(T0)}", head
-    assert re.search(r"на \d\d\.\d\d \d\d:\d\d \(UTC[+-]\d+\)$", head), f"время без метки пояса: {head}"
+    assert head == f"⚠️ <b>Не добавлено</b> · 52 · стр. 1 из 2 · от {timeutil.fmt_dt_ui(T0)}", head
+    assert re.search(r"от \d\d\.\d\d \d\d:\d\d \(UTC[+-]\d+\)$", head), f"время без метки пояса: {head}"
 
 
 async def test_one_page_has_no_page_label(db, clock):
     key = db.list_snap_keep(CHAT, "admin", "⚠️ Не добавлено", _rows(6))
     text, markup = await _open(db, key)
-    assert text.split("\n", 1)[0] == f"⚠️ <b>Не добавлено</b> · 6 · на {timeutil.fmt_dt_ui(T0)}", text[:120]
+    assert text.split("\n", 1)[0] == f"⚠️ <b>Не добавлено</b> · 6 · от {timeutil.fmt_dt_ui(T0)}", text[:120]
     assert [t for t, _ in _buttons(markup)] == ["⬅️ В меню"], _buttons(markup)
 
 

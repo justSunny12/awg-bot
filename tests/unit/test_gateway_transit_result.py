@@ -59,3 +59,44 @@ def test_a_short_result_lists_every_line_with_its_icon():
         "✅ <code>a.example</code>: добавлен", "ℹ️ <code>b.example</code>: уже в списке",
         "⚠️ <code>zzz</code>: не домен, пропущен"]
     assert tt.transit_result_cut(False, out) == 0 and tt.transit_result_rows(False, out) == []
+
+
+# ── заголовок снимка и хвост синхронизации ──────────────────────────────────
+
+def test_the_snapshot_title_says_not_added_only_when_the_result_is_a_summary():
+    """От BATCH_SUMMARY_FROM доменов в снимок идут только пропущенные строки —
+    заголовок «…, не добавленные»; меньше — в снимке все строки итога, хвост
+    соврал бы. Служебные строки с отступом доменами не считаются."""
+    n = tt.BATCH_SUMMARY_FROM
+    below = _out(n - 1)                                   # n−1 доменов + строка с отступом
+    at = _out(n - 1, 1)
+    assert tt.transit_result_title("add", below) == "🔀 Итог: в туннель", "служебная строка посчитана доменом"
+    assert tt.transit_result_title("add", at) == "🔀 Итог: в туннель, не добавленные"
+    assert tt.transit_result_title("ru", at) == "🔀 Итог: напрямую, не добавленные"
+    assert tt.transit_result_title("ru", below) == "🔀 Итог: напрямую"
+    assert tt.transit_result_title("add", _out(200, 200)) == "🔀 Итог: в туннель, не добавленные"
+    assert tt.transit_result_title("add") == "🔀 Итог: в туннель", "без вывода — без хвоста"
+    assert tt.transit_result_title("add", "") == "🔀 Итог: в туннель"
+
+
+def test_the_snapshot_title_of_a_removal_never_says_not_added():
+    """Удаление сводкой не сворачивается (в снимке все строки) — «не добавленные» там ложь."""
+    out = "\n".join(f"<code>d{i}.example</code>: убран" for i in range(50))
+    assert tt.transit_result_title("del", out) == "🔀 Итог: в туннель", tt.transit_result_title("del", out)
+    assert len(tt.transit_result_rows(True, out, "del")) == 50, "удаление свернулось в сводку — заголовок устарел"
+
+
+@pytest.mark.parametrize("sync", ["online", "offline"])
+def test_the_sync_tail_is_a_separate_paragraph_in_the_result_and_in_the_refusal(sync):
+    """Хвост синхронизации — отдельным абзацем: прилепленный к последней строке
+    перечня, он читается как её продолжение."""
+    tail = tt.SYNC_TAILS[sync]
+    ok = tt.gateway_transit_result(True, "<code>a.example</code>: добавлен", sync=sync)
+    assert ok == f"✅ <code>a.example</code>: добавлен\n\n{tail}", ok
+    big = tt.gateway_transit_result(True, _out(200, 200), sync=sync, budget=1200)
+    assert big.endswith(f"строк\n\n{tail}") or big.endswith(f"строки\n\n{tail}") \
+        or big.endswith(f"строка\n\n{tail}"), big[-160:]
+    bad = tt.gateway_transit_result(False, "a.example: не похоже на домен", sync=sync, domains=["a.example"])
+    assert bad.endswith(f"\n\n{tail}") and "\n\n\n" not in bad, bad
+    assert tt.gateway_transit_result(True, "<code>a.example</code>: добавлен") == "✅ <code>a.example</code>: добавлен", \
+        "без связи и без хвоста — пустой абзац в конце"

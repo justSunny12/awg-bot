@@ -121,16 +121,29 @@ SSH_MERGED_TITLE = "ℹ️ Вошли в добавленные подсети"
 
 
 def gateway_ssh_allow_added(entries: list[str], merged: list[str] | None = None, link: tuple | None = None,
-                            link_merged: tuple | None = None) -> str:
+                            link_merged: tuple | None = None, nets: list[str] | tuple = ()) -> str:
     """merged — записи, которые схлопнулись в добавленную подсеть (nft не
-    принимает пересечения; человеку — что объединено, а не отказ); link,
-    link_merged — (имя бота, параметр /start) снимков всего списка для хвоста."""
+    принимает пересечения; человеку — что объединено, а не отказ), nets — сами
+    эти подсети; link, link_merged — (имя бота, параметр /start) снимков всего
+    списка для хвоста."""
     # адреса и подсети — моноширинным: жирный адрес Telegram превращает в ссылку
     text = "✅ Адреса для SSH-доступа: добавлено " + more(entries, shown=SSH_SHOWN, link=link) \
         if entries else "✅ Адреса для SSH-доступа"
     if merged:
-        text += "; вошли в неё и убраны из списка: " + more(merged, shown=SSH_SHOWN, link=link_merged)
+        nets = list(nets)
+        if not nets:
+            where = "входят в уже добавленную подсеть"
+        elif len(nets) == 1:
+            where = f"входят в уже добавленную подсеть {more(nets, shown=3)}"
+        else:
+            where = f"входят в уже добавленные подсети {more(nets, shown=3)}"
+        text += f"; {where}, поэтому не добавлены в список: " + more(merged, shown=SSH_SHOWN, link=link_merged)
     return text
+
+
+def ssh_merged_row(addr: str, net: str = "") -> str:
+    """Строка снимка «Вошли в добавленные подсети»: адрес и подсеть, в которую он вошёл."""
+    return f"<code>{_e(addr)}</code>" + (f" (входит в <code>{_e(net)}</code>)" if net else "")
 
 
 GW_SSH_ALLOW_ALREADY = "ℹ️ Всё из введённого уже в списке — ничего не менял"

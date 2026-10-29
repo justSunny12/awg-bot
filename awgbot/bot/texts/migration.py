@@ -38,10 +38,10 @@ def migration_started(res, more: str = "") -> str:
              f"Новых конфигураций создано: {res.born}"]
     if res.already:
         lines.append(f"Уже существовало: {res.already}")
-    lines.append(f"Готовность считаем по списку: {_n_profiles(res.cohort_clients)}, "
+    lines.append(f"Готовность к завершению переезда считаем по списку: {_n_profiles(res.cohort_clients)}, "
                  f"{_n_devices(res.cohort_devices)}")
     if res.failed:
-        lines.append(f"\n⚠️ Не создано у: {_names_capped(res.failed, more=more)}. "
+        lines.append(f"\n⚠️ Не удалось создать конфигурацию: {_names_capped(res.failed, more=more)}. "
                      f"Повтори включение — недостающие докинутся, существующие "
                      f"не задвоятся.")
     lines.append("\nТеперь выдаются только новые конфигурации. Проверь на своём "

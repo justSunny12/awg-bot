@@ -139,6 +139,7 @@ def test_days_prompt_and_preview_footer(services, make_active_client):
     assert texts.broadcast_days_prompt(plan) == (
         "📢 <b>Продление подписки:</b> Вера, Ксюша\n"
         "Без продления (∞): Антон\n"
+        "\n"
         "На сколько дней продлеваем?")
     foot = texts.broadcast_preview("т", 3, extension=(10, plan))
     lines = foot.split("\n")

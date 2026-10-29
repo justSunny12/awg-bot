@@ -99,7 +99,7 @@ async def test_sites_rejects_tail_links_to_a_snapshot_of_all_forty(tmp_path, fro
     reason = line.rsplit("</a> — ", 1)[1]
     shown = re.findall(r"<code>([^<]+)</code>", line)
     head, rows = await _all_rows(tmp_path, fakes, _BY_ID[opened])
-    assert head.startswith("⚠️ <b>Не добавлено</b> · 40 · стр. 1 из 2 · на "), head
+    assert head.startswith("⚠️ <b>Не добавлено</b> · 40 · стр. 1 из 2 · от "), head
     assert rows == [f"<code>bad{i:02d}..ru</code> — {reason}" for i in range(40)], \
         f"строки снимка не те, что у итога: {rows[:3]}"
     assert [re.search(r"<code>([^<]+)</code>", r).group(1) for r in rows[:5]] == shown, "первые пять — не те же"
@@ -124,7 +124,7 @@ async def test_subnet_rejects_tail_links_to_a_snapshot_named_after_the_gateway(t
     items = [ln for ln in body.split("\n") if ln.startswith("• ")]
     assert len(items) == 4 and _LINK.findall(items[-1]) == [("list-snap-snapkey001", "и ещё 7")], items
     text, buttons = _screen(await _rec(tmp_path, fakes, _BY_ID["adm.snap.lan.open"]))
-    assert text.split("\n", 1)[0].startswith("⚠️ <b>Подсети NASPi: не принято</b> · 10 · на "), \
+    assert text.split("\n", 1)[0].startswith("⚠️ <b>Подсети NASPi: не принято</b> · 10 · от "), \
         f"в заголовке нет имени устройства шлюза: {text[:100]}"
     rows = _snap_rows(text)
     assert len(rows) == 10 and ["• " + r for r in rows[:3]] == items[:3], \
@@ -146,23 +146,23 @@ async def test_the_broadcast_report_links_both_tails_with_the_new_mark(tmp_path,
     все 30 «профиль Имя» (ссылки без метки — это уже экран), первые три — те же, что в
     отчёте; в снимке адресатов — все 32."""
     rec = await _rec(tmp_path, fakes, _BY_ID["adm.snap.bc.report"])
-    body = _with(rec, "✅ Разослано:")
+    body = _with(rec, "✅ Разослано владельцам профилей:")
     assert ("list-snap-snapkey001-n", "и ещё 20") in _LINK.findall(body), "хвост адресатов — не ссылка с «-n»"
     und = next(ln for ln in body.split("\n") if ln.startswith("⚠️ Не доставлено:"))
     assert _LINK.findall(und)[-1] == ("list-snap-snapkey002-n", "и ещё 27"), und
     named = re.findall(r'<a href="[^"]+">Подписчик \d\d</a>', und)
     head, rows = await _all_rows(tmp_path, fakes, _BY_ID["adm.snap.bc.undelivered"])
-    assert head.startswith("⚠️ <b>Не доставлено</b> · 30 · на "), head
+    assert head.startswith("⚠️ <b>Не доставлено</b> · 30 · от "), head
     assert len(rows) == 30 and all(r.startswith("профиль <a href=") for r in rows), rows[:3]
     assert ["профиль " + _unmark(n) for n in named] == rows[:3], f"{named} ≠ {rows[:3]}"
     assert not any("-n\"" in r for r in rows), "ссылки на профили в снимке — с меткой уведомления"
     head, rows = await _all_rows(tmp_path, fakes, _BY_ID["adm.snap.bc.audience"])
-    assert head.startswith("📢 <b>Адресаты рассылки</b> · 32 · стр. 1 из 2 · на "), head
+    assert head.startswith("📢 <b>Адресаты рассылки</b> · 32 · стр. 1 из 2 · от "), head
     assert len(rows) == 32, f"в снимке адресатов {len(rows)}"
 
 
 async def test_the_broadcast_report_keeps_text_tails_when_snapshots_fail(tmp_path, frozen, fakes):
-    body = _with(await _rec(tmp_path, fakes, _BY_ID["adm.snap.bc.failed"]), "✅ Разослано:")
+    body = _with(await _rec(tmp_path, fakes, _BY_ID["adm.snap.bc.failed"]), "✅ Разослано владельцам профилей:")
     assert "list-snap-" not in body, body[:300]
     assert "</a> [+20] — доставлено" in body and "</a> и ещё 27 — бот заблокирован" in body, body
 
@@ -190,7 +190,7 @@ async def test_guests_without_a_profile_are_one_line_of_the_undelivered_snapshot
     снимок вошли все, журнал ничего не хранит."""
     steps = [*ss._BC, ss.snap("snapkey002", new=True)]
     head, rows = await _all_rows(tmp_path, fakes, Shot("bc.guests", role="admin", steps=steps, data=_bc_guests))
-    assert re.match(r"⚠️ <b>Не доставлено</b> · 32 · (стр\. 1 из 2 · )?на ", head), head
+    assert re.match(r"⚠️ <b>Не доставлено</b> · 32 · (стр\. 1 из 2 · )?от ", head), head
     assert rows[-1] == "2 адресата без профиля — те, с кем делятся устройствами", \
         f"последняя строка снимка: {rows[-1]!r}"
     assert not any("полный список в журнале бота" in r for r in rows), \
@@ -234,7 +234,7 @@ async def test_ssh_allow_added_tail_opens_all_fifteen(tmp_path, frozen, fakes, o
     body = _with(await _rec(tmp_path, fakes, report), "✅ Адреса для SSH-доступа: добавлено")
     assert _LINK.findall(body) == [("list-snap-snapkey001", "и ещё 3")], body[:900]
     text, _ = _screen(await _rec(tmp_path, fakes, shot))
-    assert text.startswith("✅ <b>Добавлено для SSH-доступа</b> · 15 · на "), text[:100]
+    assert text.startswith("✅ <b>Добавлено для SSH-доступа</b> · 15 · от "), text[:100]
     assert _snap_rows(text) == [f"<code>198.51.100.{n}</code>" for n in range(1, 16)], _snap_rows(text)
     assert re.findall(r"<code>[^<]+</code>", body.split("\n")[0]) == _snap_rows(text)[:12], "первые двенадцать — не те"
     after, _ = _screen(await _rec(tmp_path, fakes, _BY_ID[back]))
@@ -250,7 +250,7 @@ async def test_the_transit_result_tail_opens_every_skipped_line(tmp_path, frozen
     assert _LINK.findall(note[-1]) == [("list-snap-snapkey001", "и ещё 133 строки")], note[-1]
     shown = note[1:-1]
     head, rows = await _all_rows(tmp_path, fakes, _BY_ID["gw.snap.transit.open"])
-    assert head.startswith("🔀 <b>Итог: в туннель</b> · 200 · стр. 1 из "), head
+    assert head.startswith("🔀 <b>Итог: в туннель, не добавленные</b> · 200 · стр. 1 из "), head
     assert rows == [f"⚠️ <code>bad-name-{i:03d}</code>: не домен, пропущен" for i in range(200)], rows[:2]
     assert rows[:len(shown)] == shown and len(shown) + 133 == 200, "строки снимка не те, что в итоге"
     lan, _ = _screen(await _rec(tmp_path, fakes, _BY_ID["gw.snap.transit.back"]))
@@ -260,8 +260,8 @@ async def test_the_transit_result_tail_opens_every_skipped_line(tmp_path, frozen
 # ── Т-Ж4 и отчёт восстановления: уведомления ────────────────────────────────
 
 @pytest.mark.parametrize("notice, opened, title", [
-    ("adm.snap.tj4.crash", "adm.snap.tj4.crash.open", "⚠️ <b>Не перенесены изменения, сделанные здесь перед переездом на «резерв»</b>"),
-    ("adm.snap.tj4.c9", "adm.snap.tj4.c9.open", "⚠️ <b>Не перенесены изменения от бота на «резерв»</b>"),
+    ("adm.snap.tj4.crash", "adm.snap.tj4.crash.open", "⚠️ <b>Не перенесённые изменения, сделанные здесь перед переездом на «резерв»</b>"),
+    ("adm.snap.tj4.c9", "adm.snap.tj4.c9.open", "⚠️ <b>Не перенесённые изменения от бота на «резерв»</b>"),
     ("adm.snap.restore", "adm.snap.restore.open", "⚠️ <b>Не восстановлено из бэкапа</b>"),
 ])
 async def test_a_notice_shows_five_lines_and_links_the_rest_with_the_new_mark(tmp_path, frozen, fakes, notice,
@@ -275,7 +275,7 @@ async def test_a_notice_shows_five_lines_and_links_the_rest_with_the_new_mark(tm
     assert lines[-1] == f'… <a href="https://t.me/test_bot?start=list-snap-snapkey001-n">и ещё {total - 5}</a>', \
         lines[-1]
     text, buttons = _screen(await _rec(tmp_path, fakes, _BY_ID[opened]))
-    assert text.startswith(f"{title} · {total} · на "), text[:160]
+    assert text.startswith(f"{title} · {total} · от "), text[:160]
     rows = _snap_rows(text)
     assert len(rows) == total and ["• " + r for r in rows[:5]] == items, \
         f"строки снимка — не строки уведомления без «• »:\n{rows[:2]}\n{items[:2]}"

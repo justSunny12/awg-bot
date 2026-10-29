@@ -264,9 +264,12 @@ def _fail_reason(out: str, cmd: str) -> str:
     return last.split(": ", 1)[1] if ": " in last and not last.startswith(("dnsmasq", "скрипт")) else last
 
 
-def transit_result_title(cmd: str) -> str:
-    """Заголовок снимка всех строк итога (экран «весь список»)."""
-    return "🔀 Итог: напрямую" if cmd == "ru" else "🔀 Итог: в туннель"
+def transit_result_title(cmd: str, out: str = "") -> str:
+    """Заголовок снимка строк итога (экран «весь список»); при сводке (от
+    BATCH_SUMMARY_FROM доменов) в снимок идут только пропущенные — «…, не добавленные»."""
+    head = "🔀 Итог: напрямую" if cmd == "ru" else "🔀 Итог: в туннель"
+    rows = [r for r in out.strip().splitlines() if r and not r.startswith(" ")]
+    return head + (", не добавленные" if out and len(rows) >= BATCH_SUMMARY_FROM and cmd != "del" else "")
 
 
 def transit_result_rows(ok: bool, out: str, cmd: str = "add") -> list[str]:
@@ -291,7 +294,7 @@ def gateway_transit_result(ok: bool, out: str, sync: str = "", budget: int = 330
         what = ("не убран" if cmd == "del" else
                 ("не добавлены" if len(domains) > 1 else "не добавлен"))
         head = f"{pkg.short_name(names, 120)} {what}" if names else ("Не убран" if cmd == "del" else "Не добавлен")
-        return f"⚠️ {_e(head)}: {_e(_fail_reason(out, cmd))}" + (f"\n{tail}" if tail else "")
+        return f"⚠️ {_e(head)}: {_e(_fail_reason(out, cmd))}" + (f"\n\n{tail}" if tail else "")
     summary, rows = _result_parts(out, cmd)
     keep = _fit(summary, rows, budget)
     body = "\n".join(summary + keep)
@@ -302,4 +305,4 @@ def gateway_transit_result(ok: bool, out: str, sync: str = "", budget: int = 330
         body += "\n…" + (deep_link(link[0], link[1], label) if link is not None else label)
     if not body:
         body = "✅ готово"
-    return body + (f"\n{tail}" if tail else "")
+    return body + (f"\n\n{tail}" if tail else "")   # хвост синхронизации — абзацем

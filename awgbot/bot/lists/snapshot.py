@@ -25,6 +25,15 @@ async def snap_param(services, chat: int, role: str, title: str, rows, back: str
                       rows, back, new, n, missing)
 
 
+async def snap_rows(message, services, title: str, rows: list[str], back: str, shown: int) -> tuple | None:
+    """Как snap_codes, но строки снимка готовы (HTML) — например, адрес с подсетью, в
+    которую он вошёл."""
+    if len(rows) <= shown:
+        return None
+    param = await snap_param(services, message.chat.id, "admin", title, list(rows), back)
+    return (getattr(services, "bot_username", "") or "", param) if param else None
+
+
 async def snap_codes(message, services, title: str, items: list, back: str, shown: int) -> tuple | None:
     """Итог ввода адресов (SSH-доступ обоих ботов): больше shown — все снимком
     строками <code>; (имя бота, параметр /start) для хвоста more(link=…) или

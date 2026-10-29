@@ -1482,6 +1482,7 @@ https://t.me/test_bot?start=CDUMMY000005
 > press bc:next:0
 = edit #1
 📢 <b>Продление подписки:</b> <a href="https://t.me/test_bot?start=cl-4">Боря</a>, <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>
+
 На сколько дней продлеваем?
   [1 дн. | ps:bc_days:0:1] [3 дн. | ps:bc_days:0:3] [7 дн. | ps:bc_days:0:7]
   [✏️ Другое | ps:bc_days:0:-1]
@@ -1510,7 +1511,7 @@ https://t.me/test_bot?start=CDUMMY000005
 ### adm.bc.preview — превью
 > text «В субботу с 02:00 до 03:00 — <b>работы на сервере</b>»
 + send #3
-👇 <b>Так увидят получатели</b> · 2 адресата: профили <a href="https://t.me/test_bot?start=cl-4">Боря</a>, <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>
+👇 <b>Так увидят получатели</b> · 2 адресата, владельцы профилей: <a href="https://t.me/test_bot?start=cl-4">Боря</a>, <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>
 
 В субботу с 02:00 до 03:00 — &lt;b&gt;работы на сервере&lt;/b&gt;
   [⬅️ Отмена | bc:cancel:0] [📢 Отправить | bc:send:0]
@@ -3985,7 +3986,7 @@ Pi4 — 🟢 Резерв
 = edit #1
 🚚 Переезд начат
 Новых конфигураций создано: 5
-Готовность считаем по списку: 2 профиля, 2 устройства
+Готовность к завершению переезда считаем по списку: 2 профиля, 2 устройства
 
 Теперь выдаются только новые конфигурации. Проверь на своём устройстве, прежде чем звать остальных: если не заработает — «↩️ Отменить», и никто, кроме тебя, ничего не заметит
 + send #2
@@ -4489,7 +4490,7 @@ https://t.me/test_bot?start=CDUMMY000005
 ### adm.bc.preview.markup — превью с разметкой Telegram
 > text «В субботу — <b>работы на сервере</b>»
 + send #3
-👇 <b>Так увидят получатели</b> · 2 адресата: профили <a href="https://t.me/test_bot?start=cl-4">Боря</a>, <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>
+👇 <b>Так увидят получатели</b> · 2 адресата, владельцы профилей: <a href="https://t.me/test_bot?start=cl-4">Боря</a>, <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>
 
 В субботу — <b>работы на сервере</b>
   [⬅️ Отмена | bc:cancel:0] [📢 Отправить | bc:send:0]
@@ -4509,7 +4510,7 @@ https://t.me/test_bot?start=CDUMMY000005
 = edit #3
 В субботу с 02:00 до 03:00 — работы на сервере
 + send #4
-✅ Разослано: профили <a href="https://t.me/test_bot?start=cl-4-n">Боря</a>, <a href="https://t.me/test_bot?start=cl-3-n">Ксюша</a> — доставлено: 2 адресата
+✅ Разослано владельцам профилей: <a href="https://t.me/test_bot?start=cl-4-n">Боря</a>, <a href="https://t.me/test_bot?start=cl-3-n">Ксюша</a> — доставлено: 2 адресата
 + send #5
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
@@ -4552,7 +4553,7 @@ https://t.me/test_bot?start=CDUMMY000005
 
 Неделя в подарок — спасибо, что с нами
 + send #4
-✅ Разослано: профили <a href="https://t.me/test_bot?start=cl-4-n">Боря</a>, <a href="https://t.me/test_bot?start=cl-3-n">Ксюша</a> — доставлено: 2 адресата · продлено на 7 дней
+✅ Разослано владельцам профилей: <a href="https://t.me/test_bot?start=cl-4-n">Боря</a>, <a href="https://t.me/test_bot?start=cl-3-n">Ксюша</a> — доставлено: 2 адресата · продлено на 7 дней
 + send #5
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
@@ -7116,7 +7117,7 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 ### adm.bc.preview.one — превью одному профилю — адресат по имени
 > text «В субботу с 02:00 до 03:00 — работы на сервере»
 + send #3
-👇 <b>Так увидят получатели</b> · 1 адресат: профиль <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>
+👇 <b>Так увидят получатели</b> · 1 адресат, владелец профиля: <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>
 
 В субботу с 02:00 до 03:00 — работы на сервере
   [⬅️ Отмена | bc:cancel:0] [📢 Отправить | bc:send:0]
@@ -7133,7 +7134,7 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 = edit #3
 В субботу с 02:00 до 03:00 — работы на сервере
 + send #4
-✅ Разослано: профиль <a href="https://t.me/test_bot?start=cl-3-n">Ксюша</a> — доставлено: 1 адресат
+✅ Отправлено владельцу профиля: <a href="https://t.me/test_bot?start=cl-3-n">Ксюша</a> — доставлено: 1 адресат
 + send #5
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
@@ -7167,7 +7168,7 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 = edit #3
 В субботу с 02:00 до 03:00 — работы на сервере
 + send #4
-✅ Разослано: профиль <a href="https://t.me/test_bot?start=cl-3-n">Ксюша</a> и те, с кем он делится устройствами — доставлено: 2 адресата
+✅ Отправлено владельцу профиля: <a href="https://t.me/test_bot?start=cl-3-n">Ксюша</a> и тому, с кем он делится устройствами — доставлено: 2 адресата
 + send #5
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
@@ -7201,7 +7202,7 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 = edit #3
 В субботу с 02:00 до 03:00 — работы на сервере
 + send #4
-✅ Разослано: профили <a href="https://t.me/test_bot?start=cl-4-n">Боря</a>, <a href="https://t.me/test_bot?start=cl-3-n">Ксюша</a> и те, с кем они делятся устройствами — доставлено: 2 адресата
+✅ Разослано владельцам профилей: <a href="https://t.me/test_bot?start=cl-4-n">Боря</a>, <a href="https://t.me/test_bot?start=cl-3-n">Ксюша</a> и тем, с кем они делятся устройствами — доставлено: 2 адресата
 ⚠️ Не доставлено: <a href="https://t.me/test_bot?start=cl-4-n">Боря</a> — бот заблокирован или аккаунт удалён
 + send #5
 🛠 <b>pi</b> 🟢 работает · 3 дн
@@ -7230,6 +7231,7 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 = edit #1
 📢 <b>Продление подписки:</b> <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>
 Без продления (∞): <a href="https://t.me/test_bot?start=cl-6">Вечный</a>
+
 На сколько дней продлеваем?
   [1 дн. | ps:bc_days:0:1] [3 дн. | ps:bc_days:0:3] [7 дн. | ps:bc_days:0:7]
   [✏️ Другое | ps:bc_days:0:-1]
@@ -7302,7 +7304,7 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 
 Спасибо за терпение
 + send #4
-✅ Разослано: профили <a href="https://t.me/test_bot?start=cl-4-n">Боря</a>, <a href="https://t.me/test_bot?start=cl-6-n">Вечный</a>, <a href="https://t.me/test_bot?start=cl-3-n">Ксюша</a> — доставлено: 3 адресата · продлено на 7 дней (<a href="https://t.me/test_bot?start=cl-6-n">Вечный</a> — без продления)
+✅ Разослано владельцам профилей: <a href="https://t.me/test_bot?start=cl-4-n">Боря</a>, <a href="https://t.me/test_bot?start=cl-6-n">Вечный</a>, <a href="https://t.me/test_bot?start=cl-3-n">Ксюша</a> — доставлено: 3 адресата · продлено на 7 дней (<a href="https://t.me/test_bot?start=cl-6-n">Вечный</a> — без продления)
 + send #5
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
@@ -14819,7 +14821,7 @@ bad39..ru»
 > /start list-snap-snapkey001
 - delete #4
 = edit #3
-⚠️ <b>Не добавлено</b> · 40 · стр. 1 из 2 · на 15.09 12:00 (UTC+5)
+⚠️ <b>Не добавлено</b> · 40 · стр. 1 из 2 · от 15.09 12:00 (UTC+5)
 
 <code>bad00..ru</code> — недопустимые символы в имени
 <code>bad01..ru</code> — недопустимые символы в имени
@@ -14857,7 +14859,7 @@ bad39..ru»
 ### adm.snap.sites.p2 — снимок отказов, стр. 2
 > press pg|ls_snap|0|1|ls:snap:0:snapkey001:0
 = edit #3
-⚠️ <b>Не добавлено</b> · 40 · стр. 2 из 2 · на 15.09 12:00 (UTC+5)
+⚠️ <b>Не добавлено</b> · 40 · стр. 2 из 2 · от 15.09 12:00 (UTC+5)
 
 <code>bad30..ru</code> — недопустимые символы в имени
 <code>bad31..ru</code> — недопустимые символы в имени
@@ -14968,7 +14970,7 @@ bad39..ru»
 > /start list-snap-snapkey001
 - delete #4
 = edit #3
-⚠️ <b>Подсети NASPi: не принято</b> · 10 · на 15.09 12:00 (UTC+5)
+⚠️ <b>Подсети NASPi: не принято</b> · 10 · от 15.09 12:00 (UTC+5)
 
 <code>10.241.0.0/24</code> — в служебном пространстве сервера AWG (<code>10.240.0.0/12</code>): выбери другую подсеть
 <code>10.241.1.0/24</code> — в служебном пространстве сервера AWG (<code>10.240.0.0/12</code>): выбери другую подсеть
@@ -15037,7 +15039,7 @@ bad39..ru»
 = edit #3
 Плановые работы на сервере
 + send #4
-✅ Разослано: профили <a href="https://t.me/test_bot?start=cl-4-n">Боря</a>, <a href="https://t.me/test_bot?start=cl-3-n">Ксюша</a>, <a href="https://t.me/test_bot?start=cl-6-n">Подписчик 00</a>, <a href="https://t.me/test_bot?start=cl-7-n">Подписчик 01</a>, <a href="https://t.me/test_bot?start=cl-8-n">Подписчик 02</a>, <a href="https://t.me/test_bot?start=cl-9-n">Подписчик 03</a>, <a href="https://t.me/test_bot?start=cl-10-n">Подписчик 04</a>, <a href="https://t.me/test_bot?start=cl-11-n">Подписчик 05</a>, <a href="https://t.me/test_bot?start=cl-12-n">Подписчик 06</a>, <a href="https://t.me/test_bot?start=cl-13-n">Подписчик 07</a>, <a href="https://t.me/test_bot?start=cl-14-n">Подписчик 08</a>, <a href="https://t.me/test_bot?start=cl-15-n">Подписчик 09</a> <a href="https://t.me/test_bot?start=list-snap-snapkey001-n">и ещё 20</a> — доставлено: 2 адресата
+✅ Разослано владельцам профилей: <a href="https://t.me/test_bot?start=cl-4-n">Боря</a>, <a href="https://t.me/test_bot?start=cl-3-n">Ксюша</a>, <a href="https://t.me/test_bot?start=cl-6-n">Подписчик 00</a>, <a href="https://t.me/test_bot?start=cl-7-n">Подписчик 01</a>, <a href="https://t.me/test_bot?start=cl-8-n">Подписчик 02</a>, <a href="https://t.me/test_bot?start=cl-9-n">Подписчик 03</a>, <a href="https://t.me/test_bot?start=cl-10-n">Подписчик 04</a>, <a href="https://t.me/test_bot?start=cl-11-n">Подписчик 05</a>, <a href="https://t.me/test_bot?start=cl-12-n">Подписчик 06</a>, <a href="https://t.me/test_bot?start=cl-13-n">Подписчик 07</a>, <a href="https://t.me/test_bot?start=cl-14-n">Подписчик 08</a>, <a href="https://t.me/test_bot?start=cl-15-n">Подписчик 09</a> <a href="https://t.me/test_bot?start=list-snap-snapkey001-n">и ещё 20</a> — доставлено: 2 адресата
 ⚠️ Не доставлено: <a href="https://t.me/test_bot?start=cl-6-n">Подписчик 00</a>, <a href="https://t.me/test_bot?start=cl-7-n">Подписчик 01</a>, <a href="https://t.me/test_bot?start=cl-8-n">Подписчик 02</a> <a href="https://t.me/test_bot?start=list-snap-snapkey002-n">и ещё 27</a> — бот заблокирован или аккаунт удалён
 + send #5
 🛠 <b>pi</b> 🟢 работает · 3 дн
@@ -15062,7 +15064,7 @@ bad39..ru»
 - delete #6
 - markup off #5
 + send #7
-⚠️ <b>Не доставлено</b> · 30 · на 15.09 12:00 (UTC+5)
+⚠️ <b>Не доставлено</b> · 30 · от 15.09 12:00 (UTC+5)
 
 профиль <a href="https://t.me/test_bot?start=cl-6">Подписчик 00</a>
 профиль <a href="https://t.me/test_bot?start=cl-7">Подписчик 01</a>
@@ -15101,7 +15103,7 @@ bad39..ru»
 - delete #6
 - markup off #5
 + send #7
-📢 <b>Адресаты рассылки</b> · 32 · стр. 1 из 2 · на 15.09 12:00 (UTC+5)
+📢 <b>Адресаты рассылки</b> · 32 · стр. 1 из 2 · от 15.09 12:00 (UTC+5)
 
 профиль <a href="https://t.me/test_bot?start=cl-4">Боря</a>
 профиль <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>
@@ -15151,7 +15153,7 @@ bad39..ru»
 = edit #3
 Плановые работы на сервере
 + send #4
-✅ Разослано: профили <a href="https://t.me/test_bot?start=cl-4-n">Боря</a>, <a href="https://t.me/test_bot?start=cl-3-n">Ксюша</a>, <a href="https://t.me/test_bot?start=cl-6-n">Подписчик 00</a>, <a href="https://t.me/test_bot?start=cl-7-n">Подписчик 01</a>, <a href="https://t.me/test_bot?start=cl-8-n">Подписчик 02</a>, <a href="https://t.me/test_bot?start=cl-9-n">Подписчик 03</a>, <a href="https://t.me/test_bot?start=cl-10-n">Подписчик 04</a>, <a href="https://t.me/test_bot?start=cl-11-n">Подписчик 05</a>, <a href="https://t.me/test_bot?start=cl-12-n">Подписчик 06</a>, <a href="https://t.me/test_bot?start=cl-13-n">Подписчик 07</a>, <a href="https://t.me/test_bot?start=cl-14-n">Подписчик 08</a>, <a href="https://t.me/test_bot?start=cl-15-n">Подписчик 09</a> [+20] — доставлено: 2 адресата
+✅ Разослано владельцам профилей: <a href="https://t.me/test_bot?start=cl-4-n">Боря</a>, <a href="https://t.me/test_bot?start=cl-3-n">Ксюша</a>, <a href="https://t.me/test_bot?start=cl-6-n">Подписчик 00</a>, <a href="https://t.me/test_bot?start=cl-7-n">Подписчик 01</a>, <a href="https://t.me/test_bot?start=cl-8-n">Подписчик 02</a>, <a href="https://t.me/test_bot?start=cl-9-n">Подписчик 03</a>, <a href="https://t.me/test_bot?start=cl-10-n">Подписчик 04</a>, <a href="https://t.me/test_bot?start=cl-11-n">Подписчик 05</a>, <a href="https://t.me/test_bot?start=cl-12-n">Подписчик 06</a>, <a href="https://t.me/test_bot?start=cl-13-n">Подписчик 07</a>, <a href="https://t.me/test_bot?start=cl-14-n">Подписчик 08</a>, <a href="https://t.me/test_bot?start=cl-15-n">Подписчик 09</a> [+20] — доставлено: 2 адресата
 ⚠️ Не доставлено: <a href="https://t.me/test_bot?start=cl-6-n">Подписчик 00</a>, <a href="https://t.me/test_bot?start=cl-7-n">Подписчик 01</a>, <a href="https://t.me/test_bot?start=cl-8-n">Подписчик 02</a> и ещё 27 — бот заблокирован или аккаунт удалён
 + send #5
 🛠 <b>pi</b> 🟢 работает · 3 дн
@@ -15200,7 +15202,7 @@ bad39..ru»
 - delete #4
 - markup off #3
 + send #5
-⚠️ <b>Потеряли связь при завершении переезда</b> · 50 · стр. 1 из 2 · на 15.09 12:00 (UTC+5)
+⚠️ <b>Потеряли связь при завершении переезда</b> · 50 · стр. 1 из 2 · от 15.09 12:00 (UTC+5)
 
 Профиль 00 — Тел 00
 Профиль 01 — Тел 01
@@ -15266,7 +15268,7 @@ bad39..ru»
 > /start list-snap-snapkey001
 - delete #4
 = edit #3
-✅ <b>Добавлено для SSH-доступа</b> · 15 · на 15.09 12:00 (UTC+5)
+✅ <b>Добавлено для SSH-доступа</b> · 15 · от 15.09 12:00 (UTC+5)
 
 <code>198.51.100.1</code>
 <code>198.51.100.2</code>
@@ -15312,7 +15314,7 @@ bad39..ru»
 ### adm.snap.tj4.crash — Т-Ж4 после аварии — пять строк и «… и ещё 4» ссылкой с «-n»
 > call Т-Ж4 после аварии
 + send #3
-⚠️ Не перенесены 9 изменений, сделанные здесь перед переездом на «резерв»: на той стороне уже применены другие правки
+⚠️ Не перенесены 9 изменений, сделанные здесь перед переездом на «резерв» — обнаружены конфликты:
 • профиль Профиль 0: имя «Профиль 0 здесь» — на «резерв» осталось «Профиль 0 там»
 • профиль Профиль 1: имя «Профиль 1 здесь» — на «резерв» осталось «Профиль 1 там»
 • профиль Профиль 2: имя «Профиль 2 здесь» — на «резерв» осталось «Профиль 2 там»
@@ -15326,7 +15328,7 @@ bad39..ru»
 - delete #4
 - markup off #2
 + send #5
-⚠️ <b>Не перенесены изменения, сделанные здесь перед переездом на «резерв»</b> · 9 · на 15.09 12:00 (UTC+5)
+⚠️ <b>Не перенесённые изменения, сделанные здесь перед переездом на «резерв»</b> · 9 · от 15.09 12:00 (UTC+5)
 
 профиль Профиль 0: имя «Профиль 0 здесь» — на «резерв» осталось «Профиль 0 там»
 профиль Профиль 1: имя «Профиль 1 здесь» — на «резерв» осталось «Профиль 1 там»
@@ -15342,7 +15344,7 @@ bad39..ru»
 ### adm.snap.tj4.c9 — Т-Ж4 С9 — пять строк и «… и ещё 4» ссылкой
 > call Т-Ж4 С9
 + send #3
-⚠️ Не перенесены 9 изменений от бота на «резерв», сделанные после потери связи: здесь уже применены другие правки
+⚠️ Не перенесены 9 изменений от бота на «резерв», сделанные после потери связи — обнаружены конфликты:
 • профиль Профиль 0: имя «Профиль 0 здесь» — здесь осталось «Профиль 0 там»
 • профиль Профиль 1: имя «Профиль 1 здесь» — здесь осталось «Профиль 1 там»
 • профиль Профиль 2: имя «Профиль 2 здесь» — здесь осталось «Профиль 2 там»
@@ -15356,7 +15358,7 @@ bad39..ru»
 - delete #4
 - markup off #2
 + send #5
-⚠️ <b>Не перенесены изменения от бота на «резерв»</b> · 9 · на 15.09 12:00 (UTC+5)
+⚠️ <b>Не перенесённые изменения от бота на «резерв»</b> · 9 · от 15.09 12:00 (UTC+5)
 
 профиль Профиль 0: имя «Профиль 0 здесь» — здесь осталось «Профиль 0 там»
 профиль Профиль 1: имя «Профиль 1 здесь» — здесь осталось «Профиль 1 там»
@@ -15405,7 +15407,7 @@ bad39..ru»
 - delete #5
 - markup off #4
 + send #6
-⚠️ <b>Не восстановлено из бэкапа</b> · 8 · на 15.09 12:00 (UTC+5)
+⚠️ <b>Не восстановлено из бэкапа</b> · 8 · от 15.09 12:00 (UTC+5)
 
 устройство «Телефон 0» профиля Профиль &lt;0&gt; не восстановлено: его адрес <code>10.8.1.50</code> уже у устройства шлюза
 устройство «Телефон 1» профиля Профиль &lt;1&gt; не восстановлено: его адрес <code>10.8.1.51</code> уже у устройства шлюза

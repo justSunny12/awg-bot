@@ -148,7 +148,7 @@ def test_friends_clause_only_when_friends_exist(services, make_active_client):
     solo = make_active_client(name="Один", tg_id=6001)
     assert services.db.broadcast_has_friends([solo.id], cfg.ADMIN_ID) is False
     preview = texts.broadcast_preview("текст", 1, [solo], False)
-    assert preview.startswith("👇 <b>Так увидят получатели</b> · 1 адресат: профиль Один\n\n"), preview
+    assert preview.startswith("👇 <b>Так увидят получатели</b> · 1 адресат, владелец профиля: Один\n\n"), preview
     assert "делится" not in preview
 
     dc = services.add_device(solo.id, "Телефон")
@@ -156,7 +156,7 @@ def test_friends_clause_only_when_friends_exist(services, make_active_client):
     services.activate_friend(code, tg_id=6099)
     assert services.db.broadcast_has_friends([solo.id], cfg.ADMIN_ID) is True
     preview2 = texts.broadcast_preview("текст", 2, [solo], True)
-    assert "2 адресата: профиль Один и те, с кем он делится устройствами" in preview2, preview2
+    assert "2 адресата, владелец профиля: Один и тот, с кем он делится устройствами" in preview2, preview2
 
 
 def test_audience_names_are_profile_links(services, make_active_client):
@@ -180,3 +180,33 @@ def test_audience_wording_matches_number_of_profiles(make_active_client):
     assert texts.broadcast_prompt([k, d], False).startswith("📢 <b>Текст для профилей:</b> Ксюша, Дима\n")
     assert "с кем он делится" in texts.broadcast_preview("т", 2, [k], True)
     assert "с кем они делятся" in texts.broadcast_preview("т", 3, [k, d], True)
+
+def test_the_report_to_one_profile_says_sent_to_its_owner(services, make_active_client):
+    """Один профиль — «Отправлено владельцу профиля … и тому, с кем он делится»;
+    несколько — «Разослано владельцам профилей … и тем, с кем они делятся».
+    «Разослано» одному адресату и «владельцам» одного — человек ищет, кому ещё ушло."""
+    from awgbot.bot import texts
+    one = make_active_client(name="Один", tg_id=6011)
+    two = make_active_client(name="Два", tg_id=6012)
+    got = texts.broadcast_report([one], True, 2, [])
+    assert got == "✅ Отправлено владельцу профиля: Один и тому, с кем он делится устройствами — доставлено: 2 адресата", got
+    got = texts.broadcast_report([one], False, 1, [])
+    assert got == "✅ Отправлено владельцу профиля: Один — доставлено: 1 адресат", got
+    got = texts.broadcast_report([one, two], True, 3, [])
+    assert got == ("✅ Разослано владельцам профилей: Один, Два и тем, с кем они делятся устройствами — "
+                   "доставлено: 3 адресата"), got
+    got = texts.broadcast_report([one, two], False, 2, [])
+    assert got == "✅ Разослано владельцам профилей: Один, Два — доставлено: 2 адресата", got
+
+
+def test_the_preview_names_owners_in_the_nominative(services, make_active_client):
+    """Превью — именительный падеж («владельцы профилей: … и те, с кем …»), отчёт —
+    дательный: перепутанный падеж читается как ошибка в каждом объявлении."""
+    from awgbot.bot import texts
+    one = make_active_client(name="Один", tg_id=6021)
+    two = make_active_client(name="Два", tg_id=6022)
+    p = texts.broadcast_preview("т", 4, [one, two], True)
+    assert p.startswith("👇 <b>Так увидят получатели</b> · 4 адресата, владельцы профилей: Один, Два и те, с кем они "
+                        "делятся устройствами\n\n"), p
+    p = texts.broadcast_preview_photos(2, [one, two], False)
+    assert "· 2 адресата, владельцы профилей: Один, Два" in p and "делятся" not in p, p

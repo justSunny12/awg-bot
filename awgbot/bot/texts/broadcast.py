@@ -59,12 +59,13 @@ def _names(clients, bot_username: str, more: str = "") -> str:
 
 def broadcast_days_prompt(plan, bot_username: str = "") -> str:
     """Шаг дней: «📢 Продление подписки: [Ксюша], [Петя]» ⏎ «Без продления (∞):
-    [Вечный]» ⏎ «На сколько дней продлеваем?»."""
+    [Вечный]» ⏎ ⏎ «На сколько дней продлеваем?»."""
     names = _names([e.client for e in plan if not e.unlimited], bot_username)
     unl = _names([e.client for e in plan if e.unlimited], bot_username)
     lines = [ui.head("📢 Продление подписки", value=names)]
     if unl:
         lines.append(f"Без продления (∞): {unl}")
+    lines.append("")                                   # вопрос — отдельным абзацем (вычитка 29.10.2026)
     lines.append("На сколько дней продлеваем?")
     return "\n".join(lines)
 
@@ -126,15 +127,22 @@ def _extension_footer(days: int, plan, n: int, bot_username: str = "") -> str:
     return "\n".join(lines)
 
 
-def _bc_audience(clients: list, with_friends: bool, bot_username: str = "", more: str = "") -> str:
-    """«профили Ксюша, Петя и те, с кем они делятся устройствами» — имена
-    ссылками; про друзей — только когда они есть среди адресатов."""
+def _bc_audience(clients: list, with_friends: bool, bot_username: str = "", more: str = "",
+                 case: str = "nom") -> str:
+    """«владельцы профилей: Ксюша, Петя и те, с кем они делятся устройствами» —
+    имена ссылками; про друзей — только когда они есть среди адресатов. case —
+    падеж: "nom" (превью: «40 адресатов, владельцы профилей: …») или "dat"
+    (отчёт: «Разослано владельцам профилей: … и тем, с кем …»)."""
     who = _names(clients, bot_username, more)
     solo = len(clients) == 1
-    head = f"профиль {who}" if solo else f"профили {who}"
-    if not with_friends:
-        return head
-    return head + (" и те, с кем он делится устройствами" if solo else " и те, с кем они делятся устройствами")
+    dat = case == "dat"
+    if solo:
+        head = ("владельцу профиля" if dat else "владелец профиля") + f": {who}"
+        tail = " и тому, с кем он делится устройствами" if dat else " и тот, с кем он делится устройствами"
+    else:
+        head = ("владельцам профилей" if dat else "владельцы профилей") + f": {who}"
+        tail = " и тем, с кем они делятся устройствами" if dat else " и те, с кем они делятся устройствами"
+    return head + (tail if with_friends else "")
 
 
 def _how_to(text_max: int, caption_max: int) -> str:
@@ -162,7 +170,7 @@ def broadcast_preview(text: str, n: int, clients: list = (),
         foot = _extension_footer(extension[0], extension[1], n, bot_username)
     else:
         w = plural_ru(n, "адресат", "адресата", "адресатов")
-        foot = f"{n} {w}: {_bc_audience(list(clients), with_friends, bot_username)}"
+        foot = f"{n} {w}, {_bc_audience(list(clients), with_friends, bot_username)}"
     return ui.head("👇 Так увидят получатели", meta=[foot]) + f"\n\n{text}"
 
 
@@ -175,7 +183,7 @@ def broadcast_preview_photos(n: int, clients: list = (),
         foot = _extension_footer(extension[0], extension[1], n, bot_username)
     else:
         w = plural_ru(n, "адресат", "адресата", "адресатов")
-        foot = f"{n} {w}: {_bc_audience(list(clients), with_friends, bot_username)}"
+        foot = f"{n} {w}, {_bc_audience(list(clients), with_friends, bot_username)}"
     head = ui.head("👆 Так увидят получатели", meta=[foot])
     if not has_text:
         head += "\n✍️ Текста нет — уйдут только картинки. Нужен текст — пришли его сообщением"
@@ -259,11 +267,14 @@ def broadcast_report(clients: list, with_friends: bool, delivered: int,
                     failed, extension=None, bot_username: str = "", audience_more: str = "",
                     undelivered_more: str = "") -> str:
     """Отчёт: только факт доставки. Само объявление остаётся в чате строкой
-    выше. «✅ Разослано: профили [Ксюша], [Петя] и те, с кем они делятся
-    устройствами — доставлено: 3 адресата · продлено на 7 дн.» ⏎ «⚠️ Не доставлено: [Петя] —
-    бот заблокирован или аккаунт удалён». failed — tg_id недоставленных."""
+    выше. «✅ Разослано владельцам профилей: [Ксюша], [Петя] и тем, с кем они делятся
+    устройствами — доставлено: 3 адресата · продлено на 7 дн.» (один профиль — «✅ Отправлено
+    владельцу профиля: …») ⏎ «⚠️ Не доставлено: [Петя] — бот заблокирован или аккаунт удалён».
+    failed — tg_id недоставленных."""
     w = plural_ru(delivered, "адресат", "адресата", "адресатов")
-    line = f"✅ Разослано: {_bc_audience(clients, with_friends, bot_username, audience_more)} — доставлено: {delivered} {w}"
+    verb = "✅ Отправлено" if len(clients) == 1 else "✅ Разослано"
+    line = (f"{verb} {_bc_audience(clients, with_friends, bot_username, audience_more, case='dat')} — "
+            f"доставлено: {delivered} {w}")
     if extension is not None:
         days, plan = extension
         unl = [e.client for e in plan if e.unlimited]

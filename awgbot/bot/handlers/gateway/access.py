@@ -103,15 +103,41 @@ async def gw_ssh_allow_received(message: Message, state: FSMContext, services):
     await state.clear()
     new = [x for x in after if x not in before]
     gone = [x for x in before if x not in after]          # схлопнуто в добавленную подсеть
-    from awgbot.bot.lists.snapshot import snap_codes
+    from awgbot.bot.lists.snapshot import snap_codes, snap_rows
     from awgbot.bot.texts.gateway import access as ta
     from awgbot.bot.texts.settings.inputs import SSH_ADDED_TITLE, SSH_SHOWN
     back = GwCB(action="ssh").pack()                      # «⬅️ Назад» со снимка — в «🛡 SSH-доступ»
     link = await snap_codes(message, services, SSH_ADDED_TITLE, new, back, SSH_SHOWN)
-    link_m = await snap_codes(message, services, ta.SSH_MERGED_TITLE, gone, back, SSH_SHOWN)
+    nets_of = _absorbing(gone, after)                     # адрес → подсеть из списка, в которую он вошёл
+    link_m = await snap_rows(message, services, ta.SSH_MERGED_TITLE,
+                             [ta.ssh_merged_row(a, nets_of.get(a, "")) for a in gone], back, SSH_SHOWN)
+    nets = list(dict.fromkeys(n for n in nets_of.values() if n))
     await core.after_input(message, services, pkg._hooks(), "ssh",
-                           texts.gateway_ssh_allow_added(new, gone, link, link_m) if new or gone
+                           texts.gateway_ssh_allow_added(new, gone, link, link_m, nets) if new or gone
                            else texts.GW_SSH_ALLOW_ALREADY)
+
+
+def _absorbing(gone: list[str], after: list[str]) -> dict[str, str]:
+    """Какая подсеть списка поглотила каждый убранный адрес: {адрес: подсеть}.
+    Не разобралось — адрес без подсети (текст скажет «подсеть» без имени)."""
+    import ipaddress
+    nets = []
+    for x in after:
+        try:
+            nets.append((x, ipaddress.ip_network(x, strict=False)))
+        except ValueError:
+            continue
+    out: dict[str, str] = {}
+    for a in gone:
+        try:
+            ip = ipaddress.ip_network(a, strict=False)
+        except ValueError:
+            continue
+        for raw, net in nets:
+            if ip.version == net.version and ip.subnet_of(net):
+                out[a] = raw
+                break
+    return out
 
 
 @router.callback_query(GwCB.filter(F.action.in_({"ssh_del", "ssh_del!", "ssh_on", "ssh_on!",

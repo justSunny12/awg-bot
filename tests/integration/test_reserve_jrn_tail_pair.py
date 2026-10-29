@@ -539,8 +539,8 @@ def test_c9_tj4_goes_after_the_return_report_in_the_c9_wording(duo):
     texts = [n.text for n in notes]
     tj4 = [t for t in texts if t.startswith("⚠️ Не перенесен")]
     assert len(tj4) == 1 and texts.index(tj4[0]) == 1, texts
-    assert tj4[0].startswith("⚠️ Не перенесено 1 изменение от бота на «Beta», сделанное после потери связи: здесь уже "
-                             "применены другие правки"), tj4[0]
+    assert tj4[0].startswith("⚠️ Не перенесено 1 изменение от бота на «Beta», сделанное после потери связи — "
+                             "обнаружены конфликты:\n"), tj4[0]
     assert "имя «Иван на резерве» — здесь осталось «Иван здесь»" in tj4[0], tj4[0]
     assert duo.a.rsv_get("rsv_c9") == {}, "отчёт С9 не снят — придёт снова"
 
@@ -686,7 +686,7 @@ async def test_tj4_on_nine_disputes_after_a_crash_links_a_snapshot_kept_at_the_p
     shutil.rmtree(rsvzone.VAR_DIR / "jrn", ignore_errors=True)
     text, markup = await _open_snap(duo.a, key)
     head, body = text.split("\n\n", 1)
-    assert head.startswith("⚠️ <b>Не перенесены изменения, сделанные здесь перед переездом на «Beta»</b> · 9 · на "), head
+    assert head.startswith("⚠️ <b>Не перенесённые изменения, сделанные здесь перед переездом на «Beta»</b> · 9 · от "), head
     rows = body.split("\n")
     shown = [ln[2:] for ln in tj4.split("\n") if ln.startswith("• ")]
     assert len(rows) == 9 and rows[:5] == shown, f"строки снимка — не строки Т-Ж4:\n{rows[:2]}\n{shown[:2]}"
@@ -712,7 +712,7 @@ async def test_tj4_on_nine_disputes_in_c9_links_a_snapshot_with_the_c9_title(duo
     assert _snap_keys(duo.a.db) == [key] and not _snap_keys(duo.gdb), (_snap_keys(duo.a.db), _snap_keys(duo.gdb))
     duo.b_keep.wipe()
     text, _ = await _open_snap(duo.a, key)
-    assert text.startswith("⚠️ <b>Не перенесены изменения от бота на «Beta»</b> · 9 · на "), text[:120]
+    assert text.startswith("⚠️ <b>Не перенесённые изменения от бота на «Beta»</b> · 9 · от "), text[:120]
     assert len(text.split("\n\n", 1)[1].split("\n")) == 9
 
 

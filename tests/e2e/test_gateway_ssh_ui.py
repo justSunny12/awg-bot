@@ -283,3 +283,66 @@ async def test_cancel_under_a_prompt_closes_the_dialog_and_returns_the_section(s
     cb2, nav2 = _cb(fake_bot)
     await gh.gw_cancel_inline(cb2, CancelCB(kind="set_ssh", ref=0), svc, st)
     assert await st.get_state() is None, "ввод остался открытым"
+
+
+# ── подсеть поглотила адреса списка ─────────────────────────────────────────
+
+class _MergeSvc(_Svc):
+    """Сервис, который, как nft, не держит пересечений: введённая подсеть
+    вытесняет из списка адреса, которые в неё входят."""
+
+    def ssh_allow_current(self):
+        return list(self.screen["allow"])
+
+    def ssh_allow_add(self, raw):
+        import ipaddress
+        new = [x.strip() for x in raw.split(",") if x.strip()]
+        nets = [ipaddress.ip_network(x, strict=False) for x in new]
+        keep = [a for a in self.screen["allow"]
+                if not any(ipaddress.ip_network(a, strict=False).subnet_of(n) for n in nets)]
+        self.screen["allow"] = keep + new
+        return list(self.screen["allow"])
+
+
+def _report(fake_bot) -> str:
+    sent = [r[2] for r in fake_bot.records if r[0] in ("send_message", "answer") and "✅ Адреса для SSH-доступа" in str(r[2])]
+    assert len(sent) == 1, f"итог ввода пришёл {len(sent)} раз: {fake_bot.records}"
+    return sent[0]
+
+
+async def test_fifteen_addresses_swallowed_by_a_net_are_named_with_it_in_text_and_snapshot(tmp_path, fake_bot):
+    """15 адресов вошли в 192.168.5.0/24: в итоге — имя подсети моноширинным, 12
+    адресов и хвост-ссылка; в снимке все 15, каждый — «(входит в 192.168.5.0/24)».
+    Без подсети человек не поймёт, куда делись адреса, и введёт их снова."""
+    import re
+    d = Database(tmp_path / "gw.db"); d.init_schema()
+    svc = _MergeSvc(d)
+    svc.bot_username = "test_bot"
+    svc.screen["allow"] = [f"192.168.5.{n}" for n in range(1, 16)] + ["203.0.113.7"]
+    msg = FakeMessage(text="192.168.5.0/24", chat_id=ADMIN, user_id=ADMIN, bot=fake_bot)
+    await gh.gw_ssh_allow_received(msg, FakeState(), svc)
+    text = _report(fake_bot)
+    assert "; входят в уже добавленную подсеть <code>192.168.5.0/24</code>, поэтому не добавлены в список: " \
+        "<code>192.168.5.1</code>" in text, text[:400]
+    m = re.search(r'start=list-snap-([A-Za-z0-9]+)">и ещё 3<', text)
+    assert m, f"хвост поглощённых — не ссылка на снимок: {text[:900]}"
+    snap = d.list_snap_get(m.group(1), ADMIN)
+    assert snap and snap.get("rows") == [
+        f"<code>192.168.5.{n}</code> (входит в <code>192.168.5.0/24</code>)" for n in range(1, 16)], snap
+    assert snap.get("title") == "ℹ️ Вошли в добавленные подсети", snap.get("title")
+
+
+async def test_two_nets_at_once_are_both_named_and_a_short_list_needs_no_snapshot(tmp_path, fake_bot):
+    """Две подсети разом — обе в тексте, во множественном числе; поглощённых меньше
+    предела — снимок не пишется (ссылки нет, запись в базе была бы зря)."""
+    d = Database(tmp_path / "gw.db"); d.init_schema()
+    svc = _MergeSvc(d)
+    svc.bot_username = "test_bot"
+    svc.screen["allow"] = ["10.1.1.1", "192.168.5.4", "203.0.113.7"]
+    msg = FakeMessage(text="10.0.0.0/8, 192.168.5.0/24", chat_id=ADMIN, user_id=ADMIN, bot=fake_bot)
+    await gh.gw_ssh_allow_received(msg, FakeState(), svc)
+    text = _report(fake_bot)
+    assert ("; входят в уже добавленные подсети <code>10.0.0.0/8</code>, <code>192.168.5.0/24</code>, поэтому не "
+            "добавлены в список: <code>10.1.1.1</code>, <code>192.168.5.4</code>") in text, text[:400]
+    assert "list-snap-" not in text, text[:400]
+    assert d._snaps() == [], "снимок короткого списка записан"

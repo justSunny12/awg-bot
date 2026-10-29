@@ -164,10 +164,8 @@ def _tail_head(variant: str, reserve: str, n: int) -> str:
     verb = plural_ru(n, "перенесено", "перенесены", "перенесены")
     made = plural_ru(n, "сделанное", "сделанные", "сделанные")
     if variant == "c9":
-        return (f"⚠️ Не {verb} {word} от бота на {_n(reserve)}, {made} после потери связи: здесь уже применены "
-                "другие правки")
-    return (f"⚠️ Не {verb} {word}, {made} здесь перед переездом на {_n(reserve)}: на той стороне уже применены "
-            "другие правки")
+        return f"⚠️ Не {verb} {word} от бота на {_n(reserve)}, {made} после потери связи — обнаружены конфликты:"
+    return f"⚠️ Не {verb} {word}, {made} здесь перед переездом на {_n(reserve)} — обнаружены конфликты:"
 
 
 def tail_disputed(variant: str, reserve: str, lines: list[str], total: int, more: str = "") -> str:
@@ -189,8 +187,8 @@ def tail_snap_rest(reserve: str) -> str:
 def tail_snap_title(variant: str, reserve: str) -> str:
     """Заголовок снимка всего списка Т-Ж4 (экран «весь список»)."""
     if variant == "c9":
-        return f"⚠️ Не перенесены изменения от бота на {_n(reserve)}"
-    return f"⚠️ Не перенесены изменения, сделанные здесь перед переездом на {_n(reserve)}"
+        return f"⚠️ Не перенесённые изменения от бота на {_n(reserve)}"
+    return f"⚠️ Не перенесённые изменения, сделанные здесь перед переездом на {_n(reserve)}"
 
 
 def tail_moved(variant: str, reserve: str, n: int) -> str:

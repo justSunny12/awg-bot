@@ -123,13 +123,13 @@ def test_a_device_without_an_owner_is_not_signed_by_its_own_name():
 ])
 def test_the_head_agrees_with_the_number(n, head):
     text = rn.tail_disputed("crash", "Beta", ["x"] * min(n, 5), n)
-    assert text.startswith(head + " перед переездом на «Beta»: на той стороне уже применены другие правки"), text
+    assert text.startswith(head + " перед переездом на «Beta» — обнаружены конфликты:\n• x"), text
 
 
 def test_the_c9_head():
     text = rn.tail_disputed("c9", "Beta", ["x", "y"], 2)
-    assert text.startswith("⚠️ Не перенесены 2 изменения от бота на «Beta», сделанные после потери связи: здесь уже "
-                           "применены другие правки"), text
+    assert text.startswith("⚠️ Не перенесены 2 изменения от бота на «Beta», сделанные после потери связи — "
+                           "обнаружены конфликты:\n• x\n• y"), text
 
 
 def test_twelve_disputes_show_five_lines_and_seven_more():
