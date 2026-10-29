@@ -242,7 +242,8 @@ class GatewayQuorumMixin:
         _write(cur, self._QUO_STORE)
         if w == "sus":
             return []
-        body = {"l": str(rec.get("l") or ""), "g": int(cur.get("g") or 0), "w": w, "since": views[name]["since"], "e": int(v.epoch)}
+        body = {"l": str(rec.get("l") or ""), "g": int(cur.get("g") or 0), "w": w, "since": views[name]["since"], "e": int(v.epoch),
+                "t": str(rec.get("target") or "h")}
         info = v.info()
         if info is not None and w == "see":
             body["i"] = info.to_dict()
@@ -253,7 +254,7 @@ class GatewayQuorumMixin:
 
     def quorum_guest_in(self, kind: str, body: dict) -> list[tuple]:
         """Слово кандидата (резерв по гостевому каналу или свой сервер по каналу
-        конфигурации в отъезде): `qstate` — эпоха линии; `qask` — опрос (взгляд сразу
+        конфигурации в отъезде, `t = r` — о своём клоне): `qstate` — эпоха линии; `qask` — опрос (взгляд сразу
         или после трёх свежих проб); `qtake{e}` — забирает под e + 1; `qrel{e}` —
         обязательство снято; `qneed` — точка ключа кворума, если сам не вижу основу и
         поколение совпало; `qpause{until}` — «не вижу» кандидату не уходит до срока."""
@@ -262,7 +263,7 @@ class GatewayQuorumMixin:
         if not sec.get("l") or (l and l != str(sec.get("l"))):
             return []
         now = time.monotonic()
-        name = f"awgq{sec['l']}h"
+        name = f"awgq{sec['l']}{'r' if str(body.get('t') or 'h') == 'r' else 'h'}"   # t = r — свой сервер в отъезде о клоне
         v = self._gw_qvoters.get(name)
         if kind == "qstate":
             e = int(body.get("e") or 0)
@@ -311,7 +312,8 @@ class GatewayQuorumMixin:
         w = v.view if v.view != "sus" else "uns"
         cur = self.quorum_section()
         body = {"l": str(rec.get("l") or ""), "g": int(cur.get("g") or 0), "w": w,
-                "since": str((cur.get("views") or {}).get(name, {}).get("since") or timeutil.now_iso()), "e": int(v.epoch)}
+                "since": str((cur.get("views") or {}).get(name, {}).get("since") or timeutil.now_iso()), "e": int(v.epoch),
+                "t": str(rec.get("target") or "h")}
         info = v.info()
         if info is not None and w == "see":
             body["i"] = info.to_dict()

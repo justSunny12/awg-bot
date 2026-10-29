@@ -78,6 +78,10 @@ def screen(d: dict) -> str:
         if sees:
             parts.insert(0, "🟢 " + " и ".join(_n(n) for n in sees) + (" видит сервер" if len(sees) == 1 else " видят сервер"))
         lines.append(" · ".join(parts))
+    q = d.get("quorum") or {}
+    if q:                                                     # Т-К22
+        mine = "видит" if q.get("w") in ("see", "held") else ("не видит" + (f" с {_e(_when(q['since']))}" if q.get("since") else ""))
+        lines.append(f"🗳 Твой {_n(peer)} видят {int(q.get('y') or 0)} из {int(q.get('v') or 0)} · этот сервер — {mine}")
     case = str(d.get("case") or "")
     inn = d.get("inn") or "idle"
     if d.get("code_needed"):

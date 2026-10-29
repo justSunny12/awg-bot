@@ -152,6 +152,25 @@ class ReserveVoteMixin:
             out[int(slot)] = "unseen" if rec.get("seen") else "see"
         return out
 
+    def _quorum_rules(self) -> bool:
+        """Кворум второй стороны включён и решает: матрица — только Н3 (§3.7.9)."""
+        if not hasattr(self, "reserve_quorum_peer_line") or not hasattr(self, "reserve_quorum_act"):
+            return False
+        return bool(self.reserve_quorum_peer_line().get("active")) and self.reserve_quorum_act()
+
+    def _liveness_views(self) -> dict:
+        """Под кворумом доли прямой у шлюзов нет — набор для Н3 по живости гостевого
+        канала, взгляд — `qview` (uns → unseen)."""
+        l = str(self.reserve_quorum_peer_line().get("l") or "")
+        gv = self.reserve_quorum_gw_views(l) if l and hasattr(self, "reserve_quorum_gw_views") else {}
+        out = {}
+        for slot, rec in self._gwv.items():
+            if rec["lv"].state == "down" or not rec.get("online"):
+                continue
+            w = str((gv.get(f"{l}{int(slot)}") or {}).get("w") or "")
+            out[int(slot)] = "unseen" if w == "uns" else "see"
+        return out
+
     def _absent_slots(self) -> list[int]:
         """Слоты основы с rsv1 (по `st.voters`), которых нет в наборе."""
         known = [int(v.get("slot") or 0) for v in self.reserve_peer_state().get("voters") or [] if isinstance(v, dict)]
@@ -197,9 +216,12 @@ class ReserveVoteMixin:
         """Пересчёт случая по текущему набору; переходы — действия."""
         if not self.reserve_paired():
             return []
-        views = self._voters()
+        quorum = self._quorum_rules()
+        views = self._liveness_views() if quorum else self._voters()
         sees = self.reserve_peer_seen() != "down"
         case = decide(sees, views)
+        if quorum and case != "H3":
+            case = "6"                                        # переезд и код — у кандидата кворума; матрице остаётся Н3
         view = self.rsv_get("rsv_view")
         prev = str(view.get("case") or "")
         actions: list[tuple] = []

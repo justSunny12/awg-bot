@@ -5,8 +5,9 @@ inbound.py — часть пакета quorum (см. __init__): слова ка�
 `qview{l, g, w, since, e, i}` — взгляд второго сервера (на мою линию — для
 карточки и ничьей; на свою — если он голосующий о клоне); `qstate{l, e,
 holder, r}` — эпоха и роль держателя. Гостевой канал: `qview` шлюзов основы
-о её линии (на этапе зондов — только карточка). Канал конфигурации: `qview`
-своих шлюзов о моей линии. Снимок шлюза (`quo`) — взгляд и поколение, как
+о её линии (кандидату). Канал конфигурации: `qview` своих шлюзов о моей
+линии — о сервере дома (`t = h`) и, в отъезде, о моём клоне у резерва
+(`t = r`, аварийный возврат). Снимок шлюза (`quo`) — взгляд и поколение, как
 поле `rsv`.
 """
 from __future__ import annotations
@@ -110,9 +111,11 @@ class ReserveQuorumInboundMixin:
             return []
         side = self.reserve_quorum_side()
         node = f"{side}{int(slot)}" if side else f"?{int(slot)}"
-        self._qgwviews[node] = {"w": w, "since": str(body.get("since") or ""), "e": int(body.get("e") or 0),
-                                "g": int(body.get("g") or 0), "l": str(body.get("l") or side), "at": timeutil.now_iso(),
-                                "i": dict(body.get("i") or {}), "via": "link"}
+        t = "r" if str(body.get("t") or "h") == "r" else "h"  # цель зонда: основа дома или её клон у резерва
+        self._qgwviews[node if t == "h" else node + ":r"] = {
+            "w": w, "since": str(body.get("since") or ""), "e": int(body.get("e") or 0),
+            "g": int(body.get("g") or 0), "l": str(body.get("l") or side), "at": timeutil.now_iso(),
+            "i": dict(body.get("i") or {}), "via": "link", "t": t}
         return []
 
     def reserve_quorum_snapshot_in(self, slot: int, quo: dict | None) -> None:
@@ -130,6 +133,8 @@ class ReserveQuorumInboundMixin:
                 self._qgwviews[node] = {"w": w, "since": str(quo.get("since") or ""), "e": int(quo.get("e") or 0),
                                         "g": int(quo.get("g") or 0), "l": side, "at": timeutil.now_iso(), "via": "snap"}
 
-    def reserve_quorum_gw_views(self, l: str) -> dict:
-        """Взгляды узлов на линию `l` (шлюзы и второй сервер), как они известны мне."""
-        return {n: v for n, v in self._qgwviews.items() if str(v.get("l") or "") == l}
+    def reserve_quorum_gw_views(self, l: str, t: str = "h") -> dict:
+        """Взгляды узлов на линию `l` (шлюзы и второй сервер), как они известны мне;
+        `t` — цель: сервер линии дома (`h`) или его клон у второй стороны (`r`)."""
+        return {n.split(":", 1)[0]: v for n, v in self._qgwviews.items()
+                if str(v.get("l") or "") == l and str(v.get("t") or "h") == t}

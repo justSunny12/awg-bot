@@ -162,7 +162,12 @@ def _peer_code_offer():
     return rkb.peer_code_offer()
 
 
-KEYBOARDS = {"update_done": kb.update_done_menu, "peer_code": _peer_code_offer}
+def _quorum_tie():
+    from awgbot.bot.keyboards import reserve as rkb
+    return rkb.quorum_tie()
+
+
+KEYBOARDS = {"update_done": kb.update_done_menu, "peer_code": _peer_code_offer, "quorum_tie": _quorum_tie}
 
 
 def note_markup(n):

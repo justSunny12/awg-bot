@@ -96,4 +96,5 @@ class ReserveQuorumTickMixin:
         actions += self.reserve_quorum_leader_tick(now)
         actions += self.reserve_quorum_voter_tick(now)
         actions += self.reserve_quorum_candidate_tick(now)
+        actions += self.reserve_quorum_back_tick(now)
         return actions

@@ -369,6 +369,49 @@ def quorum_enabled_peer(primary: str) -> str:
     return f"🗳 Голосование о {_n(primary)} включено: этот сервер и шлюзы {_n(primary)} решают, когда его пользователям переезжать сюда"
 
 
+def _tie_head(name: str, since: str, see: list, no: list) -> list[str]:
+    return [f"🚨 Ничья о сервере {_n(name)} с {_when(since)}: половина голосующих его видит, половина — нет",
+            "Видят: " + (_names(see) or "никто"), "Не видят: " + (_names(no) or "никто")]
+
+
+def _tie_info(name: str, info: dict | None, said: str = "") -> str:
+    if not info:
+        return f"Справки о трафике {_n(name)} нет: видящие не на связи с этим сервером"
+    hs = int(info.get("hs") or 0)
+    flow = "трафик идёт" if info.get("flow") else "трафика нет"
+    tail = f" (со слов {_n(said)}, {_when(str(info.get('at') or ''))})" if said else ""
+    return f"На {_n(name)}: на связи {hs} {plural_ru(hs, 'устройство', 'устройства', 'устройств')}, {flow}{tail}"
+
+
+def quorum_tie_leader(name: str, reserve: str, since: str, see: list, no: list, info: dict | None) -> str:
+    """Т-К5 (админу лидера, со звуком): ничья о моём сервере — поимённо, справка своя."""
+    return "\n".join(_tie_head(name, since, see, no) + [_tie_info(name, info),
+                      f"Сам бот пользователей не переведёт: проверь, доходит ли VPN до пользователей, и, если нет, — "
+                      f"«🔀 Переезд на {_n(reserve)}»"])
+
+
+def quorum_tie_candidate(name: str, since: str, see: list, no: list, info: dict | None, said: str, told_peer: bool) -> str:
+    """Т-К5б (админу кандидата, со звуком)."""
+    last = (f"Пользователи {_n(name)} сами сюда не переедут — решает админ {_n(name)}, бот написал ему" if told_peer
+            else f"Пользователи {_n(name)} сами сюда не переедут — решает админ {_n(name)}, его админ этот бот ещё не открывал — "
+                 "написать ему некуда")
+    return "\n".join(_tie_head(name, since, see, no) + [_tie_info(name, info, said), last])
+
+
+def quorum_tie_peer(name: str, since: str, see: list, no: list, info: dict | None, said: str) -> str:
+    """Т-К5в (админу спорного сервера в его роли, со звуком, кнопка peer_code)."""
+    return "\n".join([f"🚨 Ничья о твоём сервере {_n(name)} с {_when(since)}",
+                       "Видят: " + (_names(see) or "никто"), "Не видят: " + (_names(no) or "никто"), _tie_info(name, info, said),
+                       f"Если {_n(name)} не доходит до пользователей, а в её бот не попасть, — пришли аварийный код"])
+
+
+def quorum_tie_over(name: str, y: int, v: int, outcome: str, *, mine: bool = False) -> str:
+    """Т-К6 (тем же адресатам, со звуком): чем кончилось — stayed | moved | fenced."""
+    tail = {"moved": f"пользователи переехали{'' if mine else ' сюда'}",
+            "fenced": f"{_n(name)} без кворума, бот не принимает решений"}.get(outcome, f"пользователи остались на {_n(name)}")
+    return f"✅ Ничьей о {_n(name)} больше нет: видят {int(y)} из {int(v)} — {tail}"
+
+
 # ── пул адресов Telegram и вебхук (этап 7) ──────────────────────────────────
 
 def tg_pool_stale(since: str) -> str:

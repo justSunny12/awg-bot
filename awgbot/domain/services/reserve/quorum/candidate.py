@@ -104,9 +104,9 @@ class ReserveQuorumCandidateMixin:
             elif act == "take":
                 actions += self._quorum_take(c, now)
             elif act == "tie":
-                log.warning("кворум: ничья о «%s» — видят %d, не видят %d", self.reserve_peer_name(), len(c.see_nodes()), len(c.no_nodes()))
+                actions += self.reserve_quorum_tie(c, now)
             elif act == "tie_over":
-                log.info("кворум: ничьей о «%s» больше нет", self.reserve_peer_name())
+                actions += self.reserve_quorum_tie_over(c)
         actions += self._quorum_exec_tick(c, now)
         return actions
 
@@ -251,6 +251,7 @@ class ReserveQuorumCandidateMixin:
             return {}
         dl = c.take_deadline()
         now = time.monotonic()
+        left = int(dl - now) if dl is not None and dl > now else 0
         return {"no": len(c.no_nodes()), "see": len(c.see_nodes()), "silent": len(c.silent_nodes()), "v": c.v, "own": c.own,
-                "deadline_in": int(dl - now) if dl is not None and dl > now else 0,
+                "deadline_in": left, "deadline_at": timeutil.to_iso(timeutil.shift(timeutil.now(), left)) if left else "",
                 "stage": str((self.__dict__.get("_quo_exec") or {}).get("stage") or ""), "tie": c.tie_told}

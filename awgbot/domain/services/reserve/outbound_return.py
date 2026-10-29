@@ -70,14 +70,17 @@ class ReserveReturnMixin:
         return ""
 
     def reserve_force_dialog_data(self) -> dict:
+        back = self.reserve_quorum_back_view() if hasattr(self, "reserve_quorum_back_view") else {}
         return {"name": self.reserve_peer_name(), "since": self.reserve_down_since(), "record": self.reserve_dns_name(),
-                "own": self.reserve_own_ip(), "manual": not self.reserve_dns_automatic(), "jrn": self.reserve_jrn_moved()}
+                "own": self.reserve_own_ip(), "manual": not self.reserve_dns_automatic(), "jrn": self.reserve_jrn_moved(),
+                "quorum": back if back.get("known") else {}}                   # Т-К19
 
-    def reserve_force_home(self) -> list[tuple]:
+    def reserve_force_home(self, *, check: bool = True) -> list[tuple]:
         """Рычаг: запись на себя (API — если автоматически), deleteWebhook и поллинг;
         в состоянии home с отметкой `await_merge`: реплика резерва вольётся, когда он выйдет на
-        связь (его `released` по моему `back_req`)."""
-        why = self.reserve_force_check()
+        связь (его `released` по моему `back_req`). `check=False` — аварийный возврат по
+        кворуму: большинство не видит мой бот у резерва, условие «не на связи 10 мин» не ждём."""
+        why = self.reserve_force_check() if check else ("пользователи не у резерва" if self.reserve_out() != "away" else "")
         if why:
             raise ServiceError(why)
         from awgbot.domain.notices import reserve as rn

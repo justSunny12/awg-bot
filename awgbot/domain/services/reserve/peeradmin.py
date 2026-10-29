@@ -84,7 +84,18 @@ class ReservePeerAdminMixin:
             "zone_links": [int(k) for k in self.reserve_guest_links() if str(k).isdigit()],
             "mem_free": self.reserve_mem_free_mb(), "has_client": self.reserve_peer_admin_is_client(),
             "self_admin": self.reserve_self_peer_admin(), "tg_pool": self.reserve_tg_pool_view(),
+            "quorum": self._peer_admin_quorum(),
         }
+
+    def _peer_admin_quorum(self) -> dict:
+        """Т-К22: голоса о его сервере по моему зонду — {y, v, w, since}; пусто — кворума нет."""
+        if not hasattr(self, "reserve_quorum_other_view") or not self.reserve_quorum_peer_line().get("active"):
+            return {}
+        view = self.reserve_quorum_other_view()
+        if not view or "y" not in view:
+            return {}
+        return {"y": int(view.get("y") or 0), "v": int(view.get("v") or 0), "w": str(view.get("w") or ""),
+                "since": str(view.get("since") or "")}
 
     def reserve_code_prompt_data(self) -> dict:
         """Т-РН2: имена, момент аварии, запись основы (из заголовка пакета — нет: из st)."""

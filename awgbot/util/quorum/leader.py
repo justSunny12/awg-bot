@@ -10,6 +10,12 @@ T_down_rf. Возврат (`unfence`): Y ≥ v/2 дольше U, все «да»
 (взгляд `held` не считается). На старте лидер без права записи: первое
 большинство «да» снимает ограждение без окна U. Проба с эпохой больше моей —
 `adopt`: эпоху держит другая сторона, решает вызывающий (`jrn_adopt`).
+В отъезде (`q2`) ответчик дома считает «да» для возврата «сразу» (Q2,
+§3.7.8): роль в ответе `follow`, эпоха пробы не сверяется, ограждения нет.
+В отъезде (`q2`) ответчик дома считает «да» для возврата «сразу» (Q2,
+§3.7.8): роль в ответе `follow`, эпоха пробы не сверяется, ограждения нет.
+В отъезде (`q2`) ответчик дома считает «да» для возврата «сразу» (Q2,
+§3.7.8): роль в ответе `follow`, эпоха пробы не сверяется, ограждения нет.
 
 Машина не знает ни базы, ни сети: вход — пробы и такты с монотонным временем,
 выход — действия строками; остальное (ответ пробе, справка) собирает ответчик.
@@ -46,6 +52,9 @@ class Leader:
     low_since: float | None = None
     high_since: float | None = None
     fenced_at: float = 0.0
+    q2: bool = False                               # отъезд: счёт «да» для возврата «сразу», роль follow
+    q2: bool = False                               # отъезд: счёт «да» для возврата «сразу», роль follow
+    q2: bool = False                               # отъезд: счёт «да» для возврата «сразу», роль follow
 
     # ── вход ────────────────────────────────────────────────────────────────
     def probe_in(self, p: Probe, now: float) -> str:
@@ -73,7 +82,7 @@ class Leader:
     def yes_nodes(self, now: float) -> tuple[str, ...]:
         out = []
         for n, s in self.seen.items():
-            if s.w == "see" and s.e == int(self.epoch) and self.gen.accepts(s.g, now) \
+            if s.w == "see" and (self.q2 or s.e == int(self.epoch)) and self.gen.accepts(s.g, now) \
                     and now - s.at <= self.timing.yes_window_s:
                 out.append(n)
         return tuple(out)
@@ -82,6 +91,12 @@ class Leader:
         return len(self.yes_nodes(now))
 
     def role(self) -> str:
+        if self.q2:
+            return "follow"
+        if self.q2:
+            return "follow"
+        if self.q2:
+            return "follow"
         return "fenced" if self.fenced else "lead"
 
     def reply_for(self, p: Probe, now: float, info: Info | None = None) -> Reply:

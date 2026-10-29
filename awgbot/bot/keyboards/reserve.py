@@ -144,6 +144,12 @@ def confirm_ready_off() -> InlineKeyboardMarkup:
     return kc.confirm(SetCB(sec="rsv"), "☑️ Выключить", RsvCB(action="ready_off_yes"))
 
 
+def quorum_tie() -> InlineKeyboardMarkup:
+    """Т-К5: переезд кнопкой и раздел."""
+    return ui.rows("🔀 Переезд на резерв", RsvCB(action="move")) if False else ui.rows(
+        ("🔀 Переезд", RsvCB(action="move")), ("🛟 Резерв", SetCB(sec="rsv")))
+
+
 def peer_code_offer() -> InlineKeyboardMarkup:
     """Т-РУ7б: «🔑 Ввести аварийный код» над «Скрыть»."""
     return kc.append_hide_row(ui.rows(("🔑 Ввести аварийный код", PeerCB(action="code"))))

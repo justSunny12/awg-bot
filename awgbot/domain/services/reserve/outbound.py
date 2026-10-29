@@ -132,8 +132,13 @@ class ReserveOutboundMixin:
         return ""
 
     def reserve_move_dialog_data(self) -> dict:
-        return {"name": self.reserve_peer_name(), "record": self.reserve_dns_name(), "target": self.reserve_peer_ip(),
-                "manual": not self.reserve_dns_automatic(), "own": self.reserve_own_ip()}
+        d = {"name": self.reserve_peer_name(), "record": self.reserve_dns_name(), "target": self.reserve_peer_ip(),
+             "manual": not self.reserve_dns_automatic(), "own": self.reserve_own_ip()}
+        count = self.reserve_quorum_count() if hasattr(self, "reserve_quorum_count") else {}
+        tie = self.reserve_quorum_tie_view() if hasattr(self, "reserve_quorum_tie_view") else {}
+        if count and (count.get("role") == "fenced" or tie):
+            d["quorum"] = {"y": int(count["y"]), "v": int(count["v"])}          # Т-К18: лишён кворума или ничья
+        return d
 
     def reserve_move_start(self, chat_id: int = 0, message_id: int = 0, kind: str = "button", dead_since: str = "") -> dict:
         """«🔀 Перевести»: leaving/pkg, свежий пакет вне очереди. По просьбе
@@ -389,7 +394,12 @@ class ReserveOutboundMixin:
 
     # ── away: здоровье и возврат ────────────────────────────────────────────
     def reserve_healthy(self) -> bool:
-        """Свой AWG отвечает, линк пары жив, шлюз (если есть) на связи — сейчас."""
+        """Свой AWG отвечает, линк пары жив, шлюз (если есть) на связи — сейчас. Под
+        кворумом «свой AWG отвечает» и «шлюз на связи» заменяет счёт Q2: «да» за меня
+        путём пользователей строго больше половины голосующих."""
+        q = self.reserve_quorum_healthy() if hasattr(self, "reserve_quorum_healthy") else None
+        if q is not None:
+            return bool(q and self.reserve_online() and self.reserve_peer_seen() == "ok" and self._tg_reachable())
         try:
             awg_ok = str(self.db.get_state("last_server_ok") or "") == "1"
         except Exception:                                     # noqa: BLE001

@@ -304,10 +304,15 @@ def quorum_mine_lines(q: dict) -> list[str]:
             since = _when(mine.get("fenced_since") or "")
             out.append(f"└ ⚠️ Без кворума{(' с ' + _e(since)) if since else ''} — этот сервер видят {y} из {v}: бот не принимает "
                        "решений и не отвечает пользователям, VPN работает")
+        elif mine.get("tie_since"):
+            since = _when(mine.get("tie_since") or "")
+            out.append(f"└ ⚠️ Ничья{(' с ' + _e(since)) if since else ''}: этот сервер видят {y}, не видят {v - y} — сам бот "
+                       "пользователей не переведёт")
         else:
             out.append(f"└ 🗳 Этот сервер видят {y} из {v} — пользователи переедут, если не увидят {t}")
     elif not mine.get("leader_here") and "y" in mine:
-        out.append(f"└ 🗳 Бот на {peer} видят {int(mine.get('y') or 0)} из {v}")
+        out.append(f"└ 🗳 Бот на {peer} видят {int(mine.get('y') or 0)} из {v}"
+                   + (" — пользователи вернутся сюда сами, если его не увидят большинство" if mine.get("back") else ""))
     else:
         out.append(f"└ 🗳 Голосующих о этом сервере: {v}, порог переезда — {t}")
     rows = []
@@ -317,6 +322,9 @@ def quorum_mine_lines(q: dict) -> list[str]:
         rows.append(f"{_n(vt.get('name') or vt.get('node') or '?')} — {_W.get(w, w)}" + (f" с {_e(since)}" if since and w in ("uns", "silent") else ""))
     if rows:
         out.append("└ " + " · ".join(rows))
+    for names, net in mine.get("correlation") or []:          # Т-К15
+        out.append(f"└ ⚠️ {' и '.join(_n(n) for n in names)} выходят в интернет из одной сети <code>{_e(net)}</code> — "
+                   "её отказ снимет " + ("оба голоса" if len(names) == 2 else "все их голоса"))
     return out
 
 
@@ -341,8 +349,24 @@ def quorum_peer_lines(q: dict) -> list[str]:
         if not unseen and seen:
             return [f"└ 🟡 Этот сервер не видит {peer}{(' с ' + _e(since)) if since else ''}, а его шлюзы видят — похоже, дело в сети этого сервера"]
         n = 1 + len(unseen)
-        return [f"└ 🟡 {peer} не видят {n} из {int(p.get('v') or 0)}{(' с ' + _e(since)) if since else ''}"]
+        return [f"└ 🟡 {peer} не видят {n} из {int(p.get('v') or 0)}{(' с ' + _e(since)) if since else ''}" + _cand_tail(p)]
+    unseen = [g for g in p.get("gw_views") or [] if g.get("w") == "uns"]
+    if unseen and w == "new":
+        return []
+    cand = p.get("cand") or {}
+    if unseen and cand.get("deadline_at") and w in ("see", "held"):
+        first = min((g.get("since") or "" for g in unseen), default="")
+        return [f"└ 🟡 Шлюзы {peer} не видят его{(' с ' + _e(_when(first))) if first else ''}, а этот сервер видит — если так "
+                f"останется до {_e(_when(cand['deadline_at']))}, пользователи переедут сюда"]
     return []
+
+
+def _cand_tail(p: dict) -> str:
+    """Т-К3: большинство «нет» набрано — когда переедут."""
+    cand = p.get("cand") or {}
+    if cand.get("deadline_at") and cand.get("own") == "uns":
+        return f" — если так останется до {_e(_when(cand['deadline_at']))}, пользователи переедут сюда"
+    return ""
 
 
 def unpair_dialog(name: str) -> str:
@@ -391,7 +415,9 @@ def move_dialog(d: dict) -> str:
             "Твои шлюзы продолжат работать с резервным сервером.\n\n"
             "Функционал бота на резерве ограничен: настройки бота, шлюзов, бэкапов и обновлений будут недоступны.\n\n"
             f"Вернуться обратно можно в любой момент, пока {name} на связи — «↩️ Вернуть пользователей»; изменения "
-            "данных за время нахождения на резерве будут сохранены и перенесены.")
+            "данных за время нахождения на резерве будут сохранены и перенесены."
+            + (f"\n\nЭтот сервер сейчас видят {int(d['quorum'].get('y') or 0)} из {int(d['quorum'].get('v') or 0)}."
+               if d.get("quorum") else ""))                       # Т-К18
 
 
 def move_live(d: dict) -> str:
@@ -453,7 +479,19 @@ def force_dialog(d: dict) -> str:
                else f"Изменения с {name} за это время применятся, когда он выйдет на связь.")
             # одно поведение — одна фраза в обеих ветках (вычитка 29.10.2026)
             + f"\nПока {name} не на связи, пересылки устройств с него нет — устройствам, которые ещё ходят через него, "
-            "необходимо переподключиться к VPN")
+            "необходимо переподключиться к VPN" + _force_quorum_line(d))
+
+
+def _force_quorum_line(d: dict) -> str:
+    """Т-К19: сколько голосующих видят бот на резерве."""
+    q = d.get("quorum") or {}
+    if not q:
+        return ""
+    name = _n(str(d.get("name") or "резерв"))
+    y, v = int(q.get("y") or 0), int(q.get("v") or 0)
+    if not y:
+        return f"\nБот на {name} не видит никто."
+    return f"\nБот на {name} видят {y} из {v} — если он жив, правки, сделанные там после этой минуты, придут хвостом."
 
 
 def evict_dialog(name: str) -> str:

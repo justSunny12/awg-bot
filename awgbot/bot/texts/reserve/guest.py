@@ -75,6 +75,9 @@ def card_text(d: dict) -> str:
     online = int(d.get("online") or 0)
     if online:
         rows.append(f"на связи здесь: {online}")
+    q = d.get("quorum") or {}
+    if q and "y" in q:                                        # Т-К1: голоса о боте здесь (бот основы на резерве — лидер)
+        rows.append(f"🗳 Бот здесь видят {int(q['y'])} из {int(q['v'])} — пользователи вернутся сами, если не увидят {int(q.get('t') or 0)}")
     lines.append(details("\n".join(rows)))
     return "\n".join(lines)
 

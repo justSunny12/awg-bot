@@ -8,9 +8,10 @@ leader.py — часть пакета quorum (см. __init__): ответчик 
 отвечает `qcount{y, v, r}`). Проба — JSON внутри туннеля зонда; ответчик
 сверяет узел с адресом источника, считает «да» только со своей эпохой и
 действующим поколением, в ответ кладёт роль, счёт и справку (устройств с
-рукопожатием за 5 мин без зондов, идёт ли трафик). На этапе зондов (4.2.0)
-лишение кворума и возврат к лидерству — только строка журнала и карточка
-(решений нет); правило лидера с `jrn_fence`/`jrn_unfence` — этап решения.
+рукопожатием за 5 мин без зондов, идёт ли трафик). Лишение кворума и возврат
+— `fence` (`jrn_fence`/`jrn_unfence`); ничья — `tie`. В отъезде ответчик дома
+продолжает считать «да» (роль `follow`) — это Q2 для возврата «сразу»
+(`returns`); решений в отъезде нет.
 """
 from __future__ import annotations
 
@@ -37,6 +38,7 @@ class ReserveQuorumLeaderMixin:
     def _quorum_leader_setup(self) -> Leader | None:
         """Машина лидера по текущему составу; None — я не лидер своей линии
         (пары нет, кворум не включён, пользователи у резерва)."""
+        q2 = False
         if getattr(self, "guest", False):
             q = self.__dict__.get("_guest_quorum") or {}
             l, g, members = str(q.get("l") or ""), int(q.get("g") or 0), list(q.get("members") or [])
@@ -46,7 +48,11 @@ class ReserveQuorumLeaderMixin:
             leader_host = probenet.other_side(l)              # клон живёт у второй стороны
         else:
             m = self.reserve_quorum_mine()
-            if m is None or not self.reserve_quorum_active() or self.reserve_quorum_leader_host() != m.l:
+            if m is None or not self.reserve_quorum_active():
+                self.__dict__.pop("_rsv_qleader", None)
+                return None
+            q2 = self.reserve_quorum_leader_host() != m.l        # отъезд: ответчик дома считает «да» для Q2
+            if q2 and self.reserve_out() != "away":
                 self.__dict__.pop("_rsv_qleader", None)
                 return None
             l, g, members, leader_host = m.l, int(m.g), list(m.members), m.l
@@ -58,13 +64,14 @@ class ReserveQuorumLeaderMixin:
             return None
         ld = self._qleader
         now = time.monotonic()
-        if ld is None or ld.l != l:
+        if ld is None or ld.l != l or ld.q2 != q2:
             ld = Leader(l, len(voters), self.reserve_quorum_epoch(), candidate=probenet.other_side(leader_host),
-                        timing=self.reserve_quorum_timing(), voters=voters)
+                        timing=self.reserve_quorum_timing(), voters=voters, q2=q2)
             ld.gen.bump(g, now, ld.timing.grace_s)
             self.__dict__["_rsv_qleader"] = ld
-            log.info("кворум: ответчик линии %s — голосующих %d, поколение %s", l, len(voters), g)
-            self.__dict__["_quo_start_pending"] = True        # старт лидера — без права записи до первого большинства
+            log.info("кворум: ответчик линии %s%s — голосующих %d, поколение %s", l, " (отъезд, счёт для возврата)" if q2 else "",
+                     len(voters), g)
+            self.__dict__["_quo_start_pending"] = not q2      # старт лидера — без права записи до первого большинства
         else:
             if tuple(ld.voters) != tuple(voters) or ld.gen.g != g:
                 ld.set_members(voters, len(voters), g, now)
@@ -80,7 +87,9 @@ class ReserveQuorumLeaderMixin:
                 return None
             return probenet.responder_addr(str(q["l"]), clone=True), int(q.get("port") or quoprobe.port())
         m = self.reserve_quorum_mine()
-        if m is None or not self.reserve_quorum_active() or self.reserve_quorum_leader_host() != m.l:
+        if m is None or not self.reserve_quorum_active():
+            return None
+        if self.reserve_quorum_leader_host() != m.l and self.reserve_out() != "away":
             return None
         return probenet.responder_addr(m.l), int(self.reserve_probes().get(m.l, {}).get("port") or quoprobe.port())
 
@@ -144,6 +153,9 @@ class ReserveQuorumLeaderMixin:
                 self.reserve_quorum_unfence_if_off()
             return []
         now = time.monotonic() if now is None else now
+        if ld.q2:
+            self.__dict__.pop("_quo_start_pending", None)     # отъезд: счёт для Q2, решений нет
+            return []
         actions: list[tuple] = []
         if self.__dict__.pop("_quo_start_pending", False) and hasattr(self, "reserve_quorum_fence_apply"):
             actions += self.reserve_quorum_fence_apply("start", ld)
@@ -157,6 +169,8 @@ class ReserveQuorumLeaderMixin:
             self.__dict__["_quo_fenced_since"] = ""
         if act in ("fence", "unfence") and hasattr(self, "reserve_quorum_fence_apply"):
             actions += self.reserve_quorum_fence_apply(act, ld)
+        if hasattr(self, "reserve_quorum_leader_tie_tick"):
+            actions += self.reserve_quorum_leader_tie_tick(ld, now)
         return actions
 
     def _quorum_my_name(self) -> str:

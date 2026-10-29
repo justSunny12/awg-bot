@@ -58,11 +58,20 @@ class ReserveQuorumScreenMixin:
                                        age > self.reserve_quorum_timing().yes_window_s)})
             if count:
                 mine.update(y=int(count["y"]), role=str(count["role"]), fenced_since=str(count.get("fenced_since") or ""))
+                tie = self.reserve_quorum_tie_view() if hasattr(self, "reserve_quorum_tie_view") else {}
+                if tie:
+                    mine["tie_since"] = str(tie.get("since") or "")
+            if hasattr(self, "reserve_quorum_correlation"):
+                mine["correlation"] = self._quorum_correlation_cached()
             else:
                 guest = self.__dict__.get("_guest_qcount") or {}
                 if guest:
                     mine.update(y=int(guest.get("y") or 0), role=str(guest.get("r") or ""), from_guest=True)
             out["mine"] = mine
+        if m is not None and self.reserve_out() == "away" and hasattr(self, "reserve_quorum_back_view"):
+            back = self.reserve_quorum_back_view()
+            if back.get("known"):
+                out.setdefault("mine", {}).update(y=int(back["y"]), v=int(back["v"]), leader_here=False, back=True)
         peer = self.reserve_quorum_peer_line()
         if peer:
             other = probenet.other_side(side)
@@ -78,7 +87,23 @@ class ReserveQuorumScreenMixin:
                            "y": int(view.get("y") or 0), "yv": int(view.get("v") or 0), "r": str(view.get("r") or ""),
                            "gw_views": [{"node": n, "name": self._quorum_node_name(n, other), "w": str(gv.get("w") or ""),
                                          "since": str(gv.get("since") or "")} for n, gv in sorted(gw_views.items())]}
+            if hasattr(self, "reserve_quorum_candidate_view"):
+                out["peer"]["cand"] = self.reserve_quorum_candidate_view()
         return out
+
+    def _quorum_correlation_cached(self) -> list:
+        """Т-К15 — не чаще раза в минуту: читает эндпоинты линков."""
+        import time
+        cache = self.__dict__.setdefault("_quo_corr", {})
+        now = time.monotonic()
+        if cache.get("at") and now - cache["at"] < 60:
+            return list(cache.get("v") or [])
+        try:
+            v = [[list(names), net] for names, net in self.reserve_quorum_correlation()]
+        except Exception:                                     # noqa: BLE001
+            v = []
+        cache.update(at=now, v=v)
+        return v
 
 
 def leader_here(mine: dict) -> bool:
