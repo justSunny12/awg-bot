@@ -90,10 +90,24 @@ class ListMsgWatch(BaseRequestMiddleware):
                 note = ""
             if isinstance(method, SendMessage) and not keys and not note and not scan.has_hide(kb):
                 return                                 # причин нет — база не трогается
-            bound = await call(db.list_msg_put, chat, mid, _sent_iso(result), html, kb, keys, note)
+            sent = _sent_iso(result)
+            bound = await call(db.list_msg_put, chat, mid, sent, html, kb, keys, note)
             if bound:
                 from . import heal
                 await heal.heal_chat(bot, self.services, chat)
+            if isinstance(method, EditMessageText):
+                await self._hide_age(bot, chat, mid, sent, kb)   # отправка всегда свежая — проверка только правке
             return
         if isinstance(method, EditMessageReplyMarkup):
-            await call(db.list_msg_set_kb, chat, mid, _sent_iso(result), kb)
+            sent = _sent_iso(result)
+            await call(db.list_msg_set_kb, chat, mid, sent, kb)
+            await self._hide_age(bot, chat, mid, sent, kb)
+
+    async def _hide_age(self, bot, chat: int, mid: int, sent: str, kb: str) -> None:
+        """«Скрыть» поставили правкой на старое сообщение (след переезда на меню
+        трёхдневной давности, «⬅️ В меню» на итоге спустя выходные): кнопка, которая
+        не удалит, в чате не стоит — снять сразу той же задачей."""
+        from awgbot.infra.db.listsnap import hide_due
+        if scan.has_hide(kb) and hide_due({"sent": sent}):
+            from . import heal
+            await heal.heal_one(bot, self.services, {"chat": chat, "mid": mid}, in_action=True)

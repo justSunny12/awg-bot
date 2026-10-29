@@ -77,8 +77,9 @@ async def send_menu_to(bot, services, chat_id: int, text, markup) -> int:
 async def send_menu(message: Message, services, text, markup, keep_id=None) -> None:
     """Показать меню/нав-экран НОВЫМ сообщением, погасив предыдущее активное.
     Единая точка показа — держит инвариант «одно живое меню в чате».
-    keep_id — активное сообщение, у которого кнопки уже сняты вызывающим
-    (итог операции): гасить его повторно — гарантированный «not modified»."""
+    keep_id — активное сообщение, которое вызывающий уже превратил в след
+    (итог операции с одной «Скрыть» или без кнопок): гасить его повторно —
+    гарантированный «not modified»."""
     chat_id = message.chat.id
     await _dismiss_previous_nav(message.bot, services, chat_id, keep_id=keep_id)
     sent = await message.answer(text, reply_markup=markup, link_preview_options=NO_PREVIEW)
@@ -115,6 +116,7 @@ async def purge_menus(bot, services, chat_id: int) -> None:
     ids = await call(services.db.pop_nav_history, chat_id)
     await delete_many(bot, chat_id, ids)
     await call(services.db.set_nav_message_id, chat_id, None)
+    await call(services.db.list_msg_drop_notes, chat_id, ids)   # меню ушли мимо гашения: итоги записей не нужны
 
 
 async def dismiss_update_reports(bot, services, keep=None) -> None:
@@ -246,6 +248,7 @@ async def forget_nav_if(services, chat_id: int, deleted) -> None:
     nav = await call(services.db.get_nav_message_id, chat_id)
     if nav is not None and int(nav) in deleted:
         await call(services.db.set_nav_message_id, chat_id, None)
+        await call(services.db.list_msg_drop_note, chat_id, int(nav))
 
 
 async def content_finisher(message: Message, services, text: str, role: str,

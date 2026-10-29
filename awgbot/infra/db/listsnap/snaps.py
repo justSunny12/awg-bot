@@ -40,10 +40,10 @@ class _SnapsPart:
         """Снимки и отметки (записи сообщений — `m:` — не здесь)."""
         p = _pkg()
         out = []
-        for row in self._connection().execute(f"SELECT key, value FROM server_state WHERE {p.WHERE}").fetchall():
+        for row in self._connection().execute(
+                f"SELECT key, value FROM server_state WHERE {p.WHERE} AND instr(substr(key, {len(p.PREFIX) + 1}), ':') = 0"
+        ).fetchall():
             key = str(row[0])[len(p.PREFIX):]
-            if ":" in key:
-                continue
             try:
                 data = json.loads(row[1] or "{}")
             except ValueError:
@@ -221,9 +221,11 @@ class _SnapsPart:
         True — привязан."""
         p = _pkg()
         data = self._snap_raw(key)
-        if (not data or data.get("gone") or int(data.get("chat") or 0) != int(chat) or int(data.get("msg") or 0)
-                or expiry.is_due(data)):
+        if (not data or data.get("gone") or int(data.get("chat") or 0) != int(chat)
+                or int(data.get("msg") or 0) not in (0, int(mid)) or expiry.is_due(data)):
             return False
+        if int(data.get("msg") or 0) == int(mid):
+            return True                                   # уже этого сообщения (запись терялась)
         data["msg"] = int(mid)
         with self._tx() as c:
             c.execute("UPDATE server_state SET value = ? WHERE key = ?",

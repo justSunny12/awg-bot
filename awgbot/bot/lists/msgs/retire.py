@@ -32,6 +32,8 @@ async def retire(bot, services, chat: int, mid: int, *, drop: bool = False) -> N
         log.warning("lists: запись сообщения %d чата %d не прочитана: %s", mid, chat, e)
     note = str((rec or {}).get("note") or "")
     if note:
+        from . import NOTE
+        tok = NOTE.set("")                                 # итог нового меню — не этой правке
         try:
             await bot.edit_message_text(chat_id=chat, message_id=mid, text=links.mark_new(note),
                                         reply_markup=None if hide_due(rec) else kb.hide_only(),
@@ -39,7 +41,12 @@ async def retire(bot, services, chat: int, mid: int, *, drop: bool = False) -> N
             log.info("lists: сообщение %d чата %d — меню с итогом оставлено следом", mid, chat)
             return
         except Exception:                                  # noqa: BLE001 — как прежде: снять кнопки
-            pass
+            try:
+                await call(services.db.list_msg_drop_note, chat, mid)   # меню уже не станет следом
+            except Exception:                              # noqa: BLE001
+                pass
+        finally:
+            NOTE.reset(tok)
     if drop:
         try:
             await bot.delete_message(chat_id=chat, message_id=mid)

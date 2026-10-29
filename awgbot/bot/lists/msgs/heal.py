@@ -19,6 +19,7 @@ not modified») обновляет запись сама: посредник (wa
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import logging
 
 from aiogram.exceptions import (TelegramBadRequest, TelegramForbiddenError, TelegramNetworkError,
@@ -39,6 +40,8 @@ _NO_PREVIEW = LinkPreviewOptions(is_disabled=True)
 _locks: dict[int, asyncio.Lock] = {}
 _last: dict[int, float] = {}
 _retry: dict[tuple[int, int], int] = {}     # (чат, номер) → сколько ждать после 429 (такт читает)
+_tasks: set[asyncio.Task] = set()           # фоновые повторы после 429 в действии — держим ссылки
+ACTION_MAX = 3                              # правок в действии за раз: остальное — такту
 
 
 class _Pace:
@@ -94,19 +97,23 @@ async def _edit(bot, rec: dict, html2: str, kb2: str, text_changes: bool) -> Non
 
 async def heal_one(bot, services, rec: dict, *, in_action: bool, pace: _Pace | None = None) -> str:
     """Поправить одно сообщение по записи. Итог: "ok" (поправлено или уже было),
-    "gone" (сообщения нет), "final" (править нечего и не будет), "later" (сеть —
-    повтор позже), "flood" (429 — сколько ждать, в _retry[(чат, номер)]; в
-    действии повтор уже назначен фоновой задачей)."""
+    "noop" (править уже нечего — поправил параллельный heal), "gone" (сообщения
+    нет), "final" (править нечего и не будет), "later" (сеть — повтор позже),
+    "flood" (429 — сколько ждать, в _retry[(чат, номер)]; в действии повтор уже
+    назначен фоновой задачей)."""
     from awgbot.bot.handlers.common import call
     db = services.db
     chat, mid = int(rec["chat"]), int(rec["mid"])
     async with _lock(chat):
+        # темп — до перечитывания: окно между чтением записи и правкой минимально
+        if pace is not None:
+            await pace.wait()
+        await _chat_pace(chat)
         # запись перечитывается под замком чата: две правки разом (вытеснение из двух
-        # действий) — вторая увидит уже поправленное и ничего не пошлёт
-        fresh = [r for r in await call(db.list_msg_due, None, chat) if int(r["mid"]) == mid]
-        if not fresh:
-            return "ok"
-        rec = fresh[0]
+        # действий, такт и догон) — вторая увидит уже поправленное и ничего не пошлёт
+        rec = await call(db.list_msg_due_one, chat, mid)
+        if rec is None:
+            return "noop"
         html2, kb2, text_changes = _plan(rec)
         dead = [str(k) for k in (rec.get("dead") or [])]
         if not text_changes and not rec.get("hide"):
@@ -114,9 +121,6 @@ async def heal_one(bot, services, rec: dict, *, in_action: bool, pace: _Pace | N
             await call(db.list_msg_put, chat, mid, str(rec.get("sent") or ""), html2, None,
                        [k for k in scan.keys(html2) if k not in dead], None)
             return "ok"
-        if pace is not None:
-            await pace.wait()
-        await _chat_pace(chat)
         token = OWN.set(True)
         try:
             await _edit(bot, rec, html2, kb2, text_changes)
@@ -124,9 +128,12 @@ async def heal_one(bot, services, rec: dict, *, in_action: bool, pace: _Pace | N
             wait = min(int(getattr(e, "retry_after", 0) or 0) or WAIT_429_S, RETRY_MAX_S if in_action else WAIT_429_S)
             log.info("lists: сообщение %d чата %d — правка отложена (429, %d с), повтор %s", mid, chat, wait,
                      "фоновой задачей" if in_action else "тактом")
-            if in_action:
-                asyncio.get_running_loop().create_task(_retry_later(bot, services, chat, mid, wait))
             _retry[(chat, mid)] = wait
+            if in_action:
+                task = asyncio.get_running_loop().create_task(_retry_later(bot, services, chat, mid, wait),
+                                                              context=contextvars.Context())
+                _tasks.add(task)
+                task.add_done_callback(_tasks.discard)
             return "flood"
         except TelegramBadRequest as e:
             why = str(e)
@@ -134,7 +141,8 @@ async def heal_one(bot, services, rec: dict, *, in_action: bool, pace: _Pace | N
                 pass
             elif "message to edit not found" in why:
                 keys = await call(db.list_msg_forget, chat, mid, True)
-                log.info("lists: сообщение %d чата %d удалено — снимки %s сняты", mid, chat, keys)
+                if keys:
+                    log.info("lists: сообщение %d чата %d удалено — снимки %s сняты", mid, chat, keys)
                 return "gone"
             else:
                 await call(db.list_msg_final, chat, mid)
@@ -149,11 +157,21 @@ async def heal_one(bot, services, rec: dict, *, in_action: bool, pace: _Pace | N
         except (TelegramNetworkError, TelegramServerError, TelegramUnauthorizedError) as e:
             log.info("lists: сообщение %d чата %d — правка отложена (%s), повтор тактом", mid, chat, e)
             return "later"
+        except Exception as e:                           # noqa: BLE001 — ответ не JSON, незнакомый код: позже
+            log.warning("lists: сообщение %d чата %d — правка отложена (%s), повтор тактом", mid, chat, e)
+            return "later"
         finally:
             OWN.reset(token)
-        # запись — по новому виду (посредник при «not modified» ответа не видел)
+        # обработчик поправил то же сообщение, пока шла правка: его запись новее — не затирать
+        now_rec = await call(db.list_msg_get, chat, mid)
+        if now_rec is not None and str(now_rec.get("upd") or "") != str(rec.get("upd") or ""):
+            log.info("lists: сообщение %d чата %d — запись изменилась во время правки, оставлена", mid, chat)
+            return "ok"
+        # запись — по новому виду (посредник при «not modified» ответа не видел); итог
+        # живого меню тоже без мёртвых ссылок — иначе след вернул бы их в чат
+        note = scan.strip(str(rec.get("note") or ""), dead) if dead and rec.get("note") else None
         await call(db.list_msg_put, chat, mid, str(rec.get("sent") or ""), html2, kb2,
-                   [k for k in scan.keys(html2) if k not in dead], None)
+                   [k for k in scan.keys(html2) if k not in dead], note)
         if dead:
             log.info("lists: сообщение %d чата %d — ссылки на снимки %s сняты правкой", mid, chat, dead)
         return "ok"
@@ -161,12 +179,14 @@ async def heal_one(bot, services, rec: dict, *, in_action: bool, pace: _Pace | N
 
 async def _retry_later(bot, services, chat: int, mid: int, wait: int) -> None:
     await asyncio.sleep(wait)
+    _retry.pop((chat, mid), None)
     try:
         from awgbot.bot.handlers.common import call
         recs = await call(services.db.list_msg_due, None, chat)
         for rec in recs:
             if int(rec["mid"]) == mid:
-                await heal_one(bot, services, rec, in_action=False)
+                if await heal_one(bot, services, rec, in_action=False) == "flood":
+                    _retry.pop((chat, mid), None)      # второй 429 — остаток такту
     except Exception as e:                             # noqa: BLE001
         log.warning("lists: повтор правки сообщения %d чата %d не удался: %s", mid, chat, e)
 
@@ -177,8 +197,10 @@ async def heal_chat(bot, services, chat: int) -> int:
     from awgbot.bot.handlers.common import call
     recs = await call(services.db.list_msg_due, None, chat)
     done = 0
-    for rec in recs:
-        if rec.get("dead") and await heal_one(bot, services, rec, in_action=True) == "ok":
+    for rec in [r for r in recs if r.get("dead")][:ACTION_MAX]:      # остальное — такту: обработчик не ждёт
+        if (int(rec["chat"]), int(rec["mid"])) in _retry:
+            continue                                   # уже ждёт повтора после 429
+        if await heal_one(bot, services, rec, in_action=True) == "ok":
             done += 1
     return done
 
@@ -190,6 +212,9 @@ async def nightly(bot, services) -> dict:
     ни одного запроса в Telegram."""
     from awgbot.bot.handlers.common import call
     expired = await call(services.db.list_snap_expire_due)
+    swept = await call(services.db.list_msg_sweep)       # записи, которым некого править: старше 90 дней
+    if swept:
+        log.info("lists: такт — снято записей сообщений без дела: %d", swept)
     recs = await call(services.db.list_msg_due)
     by_chat: dict[int, list[dict]] = {}
     for rec in recs:
@@ -220,7 +245,9 @@ async def nightly(bot, services) -> dict:
                 elif out == "later":
                     stats["later"] += 1
 
-    await asyncio.gather(*(one_chat(items) for items in by_chat.values()))
+    for r in await asyncio.gather(*(one_chat(items) for items in by_chat.values()), return_exceptions=True):
+        if isinstance(r, BaseException):
+            log.warning("lists: такт — чат не поправлен: %s", r)
     # строка — всегда, и когда делать было нечего: по журналу видно, что такт прошёл
     log.info("lists: такт — истекло снимков %d, поправлено ссылок %d, снято «Скрыть» %d, отложено %d",
              stats["expired"], stats["links"], stats["hide"], stats["later"])

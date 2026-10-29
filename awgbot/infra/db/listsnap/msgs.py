@@ -83,13 +83,15 @@ class _MsgsPart:
             return None
         return data if isinstance(data, dict) and data.get("mid") else None
 
-    def list_msg_all(self) -> list[dict]:
-        """Все записи сообщений (такт, снятие на `away`)."""
+    def list_msg_all(self, chat: int | None = None) -> list[dict]:
+        """Записи сообщений — все (такт, снятие на `away`) или одного чата (правка в
+        действии): выбор по префиксу ключа в SQL, двоеточие после номера чата не
+        даёт -1 совпасть с -100…."""
         p = _pkg()
+        head = p.MSG_PREFIX if chat is None else f"{p.MSG_PREFIX}{int(chat)}:"
         out = []
         for row in self._connection().execute(
-                f"SELECT value FROM server_state WHERE substr(key, 1, {len(p.MSG_PREFIX)}) = ?",
-                (p.MSG_PREFIX,)).fetchall():
+                f"SELECT value FROM server_state WHERE substr(key, 1, {len(head)}) = ?", (head,)).fetchall():
             try:
                 data = json.loads(row[0] or "{}")
             except ValueError:
@@ -164,19 +166,60 @@ class _MsgsPart:
         if self.list_msg_get(chat, mid) is not None:
             self._msg_delete(chat, mid)
 
+    def _msg_due(self, rec: dict, now) -> dict | None:
+        """Запись с полями `dead` (ключи, чьи ссылки снять) и `hide` (ряд «Скрыть»
+        снять) или None — править нечего."""
+        dead = [k for k in (rec.get("keys") or []) if self._snap_dead(str(k), now)]
+        hide = kb_has_hide(rec.get("kb")) and expiry.hide_due(rec, now)
+        return {**rec, "dead": dead, "hide": hide} if dead or hide else None
+
     def list_msg_due(self, now=None, chat: int | None = None) -> list[dict]:
-        """Записи к правке: мёртвые ключи и/или «Скрыть» старше HIDE_KEEP_S. У каждой —
-        `dead` (ключи, чьи ссылки снять) и `hide` (ряд «Скрыть» снять)."""
+        """Записи к правке: мёртвые ключи и/или «Скрыть» старше HIDE_KEEP_S."""
         now = now or timeutil.now()
         out = []
-        for rec in self.list_msg_all():
-            if chat is not None and int(rec.get("chat") or 0) != int(chat):
-                continue
-            dead = [k for k in (rec.get("keys") or []) if self._snap_dead(str(k), now)]
-            hide = kb_has_hide(rec.get("kb")) and expiry.hide_due(rec, now)
-            if dead or hide:
-                out.append({**rec, "dead": dead, "hide": hide})
+        for rec in self.list_msg_all(chat):
+            due = self._msg_due(rec, now)
+            if due:
+                out.append(due)
         return out
+
+    def list_msg_due_one(self, chat: int, mid: int, now=None) -> dict | None:
+        """Одна запись к правке (перечитывание под замком чата) или None."""
+        rec = self.list_msg_get(chat, mid)
+        return self._msg_due(rec, now or timeutil.now()) if rec else None
+
+    def list_msg_drop_note(self, chat: int, mid: int) -> None:
+        """Указатель меню ушёл с сообщения мимо гашения (/start, человек удалил сам,
+        правка до итога не удалась): итог записи больше не нужен — снять; без других
+        причин записи нет."""
+        rec = self.list_msg_get(chat, mid)
+        if rec and rec.get("note"):
+            self.list_msg_put(chat, mid, str(rec.get("sent") or ""), str(rec.get("html") or ""), None,
+                              [str(k) for k in (rec.get("keys") or [])], "")
+
+    def list_msg_drop_notes(self, chat: int, mids) -> None:
+        for mid in mids:
+            self.list_msg_drop_note(chat, int(mid))
+
+    def list_msg_sweep(self, now=None) -> int:
+        """Записи, не менявшиеся дольше TOMB_TTL_S (меню ушло мимо гашения и учёта), —
+        прочь; возвращает число снятых."""
+        p = _pkg()
+        now = now or timeutil.now()
+        gone = []
+        for rec in self.list_msg_all():
+            try:
+                age = timeutil.elapsed(timeutil.parse_iso(str(rec.get("upd") or rec.get("sent") or "")), now)
+            except ValueError:
+                age = float("inf")
+            if age > p.TOMB_TTL_S:
+                gone.append(rec)
+        if gone:
+            with self._tx() as c:
+                c.executemany("DELETE FROM server_state WHERE key = ?",
+                              [(self._msg_key(rec["chat"], rec["mid"]),) for rec in gone])
+                self._tx_note(self._TX_COUNTERS)
+        return len(gone)
 
     def list_msg_drop_live(self) -> int:
         """Право отвечать ушло резерву: записи сообщений с кнопками действия — прочь
