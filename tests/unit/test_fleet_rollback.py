@@ -195,8 +195,9 @@ def test_retry_starts_the_whole_fleet_again_from_what_stands(fleet):
 
 
 def test_no_state_offers_to_go_on_without_a_gateway(fleet):
-    """Кнопки «продолжить без шлюза» нет ни в одном итоге."""
+    """Кнопки «продолжить без шлюза» нет ни в одном итоге; «Скрыть» на итоге нет
+    тоже — нажатая до «⬅️ В меню», она оставила бы админа без меню."""
     from awgbot.bot import keyboards as kb
     for retry in (False, True):
         labels = [b.text for row in kb.fleet_final(retry).inline_keyboard for b in row]
-        assert labels == (["🔁 Повторить", "⬅️ В меню", "Скрыть"] if retry else ["⬅️ В меню", "Скрыть"])
+        assert labels == (["🔁 Повторить", "⬅️ В меню"] if retry else ["⬅️ В меню"]), labels

@@ -3144,7 +3144,8 @@ IMAP и SMTP отвечают, вход выполнен
 ### gw.upd.menu — «В меню» на итоге обновления — панель
 > press upd:menu
 ~ (пустой ответ)
-- markup off #1
+= markup #1
+  [Скрыть | hd]
 + send #2
 🛰 <b>pi</b> 🟢 линк поднят · 12 дн 3 ч
 
@@ -3265,7 +3266,6 @@ IMAP и SMTP отвечают, вход выполнен
 - «🔀 VPN-транзит»: свои списки листаются
 - итог применения конфигурации не терял строку почты</blockquote>
   [⬅️ В меню | upd:menu]
-  [Скрыть | hd]
 
 ### gw.event.updated.fleet — обновление по команде сервера AWG: одна строка без звука
 > call report_update_result
@@ -3279,7 +3279,6 @@ IMAP и SMTP отвечают, вход выполнен
 + send #2
 ⚠️ Обновление до v1.2.4 не применилось, работает v1.2.3 — журнал: <code>journalctl -u awg-bot-selfupdate* -o short-iso</code>
   [⬅️ В меню | upd:menu]
-  [Скрыть | hd]
 
 ### gw.event.rebooted — шлюз перезагрузился — бот снова на связи
 > call _announce_reboot

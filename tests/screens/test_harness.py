@@ -468,3 +468,31 @@ def test_builder_list_counts_each_builder_once_and_skips_helpers():
     for helper in ("common.entry_tag", "common.page_slice", "common.select_all_button", "common.reply_hide",
                    "settings._cycle"):
         assert helper not in b, helper
+
+
+async def test_a_hide_only_keyboard_does_not_make_a_live_menu():
+    """Уведомление или след с одной «Скрыть» — не живое меню: нажатия снимка идут в
+    прежнее меню, а не в след (как у человека: следующий экран — с меню, а не со следа)."""
+    session = harness.StubSession(42, catalog.NOW)
+    bot = harness.make_bot(session)
+    await bot.send_message(42, "меню", reply_markup=_kb([("👥 Пользователи", "m:users")]))
+    await bot.send_message(42, "✅ Готово", reply_markup=_kb([("Скрыть", "hd")]))
+    await bot.edit_message_reply_markup(chat_id=42, message_id=3, reply_markup=_kb([("Скрыть", "hd")]))
+    assert session.nav == 2, f"«Скрыть»-клавиатура стала живым меню заглушки: #{session.nav}"
+    await bot.send_message(42, "⏱ Подписка", reply_markup=_kb([("⏱ Продлить", "ext:take:5")], [("Скрыть", "hd")]))
+    assert session.nav == 4, "кнопка действия над «Скрыть» — это меню"
+
+
+async def test_strict_mode_refuses_an_edit_of_a_deleted_message_as_telegram_does():
+    """Флаг снимка «правка удалённого — отказ»: правка удалённого получает
+    «message to edit not found», как в бою; без флага — строка записи и молчаливый ответ."""
+    from aiogram.exceptions import TelegramBadRequest
+    session = harness.StubSession(42, catalog.NOW, strict_deleted=True)
+    bot = harness.make_bot(session)
+    await bot.delete_message(42, 1)
+    with pytest.raises(TelegramBadRequest, match="message to edit not found"):
+        await bot.edit_message_text("новый", chat_id=42, message_id=1)
+    with pytest.raises(TelegramBadRequest, match="message to edit not found"):
+        await bot.edit_message_reply_markup(chat_id=42, message_id=1, reply_markup=None)
+    assert [c.head for c in session.calls] == ["- delete #1", "! правка удалённого #1 — отказ",
+                                               "! правка удалённого #1 — отказ"], [c.head for c in session.calls]

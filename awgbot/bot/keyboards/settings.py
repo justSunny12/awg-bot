@@ -8,7 +8,7 @@ from awgbot.core import settings
 from awgbot.bot import ui
 from awgbot.bot.callbacks import Menu, UpdateCB, SetCB, HideCB
 
-from .common import append_hide_row, entry_tag, confirm
+from .common import entry_tag, confirm
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -168,16 +168,17 @@ def fleet_confirm(tag: str) -> InlineKeyboardMarkup:
 
 
 def fleet_final(retry: bool) -> InlineKeyboardMarkup:
-    """Итог хода обновления: «⬅️ В меню» и «Скрыть» (итог — уведомление: кто не
-    хочет держать его в истории, убирает сам); ход откатился или откат не
-    прошёл — «🔁 Повторить» первой (всё заново; «продолжить без шлюза» нет)."""
-    return append_hide_row(ui.rows([("🔁 Повторить", UpdateCB(action="retry")), ui.to_menu(UpdateCB(action="menu"))]
-                                   if retry else ui.to_menu(UpdateCB(action="menu"))))
+    """Итог хода обновления: «⬅️ В меню»; ход откатился или откат не прошёл —
+    «🔁 Повторить» первой (всё заново; «продолжить без шлюза» нет). «Скрыть»
+    здесь нет: нажатая до «⬅️ В меню», она оставила бы админа без меню —
+    после «⬅️ В меню» итог остаётся выше с одной «Скрыть» (updates_flow.menu)."""
+    return ui.rows([("🔁 Повторить", UpdateCB(action="retry")), ui.to_menu(UpdateCB(action="menu"))]
+                   if retry else ui.to_menu(UpdateCB(action="menu")))
 
 
 def update_done_menu() -> InlineKeyboardMarkup:
-    """«В меню» и «Скрыть» на итоговом сообщении self-update. Свой колбэк
-    (upd:menu), а не Menu(main): стандартный обработчик РЕДАКТИРУЕТ сообщение
-    в панель, а итог остаётся в истории — кнопка лишь снимается, меню приходит
-    новым сообщением; «Скрыть» убирает итог, когда он больше не нужен."""
-    return append_hide_row(ui.rows(ui.to_menu(UpdateCB(action="menu"))))
+    """«В меню» на итоговом сообщении self-update. Свой колбэк (upd:menu), а не
+    Menu(main): стандартный обработчик РЕДАКТИРУЕТ сообщение в панель, а итог
+    остаётся в истории — после нажатия на нём одна «Скрыть», меню приходит
+    новым сообщением."""
+    return ui.rows(ui.to_menu(UpdateCB(action="menu")))

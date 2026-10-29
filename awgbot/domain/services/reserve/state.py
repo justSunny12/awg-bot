@@ -15,10 +15,13 @@ state.py — часть пакета reserve (см. __init__): пара в БД 
 from __future__ import annotations
 
 import json
+import logging
 import threading
 import time
 
 from awgbot.util import timeutil
+
+log = logging.getLogger(__name__)
 
 KEYS: tuple[str, ...] = (
     "rsv_invite", "rsv_peer_state", "rsv_out", "rsv_in", "rsv_poll", "rsv_keys", "rsv_view",
@@ -110,10 +113,21 @@ class ReserveStateMixin:
     def reserve_set_poll(self, state: str, **why) -> dict:
         if state not in POLL_STATES:
             raise ValueError(f"не право ответа: {state}")
+        prev = str(self.rsv_get("rsv_poll").get("state") or "")
         # why/url — только этого решения: прежнее «webhook» не должно пережить «mine»
         out = self.rsv_update("rsv_poll", state=state, since=timeutil.now_iso(), at_ts=time.time(),
                               **{"why": "", "url": "", **why})
         self.reserve_epoch_sync()                         # право записи — по новому состоянию (не по слову Telegram)
+        if state == "away" and prev != "away":
+            # бот на резерве правит живые меню и снимает кнопки уведомлений сам: сохранённые
+            # клавиатуры таких сообщений перестают быть правдой — записи прочь (снимки живут до срока)
+            try:
+                n = self.db.list_msg_drop_live()
+            except Exception as e:                        # noqa: BLE001 — передача права важнее учёта
+                log.warning("lists: записи сообщений с кнопками действия не сняты: %s", e)
+            else:
+                if n:
+                    log.info("lists: право отвечать у резерва — записи сообщений с кнопками действия сняты: %d", n)
         return out
 
     def reserve_busy(self) -> str:

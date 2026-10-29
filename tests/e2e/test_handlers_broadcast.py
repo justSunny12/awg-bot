@@ -462,3 +462,33 @@ async def test_broadcast_draft_chain_is_cleaned_on_cancel(services, make_active_
     tracked = services.db.pop_content_msg_ids(chat)
     assert msg.message_id in tracked, "сообщение админа осталось бы висеть"
     assert 555 in tracked, "экран-приглашение осталось бы висеть"
+
+
+# ── отчёт о доставке — след со «Скрыть» ─────────────────────────────────────
+
+@pytest.mark.parametrize("photos", [[], ["A"]])
+async def test_the_delivery_report_is_a_trace_with_one_hide_in_both_paths(services, make_active_client, fake_bot,
+                                                                         photos):
+    """Без картинок отчёт приходит отдельным сообщением, с картинками — правкой блока
+    подтверждения; в обоих путях на отчёте одна «Скрыть» и никакой навигации: без
+    неё следа не убрать, с навигацией в чате два живых меню. Объявление над отчётом
+    (без картинок — само превью) остаётся без кнопок."""
+    from tests.conftest import FakeCallback, FakeMessage
+    from awgbot.bot.handlers.admin import broadcast as admin_h
+    import awgbot.core.config as cfg
+
+    admin_h._last_broadcast_at.clear()           # защита от второго нажатия — память процесса
+    c = make_active_client(name="Ксюша", tg_id=7031)
+    state = FakeState()
+    await state.update_data(targets=[c.id], photos=photos, text="Плановые работы")
+    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    await admin_h.broadcast_send(FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot), state, services)
+    reports = [(kind, mk) for kind, t, mk in msg.sent if t and t.startswith("✅ Отправлено")]
+    assert len(reports) == 1, f"отчёта нет или он не один: {[(k, (t or '')[:40]) for k, t, _ in msg.sent]}"
+    kind, mk = reports[0]
+    assert kind == ("edit_text" if photos else "answer"), f"отчёт пришёл не тем путём: {kind}"
+    rows = [[(b.text, b.callback_data) for b in row] for row in mk.inline_keyboard] if mk is not None else None
+    assert rows == [[("Скрыть", "hd")]], f"на отчёте не одна «Скрыть»: {rows}"
+    if not photos:
+        shown = [mk for kind, t, mk in msg.sent if kind == "edit_text"]
+        assert shown and shown[0] is None, "у объявления над отчётом появились кнопки"

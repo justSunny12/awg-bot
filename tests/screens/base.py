@@ -45,7 +45,9 @@ class Shot:
     (функция (services, bot) → корутина; или (имя, функция)). Печатается
     последний шаг. conf — настройки поверх копии conf/ тестов; data —
     построитель состояния (services[, monkeypatch снимка]) → (tg_id, имя) того,
-    кто действует; photo — сообщение #1, под которым жмут, — фото."""
+    кто действует; photo — сообщение #1, под которым жмут, — фото;
+    strict_deleted — правка удалённого получает отказ Telegram «message to
+    edit not found», а не пишется молча."""
     id: str
     role: str
     press: tuple = ()
@@ -57,6 +59,7 @@ class Shot:
     steps: tuple = ()
     call: object = None
     photo: bool = False
+    strict_deleted: bool = False
 
     def __post_init__(self):
         object.__setattr__(self, "press", tuple(self.press))

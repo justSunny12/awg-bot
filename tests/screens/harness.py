@@ -86,6 +86,18 @@ class Record:
     action: str
     calls: list[Call] = field(default_factory=list)
     everything: list[Call] = field(default_factory=list)
+    notes: dict[int, str] = field(default_factory=dict)   # итоги записей сообщений чата снимка в конце
+
+
+_NOT_FOUND = object()           # ответ заглушки «правка удалённого — отказ»
+
+
+def is_menu(markup) -> bool:
+    """Клавиатура живого меню: инлайн-кнопки кроме «Скрыть» (hd). Уведомление или
+    след с одной «Скрыть» меню не становится — нажатия идут в прежнее меню."""
+    if not isinstance(markup, InlineKeyboardMarkup):
+        return False
+    return any(b.callback_data != "hd" for row in markup.inline_keyboard for b in row)
 
 
 class StubSession(BaseSession):
@@ -101,8 +113,12 @@ class StubSession(BaseSession):
     peers — подписи чатов-адресатов ({tg_id: «админ»}).
     """
 
-    def __init__(self, chat_id: int, now: _dt.datetime, peers: dict | None = None):
+    def __init__(self, chat_id: int, now: _dt.datetime, peers: dict | None = None, *,
+                 strict_deleted: bool = False):
         super().__init__()
+        # правка удалённого — отказ Telegram «message to edit not found» (как в бою), а не
+        # молчаливая строка записи: так снимок проверяет, что бот разбирает этот отказ
+        self.strict_deleted = bool(strict_deleted)
         self.chat_id = int(chat_id)
         self.date = int(now.timestamp())
         self.peers = dict(peers or {})
@@ -122,7 +138,7 @@ class StubSession(BaseSession):
 
     def remember(self, chat: int, mid: int, *, text=None, caption=None, photo=False, markup=None) -> None:
         self.messages[(chat, mid)] = {"text": text, "caption": caption, "photo": photo}
-        if chat == self.chat_id and isinstance(markup, InlineKeyboardMarkup):
+        if chat == self.chat_id and is_menu(markup):
             self.nav = mid
 
     def _to(self, chat) -> str:
@@ -144,9 +160,14 @@ class StubSession(BaseSession):
             return self._msg(chat, mid, photo=_PHOTO, caption=have.get("caption"))
         return self._msg(chat, mid, text=have.get("text") or "…")
 
-    def _edited(self, chat: int, mid: int) -> None:
+    def _edited(self, chat: int, mid: int) -> bool:
+        """Правка удалённого: строка записи; в строгом режиме — отказ (True)."""
         if (chat, mid) in self.deleted:
+            if self.strict_deleted:
+                self.calls.append(Call(f"! правка удалённого #{mid}{self._to(chat)} — отказ"))
+                return True
             self.calls.append(Call(f"! правка удалённого #{mid}{self._to(chat)}"))
+        return False
 
     # ── ответы ────────────────────────────────────────────────────────────
 
@@ -168,32 +189,36 @@ class StubSession(BaseSession):
             return self._msg(chat, mid, text=method.text)
         if isinstance(method, EditMessageText):
             mid = int(method.message_id or 0)
-            self._edited(chat, mid)
+            if self._edited(chat, mid):
+                return _NOT_FOUND
             self.calls.append(Call(f"= edit #{mid}{to}", method.text, markup=method.reply_markup))
             self.remember(chat, mid, text=method.text, markup=method.reply_markup)
             return self._msg(chat, mid, text=method.text)
         if isinstance(method, EditMessageCaption):
             mid = int(method.message_id or 0)
-            self._edited(chat, mid)
+            if self._edited(chat, mid):
+                return _NOT_FOUND
             self.calls.append(Call(f"= caption #{mid}{to}", method.caption, caption=True,
                                    markup=method.reply_markup))
             self.remember(chat, mid, caption=method.caption, photo=True, markup=method.reply_markup)
             return self._msg(chat, mid, caption=method.caption, photo=_PHOTO)
         if isinstance(method, EditMessageMedia):
             mid = int(method.message_id or 0)
-            self._edited(chat, mid)
+            if self._edited(chat, mid):
+                return _NOT_FOUND
             cap = getattr(method.media, "caption", None)
             self.calls.append(Call(f"= media #{mid}{to}", cap, caption=True, markup=method.reply_markup))
             self.remember(chat, mid, caption=cap, photo=True, markup=method.reply_markup)
             return self._msg(chat, mid, caption=cap, photo=_PHOTO)
         if isinstance(method, EditMessageReplyMarkup):
             mid = int(method.message_id or 0)
-            self._edited(chat, mid)
+            if self._edited(chat, mid):
+                return _NOT_FOUND
             if method.reply_markup is None or not getattr(method.reply_markup, "inline_keyboard", None):
                 self.calls.append(Call(f"- markup off #{mid}{to}"))
             else:
                 self.calls.append(Call(f"= markup #{mid}{to}", markup=method.reply_markup))
-                if chat == self.chat_id:
+                if chat == self.chat_id and is_menu(method.reply_markup):
                     self.nav = mid
             return self._known(chat, mid)
         if isinstance(method, DeleteMessage):
@@ -239,6 +264,10 @@ class StubSession(BaseSession):
 
     async def make_request(self, bot, method, timeout=None):
         result = self._answer(method)
+        if result is _NOT_FOUND:
+            content = json.dumps({"ok": False, "error_code": 400,
+                                  "description": "Bad Request: message to edit not found"})
+            return self.check_response(bot=bot, method=method, status_code=400, content=content).result
         content = json.dumps({"ok": True, "result": result}, ensure_ascii=False)
         return self.check_response(bot=bot, method=method, status_code=200, content=content).result
 
@@ -254,10 +283,16 @@ class StubSession(BaseSession):
         pass
 
 
-def make_bot(session: StubSession) -> Bot:
-    """Бот, как в runtime/main/: HTML по умолчанию, без превью ссылок."""
-    return Bot(BOT_TOKEN, session=session,
-               default=DefaultBotProperties(parse_mode=ParseMode.HTML, link_preview_is_disabled=True))
+def make_bot(session: StubSession, services=None) -> Bot:
+    """Бот, как в runtime/main/: HTML по умолчанию, без превью ссылок; с
+    сервисами — и посредник записей сообщений на сессии (lists/msgs.attach),
+    как в бою: снимок видит правку ссылок и след из погашенного меню."""
+    bot = Bot(BOT_TOKEN, session=session,
+              default=DefaultBotProperties(parse_mode=ParseMode.HTML, link_preview_is_disabled=True))
+    if services is not None:
+        from awgbot.bot.lists import msgs
+        msgs.attach(bot, services)
+    return bot
 
 
 # ── построитель событий ──────────────────────────────────────────────────────
@@ -334,7 +369,7 @@ async def run(dp, session: StubSession, *, uid: int, name: str, steps, services=
               photo: bool = False) -> Record:
     """Прогнать шаги снимка через диспетчер; вернуть запись последнего.
     photo — сообщение #1, под которым жмут кнопку, — фото с подписью."""
-    bot = make_bot(session)
+    bot = make_bot(session, services)
     steps = [check_step(s) for s in steps]
     assert steps, "у снимка нет ни одного шага"
     if photo:
@@ -437,6 +472,11 @@ def _reset_module_state(mp) -> None:
     mp.setattr(pairlink, "_on_event", None)
     mp.setattr(pairlink, "_on_notes", None)
     rsv_invite._live_set(None)
+    # правка сообщений по записям: замки и темп по чатам — модульные (замок прежнего
+    # цикла событий в новом не годится, темп прошлого снимка задержал бы правку этого)
+    from awgbot.bot.lists.msgs import heal
+    heal._locks.clear()
+    heal._last.clear()
     # ключ снимка события — по счёту внутри снимка, а не из secrets: ссылка
     # «и ещё N» (list-snap-<ключ>) в эталоне иначе менялась бы от прогона к прогону
     from awgbot.infra.db import listsnap
@@ -476,9 +516,12 @@ async def take(shot: base.Shot, tmp: pathlib.Path, fakes=()) -> Record:
             access_cache.invalidate_all()
             # бот основы на резерве: снимок включает config.GUEST шагом данных — диспетчер роли guest
             dp = make_dispatcher("guest" if config.GUEST else base.DISPATCHER[shot.role], services, db, reattach=True)
-            session = StubSession(uid, base.NOW, base.PEERS)
-            return await run(dp, session, uid=uid, name=name, steps=shot.all_steps(),
-                                     services=services, photo=shot.photo)
+            session = StubSession(uid, base.NOW, base.PEERS, strict_deleted=shot.strict_deleted)
+            rec = await run(dp, session, uid=uid, name=name, steps=shot.all_steps(),
+                            services=services, photo=shot.photo)
+            rec.notes = {int(r["mid"]): str(r["note"]) for r in db.list_msg_all()
+                         if int(r.get("chat") or 0) == int(uid) and r.get("note")}
+            return rec
         finally:
             db.close()
 
@@ -762,6 +805,28 @@ def problems(shot_id: str, rec: Record, label_exceptions: dict[str, set[str]]) -
     return out
 
 
+_MARKUP_OFF = re.compile(r"^- markup off #(\d+)$")
+
+
+def listmsg_problems(shot_id: str, rec: Record) -> list[str]:
+    """Сторож записей сообщений: сообщение со ссылкой на снимок (`list-snap-`) несёт
+    «Скрыть» или оно — живое меню (есть другие кнопки): ссылка без способа убрать
+    сообщение висит до смерти снимка; меню с итогом (у записи есть итог) не гаснет
+    в «- markup off» — оно становится следом из одного итога."""
+    out = []
+    for c in rec.calls:
+        if c.body and "list-snap-" in c.body and not c.head.startswith("~"):
+            buttons = ([b for row in c.markup.inline_keyboard for b in row]
+                       if isinstance(c.markup, InlineKeyboardMarkup) else [])
+            if not buttons:
+                out.append(f"{shot_id} {c.head}: ссылка на снимок без «Скрыть» и не на живом меню")
+    for c in rec.everything:
+        m = _MARKUP_OFF.match(c.head)
+        if m and int(m.group(1)) in rec.notes:
+            out.append(f"{shot_id} {c.head}: меню с итогом погашено целиком, а не следом из итога")
+    return out
+
+
 def long_labels(rec: Record) -> set[str]:
     """Длинные подписи в рядах из 2+ — для сторожа отживших исключений."""
     return {b.text for c in rec.calls if isinstance(c.markup, InlineKeyboardMarkup)
@@ -777,5 +842,5 @@ def circle_actions_seen(rec: Record) -> set[str]:
 
 
 __all__ = ["keyboard_builders", "unannotated_keyboard_functions", "BuilderCalls", "StubSession", "Record", "Call", "run", "take", "run_builder", "check_step", "serialize",
-           "problems", "html_problems", "plain", "long_labels", "circle_actions_seen", "packed", "CallbackData",
+           "problems", "html_problems", "plain", "long_labels", "listmsg_problems", "is_menu", "circle_actions_seen", "packed", "CallbackData",
            "BOT_USERNAME"]

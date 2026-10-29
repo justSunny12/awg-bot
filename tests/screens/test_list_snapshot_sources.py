@@ -289,7 +289,8 @@ async def test_a_tj4_with_five_disputes_has_no_tail_and_no_snapshot(tmp_path, fr
 
     async def count(services, bot):
         n = services.db._connection().execute(
-            "SELECT COUNT(*) FROM server_state WHERE substr(key, 1, 10) = 'list_snap:'").fetchone()[0]
+            "SELECT COUNT(*) FROM server_state WHERE substr(key, 1, 10) = 'list_snap:'"
+            " AND substr(key, 1, 12) != 'list_snap:m:'").fetchone()[0]   # записи сообщений — не снимки
         await bot.send_message(1, f"снимков: {n}")
     rec = await _rec(tmp_path, fakes, Shot("tj4.five", role="admin", data=ss._people,
                                            steps=[("call", fire, "Т-Ж4"), ("call", count, "счёт")]))
@@ -304,7 +305,8 @@ async def test_five_rejects_of_a_reason_make_no_snapshot(tmp_path, frozen, fakes
 
     async def count(services, bot):
         n = services.db._connection().execute(
-            "SELECT COUNT(*) FROM server_state WHERE substr(key, 1, 10) = 'list_snap:'").fetchone()[0]
+            "SELECT COUNT(*) FROM server_state WHERE substr(key, 1, 10) = 'list_snap:'"
+            " AND substr(key, 1, 12) != 'list_snap:m:'").fetchone()[0]   # записи сообщений — не снимки
         await bot.send_message(1, f"снимков: {n}")
     five = "\n".join(f"bad{i}..ru" for i in range(5))
     rec = await _rec(tmp_path, fakes, Shot("sites.five", role="admin", data=ss._ks_sites, steps=[

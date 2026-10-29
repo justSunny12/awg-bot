@@ -16,13 +16,14 @@ from awgbot.core import settings
 
 
 async def menu(cb: CallbackQuery, services, state: FSMContext, *, return_panel) -> None:
-    """«В меню» на итоге self-update: текст остаётся в истории, снимается
-    только клавиатура — у этого и у всех прочих окон обновления (живой должна
+    """«В меню» на итоге self-update: текст остаётся в истории с одной «Скрыть»
+    (след на сутки), у прочих окон обновления кнопки снимаются (живой должна
     быть одна кнопка); меню — новым сообщением."""
+    from awgbot.bot import keyboards as kb
     await cb.answer()
     await state.clear()
     try:
-        await cb.message.edit_reply_markup(reply_markup=None)
+        await cb.message.edit_reply_markup(reply_markup=kb.hide_only())
     except Exception:                                 # noqa: BLE001
         pass
     await dismiss_update_reports(cb.bot, services,

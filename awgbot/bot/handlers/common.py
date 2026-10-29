@@ -40,32 +40,27 @@ async def call(fn, *args, **kwargs):
 # ─────────────────────────────────────────────────────────────────────────────
 
 async def _dismiss_previous_nav(bot, services, chat_id: int, keep_id=None) -> None:
-    """Снять inline-кнопки у ранее показанного нав-сообщения (если оно не то же,
-    что сейчас редактируем). Ошибки (сообщение удалено/старое) — глушим."""
+    """Погасить ранее показанное нав-сообщение (если оно не то же, что сейчас
+    редактируем): прежнее меню с итогом первой строкой становится следом (один
+    итог и «Скрыть»), без итога — кнопки долой (bot/lists/msgs/retire). Ошибки
+    (сообщение удалено/старое) — глушим."""
     prev = await call(services.db.get_nav_message_id, chat_id)
     if prev is None or prev == keep_id:
         return
-    try:
-        await bot.edit_message_reply_markup(chat_id=chat_id, message_id=prev,
-                                            reply_markup=None)
-    except Exception:
-        pass
+    from awgbot.bot.lists.msgs import retire
+    await retire.retire(bot, services, chat_id, prev)
 
 
 async def drop_previous_nav(bot, services, chat_id: int) -> None:
     """Удалить прежнее нав-сообщение целиком, а не снять с него кнопки: когда
     следующий экран приходит новым сообщением по внешнему событию (файл
-    конфигурации в чате агента), панель без кнопок над ним — просто мусор."""
+    конфигурации в чате агента), панель без кнопок над ним — просто мусор;
+    прежнее с итогом первой строкой — остаётся следом (bot/lists/msgs/retire)."""
     prev = await call(services.db.get_nav_message_id, chat_id)
     if prev is None:
         return
-    try:
-        await bot.delete_message(chat_id=chat_id, message_id=prev)
-    except Exception:                                      # noqa: BLE001
-        try:
-            await bot.edit_message_reply_markup(chat_id=chat_id, message_id=prev, reply_markup=None)
-        except Exception:                                  # noqa: BLE001
-            pass
+    from awgbot.bot.lists.msgs import retire
+    await retire.retire(bot, services, chat_id, prev, drop=True)   # с итогом — след, без — удалить
     await call(services.db.set_nav_message_id, chat_id, None)
 
 
@@ -283,11 +278,8 @@ async def edit_nav(cb: CallbackQuery, services, text, markup) -> None:
     # один хоп: прежнее активное + запись нового + история в одной транзакции
     prev = await call(services.db.nav_touch, chat_id, cur_id)
     if prev is not None and prev != cur_id:
-        try:
-            await cb.message.bot.edit_message_reply_markup(chat_id=chat_id, message_id=prev,
-                                                           reply_markup=None)
-        except Exception:                                  # noqa: BLE001
-            pass
+        from awgbot.bot.lists.msgs import retire
+        await retire.retire(cb.message.bot, services, chat_id, prev)   # прежнее с итогом — след
     await edit(cb, text, markup)
 
 

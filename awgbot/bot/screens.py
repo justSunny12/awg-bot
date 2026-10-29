@@ -40,7 +40,14 @@ log = logging.getLogger(__name__)
 
 
 def with_note(text: str, note: str) -> str:
-    return f"{note}\n\n{text}" if note else text
+    """Итог первой строкой экрана. Запоминается в контексте задачи (lists/msgs.NOTE):
+    посредник сессии положит его в запись сообщения — по нему погашенное меню
+    становится следом."""
+    if not note:
+        return text
+    from awgbot.bot.lists import msgs
+    msgs.NOTE.set(note)
+    return f"{note}\n\n{text}"
 
 
 async def render(kind: str, ref: int = 0, *, services, role: str, client=None,

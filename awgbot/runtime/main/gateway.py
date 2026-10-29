@@ -55,6 +55,8 @@ async def run_gateway() -> None:
     # отметка жизни для сторожа обновления: первый ответ на getUpdates или
     # первое подписанное слово сервера AWG в канале (linkclient) — что раньше
     alive.watch(bot)
+    from awgbot.bot.lists import msgs
+    msgs.attach(bot, services)                   # записи сообщений: снимки, «Скрыть», итоги
     token_dead = False
     try:
         me = await bot.get_me()

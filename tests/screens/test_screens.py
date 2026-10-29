@@ -154,6 +154,7 @@ async def _take_role(shots, tmp_path, fakes, notified):
         assert rec.calls, f"{shot.id}: бот ничего не ответил на последнее действие"
         bad += harness.problems(shot.id, rec, catalog.LABEL_EXCEPTIONS)
         bad += marks.problems(shot.id, rec, notified)
+        bad += harness.listmsg_problems(shot.id, rec)
         found, used = timelabels.problems(shot.id, rec, catalog.TIME_LABEL_EXCEPTIONS, _expected_labels(shot))
         bad += found
         spare_t = catalog.TIME_LABEL_EXCEPTIONS.get(shot.id, set()) - used

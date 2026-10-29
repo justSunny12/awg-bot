@@ -85,18 +85,20 @@ async def test_send_notifications_uses_the_action_and_keeps_own_markup_first():
 async def test_keyboard_hint_becomes_the_named_bot_keyboard():
     """Домен не видит слой бота и называет готовую клавиатуру по имени
     (Notification.keyboard): notifier собирает ту же, что раньше клал домен, —
-    «⬅️ В меню» итога обновления (upd:menu). reply_markup главнее имени;
-    незнакомое имя — «Скрыть», как без клавиатуры."""
+    «⬅️ В меню» итога обновления (upd:menu), без «Скрыть»: нажатая до «⬅️ В
+    меню», она оставила бы админа без меню (на итоге она появляется после
+    «⬅️ В меню»). reply_markup главнее имени; незнакомое имя — «Скрыть», как
+    без клавиатуры."""
     done = Notification(ADMIN, "x", keyboard="update_done")
     assert notifier.note_markup(done) == kb.update_done_menu()
-    assert _rows(notifier.note_markup(done)) == [[("⬅️ В меню", "upd:menu")], [("Скрыть", "hd")]]
+    assert _rows(notifier.note_markup(done)) == [[("⬅️ В меню", "upd:menu")]], "на итоге обновления — «Скрыть»"
     own = kb.hide_only()
     assert notifier.note_markup(Notification(ADMIN, "x", reply_markup=own, keyboard="update_done")) is own
     assert notifier.note_markup(Notification(ADMIN, "x", keyboard="nope")) is None
     bot = RecordingBot()
     await notifier.send_notifications(bot, [done, Notification(222, "y", keyboard="nope")])
     by = {c[0]: c[2] for c in bot.calls}
-    assert _rows(by[ADMIN]) == [[("⬅️ В меню", "upd:menu")], [("Скрыть", "hd")]]
+    assert _rows(by[ADMIN]) == [[("⬅️ В меню", "upd:menu")]], "итог обновления ушёл со «Скрыть»"
     assert _rows(by[222]) == [[("Скрыть", HideCB().pack())]]
 
 

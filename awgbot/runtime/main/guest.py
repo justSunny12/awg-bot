@@ -62,6 +62,8 @@ async def run_guest() -> None:
     from awgbot.runtime import tgsession
     bot = pkg.Bot(config.BOT_TOKEN, session=tgsession.make(),
                   default=DefaultBotProperties(parse_mode=ParseMode.HTML, link_preview_is_disabled=True))
+    from awgbot.bot.lists import msgs
+    msgs.attach(bot, services)                       # записи сообщений — в базе зоны
     try:
         me = await bot.get_me()
         services.bot_username = me.username or ""

@@ -156,11 +156,12 @@ async def _record(cb: CallbackQuery, text: str, services):
     следующей навигации и унесла бы ответ с собой: экран переписывается, и от
     итога не остаётся ничего.
 
-    Кнопок на записи нет намеренно — иначе в чате оказалось бы два живых меню,
-    и инвариант «одно активное» держать было бы нечем. Раздел приходит следом
-    новым сообщением, как отчёт о рассылке.
+    На записи одна «Скрыть» (на сутки): это не навигация и второго живого
+    меню не создаёт — указатель меню уже у нового (send_menu с keep_id его не
+    гасит). Раздел приходит следом новым сообщением, как отчёт о рассылке.
     """
-    await edit(cb, text, None)
+    from awgbot.bot import keyboards as _kb
+    await edit(cb, text, _kb.hide_only())
     from awgbot.bot import sections
     await send_menu(cb.message, services, *await sections.screen("svc", MAIN, services),
                     keep_id=cb.message.message_id)

@@ -107,8 +107,8 @@ async def test_each_migration_event_leaves_a_record_in_the_chat(
 
     Ветка настроек живёт до следующей навигации: экран переписывается, и от
     итога не остаётся ничего — а спрашивают о нём потом, «когда начали и чем
-    кончилось». Поэтому запись без кнопок (иначе в чате два живых меню), а
-    раздел приходит следующим сообщением.
+    кончилось». Поэтому на записи одна «Скрыть» (на сутки) и никакой навигации
+    (иначе в чате два живых меню), а раздел приходит следующим сообщением.
     """
     c = make_active_client(name="c", tg_id=7093)
     dc = services.add_device(c.id, "Тел")
@@ -121,5 +121,7 @@ async def test_each_migration_event_leaves_a_record_in_the_chat(
 
     edits = [(t, m) for kind, t, m in msg.sent if kind == "edit_text"]
     assert edits and mark in edits[-1][0], "итог не показан"
-    assert edits[-1][1] is None, "на записи остались кнопки — второе живое меню"
+    kb = edits[-1][1]
+    rows = [[(b.text, b.callback_data) for b in row] for row in kb.inline_keyboard] if kb is not None else None
+    assert rows == [[("Скрыть", "hd")]], f"на записи не одна «Скрыть» (навигация — второе живое меню): {rows}"
     assert [t for kind, t, _ in msg.sent if kind == "answer"], "раздел не пришёл следом"

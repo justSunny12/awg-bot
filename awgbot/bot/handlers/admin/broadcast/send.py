@@ -117,11 +117,12 @@ async def broadcast_send(cb: CallbackQuery, state: FSMContext, services):
     aud_more, und_more = await _report_snaps(services, cb.message.chat.id, clients, failed, bot_u)
     report = links.mark_new(texts.broadcast_report(clients, friends, ok, failed, extension, bot_username=bot_u,
                                                    audience_more=aud_more, undelivered_more=und_more))
+    from awgbot.bot import keyboards as _kb
     if photos:
-        await edit(cb, report, None)
+        await edit(cb, report, _kb.hide_only())                   # отчёт — след со «Скрыть» на сутки
     else:
         await edit(cb, shown, None)
-        await cb.message.answer(report)
+        await cb.message.answer(report, reply_markup=_kb.hide_only())
     # Панель — СЛЕДУЮЩИМ сообщением, со своим обычным текстом и статусами.
     # Прежде отчёт нёс на себе клавиатуру главного меню: тогда он либо
     # переписывался при следующей навигации, либо оставлял в чате второе живое

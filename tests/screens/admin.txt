@@ -3031,7 +3031,6 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 <blockquote expandable>- исправлено одно
 - добавлено другое</blockquote>
   [⬅️ В меню | upd:menu]
-  [Скрыть | hd]
 
 ### adm.fleet.rolled_back — набор откатился: причина и шлюз, «🔁 Повторить» · «⬅️ В меню»
 > call такт набора
@@ -3042,7 +3041,6 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 🟡 «<a href="https://t.me/test_bot?start=gw-3-n">Дача</a>» — не на связи с 12.09, остался на v1.2.3
 ↩️ Сервер AWG — вернул v1.2.3
   [🔁 Повторить | upd:retry] [⬅️ В меню | upd:menu]
-  [Скрыть | hd]
 
 ### adm.fleet.rollback_failed — откат не прошёл: шлюз остался на новой, команд нет до «🔁 Повторить»
 > call такт набора
@@ -3050,7 +3048,6 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 ⚠️ <b>Откат не удался</b>: «<a href="https://t.me/test_bot?start=gw-1-n">NASPi</a>» остался на v1.3.0 — прежней версии нет
 Сервер AWG — v1.2.3. Пока не нажмёшь «🔁 Повторить», сервер AWG шлюзам команд не шлёт; журнал шлюза: <code>journalctl -u awg-bot -o short-iso</code>
   [🔁 Повторить | upd:retry] [⬅️ В меню | upd:menu]
-  [Скрыть | hd]
 
 ### adm.ev.fleet.catchup — шлюз вышел на связь и обновлён — без звука
 > call догон
@@ -3085,7 +3082,6 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 🟡 «<a href="https://t.me/test_bot?start=gw-2-n">Pi4</a>» (офис) — не на связи с 12.09, остался на v1.2.3
 ⚠️ Сервер AWG — обновление не удалось, вернул v1.2.3: обновлённый сервер AWG не вышел на связь за 10 минут
   [🔁 Повторить | upd:retry] [⬅️ В меню | upd:menu]
-  [Скрыть | hd]
 + send #2
 ⚠️ Обновление до v1.3.0 отменено: обновлённый сервер AWG не вышел на связь за 10 минут — вернул v1.2.3. Журнал: <code>journalctl -u awg-bot -o short-iso</code>
   [Скрыть | hd]
@@ -3143,7 +3139,8 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 ### adm.upd.menu — «В меню» на итоге обновления
 > press upd:menu
 ~ (пустой ответ)
-- markup off #1
+= markup #1
+  [Скрыть | hd]
 + send #2
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
@@ -3989,6 +3986,7 @@ Pi4 — 🟢 Резерв
 Готовность к завершению переезда считаем по списку: 2 профиля, 2 устройства
 
 Теперь выдаются только новые конфигурации. Проверь на своём устройстве, прежде чем звать остальных: если не заработает — «↩️ Отменить», и никто, кроме тебя, ничего не заметит
+  [Скрыть | hd]
 + send #2
 🔧 <b>Сервис</b>
 Перезапуск AWG рвёт соединения на несколько секунд, перезапуск бота не влияет на пользователей
@@ -4042,6 +4040,7 @@ Pi4 — 🟢 Резерв
 ~ Отменяю…
 = edit #1
 ↩️ Переезд отменён: выдаются прежние конфигурации. Уже переехали: 1 устройство — соединение не оборвётся, но при следующей настройке ему выдадут прежнюю конфигурацию; список переехавших — в разделе «🔧 Сервис»
+  [Скрыть | hd]
 + send #2
 🔧 <b>Сервис</b>
 Перезапуск AWG рвёт соединения на несколько секунд, перезапуск бота не влияет на пользователей
@@ -4060,6 +4059,7 @@ Pi4 — 🟢 Резерв
 Проверь на сервере:<blockquote expandable>1. DNAT <code>1.1.1.1</code> и старый порт — убрать и закрыть;
 2. старая подсеть там, где её помнят: <code>Match Address</code> в <code>sshd_config</code> (обе строки), список <code>ssh_allow4</code>, правила сервера для DNS и MASQUERADE;
 3. если стоит шлюз — сменить подсеть пользователей на обеих его сторонах одним заходом: исключение из MASQUERADE на сервере AWG, на шлюзе — его MASQUERADE и AllowedIPs линка; иначе шлюз увидит реальные адреса пользователей вне своих правил — РФ-доступ перестанет работать</blockquote>
+  [Скрыть | hd]
 + send #2
 🔧 <b>Сервис</b>
 Перезапуск AWG рвёт соединения на несколько секунд, перезапуск бота не влияет на пользователей
@@ -4511,6 +4511,7 @@ https://t.me/test_bot?start=CDUMMY000005
 В субботу с 02:00 до 03:00 — работы на сервере
 + send #4
 ✅ Разослано владельцам профилей: <a href="https://t.me/test_bot?start=cl-4-n">Боря</a>, <a href="https://t.me/test_bot?start=cl-3-n">Ксюша</a> — доставлено: 2 адресата
+  [Скрыть | hd]
 + send #5
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
@@ -4554,6 +4555,7 @@ https://t.me/test_bot?start=CDUMMY000005
 Неделя в подарок — спасибо, что с нами
 + send #4
 ✅ Разослано владельцам профилей: <a href="https://t.me/test_bot?start=cl-4-n">Боря</a>, <a href="https://t.me/test_bot?start=cl-3-n">Ксюша</a> — доставлено: 2 адресата · продлено на 7 дней
+  [Скрыть | hd]
 + send #5
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
@@ -4963,7 +4965,6 @@ IMAP и SMTP отвечают, вход выполнен
 <blockquote expandable>- исправлено одно
 - добавлено другое</blockquote>
   [⬅️ В меню | upd:menu]
-  [Скрыть | hd]
 
 ### adm.ev.upd_failed — обновление не применилось
 > call report_update_result
@@ -4971,7 +4972,6 @@ IMAP и SMTP отвечают, вход выполнен
 + send #2
 ⚠️ Обновление до v1.3.0 не применилось, работает v1.2.3 — журнал: <code>journalctl -u awg-bot-selfupdate* -o short-iso</code>
   [⬅️ В меню | upd:menu]
-  [Скрыть | hd]
 
 ### adm.ev.restarted — бот вернулся после перезапуска
 > call restore_panel_after_restart
@@ -7135,6 +7135,7 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 В субботу с 02:00 до 03:00 — работы на сервере
 + send #4
 ✅ Отправлено владельцу профиля: <a href="https://t.me/test_bot?start=cl-3-n">Ксюша</a> — доставлено: 1 адресат
+  [Скрыть | hd]
 + send #5
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
@@ -7169,6 +7170,7 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 В субботу с 02:00 до 03:00 — работы на сервере
 + send #4
 ✅ Отправлено владельцу профиля: <a href="https://t.me/test_bot?start=cl-3-n">Ксюша</a> и тому, с кем он делится устройствами — доставлено: 2 адресата
+  [Скрыть | hd]
 + send #5
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
@@ -7204,6 +7206,7 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 + send #4
 ✅ Разослано владельцам профилей: <a href="https://t.me/test_bot?start=cl-4-n">Боря</a>, <a href="https://t.me/test_bot?start=cl-3-n">Ксюша</a> и тем, с кем они делятся устройствами — доставлено: 2 адресата
 ⚠️ Не доставлено: <a href="https://t.me/test_bot?start=cl-4-n">Боря</a> — бот заблокирован или аккаунт удалён
+  [Скрыть | hd]
 + send #5
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
@@ -7305,6 +7308,7 @@ awg0 · порт 43125 · <code>10.8.1.0/24</code>
 Спасибо за терпение
 + send #4
 ✅ Разослано владельцам профилей: <a href="https://t.me/test_bot?start=cl-4-n">Боря</a>, <a href="https://t.me/test_bot?start=cl-6-n">Вечный</a>, <a href="https://t.me/test_bot?start=cl-3-n">Ксюша</a> — доставлено: 3 адресата · продлено на 7 дней (<a href="https://t.me/test_bot?start=cl-6-n">Вечный</a> — без продления)
+  [Скрыть | hd]
 + send #5
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
@@ -15041,6 +15045,7 @@ bad39..ru»
 + send #4
 ✅ Разослано владельцам профилей: <a href="https://t.me/test_bot?start=cl-4-n">Боря</a>, <a href="https://t.me/test_bot?start=cl-3-n">Ксюша</a>, <a href="https://t.me/test_bot?start=cl-6-n">Подписчик 00</a>, <a href="https://t.me/test_bot?start=cl-7-n">Подписчик 01</a>, <a href="https://t.me/test_bot?start=cl-8-n">Подписчик 02</a>, <a href="https://t.me/test_bot?start=cl-9-n">Подписчик 03</a>, <a href="https://t.me/test_bot?start=cl-10-n">Подписчик 04</a>, <a href="https://t.me/test_bot?start=cl-11-n">Подписчик 05</a>, <a href="https://t.me/test_bot?start=cl-12-n">Подписчик 06</a>, <a href="https://t.me/test_bot?start=cl-13-n">Подписчик 07</a>, <a href="https://t.me/test_bot?start=cl-14-n">Подписчик 08</a>, <a href="https://t.me/test_bot?start=cl-15-n">Подписчик 09</a> <a href="https://t.me/test_bot?start=list-snap-snapkey001-n">и ещё 20</a> — доставлено: 2 адресата
 ⚠️ Не доставлено: <a href="https://t.me/test_bot?start=cl-6-n">Подписчик 00</a>, <a href="https://t.me/test_bot?start=cl-7-n">Подписчик 01</a>, <a href="https://t.me/test_bot?start=cl-8-n">Подписчик 02</a> <a href="https://t.me/test_bot?start=list-snap-snapkey002-n">и ещё 27</a> — бот заблокирован или аккаунт удалён
+  [Скрыть | hd]
 + send #5
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
@@ -15155,6 +15160,7 @@ bad39..ru»
 + send #4
 ✅ Разослано владельцам профилей: <a href="https://t.me/test_bot?start=cl-4-n">Боря</a>, <a href="https://t.me/test_bot?start=cl-3-n">Ксюша</a>, <a href="https://t.me/test_bot?start=cl-6-n">Подписчик 00</a>, <a href="https://t.me/test_bot?start=cl-7-n">Подписчик 01</a>, <a href="https://t.me/test_bot?start=cl-8-n">Подписчик 02</a>, <a href="https://t.me/test_bot?start=cl-9-n">Подписчик 03</a>, <a href="https://t.me/test_bot?start=cl-10-n">Подписчик 04</a>, <a href="https://t.me/test_bot?start=cl-11-n">Подписчик 05</a>, <a href="https://t.me/test_bot?start=cl-12-n">Подписчик 06</a>, <a href="https://t.me/test_bot?start=cl-13-n">Подписчик 07</a>, <a href="https://t.me/test_bot?start=cl-14-n">Подписчик 08</a>, <a href="https://t.me/test_bot?start=cl-15-n">Подписчик 09</a> [+20] — доставлено: 2 адресата
 ⚠️ Не доставлено: <a href="https://t.me/test_bot?start=cl-6-n">Подписчик 00</a>, <a href="https://t.me/test_bot?start=cl-7-n">Подписчик 01</a>, <a href="https://t.me/test_bot?start=cl-8-n">Подписчик 02</a> и ещё 27 — бот заблокирован или аккаунт удалён
+  [Скрыть | hd]
 + send #5
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
@@ -15182,6 +15188,7 @@ bad39..ru»
 Проверь на сервере:<blockquote expandable>1. DNAT <code>1.1.1.1</code> и старый порт — убрать и закрыть;
 2. старая подсеть там, где её помнят: <code>Match Address</code> в <code>sshd_config</code> (обе строки), список <code>ssh_allow4</code>, правила сервера для DNS и MASQUERADE;
 3. если стоит шлюз — сменить подсеть пользователей на обеих его сторонах одним заходом: исключение из MASQUERADE на сервере AWG, на шлюзе — его MASQUERADE и AllowedIPs линка; иначе шлюз увидит реальные адреса пользователей вне своих правил — РФ-доступ перестанет работать</blockquote>
+  [Скрыть | hd]
 + send #2
 🔧 <b>Сервис</b>
 Перезапуск AWG рвёт соединения на несколько секунд, перезапуск бота не влияет на пользователей
