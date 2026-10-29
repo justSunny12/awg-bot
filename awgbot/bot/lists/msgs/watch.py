@@ -1,28 +1,35 @@
 """watch.py — часть пакета lists/msgs: посредник запросов сессии бота.
 
-Видит SendMessage, EditMessageText, EditMessageReplyMarkup и DeleteMessage
-(прочее пропускает без чтения базы); отказ Telegram уходит наверх как есть,
-запись не трогается. После удачного ответа:
+Видит SendMessage, EditMessageText, отправки с подписью (SendPhoto,
+SendDocument, SendAnimation, SendVideo), EditMessageCaption,
+EditMessageReplyMarkup и DeleteMessage (прочее пропускает без чтения базы);
+отказ Telegram уходит наверх как есть, запись не трогается. После удачного
+ответа:
 
   отправка / правка текста  — ссылки на снимки (scan.keys), клавиатура,
                               итог из NOTE (только если текст с него
                               начинается) → list_msg_put; привязалась новая
                               ссылка → правка чата сейчас (heal.heal_chat:
                               сообщения с мёртвыми ключами — вытесненные);
+  отправка / правка подписи — то же по подписи; запись с признаком `cap` —
+                              правка и гашение идут editMessageCaption;
   правка клавиатуры         — list_msg_set_kb (ключи и текст — прежние);
   удаление                  — запись и снимки сообщения прочь, без отметки.
 
 Запись — только при разметке HTML (по умолчанию у всех ботов проекта).
 Сбой записи в базу — строкой журнала: отправка уже состоялась, ломать её
 нельзя. DeleteMessages (пачка) не учитывается: Telegram пропускает
-неудаляемые номера молча — разберутся правка ссылки и такт."""
+неудаляемые номера молча — разберутся правка ссылки и такт. Альбом
+(SendMediaGroup) не учитывается: у него нет клавиатуры, а подпись стоит у
+первого вложения из нескольких ответных сообщений."""
 from __future__ import annotations
 
 import logging
 
 from aiogram.client.default import Default
 from aiogram.client.session.middlewares.base import BaseRequestMiddleware
-from aiogram.methods import DeleteMessage, EditMessageReplyMarkup, EditMessageText, SendMessage
+from aiogram.methods import (DeleteMessage, EditMessageCaption, EditMessageReplyMarkup, EditMessageText,
+                             SendAnimation, SendDocument, SendMessage, SendPhoto, SendVideo)
 from aiogram.types import Message
 
 from awgbot.util import timeutil
@@ -32,6 +39,9 @@ from . import NOTE, OWN, scan
 log = logging.getLogger(__name__)
 
 _TEXT = (SendMessage, EditMessageText)
+_CAP = (SendPhoto, SendDocument, SendAnimation, SendVideo, EditMessageCaption)
+_SENDS = (SendMessage, SendPhoto, SendDocument, SendAnimation, SendVideo)
+_EDITS = (EditMessageText, EditMessageCaption)
 
 
 def _html(method) -> bool:
@@ -54,7 +64,7 @@ class ListMsgWatch(BaseRequestMiddleware):
         self.services = services
 
     async def __call__(self, make_request, bot, method):
-        if not isinstance(method, (SendMessage, EditMessageText, EditMessageReplyMarkup, DeleteMessage)):
+        if not isinstance(method, _TEXT + _CAP + (EditMessageReplyMarkup, DeleteMessage)):
             return await make_request(bot, method)
         result = await make_request(bot, method)      # отказ — наверх, запись не трогаем
         if OWN.get():
@@ -78,24 +88,25 @@ class ListMsgWatch(BaseRequestMiddleware):
         if not mid:
             return
         kb = scan.kb_json(method.reply_markup)
-        if isinstance(method, _TEXT):
+        if isinstance(method, _TEXT + _CAP):
             if not _html(method):
                 return
-            html = method.text or ""
+            cap = isinstance(method, _CAP)
+            html = (method.caption if cap else method.text) or ""
             keys = scan.keys(html)
             note = NOTE.get()
             if note and html.startswith(note + "\n\n"):
                 NOTE.set("")
             else:
                 note = ""
-            if isinstance(method, SendMessage) and not keys and not note and not scan.has_hide(kb):
+            if isinstance(method, _SENDS) and not keys and not note and not scan.has_hide(kb):
                 return                                 # причин нет — база не трогается
             sent = _sent_iso(result)
-            bound = await call(db.list_msg_put, chat, mid, sent, html, kb, keys, note)
+            bound = await call(db.list_msg_put, chat, mid, sent, html, kb, keys, note, cap)
             if bound:
                 from . import heal
                 await heal.heal_chat(bot, self.services, chat)
-            if isinstance(method, EditMessageText):
+            if isinstance(method, _EDITS):
                 await self._hide_age(bot, chat, mid, sent, kb)   # отправка всегда свежая — проверка только правке
             return
         if isinstance(method, EditMessageReplyMarkup):

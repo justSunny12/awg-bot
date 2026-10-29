@@ -5,9 +5,8 @@
 «Скрыть» и дальше живёт обычным следом (запись ведёт посредник: ссылки итога
 с меткой «-n», «Скрыть» — на сутки). Меню старше суток — итог без кнопок:
 ночью её бы сняли, а после 48 часов она бы не удаляла. Меню без итога
-гаснет, как прежде: кнопки долой, текст остаётся; drop — удаляется (запасной
-ход, когда следующий экран приходит по внешнему событию). Правка не удалась
-— как прежде."""
+гаснет, как прежде: кнопки долой, текст остаётся. Правка не удалась — как
+прежде. Меню с подписью (фото, файл) правится как подпись."""
 from __future__ import annotations
 
 import logging
@@ -19,7 +18,7 @@ log = logging.getLogger(__name__)
 _NO_PREVIEW = LinkPreviewOptions(is_disabled=True)
 
 
-async def retire(bot, services, chat: int, mid: int, *, drop: bool = False) -> None:
+async def retire(bot, services, chat: int, mid: int) -> None:
     from awgbot.bot import keyboards as kb
     from awgbot.bot import links
     from awgbot.bot.handlers.common import call
@@ -35,9 +34,13 @@ async def retire(bot, services, chat: int, mid: int, *, drop: bool = False) -> N
         from . import NOTE
         tok = NOTE.set("")                                 # итог нового меню — не этой правке
         try:
-            await bot.edit_message_text(chat_id=chat, message_id=mid, text=links.mark_new(note),
-                                        reply_markup=None if hide_due(rec) else kb.hide_only(),
-                                        link_preview_options=_NO_PREVIEW)
+            markup = None if hide_due(rec) else kb.hide_only()
+            if rec.get("cap"):
+                await bot.edit_message_caption(chat_id=chat, message_id=mid, caption=links.mark_new(note),
+                                               reply_markup=markup)
+            else:
+                await bot.edit_message_text(chat_id=chat, message_id=mid, text=links.mark_new(note),
+                                            reply_markup=markup, link_preview_options=_NO_PREVIEW)
             log.info("lists: сообщение %d чата %d — меню с итогом оставлено следом", mid, chat)
             return
         except Exception:                                  # noqa: BLE001 — как прежде: снять кнопки
@@ -47,12 +50,6 @@ async def retire(bot, services, chat: int, mid: int, *, drop: bool = False) -> N
                 pass
         finally:
             NOTE.reset(tok)
-    if drop:
-        try:
-            await bot.delete_message(chat_id=chat, message_id=mid)
-            return
-        except Exception:                                  # noqa: BLE001
-            pass
     try:
         await bot.edit_message_reply_markup(chat_id=chat, message_id=mid, reply_markup=None)
     except Exception:                                      # noqa: BLE001 — удалено/старое: не страшно

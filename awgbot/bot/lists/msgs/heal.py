@@ -3,7 +3,8 @@
 Одна правка на сообщение: мёртвые ключи — ссылки подписью (scan.strip),
 «Скрыть» старше суток — ряд прочь (scan.without_hide); меняется текст —
 editMessageText с клавиатурой, какая сейчас (правка без reply_markup сняла
-бы её), только кнопки — editMessageReplyMarkup. Удачная правка (и «message is
+бы её), подпись к фото или файлу (запись с `cap`) — editMessageCaption, только
+кнопки — editMessageReplyMarkup. Удачная правка (и «message is
 not modified») обновляет запись сама: посредник (watch) увидит свою же
 правку, но при «not modified» ответа нет.
 
@@ -88,7 +89,9 @@ def _plan(rec: dict) -> tuple[str, str, bool]:
 
 async def _edit(bot, rec: dict, html2: str, kb2: str, text_changes: bool) -> None:
     chat, mid = int(rec["chat"]), int(rec["mid"])
-    if text_changes:
+    if text_changes and rec.get("cap"):
+        await bot.edit_message_caption(chat_id=chat, message_id=mid, caption=html2, reply_markup=scan.markup_from(kb2))
+    elif text_changes:
         await bot.edit_message_text(chat_id=chat, message_id=mid, text=html2, reply_markup=scan.markup_from(kb2),
                                     link_preview_options=_NO_PREVIEW)
     else:

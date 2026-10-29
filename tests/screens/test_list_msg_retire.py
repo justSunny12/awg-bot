@@ -1,7 +1,7 @@
 """Прежнее меню гаснет (lists/msgs/retire) — через настоящий диспетчер ролей и
 посредник на сессии: меню с итогом первой строкой при новом меню ниже
 становится следом из одного итога с «Скрыть»; без итога — гаснет, как
-прежде; запасной ход drop_previous_nav; меню старше суток; правка не удалась.
+прежде; меню старше суток; правка не удалась.
 
 Цена ошибки: меню с итогом, погашенное целиком, — экран «Свои сайты» висит в
 чате без кнопок, и итог («не добавлено …») тонет в нём; след без «Скрыть» —
@@ -104,30 +104,6 @@ async def test_a_menu_without_a_note_is_dimmed_as_before(tmp_path, frozen, fakes
     heads = [c.head for c in rec.calls]
     assert f"- markup off #{mid}" in heads, f"меню без итога не погашено: {heads}"
     assert f"= edit #{mid}" not in heads, "меню без итога переписано — в чате пустой след"
-
-
-def _drop(uid: int):
-    async def drop(services, bot):
-        from awgbot.bot.handlers import common
-        await common.drop_previous_nav(bot, services, uid)
-        await bot.send_message(uid, "📄 файл конфигурации")
-    return drop
-
-
-async def test_drop_previous_nav_keeps_a_note_as_a_trace_and_deletes_a_plain_menu(tmp_path, frozen, fakes):
-    from awgbot.core import config
-    noted = await take(Shot("adm.rt.drop.note", role="admin", data=_people, steps=[
-        MAIN, DEL, ("call", _drop(config.ADMIN_ID), "drop")]),
-        tmp_path, fakes)
-    mid, _ = _menu_before(noted)
-    heads = [c.head for c in noted.calls]
-    assert heads[0] == f"= edit #{mid}" and _rows(noted.calls[0].markup) == HIDE, f"с итогом — не след: {heads}"
-    assert noted.calls[0].body == "✅ Устройство «Ноутбук» удалено" and f"- delete #{mid}" not in heads
-    plain = await take(Shot("adm.rt.drop.plain", role="admin", data=ss._ks_sites, steps=[
-        MAIN, ss._SITES, ("call", _drop(config.ADMIN_ID), "drop")]), tmp_path, fakes)
-    mid, _ = _menu_before(plain)
-    assert [c.head for c in plain.calls][0] == f"- delete #{mid}", \
-        f"без итога — не удалено: {[c.head for c in plain.calls]}"
 
 
 def _age(hours: float):

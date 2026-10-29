@@ -67,6 +67,23 @@ async def test_the_51st_snapshot_edits_the_old_message_before_the_send_returns(r
     assert rig.raw(k1).get("gone") == 1, "отметка вытесненного снята — открытый экран снимка соврёт"
 
 
+async def test_the_51st_snapshot_edits_the_caption_of_an_old_photo(rig):
+    """Ссылка в подписи к фото: вытеснение правит подпись (editMessageCaption) с той же
+    клавиатурой — editMessageText у фото получил бы «нет текста»."""
+    k1 = rig.snap()
+    body = "📣 Не доставлено: Боря " + rig.link(k1, "и ещё 27", new=True)
+    a = (await rig.bot.send_photo(CHAT, "DUMMYPHOTO", caption=body, reply_markup=EXTEND)).message_id
+    await _evict_first(rig)
+    heads = rig.heads()
+    assert f"= caption #{a}" in heads and f"= edit #{a}" not in heads, f"подпись не поправлена: {heads[-4:]}"
+    cap = rig.caption_of(a)
+    assert "list-snap-" not in cap and cap.endswith("Боря и ещё 27"), f"ссылка не стала текстом: {cap}"
+    edit = rig.edit_calls(a)[-1]
+    assert rows(edit.markup) == rows(EXTEND), "правка подписи ушла не с той клавиатурой"
+    rec = rig.rec(a)
+    assert rec is not None and rec.get("cap") is True and rec["keys"] == [], f"запись после правки: {rec}"
+
+
 async def test_of_two_links_only_the_dead_one_is_replaced(rig):
     k1, k2 = rig.snap(), rig.snap()
     a = await _shown(rig, ("и ещё 20", k1), ("и ещё 27", k2))

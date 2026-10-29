@@ -13,7 +13,7 @@ import datetime as _dt
 import json
 
 from aiogram.exceptions import TelegramNetworkError
-from aiogram.methods import DeleteMessage, EditMessageReplyMarkup, EditMessageText, SendMessage
+from aiogram.methods import DeleteMessage, EditMessageCaption, EditMessageReplyMarkup, EditMessageText, SendMessage
 
 from awgbot.bot.lists import msgs
 from awgbot.bot.lists.msgs import heal
@@ -107,7 +107,7 @@ class Session(harness.StubSession):
         return None
 
     async def make_request(self, bot, method, timeout=None):
-        if isinstance(method, (EditMessageText, EditMessageReplyMarkup)):
+        if isinstance(method, (EditMessageText, EditMessageCaption, EditMessageReplyMarkup)):
             self.edits.append((self.vt.t, type(method).__name__, int(method.chat_id), int(method.message_id)))
         rule = self._rule(method)
         if rule is not None:
@@ -179,9 +179,12 @@ class Rig:
     def text_of(self, mid: int, chat: int = CHAT) -> str | None:
         return (self.session.messages.get((chat, mid)) or {}).get("text")
 
+    def caption_of(self, mid: int, chat: int = CHAT) -> str | None:
+        return (self.session.messages.get((chat, mid)) or {}).get("caption")
+
     def edit_calls(self, mid: int | None = None) -> list[harness.Call]:
         return [c for c in self.session.calls
-                if c.head.startswith(("= edit #", "= markup #", "- markup off #"))
+                if c.head.startswith(("= edit #", "= caption #", "= markup #", "- markup off #"))
                 and (mid is None or c.head.split("#", 1)[1].split()[0] == str(mid))]
 
     async def settle(self, cond, limit_s: float = 3.0) -> bool:

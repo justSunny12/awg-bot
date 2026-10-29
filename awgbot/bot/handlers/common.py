@@ -51,19 +51,6 @@ async def _dismiss_previous_nav(bot, services, chat_id: int, keep_id=None) -> No
     await retire.retire(bot, services, chat_id, prev)
 
 
-async def drop_previous_nav(bot, services, chat_id: int) -> None:
-    """Удалить прежнее нав-сообщение целиком, а не снять с него кнопки: когда
-    следующий экран приходит новым сообщением по внешнему событию (файл
-    конфигурации в чате агента), панель без кнопок над ним — просто мусор;
-    прежнее с итогом первой строкой — остаётся следом (bot/lists/msgs/retire)."""
-    prev = await call(services.db.get_nav_message_id, chat_id)
-    if prev is None:
-        return
-    from awgbot.bot.lists.msgs import retire
-    await retire.retire(bot, services, chat_id, prev, drop=True)   # с итогом — след, без — удалить
-    await call(services.db.set_nav_message_id, chat_id, None)
-
-
 async def send_menu_to(bot, services, chat_id: int, text, markup) -> int:
     """Меню/нав-экран НОВЫМ сообщением без входящего Message — по событию
     (старт после рестарта, канал линка, первая панель агента); прежнее

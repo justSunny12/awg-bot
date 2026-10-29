@@ -13,7 +13,8 @@
 «Скрыть» и удаление сообщения снимают запись и его снимки без отметки.
 
 Клавиатура хранится JSON-строкой InlineKeyboardMarkup; «Скрыть» узнаётся по
-колбэку `hd` (bot/callbacks.HideCB), кнопки действия — всё остальное."""
+колбэку `hd` (bot/callbacks.HideCB), кнопки действия — всё остальное. `cap` —
+текст записи — подпись к фото или файлу: править её editMessageCaption."""
 from __future__ import annotations
 
 import json
@@ -101,13 +102,14 @@ class _MsgsPart:
         return out
 
     def list_msg_put(self, chat: int, mid: int, sent: str, html: str, kb: str | None,
-                     keys: list[str], note: str | None) -> bool:
-        """Отправка или правка: поля — по новому виду сообщения; kb/note None — не
+                     keys: list[str], note: str | None, cap: bool | None = None) -> bool:
+        """Отправка или правка: поля — по новому виду сообщения; kb/note/cap None — не
         менялись. Ушедшие ключи отпущены (msg = 0), новые ключи снимков ЭТОГО чата,
         ещё не показанные, привязаны; причин держать запись нет — записи нет.
         True — привязалась новая ссылка (вызывающий правит чат: вытесненные — сейчас)."""
         chat, mid = int(chat), int(mid)
         rec = self.list_msg_get(chat, mid) or {}
+        cap_now = bool(rec.get("cap")) if cap is None else bool(cap)
         old_keys = [str(k) for k in (rec.get("keys") or [])]
         want = []
         for k in keys:
@@ -133,7 +135,7 @@ class _MsgsPart:
             return new_bound
         self._msg_write({"v": 1, "chat": chat, "mid": mid, "sent": str(rec.get("sent") or sent or ""),
                          "kb": kb_now, "keys": bound, "html": str(html or "") if bound else "",
-                         "note": note_now, "upd": timeutil.now_iso()})
+                         "note": note_now, "upd": timeutil.now_iso(), **({"cap": True} if cap_now else {})})
         return new_bound
 
     def list_msg_set_kb(self, chat: int, mid: int, sent: str, kb: str) -> None:

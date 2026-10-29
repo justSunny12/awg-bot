@@ -15,7 +15,10 @@ Telegram резерву.
 привязавший снимок, — повтор привяжет его к пустому месту; сбой базы в
 посреднике, уронивший отправку, — человек не получает уведомление вовсе;
 записи живых меню у основы после переезда — она правит экран, за который
-отвечает резерв, и возвращает снятые там кнопки.
+отвечает резерв, и возвращает снятые там кнопки; подпись к фото или файлу
+мимо посредника — ссылка в ней умирает с отметкой, «Скрыть» на ней живёт
+дольше суток, а запись с подписью, правленная как текст, — отказ Telegram
+«нет текста», и правка не идёт.
 """
 from __future__ import annotations
 
@@ -24,7 +27,7 @@ import sqlite3
 
 import pytest
 from aiogram.exceptions import TelegramForbiddenError
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
 
 from awgbot.bot import keyboards as kb
 from awgbot.bot import links, screens
@@ -388,3 +391,71 @@ async def test_retire_does_not_take_the_note_of_the_new_menu(rig, services):
     assert trace is not None and trace["note"] == "", f"след забрал итог нового меню: {trace}"
     rec = rig.rec(new)
     assert rec is not None and rec["note"] == "✅ A", f"у нового меню итога нет: {rec}"
+
+
+# ── подписи к фото и файлам ──────────────────────────────────────────────────
+
+PHOTO = "DUMMYPHOTO"
+
+
+async def test_a_photo_caption_with_a_link_and_hide_is_recorded_as_a_caption(rig):
+    """Объявление картинкой со ссылкой на список: запись как у текста, с признаком
+    подписи — иначе правка пошла бы editMessageText и получила бы «нет текста»."""
+    key = rig.snap()
+    caption = links.mark_new("📣 Не доставлено: Боря " + rig.link(key))
+    m = await rig.bot.send_photo(CHAT, PHOTO, caption=caption, reply_markup=kb.hide_only())
+    rec = rig.rec(m.message_id)
+    assert rec is not None, "фото со ссылкой на снимок не записано"
+    assert rec.get("cap") is True and rec["html"] == caption and rec["keys"] == [key], rec
+    assert rig.raw(key)["msg"] == m.message_id, "снимок не привязан к фото"
+
+
+async def test_a_document_caption_with_hide_only_is_recorded_and_the_caption_edit_updates_it(rig):
+    key = rig.snap()
+    m = await rig.bot.send_document(CHAT, "DUMMYDOC", caption="💾 Бэкап", reply_markup=kb.hide_only())
+    rec = rig.rec(m.message_id)
+    assert rec is not None and rec.get("cap") is True and rec["keys"] == [], rec
+    await rig.bot.edit_message_caption(chat_id=CHAT, message_id=m.message_id,
+                                       caption="💾 Бэкап " + rig.link(key), reply_markup=kb.hide_only())
+    rec = rig.rec(m.message_id)
+    assert rec["keys"] == [key] and rec.get("cap") is True, f"правка подписи не легла в запись: {rec}"
+    await rig.bot.edit_message_caption(chat_id=CHAT, message_id=m.message_id, caption="💾 Бэкап")
+    assert rig.rec(m.message_id) is None, "ссылка и «Скрыть» ушли из подписи — запись осталась"
+    assert rig.raw(key)["msg"] == 0, "снимок не отпущен после правки подписи"
+
+
+async def test_a_media_group_leaves_no_record(rig):
+    """У альбома нет клавиатуры, а подпись стоит у первого из нескольких ответных
+    сообщений: посредник его не учитывает — снимок остаётся не привязанным."""
+    key = rig.snap()
+    media = [InputMediaPhoto(media=PHOTO, caption="📣 " + rig.link(key)), InputMediaPhoto(media=PHOTO)]
+    await rig.bot.send_media_group(CHAT, media=media)
+    assert rig.records() == [], f"альбом записан: {rig.records()}"
+    assert rig.raw(key)["msg"] == 0
+
+
+async def test_hide_put_on_an_old_photo_by_a_caption_edit_is_taken_off_at_once(rig):
+    rig.session.date = int((T0 - _dt_hours(72)).timestamp())
+    m = await rig.bot.send_photo(CHAT, PHOTO, caption="📣 Объявление", reply_markup=MENU)
+    await rig.bot.edit_message_caption(chat_id=CHAT, message_id=m.message_id, caption="📣 Объявление",
+                                       reply_markup=kb.hide_only())
+    heads = [c.head for c in rig.edit_calls(m.message_id)]
+    assert heads == [f"= caption #{m.message_id}", f"- markup off #{m.message_id}"], \
+        f"«Скрыть» на фото трёхдневной давности осталась: {heads}"
+    assert rig.rec(m.message_id) is None
+
+
+async def test_a_photo_menu_with_a_note_retires_by_a_caption_edit(rig, services):
+    """Меню картинкой (гайд) с итогом первой строкой: след — правкой подписи, не текста."""
+    from awgbot.bot.handlers import common
+    m = await rig.bot.send_photo(CHAT, PHOTO, caption=screens.with_note("🧭 <b>Гайд</b>", "✅ Шаг пройден"),
+                                 reply_markup=MENU)
+    old = m.message_id
+    rig.db.nav_touch(CHAT, old)
+    await common.send_menu_to(rig.bot, services, CHAT, "🏠 Главное меню", MENU)
+    heads = rig.heads()
+    assert f"= caption #{old}" in heads and f"= edit #{old}" not in heads, f"след не правкой подписи: {heads}"
+    assert rig.caption_of(old) == "✅ Шаг пройден", rig.caption_of(old)
+    trace = rig.rec(old)
+    assert trace is not None and trace["note"] == "" and trace.get("cap") is True \
+        and trace["kb"] == _kb(kb.hide_only()), trace
