@@ -21,6 +21,7 @@ util/listlink); экран собирается в момент открытия
 """
 from __future__ import annotations
 
+import importlib
 import logging
 from dataclasses import dataclass, field
 from typing import Awaitable, Callable
@@ -68,7 +69,8 @@ def register(kind: Kind) -> Kind:
 def _load() -> None:
     """Все модули видов — импортом (регистрируются при нём); повторный импорт
     бесплатен, а ранний импорт одного модуля видов остальных не прячет."""
-    from .kinds import agent, server, slots, snap  # noqa: F401 — виды регистрируются при импорте
+    for mod in ("agent", "server", "slots", "snap"):       # виды регистрируются при импорте
+        importlib.import_module(f"{__name__}.kinds.{mod}")
 
 
 def kind_for(name: str, role: str) -> Kind | None:
