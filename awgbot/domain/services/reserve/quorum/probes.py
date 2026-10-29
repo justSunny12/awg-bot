@@ -99,7 +99,7 @@ class ReserveQuorumProbesMixin:
         want: dict[str, dict] = {}
         if m is not None and line:
             for node, rec in (line.get("nodes") or {}).items():
-                if node != m.l and rec.get("pub"):             # свой зонд идёт к клону, не к себе
+                if rec.get("pub"):                            # и свой: клон берёт пиры с awg0, а свой зонд идёт к клону
                     want[str(rec["pub"])] = rec
         iface = config.AWG_INTERFACE
         try:
@@ -129,11 +129,12 @@ class ReserveQuorumProbesMixin:
                 log.info("кворум: пир-зонд %s… (%s) добавлен на %s", pub[:8], rec["addr"], iface)
             except Exception as e:                            # noqa: BLE001
                 log.warning("кворум: пир-зонд не добавлен: %s", e)
+        side = m.l if m is not None else self.reserve_quorum_side()
         try:
             if m is not None and want:
                 awg.ensure_second_address(probenet.responder_cidr(m.l), iface=iface)
-            elif m is not None:
-                awg.drop_second_address(probenet.responder_cidr(m.l), iface=iface)
+            elif side:
+                awg.drop_second_address(probenet.responder_cidr(side), iface=iface)
         except Exception as e:                                # noqa: BLE001
             log.warning("кворум: второй адрес интерфейса: %s", e)
 
@@ -205,7 +206,7 @@ class ReserveQuorumProbesMixin:
         """Раздел `quorum` документа слота: состав, поколение, порог, порт, конфиги
         зондов (к основе и к клону), эпоха. None — пары нет или шлюз не в составе."""
         m = self.reserve_quorum_proposed()
-        if m is None:
+        if m is None or not self.reserve_quorum_peer_quo1():  # второй сервер 4.1.x: линия на матрице, зондов нет (§3.7.11)
             return None
         node = qm.gateway_node(m.l, int(gw.id))
         if node not in m.members:
@@ -294,6 +295,8 @@ def _probe_conf_ok(conf: str) -> bool:
     allowed = str(c.get("Peer", "AllowedIPs") or "").strip()
     addr = str(c.get("Interface", "Address") or "").strip()
     if "," in allowed or not allowed.endswith("/32") or not addr.endswith("/32"):
+        return False
+    if str(c.get("Interface", "Table") or "").strip():          # зонд живёт в awg-quo без таблиц маршрутов
         return False
     return probenet.is_probe(allowed) and probenet.is_probe(addr) and bool(c.get("Peer", "Endpoint"))
 

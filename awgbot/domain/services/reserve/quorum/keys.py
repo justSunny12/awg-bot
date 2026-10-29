@@ -124,7 +124,7 @@ class ReserveQuorumKeysMixin:
             self.rsv_update("rsv_keys", code_notify_why="голосование о сервере выключено — код на прежних правилах")
             log.warning("кворум: голосование о «%s» выключено — поколение ключа и код заново", str(config.SERVER_NAME or ""))
             return actions
-        if on and m is not None and int(self.reserve_qkeys().get("t") or 0) != m.t(m.l):
+        if on and m is not None and int(self.reserve_qkeys().get("t") or 0) != max(2, m.t(m.l)):
             self._quorum_new_poly(m.t(m.l), f"порог {m.t(m.l)} по составу {m.g}")
         return actions
 
@@ -132,7 +132,7 @@ class ReserveQuorumKeysMixin:
         from awgbot.domain.notices import reserve as rn
         from ...types import Notification
         names = [self._quorum_node_name(n, m.l) for n in m.gateways] if hasattr(self, "_quorum_node_name") else list(m.gateways)
-        notes = [Notification(tg_id=int(config.ADMIN_ID), text=rn.quorum_enabled(self.reserve_peer_name(), names), force_sound=True)]
+        notes = [Notification(tg_id=int(config.ADMIN_ID), text=rn.quorum_enabled(self.reserve_peer_name(), names, str(config.SERVER_NAME or "")), force_sound=True)]
         pid = self.reserve_peer_admin_id() if hasattr(self, "reserve_peer_admin_id") else 0
         if pid and bool(self.rsv_get("rsv_peer_admin").get("opened")):
             notes.append(Notification(tg_id=pid, text=rn.quorum_enabled_peer(str(config.SERVER_NAME or "")), silent=True))

@@ -103,8 +103,9 @@ class ReserveQuorumMembersMixin:
             cur = self.reserve_quorum_proposed()
             if cur is not None and cur.members == want:
                 return cur
-            if cur is not None and (self.reserve_busy() or self.reserve_out() != "home"):
-                return cur                                    # в отъезде и в ходе состав не меняется
+            fleet = self.fleet_running() if hasattr(self, "fleet_running") else False
+            if cur is not None and (self.reserve_busy() or self.reserve_out() != "home" or fleet):
+                return cur                                    # в отъезде, в ходе и в наборе обновлений состав не меняется
             g = (int(cur.g) + 1) if cur is not None else 1
             m = qm.Members.make(side, g, want)
             self.rsv_update("rsv_quorum", mine={**m.to_dict(), "since": timeutil.now_iso()})
@@ -225,8 +226,9 @@ class ReserveQuorumMembersMixin:
         return not self.reserve_quorum_off_reasons()
 
     def reserve_quorum_wanted(self) -> bool:
-        """Условия включения без ключей: пара с `quo1`, состав с шлюзом, цифры и блок в порядке."""
-        why = [c for c in self.reserve_quorum_off_reasons() if c not in ("keys", "not_acked")]
+        """Условия включения без ключей: пара с `quo1`, подтверждённый состав с шлюзом,
+        цифры и блок в порядке — ключи переводятся под кворум только после `qmem_ok`."""
+        why = [c for c in self.reserve_quorum_off_reasons() if c != "keys"]
         return not why
 
     def reserve_quorum_leader_host(self) -> str:

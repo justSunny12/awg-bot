@@ -307,12 +307,13 @@ table inet awg_guest {
         iifname "lo" accept
         ct state established,related accept
         ct state invalid drop
+$( [ -n "$iface" ] && [ -n "$paddr" ] && [ -n "$pnet" ] && printf '        iifname %s ip saddr %s ip daddr %s udp dport %s accept\n' "$ifset" "$pnet" "${paddr%/*}" "$pport" )
+        ip saddr 169.254.88.0/24 drop
         ip protocol icmp accept
         iifname "awglink*" tcp dport $chan accept
         iifname "awglink*" drop
 $( [ -n "$iface" ] && [ -n "$whp" ] && printf '        iifname "%s" ip daddr %s tcp dport %s accept\n' "$VN" "$ZONE_V" "$whp" )
 $( [ -n "$iface" ] && printf '        iifname %s udp dport 53 accept\n        iifname %s tcp dport 53 accept\n' "$ifset" "$ifset" )
-$( [ -n "$iface" ] && [ -n "$paddr" ] && [ -n "$pnet" ] && printf '        iifname %s ip saddr %s ip daddr %s udp dport %s accept\n        ip saddr 169.254.88.0/24 drop\n' "$ifset" "$pnet" "${paddr%/*}" "$pport" )
     }
     chain forward {
         type filter hook forward priority filter; policy drop;

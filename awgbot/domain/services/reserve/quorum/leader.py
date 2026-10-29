@@ -130,9 +130,9 @@ class ReserveQuorumLeaderMixin:
         hs, rx = 0, 0
         try:
             for p in awg.show_dump(config.AWG_INTERFACE):
-                if probenet.is_probe(str(p.get("ip") or "")):
+                if probenet.is_probe(str(p.get("address") or "")):
                     continue
-                if p.get("hs") and time.time() - int(p["hs"]) <= HS_FRESH_S:
+                if p.get("last_handshake") and time.time() - int(p["last_handshake"]) <= HS_FRESH_S:
                     hs += 1
                 rx += int(p.get("rx") or 0)
         except Exception as e:                                # noqa: BLE001

@@ -314,7 +314,7 @@ def quorum_mine_lines(q: dict) -> list[str]:
         out.append(f"└ 🗳 Бот на {peer} видят {int(mine.get('y') or 0)} из {v}"
                    + (" — пользователи вернутся сюда сами, если его не увидят большинство" if mine.get("back") else ""))
     else:
-        out.append(f"└ 🗳 Голосующих о этом сервере: {v}, порог переезда — {t}")
+        out.append(f"└ 🗳 Голосующих об этом сервере: {v}, порог переезда — {t}")
     rows = []
     for vt in (mine.get("voters") or [])[:10]:
         w = "silent" if vt.get("silent") and vt.get("w") not in ("uns", "sus") else (vt.get("w") or "silent")
