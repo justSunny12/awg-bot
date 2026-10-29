@@ -28,11 +28,7 @@ ROOT = Path(__file__).resolve().parents[2]
 DIRS = ("awgbot", "tools", "tests")
 
 # (путь от корня, кусок текста предупреждения) — осознанные исключения
-ALLOWED = {
-    # _load() импортирует модули видов ради регистрации при импорте; pyflakes
-    # не понимает «# noqa» и считает импорт лишним
-    ("awgbot/bot/lists/__init__.py", "imported but unused"),
-}
+ALLOWED: set[tuple[str, str]] = set()    # исключений нет: модули видов списков грузятся через importlib
 
 
 class _Collect(reporter.Reporter):
