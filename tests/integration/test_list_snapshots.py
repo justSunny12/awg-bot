@@ -1,6 +1,7 @@
 """Снимки событий для экрана «весь список» (infra/db/listsnap) и их вид snap
-(bot/lists/kinds/snap) на настоящей базе: запись и чтение, срок 30 дней на
-замороженных часах, вытеснение 21-го снимка чата по порядковому номеру,
+(bot/lists/kinds/snap) на настоящей базе: запись и чтение, срок — до полуночи
+после 30 дней — на замороженных часах, вытеснение 51-го снимка чата по
+порядковому номеру,
 отметки «больше не хранится» и их уборка, пределы 2000 строк и 256 КБ со
 строкой «полный список в журнале бота», сбой записи, чужой чат; шапка,
 листание и «⬅️ Назад» / «⬅️ В меню» у каждой роли; пользователь открывает
@@ -75,6 +76,19 @@ def _buttons(markup) -> list[tuple[str, str]]:
     return [(b.text, b.callback_data) for row in markup.inline_keyboard for b in row]
 
 
+_HIDE_KB = json.dumps({"inline_keyboard": [[{"text": "Скрыть", "callback_data": "hd"}]]})
+
+
+def _with_msg_record(db, chat: int = CHAT, mid: int = 77) -> str:
+    """Снимок, привязанный к сообщению со «Скрыть»: в базе — и снимок, и запись
+    сообщения `list_snap:m:<чат>:<номер>`. Возвращает ключ записи."""
+    key = db.list_snap_keep(chat, "admin", "t", _rows(5))
+    db.list_msg_put(chat, mid, timeutil.now_iso(), f"итог list-snap-{key}", _HIDE_KB, [key], None)
+    mk = f"{listsnap.MSG_PREFIX}{chat}:{mid}"
+    assert mk in _snap_keys(db), "запись сообщения не легла — тест бэкапа ничего не проверит"
+    return mk
+
+
 class _Svc:
     """Минимум, который нужен виду snap: база."""
 
@@ -134,13 +148,18 @@ def test_a_foreign_chat_does_not_learn_that_a_stale_snapshot_existed(db, clock):
     assert db.list_snap_get(key, CHAT) == {"stale": True, "at": timeutil.to_iso(T0), "why": ""}
 
 
-# ── срок 30 дней ────────────────────────────────────────────────────────────
+# ── срок: полночь после 30 дней ─────────────────────────────────────────────
 
-def test_a_snapshot_lives_thirty_days_and_then_answers_stale(db, clock):
+def test_a_snapshot_lives_thirty_days_until_midnight_and_then_answers_stale(db, clock):
+    """Создан 15.09 12:00 — живёт и через 30 дней с минутой (до полуночи),
+    умирает ровно в 00:00 16.10 по поясу показа: такт после полуночи и экран
+    говорят одно и то же."""
     key = db.list_snap_keep(CHAT, "admin", "x", _rows(2))
-    clock.advance(30 * DAY - 60)
-    assert db.list_snap_get(key, CHAT)["rows"] == _rows(2), "снимок протух раньше 30 дней"
-    clock.advance(120)
+    clock.advance(30 * DAY + 60)
+    assert db.list_snap_get(key, CHAT)["rows"] == _rows(2), "снимок протух раньше полуночи после 30 дней"
+    clock.t = _dt.datetime(2026, 10, 15, 23, 59, 59, tzinfo=config.TZ)
+    assert db.list_snap_get(key, CHAT)["rows"] == _rows(2), "снимок протух за секунду до полуночи"
+    clock.t = _dt.datetime(2026, 10, 16, 0, 0, 0, tzinfo=config.TZ)
     got = db.list_snap_get(key, CHAT)
     assert got == {"stale": True, "at": timeutil.to_iso(T0), "why": ""}, got
     raw = _raw(db, key)
@@ -156,37 +175,41 @@ def test_expired_snapshots_of_any_chat_become_marks_on_the_next_write(db, clock)
     assert _raw(db, old) == {"chat": OTHER, "at": timeutil.to_iso(T0), "gone": 1, "why": ""}, _raw(db, old)
 
 
-# ── 20 на чат: вытеснение по порядковому номеру ─────────────────────────────
+# ── 50 на чат: вытеснение по порядковому номеру ─────────────────────────────
 
-def test_the_21st_snapshot_of_a_chat_evicts_the_earliest_even_in_the_same_second(db, clock):
-    """Двадцать один итог за одну секунду: уходит первый по порядку, а не случайный
-    из одной секунды; соседний чат не трогается."""
+def test_the_51st_snapshot_of_a_chat_evicts_the_earliest_even_in_the_same_second(db, clock):
+    """Пятьдесят один итог за одну секунду: уходит первый по порядку, а не случайный
+    из одной секунды; соседний чат не трогается и в счёт пятидесяти не идёт."""
     neighbour = db.list_snap_keep(OTHER, "admin", "сосед", _rows(1))
-    keys = [db.list_snap_keep(CHAT, "admin", f"№{n}", _rows(1)) for n in range(21)]
+    keys = [db.list_snap_keep(CHAT, "admin", f"№{n}", _rows(1)) for n in range(51)]
     assert db.list_snap_get(keys[0], CHAT) == {"stale": True, "at": timeutil.to_iso(T0), "why": "evicted"}, \
-        "21-й снимок не вытеснил самый ранний"
+        "51-й снимок не вытеснил самый ранний"
     alive = [k for k in keys[1:] if not (db.list_snap_get(k, CHAT) or {}).get("stale")]
     assert alive == keys[1:], "вытеснен не самый ранний по порядку"
     assert db.list_snap_get(neighbour, OTHER)["title"] == "сосед", "вытеснение задело чужой чат"
 
 
-def test_twenty_snapshots_of_a_chat_all_stay(db, clock):
-    keys = [db.list_snap_keep(CHAT, "admin", f"№{n}", _rows(1)) for n in range(20)]
-    assert all(not db.list_snap_get(k, CHAT).get("stale") for k in keys), "вытеснен снимок при двадцати"
+def test_fifty_snapshots_of_a_chat_all_stay(db, clock):
+    """Пятьдесят снимков чата и снимки соседа: не вытеснен ни один — сосед в счёт
+    пятидесяти не идёт."""
+    others = [db.list_snap_keep(OTHER, "admin", f"сосед №{n}", _rows(1)) for n in range(10)]
+    keys = [db.list_snap_keep(CHAT, "admin", f"№{n}", _rows(1)) for n in range(50)]
+    assert all(not db.list_snap_get(k, CHAT).get("stale") for k in keys), "вытеснен снимок при пятидесяти"
+    assert all(not db.list_snap_get(k, OTHER).get("stale") for k in others), "снимки соседа вытеснены чужими"
 
 
 def test_marks_over_fifty_per_chat_are_dropped_oldest_first(db, clock):
-    """71 итог в чате: 20 живых и 50 отметок; отметка самого первого — прочь (ссылка
+    """101 итог в чате: 50 живых и 50 отметок; отметка самого первого — прочь (ссылка
     на него отвечает «списка нет»), второго — ещё держится."""
     keys = []
-    for n in range(71):
+    for n in range(101):
         keys.append(db.list_snap_keep(CHAT, "admin", f"№{n}", _rows(1)))
         clock.advance(1)
     states = [db.list_snap_get(k, CHAT) for k in keys]
     assert states[0] is None, f"отметок в чате больше 50: первая держится ({states[0]})"
     assert all(s and s.get("stale") for s in states[1:51]), "отметка из последних пятидесяти потеряна"
-    assert all(s and not s.get("stale") for s in states[51:]), "живых не двадцать последних"
-    assert len(_snap_keys(db)) == 70, f"в базе {len(_snap_keys(db))} записей снимков, ждали 20 + 50"
+    assert all(s and not s.get("stale") for s in states[51:]), "живых не пятьдесят последних"
+    assert len(_snap_keys(db)) == 100, f"в базе {len(_snap_keys(db))} записей снимков, ждали 50 + 50"
 
 
 def test_marks_older_than_ninety_days_are_dropped(db, clock):
@@ -321,7 +344,7 @@ def test_a_miss_at_opening_leaves_a_log_line_with_the_key_and_the_chat(db, clock
 
 def test_the_producer_helper_writes_nothing_without_a_bot_username(db, clock):
     """Без имени бота ссылки в тексте не будет (deep_link даёт текст) — снимок в
-    базу не идёт, место в двадцати снимках чата не занимает; с именем — параметр
+    базу не идёт, место в пятидесяти снимках чата не занимает; с именем — параметр
     /start на записанный снимок."""
     from awgbot.bot.lists.snapshot import snap_param_sync
     assert snap_param_sync(db, "", CHAT, "admin", "t", _rows(30)) == "" and not _snap_keys(db)
@@ -418,9 +441,9 @@ async def test_a_stale_snapshot_says_so_with_the_time_and_the_menu(db, clock):
 
 
 async def test_an_evicted_snapshot_says_it_was_pushed_out_not_that_it_expired(db, clock):
-    """Вытесненный 21-м снимок того же дня — не «хранит 30 дней» (это было бы
-    неправдой), а «держит 20 последних списков чата»."""
-    keys = [db.list_snap_keep(CHAT, "admin", "t", _rows(1)) for _ in range(21)]
+    """Вытесненный 51-м снимок того же дня — не «хранит 30 дней» (это было бы
+    неправдой), а «держит 50 последних списков чата»."""
+    keys = [db.list_snap_keep(CHAT, "admin", "t", _rows(1)) for _ in range(51)]
     text, _ = await _open(db, keys[0])
     assert text == (f"📋 Список от {timeutil.fmt_dt_ui(T0)} больше не хранится — бот держит "
                     f"{listsnap.PER_CHAT} последних списков чата"), text
@@ -475,8 +498,10 @@ async def test_a_user_opens_the_snapshot_of_his_own_sites_report(services, make_
 # ── бэкап и пакет резерва ───────────────────────────────────────────────────
 
 def test_the_backup_copy_of_the_base_has_no_snapshots_but_keeps_the_rest(services, db, clock):
-    """Снимки — следы интерфейса; копия — о данных: соседние ключи состояния на месте."""
-    db.list_snap_keep(CHAT, "admin", "t", _rows(5))
+    """Снимки и записи сообщений — следы интерфейса; копия — о данных: соседние
+    ключи состояния на месте. Запись сообщения в копии — после восстановления на
+    другом сервере такт правил бы чужие номера сообщений."""
+    _with_msg_record(db)
     db.list_snap_keep(OTHER, "admin", "t", _rows(5))
     db.set_state("email_login", "box@example.org")
     raw = services.db_snapshot_bytes(db.path)
@@ -488,14 +513,14 @@ def test_the_backup_copy_of_the_base_has_no_snapshots_but_keeps_the_rest(service
     con.close()
     assert not [k for k in keys if k.startswith("list_snap:")], f"снимки в копии: {sorted(keys)}"
     assert "email_login" in keys, "вырезание снимков задело остальное состояние"
-    assert len(_snap_keys(db)) == 2, "снимки вырезаны из живой базы, а не из копии"
+    assert len(_snap_keys(db)) == 3, "снимки и запись вырезаны из живой базы, а не из копии"
 
 
 def test_the_backup_file_has_no_snapshots(services, db, clock, monkeypatch, tmp_path):
     from awgbot.util import secrets_util
     import io
     import tarfile
-    db.list_snap_keep(CHAT, "admin", "t", _rows(5))
+    _with_msg_record(db)
     monkeypatch.setattr(config, "DB_PATH", db.path)
     monkeypatch.setattr(config, "BACKUP_DIR", tmp_path / "backups")
     services.backup_set_passphrase("correct horse")
@@ -508,12 +533,12 @@ def test_the_backup_file_has_no_snapshots(services, db, clock, monkeypatch, tmp_
     con = sqlite3.connect(p)
     left = con.execute("SELECT COUNT(*) FROM server_state WHERE substr(key, 1, 10) = 'list_snap:'").fetchone()[0]
     con.close()
-    assert left == 0, f"в файле бэкапа {left} снимков"
+    assert left == 0, f"в файле бэкапа {left} снимков и записей сообщений"
 
 
 def test_the_reserve_package_carries_no_snapshots(db, clock, tmp_path):
     from awgbot.util.rsvpkg import bot
-    db.list_snap_keep(CHAT, "admin", "t", _rows(5))
+    _with_msg_record(db)
     raw = bot.replica(db.path)
     bot.assert_clean(raw)
     p = tmp_path / "replica.db"
@@ -524,12 +549,15 @@ def test_the_reserve_package_carries_no_snapshots(db, clock, tmp_path):
     assert not [k for k in keys if k.startswith("list_snap:")], keys
 
 
-def test_the_package_guard_refuses_a_replica_with_a_snapshot(db, clock, tmp_path):
+@pytest.mark.parametrize("key", ["list_snap:aaaaaaaaaa", "list_snap:m:1:2"])
+def test_the_package_guard_refuses_a_replica_with_a_snapshot(db, clock, tmp_path, key):
+    """Сторож пакета ловит и снимок, и запись сообщения: бот на резерве не должен
+    править сообщения основы по её записям."""
     from awgbot.util.rsvpkg import bot
     p = tmp_path / "replica.db"
     p.write_bytes(bot.replica(db.path))
     con = sqlite3.connect(p)
-    con.execute("INSERT INTO server_state (key, value) VALUES ('list_snap:aaaaaaaaaa', '{}')")
+    con.execute("INSERT INTO server_state (key, value) VALUES (?, '{}')", (key,))
     con.commit()
     con.close()
     with pytest.raises(bot.BotPartError):

@@ -123,26 +123,29 @@ def _tj4(variant: str):
 
 
 def _with_snap(builder, chat: int, *, at: _dt.datetime | None = None, rows: int = 3, back: str = ""):
-    """Построитель роли и снимок в чате chat (at — время события, по умолчанию сейчас)."""
+    """Построитель роли и снимок в чате chat (at — время события, по умолчанию сейчас;
+    срок снимка пересчитан от него тем же правилом, что при записи)."""
     def build(services, mp):
         who = _call(builder, services, mp)
         key = services.db.list_snap_keep(chat, "admin", "⚠️ Не добавлено",
                                          [f"<code>bad{i:02d}..ru</code> — не похоже на адрес" for i in range(rows)], back)
         if at is not None:
+            from awgbot.infra.db.listsnap import expiry
             from awgbot.util import timeutil
             data = json.loads(services.db.get_state("list_snap:" + key))
             data["at"] = timeutil.to_iso(at)
+            data["exp"] = expiry.exp_iso(data["at"])
             services.db.set_state("list_snap:" + key, json.dumps(data, ensure_ascii=False))
         return who
     return build
 
 
 def _evicted(builder, chat: int):
-    """Построитель роли и 21 снимок в чате chat за одну минуту: первый
-    (snapkey001) вытеснен двадцать первым — не протух."""
+    """Построитель роли и 51 снимок в чате chat за одну минуту: первый
+    (snapkey001) вытеснен пятьдесят первым — не протух."""
     def build(services, mp):
         who = _call(builder, services, mp)
-        for n in range(21):
+        for n in range(51):
             services.db.list_snap_keep(chat, "admin", f"⚠️ Не добавлено №{n + 1}",
                                        [f"<code>bad{n:02d}..ru</code> — не похоже на адрес"],
                                        RoutingCB(action="sites", ref=KS).pack())
@@ -229,7 +232,7 @@ ADMIN = [
                          back=RoutingCB(action="sites", ref=KS).pack()),
          title="снимок старше 30 дней — «больше не хранится», «⬅️ В меню»"),
     Shot("adm.snap.evicted", role="admin", steps=[_MAIN, snap()], data=_evicted(_people, config.ADMIN_ID),
-         title="21-й снимок чата вытеснил первый — «бот держит 20 последних списков чата», «⬅️ В меню»"),
+         title="51-й снимок чата вытеснил первый — «бот держит 50 последних списков чата», «⬅️ В меню»"),
     Shot("adm.snap.gone", role="admin", steps=[_MAIN, snap("zzzzzzzzzz")], data=_people,
          title="снимка нет — «Этого списка больше нет»"),
     Shot("adm.snap.foreign", role="admin", steps=[_MAIN, snap()], data=_with_snap(_people, 42),
