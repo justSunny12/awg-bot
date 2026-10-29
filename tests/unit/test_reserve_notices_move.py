@@ -90,7 +90,7 @@ def test_the_primary_side_notice_lists_what_clients_were_told():
 
 def test_the_return_summary_counts_only_what_happened_and_appends_lost_devices():
     full = rn.returned_home("Beta", {"clients": 1, "devices": 2, "extensions": 3, "blocks": 4}, "↑ 1 ГБ")
-    for part in ("1 новых профиля", "2 новых устройства", "3 продления", "4 блокировки", "через резерв"):
+    for part in ("1 новый профиль", "2 новых устройства", "3 продления", "4 блокировки", "через резерв"):
         assert part in full, full
     assert "без новых профилей и устройств" in rn.returned_home("Beta", {"clients": 0}, "")
     line = rn.lost_device("Планшет", "Аня", "Ноутбук", "Вера", "Beta")

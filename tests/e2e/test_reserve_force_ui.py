@@ -62,7 +62,7 @@ async def test_the_dialog_in_manual_mode_tells_what_to_change_and_puts_cancel_fi
     assert e, "диалог не показан"
     text = e[0].text
     assert "Вернуть пользователей без «Beta»?" in text and "смени у провайдера запись" in text and OWN_IP in text, text
-    assert rc.HOST_A in text and "пока он не на связи, пересылки хвоста с него нет" in text, text
+    assert rc.HOST_A in text and "Пока «Beta» не на связи, пересылки устройств с него нет" in text, text
     assert _labels(e[0]) == ["⬅️ Отмена", "⚠️ Да, вернуть"], _labels(e[0])
     assert not ui.svc.rsv_get("rsv_out").get("await_merge"), "диалог сам запустил рычаг"
 
