@@ -164,33 +164,38 @@ def test_tj6_texts_and_no_final_period():
         assert not t.rstrip().endswith("."), t
 
 
-# ── «не дошла / не дошли» по форме числа ────────────────────────────────────
-# Глагол согласуется с числом так же, как существительное: «21 правка не дошли» —
-# безграмотная строка в уведомлении, которое админ должен прочитать и поверить.
+# ── «не применено / не применены» по форме числа ────────────────────────────
+# Глагол согласуется с числом так же, как существительное: «21 изменение не
+# применены» — безграмотная строка в уведомлении, которое админ должен прочитать
+# и поверить.
 
 @pytest.mark.parametrize("n, noun, verb", [
-    (1, "1 правка", "не дошла"), (2, "2 правки", "не дошли"), (5, "5 правок", "не дошли"),
-    (21, "21 правка", "не дошла"), (11, "11 правок", "не дошли"),
+    (1, "1 изменение", "не применено"), (2, "2 изменения", "не применены"), (5, "5 изменений", "не применены"),
+    (21, "21 изменение", "не применено"), (22, "22 изменения", "не применены"), (11, "11 изменений", "не применены"),
 ])
 def test_lost_edits_agree_with_the_number(n, noun, verb):
     text = rn.jrn_lost("Beta", 100, 100 + n - 1)
-    assert text.startswith(f"⚠️ {noun} бота на «Beta» {verb} до возврата"), text
+    assert text.startswith(f"⚠️ {noun} от бота на «Beta» {verb} — профили и устройства"), text
+    assert text.endswith("проверь глазами"), f"уведомление с точкой или без совета: {text!r}"
 
 
 @pytest.mark.parametrize("n, noun, verb", [
-    (1, "1 моё решение", "не дошло"), (2, "2 моих решения", "не дошли"), (5, "5 моих решений", "не дошли"),
-    (21, "21 моё решение", "не дошло"), (11, "11 моих решений", "не дошли"),
+    (1, "1 изменение", "не применено"), (2, "2 изменения", "не применены"), (5, "5 изменений", "не применены"),
+    (21, "21 изменение", "не применено"), (22, "22 изменения", "не применены"), (11, "11 изменений", "не применены"),
 ])
 def test_my_lost_decisions_agree_with_the_number(n, noun, verb):
     text = rn.jrn_mine_lost("Beta", 7, 7 + n - 1)
-    assert text.startswith(f"⚠️ {noun} перед переездом до базы бота на «Beta» {verb} (журнал"), text
+    assert text.startswith(f"⚠️ {noun} перед переездом {verb} на «Beta» (журнал на резерве прочитан не целиком)"), text
+    assert text.endswith("— правки резерва легли поверх, проверь глазами"), \
+        f"чьи правки легли поверх — не сказано или точка в конце: {text!r}"
 
 
 # ── журнал второй стороны не пишется: совет по причине ──────────────────────
 
 def test_a_full_disk_asks_to_free_space():
     text = rn.keep_write_failed("Alpha", "[Errno 28] No space left on device", no_space=True)
-    assert "освободи место на диске, запись возобновится сама" in text and "проверь диск" not in text, text
+    assert "освободи место на диске, запись возобновится сама" in text and "проверь" not in text, text
+    assert "— данные для переезда не обновляются;" in text, f"чьи данные — висячее «его»: {text!r}"
     assert not text.endswith("."), text
 
 
@@ -198,18 +203,36 @@ def test_another_disk_error_asks_to_check_the_disk_not_to_free_space():
     """EIO, EROFS: место есть — совет «освободи место» уводит админа чистить диск,
     пока тот сыплется."""
     text = rn.keep_write_failed("Alpha", "[Errno 5] Input/output error", no_space=False)
-    assert "проверь диск, запись возобновится сама" in text and "освободи место" not in text, text
+    assert "проверь диск, запись возобновится сама" in text and "место на диске" not in text, text
+    assert "— данные для переезда не обновляются;" in text, f"чьи данные — висячее «его»: {text!r}"
     assert rn.keep_write_failed("Alpha", "x") == rn.keep_write_failed("Alpha", "x", no_space=False), \
         "по умолчанию — не «нет места»"
 
 
 # ── отказ С9 во всплывашке ──────────────────────────────────────────────────
 
+def _utf16(s: str) -> int:
+    """Длина так, как её считает Telegram (единицы UTF-16), а не знаки Python."""
+    return len(s.encode("utf-16-le")) // 2
+
+
 def test_the_c9_refusal_with_a_long_pair_name_keeps_its_advice_within_a_toast():
-    """Отказ «⬆️ Обновить» идёт всплывашкой `str(e)[:200]` (handlers/fleet.py): с
-    именем пары в 60 знаков совет «удали пару» обязан уцелеть — иначе админ, чей
-    резерв не вернётся, не узнаёт, как выйти из ожидания."""
+    """Отказ «⬆️ Обновить» идёт всплывашкой `str(e)[:200]` (handlers/fleet.py), а
+    Telegram меряет 200 в единицах UTF-16: с именем пары в 60 знаков совет «удали
+    пару» обязан уцелеть целиком — иначе админ, чей резерв не вернётся, не узнаёт,
+    как выйти из ожидания."""
     from awgbot.domain.services.reserve.journal.tail import C9_WAIT_REFUSED
-    toast = C9_WAIT_REFUSED.format(name="Ж" * 60, what="обновление")[:200]
-    assert toast.endswith("удали пару в «🛟 Резерв»"), toast
+    full = C9_WAIT_REFUSED.format(name="Ж" * 60, what="обновление")
+    assert _utf16(full) <= 200, f"всплывашка С9 длиннее 200 единиц UTF-16: {_utf16(full)}"
+    toast = full[:200]
+    assert toast == full and toast.endswith("если не вернётся — удали пару"), toast
     assert toast.count("Ж" * 60) == 1, "имя пары в отказе дважды — съедает место совета"
+
+
+def test_the_own_tail_refusal_with_a_long_pair_name_fits_a_toast():
+    """Отказ своего хвоста — та же всплывашка: с именем в 60 знаков — целиком, со
+    сроком «после завершения» в конце."""
+    from awgbot.domain.services.reserve.journal.tail import OWN_TAIL_REFUSED
+    full = OWN_TAIL_REFUSED.format(name="Ж" * 60, what="обновление")
+    assert _utf16(full) <= 200, f"всплывашка своего хвоста длиннее 200 единиц UTF-16: {_utf16(full)}"
+    assert full.endswith("обновление станет возможным после завершения"), full

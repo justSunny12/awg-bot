@@ -78,9 +78,8 @@ def duo(wall, mv, tmp_path, monkeypatch, fake_awg):
 
 
 def _busy(capsys) -> tuple[int, str]:
-    from tools import rsvbusy
-    code = rsvbusy.main()
-    return code, capsys.readouterr().out.strip()
+    code, out, _err = _busy_err(capsys, "обновление")
+    return code, out
 
 
 def _tail_on_its_way(duo) -> None:
@@ -264,45 +263,85 @@ def test_the_bot_and_the_terminal_guard_judge_the_c9_wait_the_same(mv, capsys):
 # не узнаёт тот же случай; без подсказки он не знает, как выйти из ожидания,
 # когда резерв не вернётся.
 
-def _hint(lose: str) -> str:
-    return f"; только ждать нельзя — AWG_RESERVE_IGNORE_WAIT=1 перед командой ({lose})"
+_VERB = {"обновление": "обновить", "восстановление": "восстановить"}
 
 
-_LOSE_OWN = "правки, сделанные здесь перед переездом, на «Beta» не попадут"
-_LOSE_C9 = "правки бота на «Beta» сюда не придут"
+def _hint(lose: str, what: str = "обновление") -> str:
+    return f"; {_VERB.get(what, 'продолжить')} немедленно — AWG_RESERVE_IGNORE_WAIT=1 перед командой ({lose})"
 
 
-def _busy_err(capsys) -> tuple[int, str, str]:
+_LOSE_OWN = "изменения могут быть потеряны"
+_LOSE_C9 = "изменения с резерва могут быть потеряны"
+
+
+def _busy_err(capsys, *act: str) -> tuple[int, str, str]:
+    """Сторож так, как его зовёт reserve_busy_guard: `python -m tools.rsvbusy <действие>`
+    (без аргумента — как прежний вызов). argv подменяется явно: argv самого
+    pytest — не аргумент сторожа."""
+    import sys
     from tools import rsvbusy
-    code = rsvbusy.main()
+    saved = sys.argv
+    sys.argv = ["rsvbusy", *act]
+    try:
+        code = rsvbusy.main()
+    finally:
+        sys.argv = saved
     got = capsys.readouterr()
     return code, got.out.strip(), got.err.strip()
 
 
-def test_the_own_tail_reason_uses_the_bots_words_for_update_and_restore(duo, wall, capsys):
+@pytest.mark.parametrize("act", ["обновление", "восстановление"])
+def test_the_own_tail_reason_uses_the_bots_words_for_update_and_restore(duo, wall, capsys, act):
+    """Действие словом от вызывающего: `restore` говорит «восстановление станет
+    возможным … восстановить немедленно», а не «обновление» — человек у терминала,
+    запустивший восстановление, иначе решит, что сторож сказал не про его команду."""
     _tail_on_its_way(duo)
     duo.a.rsv_update("rsv_tail", at=wall.ago(1))
-    code, out, err = _busy_err(capsys)
-    want = tailmod.OWN_TAIL_REFUSED.format(name="Beta", what="обновление и восстановление") + _hint(_LOSE_OWN)
+    code, out, err = _busy_err(capsys, act)
+    want = tailmod.OWN_TAIL_REFUSED.format(name="Beta", what=act) + _hint(_LOSE_OWN, act)
     assert (code, out) == (3, want), f"причина «свой хвост» не словами бота или без подсказки: {code} {out!r}"
+    assert f"{act} станет возможным" in out and f"{_VERB[act]} немедленно" in out, out
     assert err == "", f"при отказе лишнее в stderr: {err!r}"
 
 
-def test_the_c9_reason_uses_the_bots_words(mv, capsys):
+@pytest.mark.parametrize("act", ["обновление", "восстановление"])
+def test_the_c9_reason_uses_the_bots_words(mv, capsys, act):
     rm.go_away(mv.svc)
     mv.svc.reserve_set_out("home", await_merge=True)
-    code, out, _err = _busy_err(capsys)
-    want = tailmod.C9_WAIT_REFUSED.format(name="Beta", what="обновление и восстановление") + _hint(_LOSE_C9)
+    code, out, _err = _busy_err(capsys, act)
+    want = tailmod.C9_WAIT_REFUSED.format(name="Beta", what=act) + _hint(_LOSE_C9, act)
     assert (code, out) == (3, want), f"причина С9 не словами бота или без подсказки: {code} {out!r}"
+    other = "восстановление" if act == "обновление" else "обновление"
+    assert other not in out, f"в отказе {act!r} — чужое действие: {out!r}"
+
+
+def test_without_an_argument_the_guard_speaks_of_the_update(mv, capsys):
+    """Без аргумента (прежний `update.sh` звал сторож без действия) — «обновление» и
+    «обновить немедленно»: пустая подстановка дала бы «— станет возможным …»."""
+    rm.go_away(mv.svc)
+    mv.svc.reserve_set_out("home", await_merge=True)
+    want = tailmod.C9_WAIT_REFUSED.format(name="Beta", what="обновление") + _hint(_LOSE_C9)
+    assert _busy_err(capsys) == (3, want, ""), "без аргумента — не «обновление»"
+    assert _busy_err(capsys, "  ") == (3, want, ""), "пустое действие — не «обновление»"
+
+
+def test_an_unknown_action_is_told_as_is_with_a_neutral_verb(mv, capsys):
+    """Действие, для которого глагола нет, — подставляется как есть, обход —
+    «продолжить немедленно»: не выдумывать «обновить» для чужой команды."""
+    rm.go_away(mv.svc)
+    mv.svc.reserve_set_out("home", await_merge=True)
+    code, out, _err = _busy_err(capsys, "перенос")
+    assert code == 3 and "перенос станет возможным" in out, out
+    assert out.endswith(_hint(_LOSE_C9, "перенос")) and "обновить" not in out, out
 
 
 def test_the_bypass_lets_the_own_tail_go_and_says_so_on_stderr(duo, wall, capsys, monkeypatch):
     """AWG_RESERVE_IGNORE_WAIT=1: код 0, stdout пуст (сторож обновления смотрит на него
-    при коде 3), в stderr — что пропущено и что правки не придут."""
+    при коде 3), в stderr — что пропущено и что изменения могут потеряться."""
     _tail_on_its_way(duo)
     duo.a.rsv_update("rsv_tail", at=wall.ago(1))
     monkeypatch.setenv("AWG_RESERVE_IGNORE_WAIT", "1")
-    code, out, err = _busy_err(capsys)
+    code, out, err = _busy_err(capsys, "обновление")
     assert (code, out) == (0, ""), f"обход не пустил: {code} {out!r}"
     assert err == f"резерв: ожидание снято по AWG_RESERVE_IGNORE_WAIT=1 — {_LOSE_OWN}", err
 
@@ -311,9 +350,23 @@ def test_the_bypass_lets_the_c9_wait_go_and_says_so_on_stderr(mv, capsys, monkey
     rm.go_away(mv.svc)
     mv.svc.reserve_set_out("home", await_merge=True)
     monkeypatch.setenv("AWG_RESERVE_IGNORE_WAIT", "1")
-    code, out, err = _busy_err(capsys)
+    code, out, err = _busy_err(capsys, "восстановление")
     assert (code, out) == (0, ""), f"обход не пустил: {code} {out!r}"
     assert err == f"резерв: ожидание снято по AWG_RESERVE_IGNORE_WAIT=1 — {_LOSE_C9}", err
+
+
+def test_an_unreadable_base_lets_the_command_go_and_says_the_check_was_skipped(capsys, monkeypatch):
+    """База бота не открылась — сторож не держит (код 0, stdout пуст), а в stderr
+    человеку — что проверка резерва пропущена: «считаю свободным» без подлежащего
+    читалось как «сервер свободен», хотя про резерв никто ничего не узнал."""
+    from awgbot.infra import db as dbmod
+
+    def broken(path):
+        raise OSError("unable to open database file")
+    monkeypatch.setattr(dbmod, "Database", broken)
+    code, out, err = _busy_err(capsys, "восстановление")
+    assert (code, out) == (0, ""), f"нечитаемая база держит команду: {code} {out!r}"
+    assert err == "резерв: база не прочитана (unable to open database file) — проверку резерва пропускаю", err
 
 
 def test_the_bypass_does_not_lift_clients_away_and_is_silent_when_nothing_waits(mv, capsys, monkeypatch):

@@ -248,8 +248,8 @@ def test_no_space_at_the_reserve_gives_no_jack_keeps_the_session_and_tells_once(
 
 
 @pytest.mark.parametrize("err, advice, not_advice", [
-    (errno.ENOSPC, "освободи место на диске", "проверь диск"),
-    (errno.EIO, "проверь диск", "освободи место"),
+    (errno.ENOSPC, "освободи место на диске", "проверь"),
+    (errno.EIO, "проверь диск", "место на диске"),
 ], ids=["no-space", "io-error"])
 def test_the_disk_advice_follows_the_errno(duo, monkeypatch, err, advice, not_advice):
     """Совет в уведомлении — по причине: нет места — освободить; прочий сбой ввода-

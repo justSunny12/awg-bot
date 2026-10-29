@@ -186,7 +186,8 @@ def _guard(tool: str | None) -> subprocess.CompletedProcess:
 def test_the_guard_stops_the_update_when_the_server_is_busy():
     r = _guard('echo "пользователи этого сервера сейчас у резерва «Beta» (away)"; return 3')
     assert r.returncode != 0 and "continued" not in r.stdout, "обновление пошло посреди переезда"
-    assert "DIE: обновление сейчас нельзя: пользователи этого сервера сейчас у резерва «Beta» (away)" in r.stdout, r.stdout
+    assert "DIE: обновление сейчас невозможно: пользователи этого сервера сейчас у резерва «Beta» (away)" in r.stdout, \
+        r.stdout
 
 
 @pytest.mark.parametrize("tool", ["return 0", "return 1", None], ids=["free", "old-code-without-the-tool", "no-bot-tool"])
@@ -195,6 +196,17 @@ def test_the_guard_lets_the_update_go_when_free_or_unknown(tool):
     без bot_tool — сторож не мешает обновлению."""
     r = _guard(tool)
     assert r.returncode == 0 and "continued" in r.stdout, r.stdout + r.stderr
+
+
+@pytest.mark.parametrize("text, func, act", [(UPDATE, "cmd_update", "обновление"),
+                                             (RESTORE, "cmd_restore", "восстановление")], ids=["update", "restore"])
+def test_each_command_names_its_own_action_to_the_guard(text, func, act):
+    """update зовёт сторож со словом «обновление», restore — «восстановление»: этим словом
+    начинается отказ и подсказка обхода; перепутанное — человек у терминала читает
+    про команду, которую не запускал."""
+    body = _func(text, func)
+    calls = re.findall(r'reserve_busy_guard "([^"]*)"', body)
+    assert calls == [act], f"{func}: сторож зовётся с {calls}, ждал [{act!r}]"
 
 
 @pytest.mark.parametrize("text, func", [(UPDATE, "cmd_update"), (RESTORE, "cmd_restore")])

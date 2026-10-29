@@ -172,8 +172,13 @@ def test_the_journal_part_of_st_lets_a_locked_base_out(duo, monkeypatch):
 # ── сторож терминала ────────────────────────────────────────────────────────
 
 def _busy(capsys) -> tuple[int, str, str]:
+    import sys
     from tools import rsvbusy
-    code = rsvbusy.main()
+    saved, sys.argv = sys.argv, ["rsvbusy", "обновление"]   # как зовёт update.sh; argv pytest — не аргумент сторожа
+    try:
+        code = rsvbusy.main()
+    finally:
+        sys.argv = saved
     cap = capsys.readouterr()
     return code, cap.out.strip(), cap.err.strip()
 
@@ -189,15 +194,16 @@ def test_the_terminal_guard_refuses_on_a_locked_base(mv, monkeypatch, capsys):
 
 def test_the_terminal_guard_bypass_lets_the_update_go_and_says_so(mv, monkeypatch, capsys):
     """AWG_RESERVE_IGNORE_WAIT=1 — обход ожидания правок бота на резерве: обновление
-    идёт, в stderr — что именно не придёт; без переменной — отказ с подсказкой."""
+    идёт, в stderr — что именно может потеряться; без переменной — отказ с подсказкой."""
     mv.svc.rsv_update("rsv_out", await_merge=True)
     monkeypatch.delenv("AWG_RESERVE_IGNORE_WAIT", raising=False)
     code, out, _err = _busy(capsys)
-    assert code == 3 and "удали пару в «🛟 Резерв»" in out, f"нет подсказки выхода: {out!r}"
+    assert code == 3 and "если не вернётся — удали пару" in out, f"нет подсказки выхода: {out!r}"
+    assert "обновить немедленно — AWG_RESERVE_IGNORE_WAIT=1" in out, f"нет подсказки обхода: {out!r}"
     monkeypatch.setenv("AWG_RESERVE_IGNORE_WAIT", "1")
     code, out, err = _busy(capsys)
     assert (code, out) == (0, ""), f"обход не пустил обновление: {code} ({out!r})"
-    assert "ожидание снято по AWG_RESERVE_IGNORE_WAIT=1" in err and "не придут" in err, err
+    assert "ожидание снято по AWG_RESERVE_IGNORE_WAIT=1" in err and "изменения с резерва могут быть потеряны" in err, err
 
 
 def test_the_terminal_guard_bypass_does_not_override_the_users_at_the_reserve(mv, monkeypatch, capsys):

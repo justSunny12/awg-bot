@@ -26,13 +26,13 @@ reserve_busy_guard() {  # reserve_busy_guard ДЕЙСТВИЕ — отказ, п
     declare -F bot_tool >/dev/null 2>&1 || return 0
     local why rc=0 err
     err="$(mktemp 2>/dev/null)" || err=""                     # временных файлов нет — сторож без его stderr
-    why="$(bot_tool tools.rsvbusy 2>"${err:-/dev/null}")" || rc=$?   # прочий код (нет инструмента, упал) — не помеха
+    why="$(bot_tool tools.rsvbusy "$1" 2>"${err:-/dev/null}")" || rc=$?   # прочий код (нет инструмента, упал) — не помеха
     if [[ -n "$err" ]]; then
-        # stderr сторожа — человеку: «база не прочитана — считаю свободным», обход по AWG_RESERVE_IGNORE_WAIT
+        # stderr сторожа — человеку: «база не прочитана — проверку резерва пропускаю», обход по AWG_RESERVE_IGNORE_WAIT
         if [[ $rc -eq 0 || $rc -eq 3 ]] && [[ -s "$err" ]]; then cat "$err" >&2; fi
         rm -f "$err"
     fi
-    if [[ $rc -eq 3 ]]; then die "$1 сейчас нельзя: $why"; fi
+    if [[ $rc -eq 3 ]]; then die "$1 сейчас невозможно: $why"; fi
     return 0
 }
 

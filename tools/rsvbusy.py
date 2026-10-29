@@ -1,12 +1,13 @@
 """
 rsvbusy.py — сторож для скриптов поставки: занят ли сервер резервом так, что
-обновление или восстановление сейчас нельзя. Код 0 — свободен; 3 — занят,
+обновление или восстановление сейчас невозможно. Код 0 — свободен; 3 — занят,
 причина в stdout (одной строкой; при ожидании — теми же словами, что отказ
 «⬆️ Обновить» в боте, journal/tail OWN_TAIL_REFUSED / C9_WAIT_REFUSED, с хвостом
-«; только ждать нельзя — AWG_RESERVE_IGNORE_WAIT=1 перед командой (<что при
-этом теряется>)»). Читает только базу бота — ни сети, ни Telegram.
+«; <обновить|восстановить> немедленно — AWG_RESERVE_IGNORE_WAIT=1 перед командой
+(<что при этом теряется>)»). Читает только базу бота — ни сети, ни Telegram.
 
-    awg-bot update / restore зовут его до остановки сервиса (bot_tool tools.rsvbusy).
+    awg-bot update / restore зовут его до остановки сервиса (bot_tool tools.rsvbusy <обновление|восстановление>):
+    аргумент — действие словами отказа («обновление станет возможным…», «обновить немедленно»).
 
 Занят: мои пользователи у резерва или едут (leaving / away / returning) — код и
 данные уедут из-под гостя при возврате; у меня пользователи и бот резерва (taking /
@@ -21,8 +22,9 @@ serving / releasing) — код в /opt меняется под работающ
 непрочитанного хвоста нельзя. AWG_RESERVE_IGNORE_WAIT=1 в окружении снимает
 только ожидание (хвост, правки после «вернуть без резерва», непрочитанное
 состояние) — строкой в stderr «резерв: ожидание снято по AWG_RESERVE_IGNORE_WAIT=1 — …»
-с тем, что при этом теряется (своя ветка у каждой причины); отъезд и гостя не снимает. Базу не открыть вовсе —
-свободен, строкой в stderr «резерв: база не прочитана (…) — считаю свободным».
+с тем, что при этом теряется (свой хвост — «изменения могут быть потеряны», иначе — «изменения с
+резерва могут быть потеряны»); отъезд и гостя не снимает. Базу не открыть вовсе —
+свободен, строкой в stderr «резерв: база не прочитана (…) — проверку резерва пропускаю».
 stderr при кодах 0 и 3 reserve_busy_guard (install/lib/update.sh) показывает человеку.
 """
 from __future__ import annotations
@@ -32,13 +34,19 @@ import os
 import sys
 
 
-def main() -> int:
+ACTS = {"обновление": "обновить", "восстановление": "восстановить"}
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = sys.argv[1:] if argv is None else list(argv)
+    what = (args[0] if args else "").strip() or "обновление"
+    verb = ACTS.get(what, "продолжить")
     try:
         from awgbot.core import config
         from awgbot.infra.db import Database
         db = Database(str(config.DATA_DIR / "bot.db"))
     except Exception as e:                                # noqa: BLE001 — базы нет: не занят
-        print(f"резерв: база не прочитана ({e}) — считаю свободным", file=sys.stderr)
+        print(f"резерв: база не прочитана ({e}) — проверку резерва пропускаю", file=sys.stderr)
         return 0
     try:
         try:
@@ -65,15 +73,15 @@ def main() -> int:
                                                                      own_tail_blocks_raw)
             from awgbot.util.rsvjrn import schema_too_old
             if own_tail_blocks_raw(db):                   # те же слова, что у отказа «⬆️ Обновить» в боте
-                waiting = OWN_TAIL_REFUSED.format(name=name, what="обновление и восстановление")
-                lose = f"правки, сделанные здесь перед переездом, на «{name}» не попадут"
+                waiting = OWN_TAIL_REFUSED.format(name=name, what=what)
+                lose = "изменения могут быть потеряны"
             elif c9_wait_raw(db):
-                waiting = C9_WAIT_REFUSED.format(name=name, what="обновление и восстановление")
-                lose = f"правки бота на «{name}» сюда не придут"
+                waiting = C9_WAIT_REFUSED.format(name=name, what=what)
+                lose = "изменения с резерва могут быть потеряны"
         except Exception as e:                            # noqa: BLE001
             if not schema_too_old(e):                     # старая база — не ждём; ошибка базы — не пускать
                 waiting = f"состояние резерва не прочитано ({e}) — повтори через минуту"
-                lose = "чего ждём, неизвестно"
+                lose = "изменения с резерва могут быть потеряны"
         if waiting and os.environ.get("AWG_RESERVE_IGNORE_WAIT") == "1":
             print(f"резерв: ожидание снято по AWG_RESERVE_IGNORE_WAIT=1 — {lose}", file=sys.stderr)
             waiting = ""
@@ -89,7 +97,7 @@ def main() -> int:
         print(f"здесь сейчас пользователи и бот «{name}» ({inn}) — сначала их возврат к нему")
         return 3
     if waiting:
-        print(f"{waiting}; только ждать нельзя — AWG_RESERVE_IGNORE_WAIT=1 перед командой ({lose})")
+        print(f"{waiting}; {verb} немедленно — AWG_RESERVE_IGNORE_WAIT=1 перед командой ({lose})")
         return 3
     return 0
 

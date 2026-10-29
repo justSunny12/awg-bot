@@ -418,7 +418,8 @@ def test_the_return_waits_for_the_own_tail_up_to_ten_minutes(duo):
     _crash(duo, tail=_tail_vera, guest=lambda db, i: None)
     _jtail_parts(duo)                                   # ушло, ответа нет
     why = duo.a.reserve_return_check()
-    assert why == "Правки, сделанные здесь перед переездом на «Beta», ещё переносятся туда — возврат после завершения", why
+    assert why == ("Изменения, сделанные здесь перед переездом на «Beta», ещё переносятся туда — возврат станет "
+                   "возможным после завершения"), why
     duo.a.rsv_update("rsv_tail", at=_ago(9))
     assert duo.a.reserve_return_check() == why, "ждал меньше 10 минут"
     duo.a.rsv_update("rsv_tail", at=_ago(11))
@@ -447,7 +448,8 @@ def test_the_update_is_refused_while_the_own_tail_is_on_its_way(duo):
     _jtail_parts(duo)
     with pytest.raises(ServiceError) as e:
         duo.a.reserve_refuse_update_if_waiting()
-    assert str(e.value) == "Правки, сделанные здесь перед переездом на «Beta», ещё переносятся туда — обновление после завершения"
+    assert str(e.value) == ("Изменения, сделанные здесь перед переездом на «Beta», ещё переносятся туда — обновление "
+                            "станет возможным после завершения")
     duo.a.rsv_update("rsv_tail", at=_ago(11))
     duo.a.reserve_refuse_update_if_waiting()           # дольше 10 минут — не держит
 
@@ -457,8 +459,8 @@ def test_the_update_is_refused_while_waiting_for_the_reserves_edits(mv):
     mv.svc.rsv_update("rsv_out", await_merge=True)
     with pytest.raises(ServiceError) as e:
         mv.svc.reserve_refuse_update_if_waiting()
-    assert str(e.value) == ("Жду изменения от бота на «Beta», сделанные после потери связи, — обновление, когда они "
-                            "придут; он не вернётся — удали пару в «🛟 Резерв»"), str(e.value)
+    assert str(e.value) == ("Жду изменения от бота на «Beta», сделанные после потери связи, — обновление станет "
+                            "возможным после их получения; если не вернётся — удали пару"), str(e.value)
     mv.svc.rsv_update("rsv_out", await_merge=False)
     mv.svc.reserve_refuse_update_if_waiting()
 
@@ -684,7 +686,7 @@ async def test_tj4_on_nine_disputes_after_a_crash_links_a_snapshot_kept_at_the_p
     shutil.rmtree(rsvzone.VAR_DIR / "jrn", ignore_errors=True)
     text, markup = await _open_snap(duo.a, key)
     head, body = text.split("\n\n", 1)
-    assert head.startswith("⚠️ <b>Не перенесены правки, сделанные здесь перед переездом на «Beta»</b> · 9 · на "), head
+    assert head.startswith("⚠️ <b>Не перенесены изменения, сделанные здесь перед переездом на «Beta»</b> · 9 · на "), head
     rows = body.split("\n")
     shown = [ln[2:] for ln in tj4.split("\n") if ln.startswith("• ")]
     assert len(rows) == 9 and rows[:5] == shown, f"строки снимка — не строки Т-Ж4:\n{rows[:2]}\n{shown[:2]}"
@@ -710,7 +712,7 @@ async def test_tj4_on_nine_disputes_in_c9_links_a_snapshot_with_the_c9_title(duo
     assert _snap_keys(duo.a.db) == [key] and not _snap_keys(duo.gdb), (_snap_keys(duo.a.db), _snap_keys(duo.gdb))
     duo.b_keep.wipe()
     text, _ = await _open_snap(duo.a, key)
-    assert text.startswith("⚠️ <b>Не перенесены правки бота на «Beta»</b> · 9 · на "), text[:120]
+    assert text.startswith("⚠️ <b>Не перенесены изменения от бота на «Beta»</b> · 9 · на "), text[:120]
     assert len(text.split("\n\n", 1)[1].split("\n")) == 9
 
 

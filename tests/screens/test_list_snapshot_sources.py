@@ -260,8 +260,8 @@ async def test_the_transit_result_tail_opens_every_skipped_line(tmp_path, frozen
 # ── Т-Ж4 и отчёт восстановления: уведомления ────────────────────────────────
 
 @pytest.mark.parametrize("notice, opened, title", [
-    ("adm.snap.tj4.crash", "adm.snap.tj4.crash.open", "⚠️ <b>Не перенесены правки, сделанные здесь перед переездом на «резерв»</b>"),
-    ("adm.snap.tj4.c9", "adm.snap.tj4.c9.open", "⚠️ <b>Не перенесены правки бота на «резерв»</b>"),
+    ("adm.snap.tj4.crash", "adm.snap.tj4.crash.open", "⚠️ <b>Не перенесены изменения, сделанные здесь перед переездом на «резерв»</b>"),
+    ("adm.snap.tj4.c9", "adm.snap.tj4.c9.open", "⚠️ <b>Не перенесены изменения от бота на «резерв»</b>"),
     ("adm.snap.restore", "adm.snap.restore.open", "⚠️ <b>Не восстановлено из бэкапа</b>"),
 ])
 async def test_a_notice_shows_five_lines_and_links_the_rest_with_the_new_mark(tmp_path, frozen, fakes, notice,
