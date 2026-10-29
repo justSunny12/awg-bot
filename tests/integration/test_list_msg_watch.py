@@ -430,6 +430,36 @@ async def test_a_refused_screen_edit_releases_the_record_and_the_resent_screen_b
         "экран, присланный заново, не привязал снимок"
 
 
+async def test_a_refused_edit_of_the_live_menu_makes_the_resent_screen_the_live_menu(rig):
+    """Указатель живого меню стоял на пропавшем сообщении: следующее меню не гасило
+    бы присланное заново, а ссылка на экран правила бы пустоту."""
+    from aiogram.exceptions import TelegramBadRequest
+    m = await rig.bot.send_message(CHAT, "экран", reply_markup=MENU)
+    rig.db.nav_touch(CHAT, m.message_id)
+    rig.session.refuse("not_found", method=EditMessageText, mid=m.message_id)
+    with pytest.raises(TelegramBadRequest):
+        await rig.bot.edit_message_text("экран ещё", chat_id=CHAT, message_id=m.message_id, reply_markup=MENU)
+    assert rig.db.get_nav_message_id(CHAT) == m.message_id, "указатель сдвинут до отправки"
+    n = await rig.bot.send_message(CHAT, "экран ещё", reply_markup=MENU)
+    assert rig.db.get_nav_message_id(CHAT) == n.message_id, "присланный заново экран не стал живым меню"
+    await rig.bot.send_message(CHAT, "уведомление", reply_markup=kb.hide_only())
+    assert rig.db.get_nav_message_id(CHAT) == n.message_id, "отказ не снят: следующая отправка сдвинула указатель"
+
+
+async def test_a_refused_edit_of_another_message_leaves_the_live_menu_alone(rig):
+    """Отказ правки не меню (уведомление) — присланное следом не живое меню."""
+    from aiogram.exceptions import TelegramBadRequest
+    menu = await rig.bot.send_message(CHAT, "экран", reply_markup=MENU)
+    rig.db.nav_touch(CHAT, menu.message_id)
+    key = rig.snap()
+    m = await rig.bot.send_message(CHAT, "⚠️ Не добавлено " + rig.link(key), reply_markup=kb.hide_only())
+    rig.session.refuse("not_found", method=EditMessageText, mid=m.message_id)
+    with pytest.raises(TelegramBadRequest):
+        await rig.bot.edit_message_text("⚠️ Не добавлено ещё", chat_id=CHAT, message_id=m.message_id)
+    await rig.bot.send_message(CHAT, "⚠️ Не добавлено ещё", reply_markup=kb.hide_only())
+    assert rig.db.get_nav_message_id(CHAT) == menu.message_id, "указатель живого меню сдвинут отказом правки уведомления"
+
+
 async def test_a_not_modified_refusal_keeps_the_record(rig):
     from aiogram.exceptions import TelegramBadRequest
     key = rig.snap()

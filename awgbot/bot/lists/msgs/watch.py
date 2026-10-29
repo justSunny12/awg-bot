@@ -6,8 +6,11 @@ EditMessageReplyMarkup и DeleteMessage (прочее пропускает бе�
 отказ Telegram уходит наверх как есть; у правки текста или подписи
 обработчиком (не heal) отказ «не изменено» запись не трогает, любой другой
 (сообщения нет, править нельзя) снимает запись и отпускает её снимки:
-обработчик шлёт экран заново новым сообщением, и его ссылки привязывают их.
-После удачного ответа:
+обработчик шлёт экран заново новым сообщением, и его ссылки привязывают их;
+было живым меню чата — им становится присланное заново (REISSUE: отказ
+запоминается в контексте задачи, следующая отправка в тот чат — живое меню;
+иначе указатель остался бы на пропавшем сообщении, и следующее меню не
+погасило бы присланное заново). После удачного ответа:
 
   отправка / правка текста  — ссылки на снимки (scan.keys), клавиатура,
                               итог из NOTE (только если текст с него
@@ -38,7 +41,7 @@ from aiogram.types import Message
 
 from awgbot.util import timeutil
 
-from . import NOTE, OWN, scan
+from . import NOTE, OWN, REISSUE, scan
 
 log = logging.getLogger(__name__)
 
@@ -97,6 +100,8 @@ class ListMsgWatch(BaseRequestMiddleware):
         if not mid:
             return
         kb = scan.kb_json(method.reply_markup)
+        if isinstance(method, _SENDS):
+            await self._reissued(chat, mid)
         if isinstance(method, _TEXT + _CAP):
             if not _html(method):
                 return
@@ -126,21 +131,43 @@ class ListMsgWatch(BaseRequestMiddleware):
     async def _refused(self, method, e) -> None:
         """Правку экрана отклонил Telegram (сообщение удалено, править нельзя): обработчик
         пришлёт экран заново новым сообщением — запись прежнего снимается, снимки
-        отпущены (не сняты: их привяжет новое сообщение)."""
+        отпущены (не сняты: их привяжет новое сообщение); было живым меню — живым
+        станет присланное заново (REISSUE до следующей отправки в чат)."""
         from awgbot.bot.handlers.common import call
+        db = self.services.db
         chat, mid = int(method.chat_id), int(getattr(method, "message_id", 0) or 0)
         if not mid:
             return
         try:
-            rec = await call(self.services.db.list_msg_get, chat, mid)
-            if rec is None:
-                return
-            await call(self.services.db.list_msg_forget, chat, mid, False)
+            rec = await call(db.list_msg_get, chat, mid)
+            if rec is not None:
+                await call(db.list_msg_forget, chat, mid, False)
+            nav = await call(db.get_nav_message_id, chat)
         except Exception as err:                       # noqa: BLE001 — отказ уже уходит наверх
             log.warning("lists: запись сообщения %d чата %d не снята после отказа правки: %s", mid, chat, err)
             return
-        log.info("lists: сообщение %d чата %d — правка отклонена (%s): запись снята, снимки %s отпущены",
-                 mid, chat, e, [str(k) for k in (rec.get("keys") or [])])
+        live = nav is not None and int(nav) == mid
+        if live:
+            REISSUE.set((chat, mid))
+        if rec is None and not live:
+            return
+        log.info("lists: сообщение %d чата %d — правка отклонена (%s): %s%s", mid, chat, e,
+                 "запись снята, снимки %s отпущены" % [str(k) for k in (rec.get("keys") or [])]
+                 if rec is not None else "записи не было",
+                 "; живое меню — им станет присланное заново" if live else "")
+
+    async def _reissued(self, chat: int, mid: int) -> None:
+        """Отправка после отказа правки живого меню той же задачей: присланный заново
+        экран — живое меню чата (следующее меню погасит его, ссылка на экран правит его)."""
+        pend = REISSUE.get()
+        if pend is None:
+            return
+        REISSUE.set(None)
+        if pend[0] != chat:
+            return
+        from awgbot.bot.handlers.common import call
+        await call(self.services.db.nav_touch, chat, mid)
+        log.info("lists: экран чата %d прислан заново (%d вместо %d) — живое меню теперь он", chat, mid, pend[1])
 
     async def _hide_age(self, bot, chat: int, mid: int, sent: str, kb: str) -> None:
         """«Скрыть» поставили правкой на старое сообщение (след переезда на меню

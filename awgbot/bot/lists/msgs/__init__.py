@@ -30,6 +30,9 @@ log = logging.getLogger(__name__)
 NOTE: contextvars.ContextVar[str] = contextvars.ContextVar("listsnap_note", default="")
 # правка идёт от heal: запись он обновляет сам, посредник её не трогает (иначе снял бы итог)
 OWN: contextvars.ContextVar[bool] = contextvars.ContextVar("listsnap_own", default=False)
+# правку живого меню отклонил Telegram (чат, номер): обработчик шлёт экран заново новым
+# сообщением той же задачей — посредник делает живым меню его; снимает посредник
+REISSUE: contextvars.ContextVar[tuple[int, int] | None] = contextvars.ContextVar("listsnap_reissue", default=None)
 
 
 def attach(bot, services) -> None:
@@ -41,4 +44,4 @@ def attach(bot, services) -> None:
         mw.register(ListMsgWatch(services))
 
 
-__all__ = ["NOTE", "OWN", "attach", "log"]
+__all__ = ["NOTE", "OWN", "REISSUE", "attach", "log"]

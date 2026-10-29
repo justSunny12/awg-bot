@@ -161,3 +161,35 @@ async def test_a_failed_edit_to_the_note_dims_the_menu_as_before(tmp_path, froze
         f"правка до итога не удалась — кнопки не сняты (два живых меню): {heads}"
     assert heads.index(f"! отказ правки #{mid}") < heads.index(f"- markup off #{mid}")
 
+
+
+# ── живое меню удалили рукой: правка отклонена, экран заново — живое меню он ──
+
+async def test_a_screen_resent_after_a_refused_edit_of_the_live_menu_becomes_the_live_menu(tmp_path, frozen, fakes):
+    """Человек удалил живое меню у себя; кнопка на нём ещё в клиенте — нажатие
+    правит пропавшее сообщение, Telegram отказывает, обработчик шлёт экран заново.
+    Указатель живого меню должен перейти на присланный экран: следующее нажатие
+    правит его, а не пустоту, и следующее меню погасит его."""
+    from awgbot.bot.callbacks import Menu
+    from awgbot.core import config
+    seen = {}
+
+    async def by_hand(services, bot):
+        s = bot.session
+        s.deleted.add((s.chat_id, s.nav))
+        seen["gone"] = s.nav
+
+    async def look(services, bot):
+        seen["nav"] = services.db.get_nav_message_id(config.ADMIN_ID)
+
+    steps = [("start", ""), ("call", by_hand, "удалил сам"), ("press", Menu(action="clients")),
+             ("call", look, "указатель"), ("press", Menu(action="main"))]
+    rec = await take(Shot("adm.nav.reissue", role="admin", data=_people, steps=steps, strict_deleted=True),
+                     tmp_path, fakes)
+    heads = [c.head for c in rec.everything]
+    assert f"! правка удалённого #{seen['gone']} — отказ" in heads, f"отказа правки не было: {heads}"
+    sent = [int(h.split("#", 1)[1].split()[0]) for h in heads if h.startswith("+ send #")]
+    assert sent and sent[-1] > seen["gone"], f"экран не прислан заново: {heads}"
+    assert seen["nav"] == sent[-1], f"указатель живого меню не на присланном заново экране: {seen} {heads}"
+    last = [c.head for c in rec.calls]
+    assert f"= edit #{sent[-1]}" in last, f"следующее нажатие не правит присланный заново экран: {last}"
