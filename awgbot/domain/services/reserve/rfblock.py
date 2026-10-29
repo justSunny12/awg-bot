@@ -198,6 +198,16 @@ class ReserveRfBlockMixin:
         и Т-РУ22; согласие — путь кнопки с видом rf | nogw."""
         from awgbot.domain.notices import reserve as rn
         name = self.reserve_peer_name()
+        if case == "q":
+            # кворум: кандидат набрал «нет» большинством — я лишён кворума (или вот-вот): отдаю эпоху
+            # сам путём кнопки; занят — busy, как прежде; проверки линков не нужны
+            why = self.reserve_move_check()
+            if why:
+                log.info("резерв: просьба «%s» по кворуму — занят: %s", name, why)
+                return [("send", "ask_no", {"reason": "busy"})]
+            log.warning("резерв: по решению кворума перевожу пользователей на «%s» (с %s)", name, since)
+            self.reserve_move_start(kind="dead", dead_since=since)
+            return [("live",)]
         kind = "nogw" if case == "nogw" else "rf"
         refuse = ""
         if kind == "rf":

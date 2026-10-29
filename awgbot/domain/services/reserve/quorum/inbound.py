@@ -45,6 +45,20 @@ class ReserveQuorumInboundMixin:
             self.__dict__["_quo_peer_state"] = {"l": str(body.get("l") or ""), "e": int(body.get("e") or 0),
                                                 "holder": str(body.get("holder") or ""), "r": str(body.get("r") or ""),
                                                 "at": timeutil.now_iso()}
+            if str(body.get("l") or "") == self.reserve_quorum_side() and int(body.get("e") or 0) > self.reserve_quorum_epoch() \
+                    and hasattr(self, "reserve_quorum_adopt"):
+                self.reserve_quorum_adopt(int(body.get("e") or 0), f"«{self.reserve_peer_name()}» (qstate)")
+            return []
+        if kind == "qpause":
+            v = self._qvoters.get(f"awgq{str(body.get('l') or '')}h") if hasattr(self, "_qvoters") else None
+            if v is not None:
+                try:
+                    secs = max(0.0, timeutil.elapsed(timeutil.now(), timeutil.parse_iso(str(body.get("until") or ""))))
+                except (ValueError, TypeError):
+                    secs = 0.0
+                import time as _t
+                v.pause(_t.monotonic(), secs)
+                log.info("кворум: «%s» просит паузу до %s", self.reserve_peer_name(), body.get("until"))
             return []
         if kind == "qmem":
             return self.reserve_qmem_in(body)
@@ -67,6 +81,8 @@ class ReserveQuorumInboundMixin:
         ключа кворума (этап решения)."""
         if kind == "qview":
             return self.reserve_quorum_guest_view_in(int(slot), body)
+        if kind == "qshare" and hasattr(self, "reserve_quorum_qshare_in"):
+            return self.reserve_quorum_qshare_in(int(slot), body)
         return []
 
     def reserve_quorum_link_in(self, slot: int, kind: str, msg: dict) -> list[tuple]:

@@ -64,6 +64,7 @@ class ReserveQuorumLeaderMixin:
             ld.gen.bump(g, now, ld.timing.grace_s)
             self.__dict__["_rsv_qleader"] = ld
             log.info("кворум: ответчик линии %s — голосующих %d, поколение %s", l, len(voters), g)
+            self.__dict__["_quo_start_pending"] = True        # старт лидера — без права записи до первого большинства
         else:
             if tuple(ld.voters) != tuple(voters) or ld.gen.g != g:
                 ld.set_members(voters, len(voters), g, now)
@@ -100,9 +101,13 @@ class ReserveQuorumLeaderMixin:
         act = ld.probe_in(p, now)
         if act == "ignore":
             return None
-        if act == "adopt" and not self.__dict__.get("_quo_adopt_told"):
-            self.__dict__["_quo_adopt_told"] = True
-            log.warning("кворум: проба %s несёт эпоху %s, у меня %s — эпоху держит другая сторона", p.n, p.e, ld.epoch)
+        if act == "adopt":
+            if not self.__dict__.get("_quo_adopt_told"):
+                self.__dict__["_quo_adopt_told"] = True
+                log.warning("кворум: проба %s несёт эпоху %s, у меня %s — эпоху держит другая сторона", p.n, p.e, ld.epoch)
+            if hasattr(self, "reserve_quorum_adopt"):
+                self.reserve_quorum_adopt(int(p.e), f"пробы {p.n}")
+                ld.set_epoch(self.reserve_quorum_epoch())
         return ld.reply_for(p, now, self._quorum_info()).encode()
 
     def _quorum_info(self) -> Info:
@@ -135,8 +140,13 @@ class ReserveQuorumLeaderMixin:
         журнал и карточка). Действия — для исполнителя runtime."""
         ld = self._quorum_leader_setup()
         if ld is None:
+            if hasattr(self, "reserve_quorum_unfence_if_off"):
+                self.reserve_quorum_unfence_if_off()
             return []
         now = time.monotonic() if now is None else now
+        actions: list[tuple] = []
+        if self.__dict__.pop("_quo_start_pending", False) and hasattr(self, "reserve_quorum_fence_apply"):
+            actions += self.reserve_quorum_fence_apply("start", ld)
         act = ld.tick(now)
         y = ld.yes_count(now)
         if act == "fence":
@@ -145,7 +155,9 @@ class ReserveQuorumLeaderMixin:
         elif act == "unfence":
             log.info("кворум: «%s» — лидер, да %d из %d", self._quorum_my_name(), y, ld.v)
             self.__dict__["_quo_fenced_since"] = ""
-        return []
+        if act in ("fence", "unfence") and hasattr(self, "reserve_quorum_fence_apply"):
+            actions += self.reserve_quorum_fence_apply(act, ld)
+        return actions
 
     def _quorum_my_name(self) -> str:
         return str(config.SERVER_NAME or self.reserve_quorum_side() or "")

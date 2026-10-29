@@ -27,6 +27,18 @@ _ctx: dict = {}
 
 def setup(bot, services, pollctl=None) -> None:
     _ctx.update(bot=bot, services=services, pollctl=pollctl)
+    try:
+        _ctx["loop"] = asyncio.get_running_loop()
+    except RuntimeError:
+        _ctx["loop"] = None
+
+
+def run_threadsafe(actions) -> None:
+    """Действия из синхронного кода (шаг обновления): на цикл событий бота, без ожидания."""
+    loop = _ctx.get("loop")
+    if loop is None or loop.is_closed():
+        return
+    asyncio.run_coroutine_threadsafe(run(actions), loop)
 
 
 def services():
@@ -66,6 +78,12 @@ async def _one(act: tuple) -> None:
         srv = guest.server()
         if srv is None or not await srv.send(int(act[1]), act[2], act[3] if len(act) > 3 else None):
             log.info("резерв: шлюзу %s «%s» не ушло — сессии нет", act[1], act[2])
+    elif kind == "gwlink":
+        # своему шлюзу по каналу конфигурации (кворум: qask, qtake, qrel, qneed, qpause, qstate)
+        from awgbot.runtime import linkserver
+        srv = linkserver._server
+        if srv is None or not await srv.send(int(act[1]), act[2], act[3] if len(act) > 3 else None):
+            log.info("резерв: шлюзу %s «%s» по каналу не ушло — сессии нет", act[1], act[2])
     elif kind == "notify":
         from awgbot.bot.notifier import send_notifications
         if bot is not None:

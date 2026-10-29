@@ -82,6 +82,9 @@ async def _bot_restart(ctx) -> None:
     await ctx.cb.answer("Перезапускаю бота…")
     await edit_nav(ctx.cb, ctx.services, BOT_RESTARTING, None)
     await call(ctx.services.set_restart_wait, ctx.cb.message.chat.id, ctx.cb.message.message_id)
+    if hasattr(ctx.services, "reserve_quorum_pause_actions"):
+        from awgbot.runtime import rsvactions
+        await rsvactions.run(await call(ctx.services.reserve_quorum_pause_actions))   # кворум: плановая пауза лидера
     await call(ctx.services.restart_bot)
     return None
 

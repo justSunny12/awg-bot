@@ -74,6 +74,8 @@ class FleetServerMixin:
         if out.server == "apply":
             run_id = str(self.fleet_run().get("id") or "") or "1"
             try:
+                if hasattr(self, "reserve_quorum_pause_sync"):
+                    self.reserve_quorum_pause_sync()              # кворум: плановая пауза лидера на время обновления
                 self.apply_update(out.step, hold=run_id)
             except Exception as e:                        # noqa: BLE001 — сеть, sha256, переезд
                 import logging

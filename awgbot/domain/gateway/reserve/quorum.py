@@ -29,7 +29,7 @@ from awgbot.util.quorum.voter import Voter
 from ..base import log
 
 STORE_PATH = Path("/var/lib/awg-gw/quorum.json")
-_KEEP_KEYS = ("views", "pledges", "told", "apply_mono")
+_KEEP_KEYS = ("views", "pledges", "told", "apply_mono", "share_given_at")
 APPLY_EVERY_S = 300
 
 
@@ -200,6 +200,7 @@ class GatewayQuorumMixin:
                 v.start(now)
                 v.epoch_in(int(sec.get("e") or 0))
                 self._gw_qvoters[name] = v
+                self._pledge_restore(name, v, now)
             for act in v.tick(now):
                 if act == "probe":
                     p = Probe(str(rec["l"]), int(sec.get("g") or 1), me, int(v.epoch), v.w_for_probe(),
@@ -207,6 +208,13 @@ class GatewayQuorumMixin:
                     actions.append(("probe", name, p.encode(), (str(rec["resp"]), int(rec["port"]))))
                 elif act in ("see", "uns", "sus"):
                     actions += self._quorum_view_changed(name, rec, v, act)
+                elif act == "unpledge":
+                    self._pledge_store(name, None)
+                    log.info("quorum: обязательство «нет» снято по сроку")
+            due = (self.__dict__.get("_quo_ask_due") or {}).get(name)
+            if due is not None and now >= due:
+                self.__dict__["_quo_ask_due"].pop(name, None)
+                actions += self._quorum_qview_now(name, rec, v)      # ответ на qask после свежих проб
         return actions
 
     def quorum_reply_in(self, name: str, data: bytes) -> list[tuple]:
@@ -238,16 +246,120 @@ class GatewayQuorumMixin:
         info = v.info()
         if info is not None and w == "see":
             body["i"] = info.to_dict()
+        if w == "uns" and rec.get("target") == "h":
+            v.said_no(time.monotonic())                       # «нет» кандидату — обязательство под этой эпохой
+            self._pledge_store(name, {"e": int(v.epoch), "at": timeutil.now_iso()})
         return [("guest", "qview", body), ("link", "qview", body), ("push",)]
 
     def quorum_guest_in(self, kind: str, body: dict) -> list[tuple]:
-        """Слово резерва по гостевому каналу о кворуме: `qstate` — эпоха линии; опрос
-        и слова кандидата (`qask`, `qtake`, `qrel`, `qneed`, `qpause`) — этап решения."""
+        """Слово кандидата (резерв по гостевому каналу или свой сервер по каналу
+        конфигурации в отъезде): `qstate` — эпоха линии; `qask` — опрос (взгляд сразу
+        или после трёх свежих проб); `qtake{e}` — забирает под e + 1; `qrel{e}` —
+        обязательство снято; `qneed` — точка ключа кворума, если сам не вижу основу и
+        поколение совпало; `qpause{until}` — «не вижу» кандидату не уходит до срока."""
+        sec = self.quorum_section()
+        l = str(body.get("l") or "")
+        if not sec.get("l") or (l and l != str(sec.get("l"))):
+            return []
+        now = time.monotonic()
+        name = f"awgq{sec['l']}h"
+        v = self._gw_qvoters.get(name)
         if kind == "qstate":
             e = int(body.get("e") or 0)
             if e:
                 self._quorum_epoch_in(e)
+            return []
+        if v is None:
+            return []
+        if kind == "qask":
+            return self._quorum_asked(name, v, now)
+        if kind == "qtake":
+            v.take(int(body.get("e") or 0))
+            self._pledge_store(name, None)
+            log.warning("quorum: кандидат забирает основу под эпоху %s — обязательство снято", v.epoch)
+            return []
+        if kind == "qrel":
+            if v.release(int(body.get("e") or 0)):
+                self._pledge_store(name, None)
+                log.info("quorum: обязательство «нет» под эпохой %s снято (qrel)", body.get("e"))
+            return []
+        if kind == "qneed":
+            return self._quorum_need_in(sec, v, int(body.get("q_gen") or 0), str(body.get("since") or ""))
+        if kind == "qpause":
+            try:
+                secs = max(0.0, timeutil.elapsed(timeutil.now(), timeutil.parse_iso(str(body.get("until") or ""))))
+            except (ValueError, TypeError):
+                secs = 0.0
+            v.pause(now, secs)
+            log.info("quorum: сервер AWG просит паузу до %s", body.get("until"))
+            return []
         return []
+
+    def _quorum_asked(self, name: str, v: Voter, now: float) -> list[tuple]:
+        """`qask`: взгляд uns/sus — qview сразу; see и ответ свежее fresh_s — qview{see, i}
+        сразу; see со старым ответом — три пробы за ≤ 15 с, qview после них."""
+        rec = self.quorum_probe_ifaces().get(name) or {"l": v.l, "target": "h"}
+        if v.view in ("uns", "sus") or (v.view == "see" and v.last_reply and now - v.last_reply <= v.timing.fresh_s):
+            return self._quorum_qview_now(name, rec, v)
+        v.next_probe = now
+        v.resends = 0
+        self.__dict__.setdefault("_quo_ask_due", {})[name] = now + 15.0
+        log.info("quorum: опрос кандидата — три свежие пробы основы")
+        return []
+
+    def _quorum_qview_now(self, name: str, rec: dict, v: Voter) -> list[tuple]:
+        w = v.view if v.view != "sus" else "uns"
+        cur = self.quorum_section()
+        body = {"l": str(rec.get("l") or ""), "g": int(cur.get("g") or 0), "w": w,
+                "since": str((cur.get("views") or {}).get(name, {}).get("since") or timeutil.now_iso()), "e": int(v.epoch)}
+        info = v.info()
+        if info is not None and w == "see":
+            body["i"] = info.to_dict()
+        if w == "uns":
+            v.said_no(time.monotonic())
+            self._pledge_store(name, {"e": int(v.epoch), "at": timeutil.now_iso()})
+        return [("guest", "qview", body), ("link", "qview", body)]
+
+    def _quorum_need_in(self, sec: dict, v: Voter, q_gen: int, since: str) -> list[tuple]:
+        point = sec.get("point") or {}
+        if v.view != "uns":
+            log.info("quorum: кандидат просит точку (с %s), а сервер AWG виден — отказ", since)
+            return []
+        if not point.get("y") or int(point.get("q_gen") or 0) != int(q_gen):
+            log.warning("quorum: кандидат просит точку поколения %s, у меня %s — отказ", q_gen, point.get("q_gen"))
+            return []
+        log.warning("quorum: отдаю точку ключа кворума кандидату (сервер AWG не отвечает с %s)", since)
+        cur = self.quorum_section()
+        cur["share_given_at"] = timeutil.now_iso()
+        _write(cur, self._QUO_STORE)
+        return [("guest", "qshare", {"l": str(sec.get("l") or ""), "q_gen": int(q_gen), "x": int(point.get("x") or 0),
+                                     "y": str(point.get("y"))})]
+
+    def _pledge_store(self, name: str, pledge: dict | None) -> None:
+        cur = self.quorum_section()
+        pledges = dict(cur.get("pledges") or {})
+        if pledge is None:
+            pledges.pop(name, None)
+        else:
+            pledges[name] = pledge
+        cur["pledges"] = pledges
+        _write(cur, self._QUO_STORE)
+
+    def _pledge_restore(self, name: str, v: Voter, now: float) -> None:
+        """Обязательство «нет» переживает перезапуск агента (срок — по отметке)."""
+        pledge = (self.quorum_section().get("pledges") or {}).get(name)
+        if not isinstance(pledge, dict):
+            return
+        try:
+            age = timeutil.elapsed(timeutil.parse_iso(str(pledge.get("at") or "")))
+        except (ValueError, TypeError):
+            age = v.timing.pledge_s + 1
+        if age < v.timing.pledge_s:
+            v.pledge = {"e": int(pledge.get("e") or 0), "at": now - age}
+            if int(pledge.get("e") or 0) > v.epoch:
+                v.epoch = int(pledge.get("e") or 0)
+        else:
+            self._pledge_store(name, None)
 
     # ── панель и снимок ─────────────────────────────────────────────────────
     def quorum_panel_view(self) -> dict:

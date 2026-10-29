@@ -89,6 +89,10 @@ class ReserveEpochMixin:
         # сказанное уже дома (прежнее «away» — до возврата)
         peer = self.reserve_peer_state()
         serving = self._peer_serving_after_home(out, peer)
+        if self._quorum_rules_home():
+            # кворум (4.2.0): роль дома — только по факту: эпоха больше моей (проба, qstate) и
+            # лишение кворума (jrn_fence); слово Telegram — только остановка поллинга
+            return (True, "резерв несёт моих пользователей") if serving else (False, "кворум: решает большинство")
         poll = self.rsv_get("rsv_poll")
         if self.reserve_poll() != "away" or _earlier(poll, out):
             return (True, "резерв несёт моих пользователей") if serving else (False, "пользователи и Telegram здесь")
@@ -96,6 +100,13 @@ class ReserveEpochMixin:
         if self._peer_alive(peer) and fresh and str(peer.get("inn") or "idle") not in HOSTING:
             return False, "вебхук у резерва без гостя"
         return True, "Telegram: вебхук у резерва"
+
+    def _quorum_rules_home(self) -> bool:
+        """Линия с включённым кворумом и решениями по нему (quorum/members, решение 9)."""
+        try:
+            return bool(self.reserve_quorum_active() and self.reserve_quorum_act())
+        except Exception:                                     # noqa: BLE001
+            return False
 
     def _peer_alive(self, peer: dict) -> bool:
         """Резерв на связи живым словом: сессия есть, живость не `down`, и его `st` получен

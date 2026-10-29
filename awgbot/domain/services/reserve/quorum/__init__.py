@@ -16,6 +16,10 @@ quorum — кворум взаимного резерва серверов на 
                (правило `util/quorum/voter`), взгляды, `qview`;
 - `inbound`  — слова каналов: `qprobe`, `qview`, `qstate` по каналу пары,
                `qview` шлюзов по гостевому каналу и каналу конфигурации;
+- `candidate` — правило кандидата о линии второй стороны и исполнение решения
+               (просьба лидеру, точки через ящик кворума, окно кода);
+- `fence`    — решения лидера: ограждение и возврат через журнал, старт без
+               права записи, принятие чужой эпохи, плановая пауза, загородка бота;
 - `screen`   — данные карточки «🛟 Резерв» и экрана роли;
 - `tick`     — такт кворума и план сокетов для runtime/quorum.
 
@@ -24,6 +28,8 @@ runtime (`runtime/quorum.py` держит сокеты ответчика и п�
 """
 from __future__ import annotations
 
+from .candidate import ReserveQuorumCandidateMixin
+from .fence import ReserveQuorumFenceMixin
 from .inbound import ReserveQuorumInboundMixin
 from .keys import ReserveQuorumKeysMixin
 from .leader import ReserveQuorumLeaderMixin
@@ -36,7 +42,7 @@ from .voter import ReserveQuorumVoterMixin
 
 class ReserveQuorumMixin(ReserveQuorumMembersMixin, ReserveQuorumKeysMixin, ReserveQuorumProbesMixin, ReserveQuorumLeaderMixin,
                          ReserveQuorumVoterMixin, ReserveQuorumInboundMixin, ReserveQuorumScreenMixin,
-                         ReserveQuorumTickMixin):
+                         ReserveQuorumCandidateMixin, ReserveQuorumFenceMixin, ReserveQuorumTickMixin):
     """Кворум резерва — одним миксином в ReserveMixin."""
 
 

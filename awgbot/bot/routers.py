@@ -53,8 +53,11 @@ def routers_for(role: str) -> list[Router]:
         from awgbot.bot.handlers import guest
         return head + [reply_commands.router, shared, guest.router, admin.router, settings.router, guide.router,
                        friend.router, routing.router, client.router, stale.make_router(show_main_menu)]
-    return head + [reply_commands.router, shared, peercode.router, peeradmin.router, admin.router, settings.router, guide.router,
-                   friend.router, routing.router, client.router, stale.make_router(show_main_menu)]
+    # fenced — загородка лишённого кворума лидера (кворум резерва): до админских, после роли
+    # админа второго сервера; действует только пока сервисы говорят «лишён кворума»
+    from awgbot.bot.handlers import fenced
+    return head + [reply_commands.router, shared, peercode.router, peeradmin.router, fenced.router, admin.router, settings.router,
+                   guide.router, friend.router, routing.router, client.router, stale.make_router(show_main_menu)]
 
 
 def make_dispatcher(role: str, services, db, *, reattach: bool = False) -> Dispatcher:
@@ -64,7 +67,7 @@ def make_dispatcher(role: str, services, db, *, reattach: bool = False) -> Dispa
     роутер, уже включённый в другой диспетчер, отцепляется и включается сюда."""
     dp = Dispatcher(storage=MemoryStorage())
     dp["services"] = services
-    access = AccessMiddleware(db)
+    access = AccessMiddleware(db, fenced=getattr(services, "reserve_quorum_fenced", None) if role == "client" else None)
     dp.message.outer_middleware(access)
     dp.callback_query.outer_middleware(access)
     for r in routers_for(role):

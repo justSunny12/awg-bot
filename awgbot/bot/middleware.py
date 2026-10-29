@@ -26,8 +26,37 @@ _PEER_ADMIN_SLOT = -1        # ключ кэша для ADMIN_ID второго 
 
 
 class AccessMiddleware(BaseMiddleware):
-    def __init__(self, db):
+    def __init__(self, db, fenced=None):
         self.db = db
+        self._fenced = fenced                              # кворум: «лишён кворума» (сервисы) — Т-К9 не админу
+        self._fenced_told: dict[int, float] = {}
+
+    def _fenced_now(self) -> bool:
+        try:
+            return bool(self._fenced()) if self._fenced is not None else False
+        except Exception:                                 # noqa: BLE001
+            return False
+
+    async def _refuse_fenced(self, event: TelegramObject, uid: int) -> None:
+        """Т-К9: кнопка — всплывашка, сообщение — ответ не чаще раза в минуту на человека."""
+        import time as _t
+        from aiogram.types import CallbackQuery
+        from awgbot.bot.texts.reserve import quorum as qt
+        if isinstance(event, CallbackQuery):
+            try:
+                await event.answer(qt.USER_FENCED, show_alert=True)
+            except Exception:                             # noqa: BLE001
+                pass
+            return
+        if isinstance(event, Message):
+            now = _t.monotonic()
+            if now - self._fenced_told.get(uid, -1e9) < 60:
+                return
+            self._fenced_told[uid] = now
+            try:
+                await event.answer(qt.USER_FENCED)
+            except Exception:                             # noqa: BLE001
+                pass
 
     def _touch_tg_name(self, client, user: User):
         """Имя Telegram-аккаунта на профиле — для ссылок на человека в текстах.
@@ -94,6 +123,10 @@ class AccessMiddleware(BaseMiddleware):
             data["role"] = "peer_admin"
             data["client"] = None
             return await handler(event, data)
+        # 1в) Лишённый кворума лидер (кворум резерва): пользователям, гостям и новым по
+        #     приглашению — Т-К9; решений бот сейчас не принимает
+        if self._fenced_now():
+            return await self._refuse_fenced(event, uid)
 
         # 2) Кэш «кто это»: TTL короткий, любая запись в БД сбрасывает его.
         #    Без кэша каждый апдейт стоил 1–3 запроса синхронно в event loop.
