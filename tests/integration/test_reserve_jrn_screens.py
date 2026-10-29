@@ -134,4 +134,4 @@ def test_tj7_without_the_journal_the_old_phrase_stays(mv):
     rc.pair_row(mv.svc)
     rm.go_away(mv.svc, kind="dead")
     text = st_t.force_dialog(mv.svc.reserve_force_dialog_data())
-    assert "Всё, что изменилось на «Beta» за это время, вольётся, когда он выйдет на связь" in text, text
+    assert "Изменения с «Beta» за это время применятся, когда он выйдет на связь" in text, text
