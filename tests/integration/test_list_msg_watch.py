@@ -287,6 +287,23 @@ async def test_lone_hide_put_on_a_three_day_old_message_by_an_edit_is_taken_off_
     assert rig.rec(mid) is None, f"запись без причин осталась после снятия «Скрыть»: {rig.rec(mid)}"
 
 
+@pytest.mark.parametrize("hours, stays", [(30, True), (37, True), (38, False)])
+async def test_hide_put_on_an_old_message_by_an_edit_stays_while_the_tick_can_take_it_off_in_time(rig, hours, stays):
+    """T0 — 14:05, такт — завтра 00:06 (через 10 ч 01 мин). Сообщению 30 или 37 часов:
+    к такту 40 или 47 ч 01 мин — «Скрыть» стоит до такта (кнопка живёт как можно
+    дольше, сообщение не придётся удалять руками); 38 часов — к такту 48 ч 01 мин,
+    после 48 часов она не удалит — снять сразу."""
+    rig.session.date = int((T0 - _dt_hours(hours)).timestamp())
+    m = await rig.bot.send_message(CHAT, "🚚 Переезд", reply_markup=MENU)
+    await rig.bot.edit_message_reply_markup(chat_id=CHAT, message_id=m.message_id, reply_markup=kb.hide_only())
+    heads = [c.head for c in rig.edit_calls(m.message_id)]
+    if stays:
+        assert heads == [f"= markup #{m.message_id}"], f"«Скрыть» снята раньше такта ({hours} ч): {heads}"
+        assert rig.rec(m.message_id) is not None, "запись «Скрыть» не легла"
+    else:
+        assert heads[-1] == f"- markup off #{m.message_id}" and rig.rec(m.message_id) is None, heads
+
+
 async def test_extend_and_hide_put_on_an_old_message_keeps_only_extend(rig):
     """Снимается только ряд «Скрыть»: «⏱ Продлить» — действие, его не трогать."""
     rig.session.date = int((T0 - _dt_hours(72)).timestamp())
@@ -391,6 +408,37 @@ async def test_retire_does_not_take_the_note_of_the_new_menu(rig, services):
     assert trace is not None and trace["note"] == "", f"след забрал итог нового меню: {trace}"
     rec = rig.rec(new)
     assert rec is not None and rec["note"] == "✅ A", f"у нового меню итога нет: {rec}"
+
+
+# ── отказ правки экрана обработчиком ─────────────────────────────────────────
+
+async def test_a_refused_screen_edit_releases_the_record_and_the_resent_screen_binds_the_snapshot(rig):
+    """Сообщения уже нет («message to edit not found»): обработчик шлёт экран заново
+    новым сообщением — снимок должен привязаться к нему, а не остаться на пустом
+    месте (ссылка в новом сообщении умирала бы с отметкой)."""
+    from aiogram.exceptions import TelegramBadRequest
+    key = rig.snap()
+    text = "⚠️ Не добавлено " + rig.link(key)
+    m = await rig.bot.send_message(CHAT, text, reply_markup=MENU)
+    rig.session.refuse("not_found", method=EditMessageText, mid=m.message_id)
+    with pytest.raises(TelegramBadRequest):
+        await rig.bot.edit_message_text(text + " ещё", chat_id=CHAT, message_id=m.message_id, reply_markup=MENU)
+    assert rig.rec(m.message_id) is None, f"запись пропавшего сообщения осталась: {rig.rec(m.message_id)}"
+    assert rig.raw(key)["msg"] == 0 and not rig.raw(key).get("gone"), f"снимок не отпущен или снят: {rig.raw(key)}"
+    n = await rig.bot.send_message(CHAT, text, reply_markup=MENU)
+    assert rig.rec(n.message_id)["keys"] == [key] and rig.raw(key)["msg"] == n.message_id, \
+        "экран, присланный заново, не привязал снимок"
+
+
+async def test_a_not_modified_refusal_keeps_the_record(rig):
+    from aiogram.exceptions import TelegramBadRequest
+    key = rig.snap()
+    text = "⚠️ Не добавлено " + rig.link(key)
+    m = await rig.bot.send_message(CHAT, text, reply_markup=MENU)
+    rig.session.refuse("not_modified", method=EditMessageText, mid=m.message_id)
+    with pytest.raises(TelegramBadRequest):
+        await rig.bot.edit_message_text(text, chat_id=CHAT, message_id=m.message_id, reply_markup=MENU)
+    assert rig.rec(m.message_id) is not None and rig.raw(key)["msg"] == m.message_id
 
 
 # ── подписи к фото и файлам ──────────────────────────────────────────────────

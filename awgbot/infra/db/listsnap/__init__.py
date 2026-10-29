@@ -47,7 +47,7 @@ import string
 
 from awgbot.util import listlink
 
-from .expiry import HIDE_KEEP_S, TOMB_TTL_S, TTL_S, expires_at, hide_due, is_due   # noqa: F401 — часть API пакета
+from .expiry import HIDE_KEEP_S, TOMB_TTL_S, TTL_S, expires_at, hide_due, hide_hopeless, is_due   # noqa: F401 — часть API пакета
 from .msgs import _MsgsPart, kb_has_action, kb_has_hide
 from .snaps import _SnapsPart
 
@@ -92,4 +92,4 @@ class ListSnapMixin(_SnapsPart, _MsgsPart):
 
 __all__ = ["PREFIX", "MSG_PREFIX", "TTL_S", "TOMB_TTL_S", "PER_CHAT", "TOMBS_PER_CHAT", "MAX_ROWS", "MAX_BYTES",
            "LOG_TAIL_ROWS", "LOG_ROW_CHARS", "TAIL_IN_LOG", "TAIL_LEFT_OUT", "HIDE_KEEP_S", "WHERE",
-           "new_key", "snap_param", "ListSnapMixin", "expires_at", "is_due", "hide_due", "kb_has_hide", "kb_has_action"]
+           "new_key", "snap_param", "ListSnapMixin", "expires_at", "is_due", "hide_due", "hide_hopeless", "kb_has_hide", "kb_has_action"]

@@ -165,6 +165,18 @@ def test_hide_of_unknown_age_is_due(db, clock):
     assert listsnap.hide_due({"sent": "вчера"}, T0) is True
 
 
+def test_hide_hopeless_is_only_the_next_tick_rule():
+    """Ставить ли «Скрыть» правкой на старое сообщение: по возрасту не снимают (кнопка
+    живёт до такта как можно дольше), не ставят только когда к такту (завтра 00:06)
+    сообщению будет 47 ч 30 мин и больше. T0 — 14:05: 37 ч — к такту 47 ч 01 мин,
+    37 ч 30 мин — ровно 47 ч 31 мин."""
+    assert listsnap.hide_hopeless({"sent": timeutil.to_iso(T0 - _dt.timedelta(hours=37))}, T0) is False
+    assert listsnap.hide_hopeless({"sent": timeutil.to_iso(T0 - _dt.timedelta(hours=37, minutes=30))}, T0) is True
+    assert listsnap.hide_hopeless({"sent": "вчера"}, T0) is True
+    assert listsnap.hide_due({"sent": timeutil.to_iso(T0 - _dt.timedelta(hours=30))}, T0) is True, \
+        "по возрасту такт снимает по-прежнему"
+
+
 def test_hide_gone_from_the_keyboard_and_nothing_else_drops_the_record(db, clock):
     """Правка убрала «Скрыть» (такт снял, меню перерисовано без неё), ссылок и итога
     нет — запись прочь."""

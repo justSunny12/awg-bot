@@ -10,6 +10,10 @@
 (сутки минус полчаса — запас к окну джиттера такта): кнопка живёт около
 суток и до почти двух и всегда моложе предела удаления Telegram (48 часов) —
 в том числе через сутки с переходом времени (проверка «к следующему такту»).
+Кнопка, которую ставят правкой на старое сообщение (след погашенного меню,
+«⬅️ В меню» на итоге), живёт до такта, если такт успевает снять её раньше
+предела удаления (hide_hopeless): раньше её не снимают — чем дольше она
+стоит, тем реже сообщение приходится удалять руками.
 Сравнивается время хоста со временем Telegram (`sent` — `date` ответа) —
 часы хоста сверены (правило проекта)."""
 from __future__ import annotations
@@ -57,19 +61,27 @@ TICK_END_S = 6 * 60                # такт после полуночи кон
 TICK_MARGIN_S = 30 * 60            # запас к пределу удаления
 
 
-def hide_due(rec: dict, now: datetime | None = None) -> bool:
-    """«Скрыть» на сообщении из записи пора снять: отправлено не позже HIDE_KEEP_S назад,
-    либо к следующему такту (следующая полночь пояса показа + 00:06, по абсолютному
-    времени — в сутки с переходом времени они длиннее) сообщению было бы больше
-    предела удаления минус запас. Нечитаемый `sent` — снять (кнопка неизвестного
+def hide_hopeless(rec: dict, now: datetime | None = None) -> bool:
+    """«Скрыть» на сообщении из записи не доживёт до такта: к следующему такту
+    (следующая полночь пояса показа + 00:06, по абсолютному времени — в сутки с
+    переходом времени они длиннее) сообщению было бы не меньше предела удаления
+    минус запас. Так решают, ставить ли кнопку правкой на старое сообщение и снимать
+    ли только что поставленную. Нечитаемый `sent` — не ставить (кнопка неизвестного
     возраста в чате не стоит)."""
     try:
         sent = timeutil.parse_iso(str(rec.get("sent") or ""))
     except ValueError:
         return True
     now = now or timeutil.now()
-    if timeutil.elapsed(sent, now) >= HIDE_KEEP_S:
-        return True
     day = now.astimezone(timeutil.TZ).date() + timedelta(days=1)
     next_tick = datetime(day.year, day.month, day.day, tzinfo=timeutil.TZ) + timedelta(seconds=TICK_END_S)
     return timeutil.elapsed(sent, next_tick) >= DELETE_LIMIT_S - TICK_MARGIN_S
+
+
+def hide_due(rec: dict, now: datetime | None = None) -> bool:
+    """«Скрыть» на сообщении из записи пора снять тактом: отправлено не позже
+    HIDE_KEEP_S назад либо не доживёт до следующего такта (hide_hopeless)."""
+    if hide_hopeless(rec, now):
+        return True
+    sent = timeutil.parse_iso(str(rec.get("sent") or ""))
+    return timeutil.elapsed(sent, now or timeutil.now()) >= HIDE_KEEP_S

@@ -3,8 +3,11 @@
 Видит SendMessage, EditMessageText, отправки с подписью (SendPhoto,
 SendDocument, SendAnimation, SendVideo), EditMessageCaption,
 EditMessageReplyMarkup и DeleteMessage (прочее пропускает без чтения базы);
-отказ Telegram уходит наверх как есть, запись не трогается. После удачного
-ответа:
+отказ Telegram уходит наверх как есть; у правки текста или подписи
+обработчиком (не heal) отказ «не изменено» запись не трогает, любой другой
+(сообщения нет, править нельзя) снимает запись и отпускает её снимки:
+обработчик шлёт экран заново новым сообщением, и его ссылки привязывают их.
+После удачного ответа:
 
   отправка / правка текста  — ссылки на снимки (scan.keys), клавиатура,
                               итог из NOTE (только если текст с него
@@ -27,6 +30,7 @@ from __future__ import annotations
 import logging
 
 from aiogram.client.default import Default
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.client.session.middlewares.base import BaseRequestMiddleware
 from aiogram.methods import (DeleteMessage, EditMessageCaption, EditMessageReplyMarkup, EditMessageText,
                              SendAnimation, SendDocument, SendMessage, SendPhoto, SendVideo)
@@ -66,7 +70,12 @@ class ListMsgWatch(BaseRequestMiddleware):
     async def __call__(self, make_request, bot, method):
         if not isinstance(method, _TEXT + _CAP + (EditMessageReplyMarkup, DeleteMessage)):
             return await make_request(bot, method)
-        result = await make_request(bot, method)      # отказ — наверх, запись не трогаем
+        try:
+            result = await make_request(bot, method)
+        except TelegramBadRequest as e:                # отказ — наверх
+            if isinstance(method, _EDITS) and not OWN.get() and "message is not modified" not in str(e):
+                await self._refused(method, e)
+            raise
         if OWN.get():
             return result                              # своя правка (heal): запись обновит он
         try:
@@ -114,11 +123,31 @@ class ListMsgWatch(BaseRequestMiddleware):
             await call(db.list_msg_set_kb, chat, mid, sent, kb)
             await self._hide_age(bot, chat, mid, sent, kb)
 
+    async def _refused(self, method, e) -> None:
+        """Правку экрана отклонил Telegram (сообщение удалено, править нельзя): обработчик
+        пришлёт экран заново новым сообщением — запись прежнего снимается, снимки
+        отпущены (не сняты: их привяжет новое сообщение)."""
+        from awgbot.bot.handlers.common import call
+        chat, mid = int(method.chat_id), int(getattr(method, "message_id", 0) or 0)
+        if not mid:
+            return
+        try:
+            rec = await call(self.services.db.list_msg_get, chat, mid)
+            if rec is None:
+                return
+            await call(self.services.db.list_msg_forget, chat, mid, False)
+        except Exception as err:                       # noqa: BLE001 — отказ уже уходит наверх
+            log.warning("lists: запись сообщения %d чата %d не снята после отказа правки: %s", mid, chat, err)
+            return
+        log.info("lists: сообщение %d чата %d — правка отклонена (%s): запись снята, снимки %s отпущены",
+                 mid, chat, e, [str(k) for k in (rec.get("keys") or [])])
+
     async def _hide_age(self, bot, chat: int, mid: int, sent: str, kb: str) -> None:
         """«Скрыть» поставили правкой на старое сообщение (след переезда на меню
-        трёхдневной давности, «⬅️ В меню» на итоге спустя выходные): кнопка, которая
-        не удалит, в чате не стоит — снять сразу той же задачей."""
-        from awgbot.infra.db.listsnap import hide_due
-        if scan.has_hide(kb) and hide_due({"sent": sent}):
+        трёхдневной давности, «⬅️ В меню» на итоге спустя выходные): кнопка, которую
+        такт не успеет снять до предела удаления, в чате не стоит — снять сразу той
+        же задачей. Моложе — стоит до такта, как у всех."""
+        from awgbot.infra.db.listsnap import hide_hopeless
+        if scan.has_hide(kb) and hide_hopeless({"sent": sent}):
             from . import heal
             await heal.heal_one(bot, self.services, {"chat": chat, "mid": mid}, in_action=True)
