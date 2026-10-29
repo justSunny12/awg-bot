@@ -29,7 +29,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from awgbot.bot import keyboards as kb
 from awgbot.bot import links, screens
 from awgbot.bot.lists import msgs
-from tests.integration._listmsg import CHAT, OTHER, T0, Rig
+from tests.integration._listmsg import CHAT, OTHER, T0, EditMessageText, Rig
 
 pytestmark = pytest.mark.integration
 
@@ -256,3 +256,135 @@ async def test_away_survives_a_failing_record_store(rig, services, monkeypatch, 
     assert "записи сообщений с кнопками действия не сняты" in caplog.text, caplog.text
 
 
+
+
+# ── «Скрыть», поставленная правкой на старое сообщение ──────────────────────
+
+DAYS3 = 72 * 3600
+
+
+@pytest.mark.parametrize("how", ["text", "markup"])
+async def test_lone_hide_put_on_a_three_day_old_message_by_an_edit_is_taken_off_at_once(rig, how):
+    """След переезда на меню трёхдневной давности, «⬅️ В меню» на итоге спустя выходные:
+    сообщение старше 48 часов, «Скрыть» на нём не удалит. Кнопка снимается той же
+    задачей, до ответа обработчику, — иначе человек нажимает и видит «не удалить»,
+    а такт снимет её только ночью."""
+    rig.session.date = int((T0 - _dt_hours(72)).timestamp())        # Telegram отправил три дня назад
+    m = await rig.bot.send_message(CHAT, "📋 <b>Свои сайты</b>", reply_markup=MENU)
+    mid = m.message_id
+    if how == "text":
+        await rig.bot.edit_message_text("🚚 Переезд начат", chat_id=CHAT, message_id=mid,
+                                        reply_markup=kb.hide_only())
+    else:
+        await rig.bot.edit_message_reply_markup(chat_id=CHAT, message_id=mid, reply_markup=kb.hide_only())
+    heads = [c.head for c in rig.edit_calls(mid)]
+    assert heads[-1] == f"- markup off #{mid}", \
+        f"«Скрыть» на сообщении трёхдневной давности осталась (правка {how}): {heads}"
+    assert len(heads) == 2, f"не одна правка следом, а {heads}"
+    assert rig.rec(mid) is None, f"запись без причин осталась после снятия «Скрыть»: {rig.rec(mid)}"
+
+
+async def test_extend_and_hide_put_on_an_old_message_keeps_only_extend(rig):
+    """Снимается только ряд «Скрыть»: «⏱ Продлить» — действие, его не трогать."""
+    rig.session.date = int((T0 - _dt_hours(72)).timestamp())
+    m = await rig.bot.send_message(CHAT, "⏱ Подписка истекает", reply_markup=MENU)
+    await rig.bot.edit_message_reply_markup(chat_id=CHAT, message_id=m.message_id, reply_markup=EXTEND)
+    got = rig.edit_calls(m.message_id)
+    assert len(got) == 2, f"не одна правка следом: {[c.head for c in got]}"
+    last = got[-1]
+    assert last.head == f"= markup #{m.message_id}" and _rows(last.markup) == [[("⏱ Продлить", "ext:take:5")]], \
+        f"снято не то: {last.head} {_rows(last.markup)}"
+    assert rig.rec(m.message_id) is None, "«Скрыть» снята, ссылок и итога нет — запись осталась"
+
+
+async def test_hide_put_on_a_fresh_message_by_an_edit_stays(rig):
+    """Сообщение минутной давности: «Скрыть» живёт сутки, правка следом не идёт."""
+    rig.session.date = int((T0 - _dt_hours(1 / 60)).timestamp())
+    m = await rig.bot.send_message(CHAT, "📋 <b>Свои сайты</b>", reply_markup=MENU)
+    await rig.bot.edit_message_text("🚚 Переезд начат", chat_id=CHAT, message_id=m.message_id,
+                                    reply_markup=kb.hide_only())
+    assert [c.head for c in rig.edit_calls(m.message_id)] == [f"= edit #{m.message_id}"], \
+        "«Скрыть» снята со свежего сообщения — его нельзя убрать из чата"
+    rec = rig.rec(m.message_id)
+    assert rec is not None and rec["kb"] == _kb(kb.hide_only()), f"запись «Скрыть» не легла: {rec}"
+
+
+async def test_a_send_with_an_old_telegram_date_is_not_checked_for_hide_age(rig):
+    """Отправка всегда свежая: дата ответа в прошлом бывает только у заглушки, и проверка
+    возраста на отправке сняла бы «Скрыть» у сценариев такта, которые так и строятся."""
+    rig.session.date = int((T0 - _dt_hours(72)).timestamp())
+    m = await rig.bot.send_message(CHAT, "✅ Готово", reply_markup=kb.hide_only())
+    assert rig.edit_calls(m.message_id) == [], f"отправку проверили на возраст: {rig.heads()}"
+    assert rig.rec(m.message_id) is not None, "запись уведомления со «Скрыть» не легла"
+
+
+def _rows(markup):
+    if markup is None:
+        return None
+    return [[(b.text, b.callback_data) for b in row] for row in markup.inline_keyboard]
+
+
+# ── итог записи — когда меню ушло мимо гашения ──────────────────────────────
+
+async def _menu(rig, note: str, screen: str = "📋 <b>Свои сайты</b>") -> int:
+    """Живое меню с итогом первой строкой — номер; указатель меню — на нём."""
+    m = await rig.bot.send_message(CHAT, screens.with_note(screen, note), reply_markup=MENU)
+    rig.db.nav_touch(CHAT, m.message_id)
+    return m.message_id
+
+
+async def test_start_purge_drops_notes_records_with_only_a_note_vanish_others_stay_without_it(rig, services):
+    """/start удаляет прошлые меню пачкой — посредник пачку не учитывает. Итог записи
+    больше не нужен: иначе запись живёт вечно, а сообщение, которое Telegram не дал
+    удалить, при гашении снова стало бы следом из итога."""
+    from awgbot.bot.handlers import common
+    key = rig.snap()
+    plain = await _menu(rig, "✅ Сайт добавлен")
+    linked = await _menu(rig, "⚠️ Не добавлено: " + rig.link(key), screen="🗺 <b>Подсети</b>")
+    assert rig.rec(plain)["note"] and rig.rec(linked)["note"], "сценарий не о том: итогов в записях нет"
+    await common.purge_menus(rig.bot, services, CHAT)
+    assert rig.rec(plain) is None, f"запись с одним итогом пережила /start: {rig.rec(plain)}"
+    rec = rig.rec(linked)
+    assert rec is not None and rec["keys"] == [key], f"запись со ссылкой снята — ссылка не поправится: {rec}"
+    assert rec["note"] == "", f"итог остался у записи ушедшего меню: {rec['note']!r}"
+
+
+async def test_forget_nav_if_drops_the_note_of_the_deleted_live_menu_only(rig, services):
+    """Живое меню удалено вместе с выдачей: указатель и итог долой; удаление другого
+    сообщения итог живого меню не трогает."""
+    from awgbot.bot.handlers import common
+    mid = await _menu(rig, "✅ Устройство «Ноутбук» удалено")
+    await common.forget_nav_if(services, CHAT, [mid + 100])
+    assert rig.rec(mid) is not None and rig.rec(mid)["note"], "итог снят, хотя удалено не меню"
+    await common.forget_nav_if(services, CHAT, [mid])
+    assert rig.rec(mid) is None, f"итог удалённого живого меню остался в записи: {rig.rec(mid)}"
+    assert services.db.get_nav_message_id(CHAT) is None
+
+
+@pytest.mark.parametrize("kind", ["cant_edit", "not_found"])
+async def test_a_failed_edit_to_the_note_drops_the_note_and_dims_the_menu(rig, services, kind):
+    """Правка до итога не удалась: меню гаснет как прежде, а итог записи снят — меню
+    следом уже не станет, запись не должна держаться вечно."""
+    from awgbot.bot.handlers import common
+    old = await _menu(rig, "✅ Сайт добавлен")
+    rig.session.refuse(kind, method=EditMessageText, mid=old)
+    await common.send_menu_to(rig.bot, services, CHAT, "🏠 Главное меню", MENU)
+    heads = rig.heads()
+    if kind == "cant_edit":
+        assert f"- markup off #{old}" in heads, f"кнопки не сняты — два живых меню: {heads}"
+    assert rig.rec(old) is None, f"{kind}: итог остался в записи меню, которое не станет следом: {rig.rec(old)}"
+
+
+async def test_retire_does_not_take_the_note_of_the_new_menu(rig, services):
+    """Прежний итог «A\\n\\nB», новый — «A»: текст следа начинается с итога нового меню.
+    Если след заберёт его себе, новое меню останется без итога и при следующем
+    переходе погаснет целиком — итог пропадёт из чата."""
+    from awgbot.bot.handlers import common
+    old = await _menu(rig, "✅ A\n\n⚠️ B")
+    new_text = screens.with_note("🗺 <b>Подсети</b>", "✅ A")
+    new = await common.send_menu_to(rig.bot, services, CHAT, new_text, MENU)
+    assert rig.text_of(old) == "✅ A\n\n⚠️ B", f"прежнее меню не стало следом: {rig.text_of(old)!r}"
+    trace = rig.rec(old)
+    assert trace is not None and trace["note"] == "", f"след забрал итог нового меню: {trace}"
+    rec = rig.rec(new)
+    assert rec is not None and rec["note"] == "✅ A", f"у нового меню итога нет: {rec}"

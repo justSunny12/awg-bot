@@ -37,6 +37,7 @@ pytestmark = pytest.mark.integration
 
 EXTEND = kb.append_hide_row(InlineKeyboardMarkup(inline_keyboard=[[
     InlineKeyboardButton(text="⏱ Продлить", callback_data="ext:take:5")]]))
+MENU = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="👥 Пользователи", callback_data="m:users")]])
 EXP_T0 = _dt.datetime(2026, 11, 27, 0, 0, 0, tzinfo=config.TZ)      # срок снимка, созданного в T0
 MIN = 60
 
@@ -268,3 +269,79 @@ async def test_a_second_429_leaves_the_rest_of_the_chat_for_later_and_other_chat
     assert all(rig.rec(m) is not None for m in mine), "отложенные записи сняты — догон их не найдёт"
     assert rig.rec(other, OTHER) is None, "другой чат не поправлен из-за флуд-контроля в этом"
     assert out["later"] == 3, out
+
+
+# ── такт: уборка записей без дела ────────────────────────────────────────────
+
+async def test_the_tick_sweeps_records_idle_for_90_days_before_editing_and_says_so_once(rig, caplog):
+    """Запись меню с итогом, ушедшего мимо гашения, — никто её не снимет: такт убирает
+    такие старше 90 дней (строкой журнала, без запроса в Telegram), свежие не трогает;
+    уборки нет — строки о ней нет."""
+    import logging
+    from awgbot.bot import screens
+    old = (await rig.bot.send_message(CHAT, screens.with_note("📋 Свои сайты", "✅ Сайт добавлен"),
+                                      reply_markup=MENU)).message_id
+    rig.clock.advance(91 * 24 * HOUR)
+    fresh = (await rig.bot.send_message(CHAT, screens.with_note("🗺 Подсети", "✅ Подсеть добавлена"),
+                                        reply_markup=MENU)).message_id
+    before = len(rig.session.calls)
+    with caplog.at_level(logging.INFO):
+        await heal.nightly(rig.bot, rig.services)
+    assert rig.rec(old) is None, "запись без дела старше 90 дней пережила такт"
+    assert rig.rec(fresh) is not None and rig.rec(fresh)["note"] == "✅ Подсеть добавлена", "свежая запись снята"
+    assert rig.session.calls[before:] == [], f"уборка сходила в Telegram: {rig.heads()[before:]}"
+    assert "lists: такт — снято записей сообщений без дела: 1" in caplog.text, caplog.text
+    caplog.clear()
+    with caplog.at_level(logging.INFO):
+        await heal.nightly(rig.bot, rig.services)
+    assert "снято записей сообщений без дела" not in caplog.text, "строка уборки, когда убирать нечего"
+    assert "lists: такт — истекло снимков" in caplog.text
+
+
+
+# ── такт: незнакомый отказ в одном чате ──────────────────────────────────────
+
+@pytest.mark.parametrize("kind", ["teapot", "decode"])
+async def test_an_unknown_refusal_in_one_chat_does_not_stop_the_tick(rig, monkeypatch, caplog, kind):
+    """Ответ, которого правка не знает (418, страница вместо JSON), в одном чате: запись
+    остаётся — правку повторит следующий такт, другой чат поправлен, строка такта есть."""
+    import logging
+    from tests.integration.test_list_msg_heal import _odd_refusal
+    mine = await _sent_ago(rig, 25 * HOUR, "✅ Готово", kb.hide_only())
+    other = await _sent_ago(rig, 25 * HOUR, "✅ Другой чат", kb.hide_only(), chat=OTHER)
+    _odd_refusal(rig, monkeypatch, kind, chat=CHAT)
+    with caplog.at_level(logging.INFO):
+        out = await heal.nightly(rig.bot, rig.services)
+    assert any(e[2] == CHAT and e[3] == mine for e in rig.session.edits), "сценарий не о том: правки не было"
+    assert rig.rec(mine) is not None, f"{kind}: запись снята — «Скрыть» переживёт 48 часов"
+    assert rig.rec(other, OTHER) is None, f"{kind}: другой чат не поправлен"
+    assert out["later"] == 1 and out["hide"] == 1, out
+    assert "lists: такт — истекло снимков 0, поправлено ссылок 0, снято «Скрыть» 1, отложено 1" in caplog.text, \
+        caplog.text
+
+
+# ── два такта разом ──────────────────────────────────────────────────────────
+
+async def test_two_ticks_at_once_edit_a_message_once_and_count_it_once(rig, monkeypatch):
+    """Догон на старте совпал с тактом после полуночи: оба прочли записи к правке, сообщение
+    поправлено один раз, и в строках двух тактов оно посчитано один раз — иначе по
+    журналу снято вдвое больше «Скрыть», чем было."""
+    import asyncio
+    import threading
+    a = await _sent_ago(rig, 25 * HOUR, "✅ Готово", kb.hide_only())
+    both = threading.Barrier(2, timeout=5)
+    real_due = rig.db.list_msg_due
+    reads = []
+
+    def due(*args, **kwargs):
+        out = real_due(*args, **kwargs)
+        reads.append(1)
+        if len(reads) <= 2:
+            both.wait()                               # оба такта прочли до правки
+        return out
+    monkeypatch.setattr(rig.db, "list_msg_due", due)
+    outs = await asyncio.gather(heal.nightly(rig.bot, rig.services), heal.nightly(rig.bot, rig.services))
+    got = [e for e in rig.session.edits if e[3] == a]
+    assert len(got) == 1, f"сообщение поправлено {len(got)} раза"
+    assert sum(o["hide"] for o in outs) == 1, f"снятая «Скрыть» посчитана дважды: {outs}"
+    assert rig.rec(a) is None

@@ -190,3 +190,149 @@ async def test_two_heals_of_a_chat_at_once_edit_the_message_once(rig, monkeypatc
     await asyncio.gather(heal.heal_chat(rig.bot, rig.services, CHAT), heal.heal_chat(rig.bot, rig.services, CHAT))
     got = [e for e in _edits_of(rig, a) if e[1] == EditMessageText.__name__]
     assert len(got) == 1, f"сообщение поправлено {len(got)} раза — лишний запрос под флуд-контроль"
+
+
+# ── итог записи без мёртвых ссылок ───────────────────────────────────────────
+
+MENU = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="👥 Пользователи", callback_data="m:users")]])
+
+
+async def test_a_link_edit_strips_the_note_too_and_the_trace_brings_no_dead_link_back(rig):
+    """Живое меню с итогом «⚠️ Не добавлено … и ещё 7» ссылкой; снимок протух, такт
+    сделал ссылку текстом. Итог в записи — тоже без ссылки: иначе следующее меню
+    погасит это в след из прежнего итога, и мёртвая ссылка вернётся в чат."""
+    import datetime as _dt
+    from awgbot.bot import screens
+    from awgbot.bot.lists.msgs import retire
+    from awgbot.core import config
+    key = rig.snap()
+    note = "⚠️ Не добавлено: r0.example " + rig.link(key, "и ещё 7")
+    mid = (await rig.bot.send_message(CHAT, screens.with_note("📋 <b>Свои сайты</b>", note),
+                                      reply_markup=MENU)).message_id
+    assert rig.rec(mid)["note"] == note, "сценарий не о том: итог со ссылкой не записан"
+    rig.clock.t = _dt.datetime(2026, 11, 27, 0, 2, tzinfo=config.TZ)       # срок снимка прошёл
+    await heal.nightly(rig.bot, rig.services)
+    assert "list-snap-" not in rig.text_of(mid), "такт не поправил ссылку меню"
+    rec = rig.rec(mid)
+    assert rec is not None and rec["note"] == "⚠️ Не добавлено: r0.example и ещё 7", \
+        f"итог записи не очищен от мёртвой ссылки: {rec and rec['note']!r}"
+    await retire.retire(rig.bot, rig.services, CHAT, mid)
+    trace = rig.text_of(mid)
+    assert trace == "⚠️ Не добавлено: r0.example и ещё 7", f"след вернул мёртвую ссылку: {trace!r}"
+
+
+# ── обработчик поправил сообщение во время правки ────────────────────────────
+
+async def test_a_handler_edit_during_the_heal_edit_is_not_overwritten(rig, monkeypatch, caplog):
+    """Пока такт снимал «Скрыть», обработчик перерисовал то же сообщение в меню с итогом
+    (запись новее). Правка такта не должна затереть её своим видом: иначе запись
+    теряет клавиатуру меню, и следующее гашение промахнётся."""
+    import datetime as _dt
+    import logging
+    from aiogram.methods import EditMessageReplyMarkup
+    rig.session.date = int((rig.clock.t - _dt.timedelta(hours=25)).timestamp())
+    mid = (await rig.bot.send_message(CHAT, "✅ Готово", reply_markup=kb.hide_only())).message_id
+    menu_kb = MENU.model_dump_json(exclude_none=True)
+    real = rig.session.make_request
+    fired = []
+
+    async def handler_meanwhile(bot, method, timeout=None):
+        out = await real(bot, method, timeout)
+        if isinstance(method, EditMessageReplyMarkup) and int(method.message_id) == mid and not fired:
+            fired.append(1)
+            rig.clock.advance(1)
+            rig.db.list_msg_put(CHAT, mid, "", "📋 Свои сайты", menu_kb, [], "✅ Сайт добавлен")
+        return out
+    monkeypatch.setattr(rig.session, "make_request", handler_meanwhile)
+    with caplog.at_level(logging.INFO):
+        await heal.nightly(rig.bot, rig.services)
+    assert fired, "сценарий не о том: правки такта не было"
+    rec = rig.rec(mid)
+    assert rec is not None and rec["kb"] == menu_kb and rec["note"] == "✅ Сайт добавлен", \
+        f"правка такта затёрла более свежую запись обработчика: {rec}"
+    assert "запись изменилась во время правки" in caplog.text, caplog.text
+
+
+# ── незнакомый отказ ─────────────────────────────────────────────────────────
+
+def _odd_refusal(rig, monkeypatch, kind: str, chat: int = CHAT, mid: int | None = None):
+    """Правки в чате chat (сообщения mid, если назван) получают ответ, которого правка
+    не знает: 418 или не-JSON (прокси отдал страницу вместо ответа)."""
+    import json as _json
+    from aiogram.methods import EditMessageReplyMarkup
+    real = rig.session.make_request
+
+    async def odd(bot, method, timeout=None):
+        if (isinstance(method, (EditMessageText, EditMessageReplyMarkup)) and int(method.chat_id) == chat
+                and (mid is None or int(method.message_id) == mid)):
+            rig.session.edits.append((rig.vt.t, type(method).__name__, int(method.chat_id),
+                                      int(method.message_id)))
+            if kind == "teapot":
+                body = _json.dumps({"ok": False, "error_code": 418, "description": "I'm a teapot"})
+                return rig.session.check_response(bot=bot, method=method, status_code=418, content=body).result
+            return rig.session.check_response(bot=bot, method=method, status_code=502,
+                                              content="<html>Bad Gateway</html>").result
+        return await real(bot, method, timeout)
+    monkeypatch.setattr(rig.session, "make_request", odd)
+
+
+@pytest.mark.parametrize("kind", ["teapot", "decode"])
+async def test_an_unknown_refusal_in_an_action_keeps_the_record_and_the_next_message_is_still_edited(
+        rig, monkeypatch, kind):
+    """Незнакомый ответ Telegram на правку вытесненного: отправка 51-го не падает (человек
+    получает свой итог), запись остаётся — ссылку поправит такт, а соседнее сообщение
+    с вытесненной ссылкой поправлено тем же действием, а не брошено."""
+    k1, k2 = rig.snap(), rig.snap()
+    a = await _shown(rig, ("и ещё 20", k1))
+    b = await _shown(rig, ("и ещё 27", k2))
+    first, second = [int(r["mid"]) for r in rig.db.list_msg_all(CHAT)]      # в этом порядке их правит действие
+    assert {first, second} == {a, b}
+    keys = {a: k1, b: k2}
+    _odd_refusal(rig, monkeypatch, kind, mid=first)
+    rig.fill(50 - 2)
+    rig.snap()
+    k = rig.snap()                                    # вытеснены k1 и k2
+    m = await rig.bot.send_message(CHAT, "Новый итог " + rig.link(k), reply_markup=kb.hide_only())
+    assert m.message_id and rig.heads()[-1].startswith(("+ send", "= edit")), f"{kind}: отправка сорвалась"
+    assert any(e[3] == first for e in rig.session.edits), f"{kind}: сценарий не о том — правки не было"
+    rec = rig.rec(first)
+    assert rec is not None and rec["keys"] == [keys[first]], \
+        f"{kind}: запись снята — ссылка так и умрёт ссылкой: {rec}"
+    assert "list-snap-" not in rig.text_of(second), f"{kind}: после незнакомого отказа соседнее сообщение брошено"
+
+
+# ── в действии — не больше трёх правок, без ждущих повтора после 429 ─────────
+
+async def test_an_action_edits_at_most_three_messages_and_leaves_the_rest_to_the_tick(rig):
+    """Пять сообщений с вытесненными разом снимками: обработчик правит три (человек не
+    ждёт пять секунд темпа чата), два — такт."""
+    shown = []
+    for i in range(5):
+        k = rig.snap()
+        shown.append((await _shown(rig, (f"и ещё {i + 20}", k))))
+    rig.fill(50 - 5)
+    for _ in range(4):
+        rig.snap()                                    # вытеснены первые четыре
+    k = rig.snap()                                    # пятый вытеснен этим, его ссылка уходит в чат
+    await rig.bot.send_message(CHAT, "Новый итог " + rig.link(k), reply_markup=kb.hide_only())
+    edited = [m for m in shown if "list-snap-" not in (rig.text_of(m) or "")]
+    assert len(edited) == heal.ACTION_MAX == 3, f"в действии поправлено {len(edited)} из 5"
+    left = [m for m in shown if m not in edited]
+    assert all(rig.rec(m) and rig.rec(m)["keys"] for m in left), "оставшиеся такту записи потеряны"
+    await heal.nightly(rig.bot, rig.services)
+    assert all("list-snap-" not in rig.text_of(m) for m in shown), "такт не поправил оставшиеся"
+
+
+async def test_an_action_skips_a_message_waiting_for_its_429_retry(rig, monkeypatch):
+    """Сообщение уже ждёт фонового повтора после 429: вторая попытка из действия —
+    лишний запрос под тот же флуд-контроль."""
+    k1, k2 = rig.snap(), rig.snap()
+    a = await _shown(rig, ("и ещё 20", k1))
+    b = await _shown(rig, ("и ещё 27", k2))
+    monkeypatch.setitem(heal._retry, (CHAT, a), 5)
+    rig.fill(50 - 2)
+    rig.snap()
+    k = rig.snap()                                    # вытеснены k1 и k2
+    await rig.bot.send_message(CHAT, "Новый итог " + rig.link(k), reply_markup=kb.hide_only())
+    assert _edits_of(rig, a) == [], f"ждущее повтора после 429 поправлено из действия: {_edits_of(rig, a)}"
+    assert "list-snap-" not in rig.text_of(b), "соседнее сообщение не поправлено"
