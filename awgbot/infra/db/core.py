@@ -31,6 +31,9 @@ class DatabaseCore:
     def __init__(self, path: str | Path):
         self.path = str(path)
         self._local = threading.local()
+        self._conns: list[sqlite3.Connection] = []     # все открытые соединения (всех потоков) — close() закрывает их
+        self._conns_lock = threading.Lock()
+        self._gen = 0                                  # поколение close(): соединение прежнего поколения — закрыто
         # Инициализируем соединение основного потока (для init_schema).
         self._connection()
 
@@ -40,6 +43,8 @@ class DatabaseCore:
         использовать нельзя — sqlite3 не потокобезопасен на одном connection.
         WAL позволяет много читателей + одного писателя через РАЗНЫЕ соединения."""
         conn = getattr(self._local, "conn", None)
+        if conn is not None and getattr(self._local, "gen", 0) != self._gen:
+            conn = None                                  # закрыто через close() из другого потока — открыть заново
         if conn is not None and not getattr(self._local, "jrn_ok", False) and self.__dict__.get("_jrn_ready"):
             self._jrn_triggers(conn)                    # соединение открыто до init_schema — триггеры теперь
         if conn is None:
@@ -56,6 +61,9 @@ class DatabaseCore:
             conn.execute("PRAGMA busy_timeout = 5000")   # мс: ждать до 5 с, а не падать на locked
             conn.commit()
             self._local.conn = conn
+            self._local.gen = self._gen
+            with self._conns_lock:
+                self._conns.append(conn)
             self._jrn_triggers(conn)
         return conn
 
@@ -73,10 +81,19 @@ class DatabaseCore:
             logging.getLogger("awgbot.db").error("журнал: триггеры запрета не поставлены: %s", e)
 
     def close(self) -> None:
-        conn = getattr(self._local, "conn", None)
-        if conn is not None:
-            conn.close()
-            self._local.conn = None
+        """Закрыть соединения ВСЕХ потоков (services ходят в базу из пула потоков
+        asyncio.to_thread: соединение пула, оставшееся открытым, держит файлы
+        базы, WAL и shm — в тестах с базой на каждый снимок это упиралось в предел
+        открытых файлов). Поток, у которого соединение закрыли, откроет новое."""
+        with self._conns_lock:
+            conns, self._conns = list(self._conns), []
+            self._gen += 1
+        for conn in conns:
+            try:
+                conn.close()
+            except sqlite3.Error:
+                pass
+        self._local.conn = None
 
     # ── вид транзакции и крючок коммита (пакет переезда резерву) ─────────────
     # Любая запись в данные пользователей — повод обновить пакет переезда у резерва;
