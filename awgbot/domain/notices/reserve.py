@@ -11,6 +11,7 @@ from __future__ import annotations
 import html
 
 from awgbot.util import timeutil
+from awgbot.util.textfmt.base import plural_ru
 
 
 def _e(s) -> str:
@@ -120,13 +121,13 @@ def returned_home(reserve: str, report: dict, traffic: str) -> str:
     """Т-РУ5б: пользователи и бот снова на основе; итог слияния."""
     parts = []
     if report.get("clients"):
-        parts.append(f"{int(report['clients'])} новых профиля")
+        parts.append(f"{int(report['clients'])} {plural_ru(int(report['clients']), 'новый профиль', 'новых профиля', 'новых профилей')}")
     if report.get("devices"):
-        parts.append(f"{int(report['devices'])} новых устройства")
+        parts.append(f"{int(report['devices'])} {plural_ru(int(report['devices']), 'новое устройство', 'новых устройства', 'новых устройств')}")
     if report.get("extensions"):
-        parts.append(f"{int(report['extensions'])} продления")
+        parts.append(f"{int(report['extensions'])} {plural_ru(int(report['extensions']), 'продление', 'продления', 'продлений')}")
     if report.get("blocks"):
-        parts.append(f"{int(report['blocks'])} блокировки")
+        parts.append(f"{int(report['blocks'])} {plural_ru(int(report['blocks']), 'блокировка', 'блокировки', 'блокировок')}")
     body = ", ".join(parts) if parts else "без новых профилей и устройств"
     text = f"↩️ Пользователи и бот снова здесь. За время на {_n(reserve)}: {body}"
     if traffic:

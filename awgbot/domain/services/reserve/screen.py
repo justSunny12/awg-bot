@@ -36,7 +36,6 @@ class ReserveScreenMixin:
                 # запись DNS — по настройке «🌐 Запись DNS»: тот же сборщик, что у карточки пары (без DNS-запросов)
                 "dns": self.reserve_dns_line_data(),
                 "ready": settings.get_bool("app.reserve.ready", False),
-                "jrn_capable": self._jrn_caps_safe(),
                 "invite_live": live and inv.get("role") != "acceptor",
                 "accepting": live and inv.get("role") == "acceptor"}
 
@@ -73,12 +72,6 @@ class ReserveScreenMixin:
                 "jrn_on": self.reserve_jrn_on(), "jrn_moved": self.reserve_jrn_moved(),
                 "jrn_follow": self.reserve_follow_view(),
                 "self_admin": self.reserve_self_peer_admin()}
-
-    def _jrn_caps_safe(self) -> bool:
-        try:
-            return "jrn1" in self._jrn_caps()
-        except Exception:                                     # noqa: BLE001
-            return False
 
     def _reserve_traffic_view(self) -> dict:
         tr = self.rsv_get("rsv_traffic")

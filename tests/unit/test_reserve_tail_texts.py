@@ -60,12 +60,12 @@ def test_values_are_shown_by_their_meaning(table, c, tail, kept, want):
 def test_an_unknown_column_is_a_general_line_without_values():
     got = line(col("clients", "kind", "owner-x", "owner-y"))
     assert "owner" not in got and "kind" not in got, got
-    assert got == "профиль Иван: правку поменяли и там, и здесь — на «Beta» осталась своя", got
+    assert got == "профиль Иван: изменение внесено с обеих сторон — на «Beta» осталось своё", got
 
 
 def test_a_mask_dispute_has_no_bits():
     got = line(col("clients", "block_reason", 3, 5))
-    assert got == "профиль Иван: блокировку поменяли и там, и здесь — на «Beta» осталась своя", got
+    assert got == "профиль Иван: блокировка изменена с обеих сторон — на «Beta» осталась своя", got
 
 
 @pytest.mark.parametrize("c", ["private_key", "preshared_key", "public_key"])
@@ -99,13 +99,13 @@ def test_an_address_taken_in_c9_was_made_here():
 def test_a_disputed_device_removal_asks_for_a_new_config():
     """Откат удаления вернул устройство без закрытого ключа — конфигурацию выдать заново."""
     got = line({"kind": "delete", "table": "devices", "col": "name"}, device="Ноутбук")
-    assert got == "устройство «Ноутбук» профиля Иван: удаление не перенесено — на «Beta» его успели поменять. " \
+    assert got == "устройство «Ноутбук» профиля Иван: удаление не перенесено — на «Beta» уже внесено конфликтующее изменение. " \
                   "Выдай конфигурацию заново", got
 
 
 def test_a_gone_row_says_the_record_is_no_more_there():
     assert line({"kind": "gone", "table": "clients"}) == \
-        "профиль Иван: правка не перенесена — на «Beta» этой записи уже нет"
+        "профиль Иван: изменение не перенесено — на «Beta» этой записи уже нет"
 
 
 def test_a_device_without_an_owner_is_not_signed_by_its_own_name():
@@ -116,20 +116,20 @@ def test_a_device_without_an_owner_is_not_signed_by_its_own_name():
 # ── заголовок, «и ещё N» ────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("n, head", [
-    (1, "⚠️ Не перенесена 1 правка, сделанная здесь"),
-    (2, "⚠️ Не перенесены 2 правки, сделанные здесь"),
-    (5, "⚠️ Не перенесены 5 правок, сделанные здесь"),
-    (21, "⚠️ Не перенесена 21 правка, сделанная здесь"),
+    (1, "⚠️ Не перенесено 1 изменение, сделанное здесь"),
+    (2, "⚠️ Не перенесены 2 изменения, сделанные здесь"),
+    (5, "⚠️ Не перенесены 5 изменений, сделанные здесь"),
+    (21, "⚠️ Не перенесено 21 изменение, сделанное здесь"),
 ])
 def test_the_head_agrees_with_the_number(n, head):
     text = rn.tail_disputed("crash", "Beta", ["x"] * min(n, 5), n)
-    assert text.startswith(head + " перед переездом на «Beta»: те же поля там успели поменять по-своему"), text
+    assert text.startswith(head + " перед переездом на «Beta»: на той стороне уже применены другие правки"), text
 
 
 def test_the_c9_head():
     text = rn.tail_disputed("c9", "Beta", ["x", "y"], 2)
-    assert text.startswith("⚠️ Не перенесены 2 правки бота на «Beta», сделанные после потери связи: здесь те же поля "
-                           "успели поменять по-своему"), text
+    assert text.startswith("⚠️ Не перенесены 2 изменения от бота на «Beta», сделанные после потери связи: здесь уже "
+                           "применены другие правки"), text
 
 
 def test_twelve_disputes_show_five_lines_and_seven_more():
@@ -147,8 +147,8 @@ def test_five_disputes_have_no_more():
 # ── Т-Ж5, Т-Ж6 ──────────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("variant, want", [
-    ("crash", "ℹ️ Правки, сделанные здесь перед переездом на «Beta», перенесены туда: 4"),
-    ("c9", "ℹ️ Правки бота на «Beta» после потери связи перенесены сюда: 12"),
+    ("crash", "ℹ️ Изменения, сделанные здесь перед переездом на «Beta», перенесены туда: 4"),
+    ("c9", "ℹ️ Изменения от бота на «Beta» после потери связи перенесены сюда: 12"),
     ("self", "ℹ️ Правки, сделанные здесь перед переездом на «Beta», перенесены после возврата: 4"),
 ])
 def test_tj5_variants(variant, want):
@@ -157,9 +157,9 @@ def test_tj5_variants(variant, want):
 
 def test_tj6_texts_and_no_final_period():
     stalled = rn.follow_stalled("Beta", "здесь — по 14:02")
-    assert stalled == "⚠️ Данные здесь перестали догонять бот на «Beta»: здесь — по 14:02 — возврат подождёт"
+    assert stalled == "⚠️ Данные здесь перестали догонять бот на «Beta»: здесь — по 14:02"
     ok = rn.follow_ok("Beta")
-    assert ok == "🟢 Данные здесь снова идут за ботом на «Beta»"
+    assert ok == "🟢 Данные здесь снова следуют за ботом на «Beta»"
     for t in (stalled, ok, rn.tail_moved("crash", "Beta", 1), rn.tail_disputed("crash", "Beta", ["a"], 1)):
         assert not t.rstrip().endswith("."), t
 

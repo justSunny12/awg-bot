@@ -2,7 +2,7 @@
 (Т-Р1), «📤 Пригласить» (живое сообщение Т-Р2), «✏️ Ввести код» с попытками
 (Т-Р7), «⬅️ Отменить», «📥 Принять приглашение» (Т-Р3 → Т-Р4/Т-Р5 →
 «🛟 Подключиться»), карточка (Т-Р9), тумблер готовности при паре (диалог),
-«🗑 Удалить резерв» (отказ в переезде, диалог), «🆘 На крайний случай»
+«🗑 Удалить резерв» (отказ в переезде, диалог), «🆘 Аварийный код»
 (Т-Р18: код отдельным сообщением, удаление через 10 минут, смена кода).
 
 Хендлеры зовутся напрямую (FakeCallback/FakeMessage/FakeState); скрипт
@@ -250,7 +250,7 @@ async def test_the_card_names_the_peer_and_its_actions(services, paired):
     text, markup = await card_h.reserve_screen(services)
     assert "Резерв «Beta»" in text and rc.ADDR_B in text
     labels = _labels(markup)
-    assert "🆘 На крайний случай" in labels and "🗑 Удалить резерв" in labels and labels[-1] == "⬅️ Назад"
+    assert "🆘 Аварийный код" in labels and "🗑 Удалить резерв" in labels and labels[-1] == "⬅️ Назад"
 
 
 async def test_readiness_off_with_a_pair_goes_through_a_dialog(services, paired, fake_bot):
@@ -293,7 +293,7 @@ async def test_unpair_through_the_dialog(services, paired, fake_bot):
     assert "📤 Пригласить" in labels, "после удаления не раздел без пары"
 
 
-# ── на крайний случай ───────────────────────────────────────────────────────
+# ── аварийный код ───────────────────────────────────────────────────────────
 
 async def test_the_emergency_screen_without_a_pair_has_no_code_buttons(services, ui, fake_bot):
     nav = _nav(fake_bot)

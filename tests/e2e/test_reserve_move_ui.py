@@ -143,7 +143,7 @@ async def test_the_card_offers_the_return_to_the_reserve_only_while_it_hosts_my_
 async def test_the_card_of_the_primary_that_is_away_shows_the_state_and_no_move(ui):
     rm.go_away(ui.svc)
     text, labels = await _card(ui)
-    assert "Мои пользователи: на «Beta»" in text.replace("<b>", "").replace("</b>", "") or "на <b>Beta</b>" in text or "Beta" in text
+    assert "Твои пользователи: на «Beta»" in text.replace("<b>", "").replace("</b>", "") or "на <b>Beta</b>" in text or "Beta" in text
     assert not any("Переезд" in x for x in labels)
 
 

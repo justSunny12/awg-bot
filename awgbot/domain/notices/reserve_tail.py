@@ -99,7 +99,7 @@ def _date_yy(iso: str) -> str:
 
 def _tail_value(col: str, v) -> str:
     if v is None or v == "":
-        return "—"
+        return "&lt;пусто&gt;"
     if col in _TAIL_WORDS and str(v) in _TAIL_WORDS[col]:
         return _TAIL_WORDS[col][str(v)]
     if col in _TAIL_DATES and isinstance(v, str):
@@ -134,23 +134,23 @@ def tail_line(d: dict, profile: str, device: str, taken_by: str, reserve: str, v
     if kind == "unique":
         made = f"заведённый на {_n(reserve)}" if variant != "c9" else "заведённый здесь"
         return (f"{subject} — его адрес занял {taken_by}, {made}. Выдай «{device}» конфигурацию заново"
-                if col == "address" else f"{subject}: не встало — {_TAIL_TAKEN.get(col, 'такое значение уже занято')}")
+                if col == "address" else f"{subject}: изменения не применены — {_TAIL_TAKEN.get(col, 'такое значение уже занято')}")
     if kind == "delete":
         tail = ". Выдай конфигурацию заново" if table == "devices" else ""   # закрытого ключа после отката нет
-        return f"{subject}: удаление не перенесено — {where} его успели поменять{tail}"
+        return f"{subject}: удаление не перенесено — {where} уже внесено конфликтующее изменение{tail}"
     if kind == "gone":
-        return f"{subject}: правка не перенесена — {where} этой записи уже нет"
+        return f"{subject}: изменение не перенесено — {where} этой записи уже нет"
     if kind == "failed":
-        return f"{subject}: правка не встала"
+        return f"{subject}: изменение не применено"
     if col in ("private_key", "preshared_key", "public_key"):
         return f"{subject}: ключи поменяли и там, и здесь — {where} остались свои. Выдай конфигурацию заново"
     if d.get("secret"):
         return f"{subject}: код поменяли и там, и здесь — {where} остался свой"
     if col == "block_reason":
-        return f"{subject}: блокировку поменяли и там, и здесь — {where} осталась своя"
+        return f"{subject}: блокировка изменена с обеих сторон — {where} осталась своя"
     field = _TAIL_FIELDS.get((table, col))
     if field is None:
-        return f"{subject}: правку поменяли и там, и здесь — {where} осталась своя"
+        return f"{subject}: изменение внесено с обеих сторон — {where} осталось своё"
     tail, kept = _tail_value(col, d.get("tail")), _tail_value(col, d.get("kept"))
     if col in _TAIL_DATES and field.endswith(" до"):
         return f"{subject}: {field} {tail} — {where} осталось до {kept}"
@@ -158,14 +158,14 @@ def tail_line(d: dict, profile: str, device: str, taken_by: str, reserve: str, v
 
 
 def _tail_head(variant: str, reserve: str, n: int) -> str:
-    word = f"{n} {plural_ru(n, 'правка', 'правки', 'правок')}"
-    verb = plural_ru(n, "перенесена", "перенесены", "перенесены")
-    made = plural_ru(n, "сделанная", "сделанные", "сделанные")
+    word = f"{n} {plural_ru(n, 'изменение', 'изменения', 'изменений')}"
+    verb = plural_ru(n, "перенесено", "перенесены", "перенесены")
+    made = plural_ru(n, "сделанное", "сделанные", "сделанные")
     if variant == "c9":
-        return (f"⚠️ Не {verb} {word} бота на {_n(reserve)}, {made} после потери связи: здесь те же поля "
-                "успели поменять по-своему")
-    return (f"⚠️ Не {verb} {word}, {made} здесь перед переездом на {_n(reserve)}: те же поля там успели "
-            "поменять по-своему")
+        return (f"⚠️ Не {verb} {word} от бота на {_n(reserve)}, {made} после потери связи: здесь уже применены "
+                "другие правки")
+    return (f"⚠️ Не {verb} {word}, {made} здесь перед переездом на {_n(reserve)}: на той стороне уже применены "
+            "другие правки")
 
 
 def tail_disputed(variant: str, reserve: str, lines: list[str], total: int, more: str = "") -> str:
@@ -195,16 +195,16 @@ def tail_moved(variant: str, reserve: str, n: int) -> str:
     """Т-Ж5: хвост перенесён целиком (self — свой хвост перенесён здесь после возврата: бот на
     резерве его не принял)."""
     if variant == "c9":
-        return f"ℹ️ Правки бота на {_n(reserve)} после потери связи перенесены сюда: {int(n)}"
+        return f"ℹ️ Изменения от бота на {_n(reserve)} после потери связи перенесены сюда: {int(n)}"
     if variant == "self":
         return f"ℹ️ Правки, сделанные здесь перед переездом на {_n(reserve)}, перенесены после возврата: {int(n)}"
-    return f"ℹ️ Правки, сделанные здесь перед переездом на {_n(reserve)}, перенесены туда: {int(n)}"
+    return f"ℹ️ Изменения, сделанные здесь перед переездом на {_n(reserve)}, перенесены туда: {int(n)}"
 
 
 def follow_stalled(reserve: str, why: str) -> str:
     """Т-Ж6: основа в следовании перестала догонять бот на резерве."""
-    return f"⚠️ Данные здесь перестали догонять бот на {_n(reserve)}: {_e(why)} — возврат подождёт"
+    return f"⚠️ Данные здесь перестали догонять бот на {_n(reserve)}: {_e(why)}"
 
 
 def follow_ok(reserve: str) -> str:
-    return f"🟢 Данные здесь снова идут за ботом на {_n(reserve)}"
+    return f"🟢 Данные здесь снова следуют за ботом на {_n(reserve)}"

@@ -72,7 +72,7 @@ async def test_the_away_card_with_nobody_anywhere_has_no_tail(ui, monkeypatch):
     rm.go_away(ui.svc)
     monkeypatch.setattr(ui.svc, "_online_count", lambda: 0)
     text, _ = await _card(ui)
-    assert "здесь ещё" not in text and "там" not in text.split("Мои пользователи")[1].split("\n")[0]
+    assert "здесь ещё" not in text and "там" not in text.split("Твои пользователи")[1].split("\n")[0]
 
 
 async def test_here_and_there_are_not_shown_while_the_clients_are_home(ui, monkeypatch):

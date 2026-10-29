@@ -296,7 +296,7 @@ class ReserveFollowMixin:
         return now - since > self.FOLLOW_LAG_S, applied, last
 
     def reserve_follow_view(self) -> dict:
-        """Строка карточки в отъезде с журналом: «идут за ботом … по <время>» или «догоняют»."""
+        """Строка карточки в отъезде с журналом: «следуют за ботом … актуальны на <дата и время>» или «догоняют»."""
         if not self.reserve_following() or not self.reserve_jrn_moved():
             return {}
         lag, applied, _last = self._follow_lag()

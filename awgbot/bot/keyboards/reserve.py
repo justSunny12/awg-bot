@@ -77,7 +77,7 @@ def card(*, ready: bool, rf_on: bool, has_gateway: bool, ret_immediate: bool, na
         ("⏱ Возврат: сразу" if ret_immediate else "⏱ Возврат: по кнопке", RsvCB(action="ret")),
         ("🌐 Запись DNS", RsvCB(action="dns")),
         (f"🛰 Для «{name}»", RsvCB(action="role")) if self_admin else None,
-        ("🆘 На крайний случай", RsvCB(action="emerg")),
+        ("🆘 Аварийный код", RsvCB(action="emerg")),
         ("🗑 Удалить резерв", RsvCB(action="unpair")),
         _back())
 

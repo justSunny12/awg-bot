@@ -2,7 +2,7 @@
 со шлюзом на агенте с rsv1 и на прежнем), приглашение и его ход (Т-Р2),
 ввод кода (Т-Р7), отмена, принятие строки (Т-Р3 → Т-Р4/Т-Р5), код у
 принявшего (Т-Р6), карточка резерва (Т-Р9), диалоги готовности и удаления,
-«🆘 На крайний случай» (Т-Р18) и экран роли админа второго сервера (Т-РН1)
+«🆘 Аварийный код» (Т-Р18) и экран роли админа второго сервера (Т-РН1)
 — во всех вариантах этапа пары.
 
 Хост не трогается: скрипт линка пары — подмена с постоянными ключами-
@@ -275,11 +275,11 @@ RESERVE = [
          data=_rsv(ready=True, gw="rsv", paired=True, then=[_away]), title="удаление при «мои у него» — отказ"),
     Shot("adm.rsv.unpair.yes", role="admin", press=[RSV, RsvCB(action="unpair"), RsvCB(action="unpair_yes")],
          data=_rsv(ready=True, gw="rsv", paired=True), title="резерв удалён"),
-    # ── на крайний случай (Т-Р18) ───────────────────────────────────────
+    # ── аварийный код (Т-Р18) ───────────────────────────────────────────
     Shot("adm.rsv.emerg", role="admin", press=[RSV, RsvCB(action="emerg")],
-         data=_rsv(ready=True, gw="rsv", paired=True), title="«🆘 На крайний случай»"),
+         data=_rsv(ready=True, gw="rsv", paired=True), title="«🆘 Аварийный код»"),
     Shot("adm.rsv.emerg.none", role="admin", press=[RSV, RsvCB(action="emerg")], data=_rsv(ready=True),
-         title="«🆘 На крайний случай» без пары — кода нет"),
+         title="«🆘 Аварийный код» без пары — кода нет"),
     Shot("adm.rsv.emerg.show", role="admin", press=[RSV, RsvCB(action="emerg"), RsvCB(action="show_code")],
          data=_rsv(ready=True, gw="rsv", paired=True), title="«🔑 Показать код» — отдельным сообщением"),
     Shot("adm.rsv.new_code", role="admin", press=[RSV, RsvCB(action="emerg"), RsvCB(action="new_code")],

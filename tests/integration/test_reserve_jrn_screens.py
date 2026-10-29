@@ -1,6 +1,6 @@
 """Экраны раздела «🛟 Резерв» с журналом данных (bot/texts/reserve/section.py по
 данным reserve_card_data / reserve_section_data / reserve_force_dialog_data):
-Т-Ж1/Т-Ж2 под «📤 Мои пользователи: на …», Т-Ж3 (ждём правки бота на резерве),
+Т-Ж1/Т-Ж2 под «📤 Твои пользователи: на …», Т-Ж3 (ждём правки бота на резерве),
 Т-Ж7 (диалог «вернуть без резерва»), Т-Ж8 («▸ подробнее» карточки — каким путём
 идут данные), Т-Ж9 («▸ подробнее» раздела).
 
@@ -66,8 +66,8 @@ def test_tj1_the_card_says_the_data_follow_the_reserves_bot_with_the_time(duo):
     _following(duo)
     text = _screen(duo.a)
     lines = text.split("\n")
-    i = next(n for n, ln in enumerate(lines) if ln.startswith("📤 Мои пользователи: на «Beta»"))
-    assert lines[i + 1].startswith("└ данные здесь идут за ботом на «Beta» · по "), lines[i:i + 2]
+    i = next(n for n, ln in enumerate(lines) if ln.startswith("📤 Твои пользователи: на «Beta»"))
+    assert lines[i + 1].startswith("└ данные здесь следуют за ботом на «Beta» · актуальны на "), lines[i:i + 2]
     assert "🟡" not in lines[i + 1]
 
 
@@ -78,21 +78,21 @@ def test_tj2_a_lag_over_a_minute_replaces_tj1(duo):
     duo.a.rsv_update("rsv_peer_state", jrn_keep=keep)
     duo.a.__dict__["_follow_lag_since"] = time.monotonic() - 61
     text = _screen(duo.a)
-    assert "└ 🟡 данные здесь догоняют бот на «Beta» · по " in text, text
-    assert "идут за ботом" not in text
+    assert "└ 🟡 данные здесь догоняют бот на «Beta» · актуальны на " in text, text
+    assert "следуют за ботом" not in text
 
 
 def test_tj1_is_not_shown_at_home(duo):
     duo.journal_on()
     text = _screen(duo.a)
-    assert "идут за ботом" not in text and "догоняют" not in text
+    assert "следуют за ботом" not in text and "догоняют" not in text
 
 
 def test_tj3_waiting_for_the_reserves_edits_with_the_journal(duo):
     _following(duo)
     duo.a.rsv_update("rsv_out", await_merge=True)
     text = _screen(duo.a)
-    assert "└ 🟡 правки бота на «Beta» придут, когда он выйдет на связь" in text, text
+    assert "└ 🟡 изменения из бота на «Beta» придут, когда он выйдет на связь" in text, text
     assert "жду реплику" not in text
 
 
@@ -107,33 +107,26 @@ def test_tj3_without_the_journal_the_old_line_stays(mv):
 def test_tj8_the_details_say_the_data_go_as_edits(duo):
     duo.journal_on()
     text = _screen(duo.a)
-    assert "Данные для переезда уходят к «Beta» правками по мере изменений, раз в сутки — целиком" in text, text
+    assert "Данные для переезда уходят к «Beta» по мере изменений, раз в сутки — полный слепок контрольно" in text, text
 
 
 def test_tj8_a_peer_without_the_journal_gets_the_old_path_with_the_reason(mv):
     rc.pair_row(mv.svc)
     rm.st_in(mv.svc)                                     # выпуск 4.0.0, возможностей журнала нет
     text = _screen(mv.svc)
-    assert "Данные для переезда уходят к «Beta» целиком после каждого изменения — у «Beta» выпуск без журнала " \
-           "правок" in text, text
-    assert "правками по мере изменений" not in text
+    assert "Данные для переезда уходят к «Beta» полным слепком после каждого изменения — версия бота на «Beta» " \
+           "не поддерживает журнал правок" in text, text
+    assert "по мере изменений" not in text
 
 
-def test_tj9_the_section_details_say_what_the_reserve_sees(services, rsv):
-    text = _screen(services)
-    assert "Прочитать правки резерв не может, но видит, когда и сколько их было" in text, text
-
-
-def test_tj9_is_not_said_by_a_release_without_the_journal(services, rsv, monkeypatch):
-    monkeypatch.setattr(services, "_jrn_caps", lambda: [])
-    assert "Прочитать правки" not in _screen(services)
+# Т-Ж9 («прочитать правки резерв не может, но видит…») с экрана снята 29.10.2026 — живёт в README
 
 
 def test_tj7_the_force_dialog_with_the_journal(duo):
     _following(duo)
     text = st_t.force_dialog(duo.a.reserve_force_dialog_data())
-    assert "Правки бота на «Beta» за это время придут, когда он выйдет на связь; если те же поля здесь успеют " \
-           "поменять по-своему, останутся здешние — список пришлю" in text, text
+    assert "Изменения от бота на «Beta» за это время придут, когда он выйдет на связь; если здесь успеешь внести " \
+           "конфликтующие со снимком с «Beta» правки — останутся они, список пришлю" in text, text
     assert "вольётся" not in text
 
 

@@ -239,7 +239,7 @@ def test_the_primary_sends_tj4_right_after_the_return_report(duo):
     texts = [n.text for n in notes]
     assert len(texts) >= 2 and texts[0].startswith("↩️ Пользователи и бот снова здесь"), texts
     tj4 = texts[1]
-    assert tj4.startswith("⚠️ Не перенесена 1 правка, сделанная здесь перед переездом на «Beta»"), tj4
+    assert tj4.startswith("⚠️ Не перенесено 1 изменение, сделанное здесь перед переездом на «Beta»"), tj4
     assert "имя «Иван здесь» — на «Beta» осталось «Иван на резерве»" in tj4, tj4
     assert notes[1].silent, "Т-Ж4 со звуком"
     assert duo.a.rsv_get("rsv_out").get("tail_report") is None, "отчёт хвоста не снят — придёт снова"
@@ -379,7 +379,7 @@ def test_more_than_2000_disputes_go_as_2000_records_and_more(duo, monkeypatch):
     assert len(rep.get("disputed") or []) == 2000 and rep.get("total") == 2001, \
         {k: (len(v) if isinstance(v, list) else v) for k, v in rep.items()}
     tj4 = [n.text for n in duo.a.reserve_tail_notes()][0]
-    assert "Не перенесена 2001 правка, сделанная" in tj4 and "… и ещё 1996" in tj4, tj4
+    assert "Не перенесено 2001 изменение, сделанное" in tj4 and "… и ещё 1996" in tj4, tj4
 
 
 # ── список у основы после --wipe резерва ────────────────────────────────────
@@ -408,7 +408,7 @@ def test_after_the_reserves_wipe_all_twelve_lines_are_built_by_the_primary(duo):
         assert any(f"«Здесь {cid}»" in ln and f"«Там {cid}»" in ln for ln in lines), (cid, lines)
     notes = _return_to_done(duo)
     tj4 = notes[1].text
-    assert tj4.startswith("⚠️ Не перенесены 12 правок"), tj4
+    assert tj4.startswith("⚠️ Не перенесены 12 изменений"), tj4
     assert tj4.count("\n• ") == 5 and tj4.rstrip().endswith("… и ещё 7"), tj4
 
 
@@ -418,7 +418,7 @@ def test_the_return_waits_for_the_own_tail_up_to_ten_minutes(duo):
     _crash(duo, tail=_tail_vera, guest=lambda db, i: None)
     _jtail_parts(duo)                                   # ушло, ответа нет
     why = duo.a.reserve_return_check()
-    assert why == "Правки, сделанные здесь перед переездом на «Beta», ещё переносятся туда — возврат после этого", why
+    assert why == "Правки, сделанные здесь перед переездом на «Beta», ещё переносятся туда — возврат после завершения", why
     duo.a.rsv_update("rsv_tail", at=_ago(9))
     assert duo.a.reserve_return_check() == why, "ждал меньше 10 минут"
     duo.a.rsv_update("rsv_tail", at=_ago(11))
@@ -447,7 +447,7 @@ def test_the_update_is_refused_while_the_own_tail_is_on_its_way(duo):
     _jtail_parts(duo)
     with pytest.raises(ServiceError) as e:
         duo.a.reserve_refuse_update_if_waiting()
-    assert str(e.value) == "Правки, сделанные здесь перед переездом на «Beta», ещё переносятся туда — обновление после этого"
+    assert str(e.value) == "Правки, сделанные здесь перед переездом на «Beta», ещё переносятся туда — обновление после завершения"
     duo.a.rsv_update("rsv_tail", at=_ago(11))
     duo.a.reserve_refuse_update_if_waiting()           # дольше 10 минут — не держит
 
@@ -457,8 +457,8 @@ def test_the_update_is_refused_while_waiting_for_the_reserves_edits(mv):
     mv.svc.rsv_update("rsv_out", await_merge=True)
     with pytest.raises(ServiceError) as e:
         mv.svc.reserve_refuse_update_if_waiting()
-    assert str(e.value) == ("Жду правки бота на «Beta», сделанные после потери связи, — обновление после них; "
-                            "он не вернётся — удали пару в «🛟 Резерв»"), str(e.value)
+    assert str(e.value) == ("Жду изменения от бота на «Beta», сделанные после потери связи, — обновление, когда они "
+                            "придут; он не вернётся — удали пару в «🛟 Резерв»"), str(e.value)
     mv.svc.rsv_update("rsv_out", await_merge=False)
     mv.svc.reserve_refuse_update_if_waiting()
 
@@ -537,8 +537,8 @@ def test_c9_tj4_goes_after_the_return_report_in_the_c9_wording(duo):
     texts = [n.text for n in notes]
     tj4 = [t for t in texts if t.startswith("⚠️ Не перенесен")]
     assert len(tj4) == 1 and texts.index(tj4[0]) == 1, texts
-    assert tj4[0].startswith("⚠️ Не перенесена 1 правка бота на «Beta», сделанная после потери связи: здесь те же поля "
-                             "успели поменять по-своему"), tj4[0]
+    assert tj4[0].startswith("⚠️ Не перенесено 1 изменение от бота на «Beta», сделанное после потери связи: здесь уже "
+                             "применены другие правки"), tj4[0]
     assert "имя «Иван на резерве» — здесь осталось «Иван здесь»" in tj4[0], tj4[0]
     assert duo.a.rsv_get("rsv_c9") == {}, "отчёт С9 не снят — придёт снова"
 
@@ -551,7 +551,7 @@ def test_c9_without_disputes_is_one_quiet_tj5(duo):
         duo.g.db.create_client("Ольга", 1, _START, _FUTURE, "INV-DUMMY-O")
     del ids
     texts = [n.text for n in _c9_return_done(duo)]
-    tj5 = [t for t in texts if t.startswith("ℹ️ Правки бота на «Beta» после потери связи перенесены сюда: ")]
+    tj5 = [t for t in texts if t.startswith("ℹ️ Изменения от бота на «Beta» после потери связи перенесены сюда: ")]
     assert len(tj5) == 1 and texts.index(tj5[0]) == 1, texts
     assert not [t for t in texts if t.startswith("⚠️ Не перенесен")], texts
 
@@ -580,7 +580,7 @@ def test_c9_after_a_reserve_reboot_takes_the_guests_journal_from_its_disk(duo):
     assert "Ольга" in _names(duo.a.db), "журнал гостя с диска не перенесён"
     duo.a.reserve_released_jrn_in(rel[0]["epoch"], rel[0]["last"])
     texts = [n.text for n in rm.notices(duo.a.reserve_wiped_in())]
-    assert any("правка бота на «Beta»" in t for t in texts), texts
+    assert any("изменение от бота на «Beta»" in t for t in texts), texts
 
 
 def test_the_reserve_drops_the_guests_disk_journal_after_a_return_without_a_guest(duo):
@@ -616,11 +616,11 @@ def test_tj6_lag_over_a_minute_is_told_once_and_the_catch_up_once(duo):
     duo.a.__dict__["_follow_lag_since"] = time.monotonic() - 61
     first = rm.notices(duo.a.reserve_follow_lag_tick())
     assert len(first) == 1 and first[0].text.startswith("⚠️ Данные здесь перестали догонять бот на «Beta»: ") \
-        and first[0].text.endswith(" — возврат подождёт") and first[0].silent, [n.text for n in first]
+        and first[0].text.endswith(": отстают") and first[0].silent, [n.text for n in first]
     assert rm.notices(duo.a.reserve_follow_lag_tick()) == [], "Т-Ж6 повторилось"
     _lag(duo, applied)
     ok = rm.notices(duo.a.reserve_follow_lag_tick())
-    assert [n.text for n in ok] == ["🟢 Данные здесь снова идут за ботом на «Beta»"], [n.text for n in ok]
+    assert [n.text for n in ok] == ["🟢 Данные здесь снова следуют за ботом на «Beta»"], [n.text for n in ok]
     assert rm.notices(duo.a.reserve_follow_lag_tick()) == [], "🟢 повторилось"
 
 
@@ -674,7 +674,7 @@ async def test_tj4_on_nine_disputes_after_a_crash_links_a_snapshot_kept_at_the_p
     duo.b_to_a(duo.guest_to_b(_to_guest(duo, "jtail", _jtail_parts(duo))))
     notes = _return_to_done(duo)
     tj4 = notes[1].text
-    assert tj4.startswith("⚠️ Не перенесены 9 правок, сделанные здесь перед переездом на «Beta»"), tj4
+    assert tj4.startswith("⚠️ Не перенесены 9 изменений, сделанные здесь перед переездом на «Beta»"), tj4
     assert tj4.count("\n• ") == 5, tj4
     key = _tj4_link(tj4)
     assert f"list-snap-{key}-n" in links.mark_new(tj4), "из уведомления ссылка не получает метку «-n»"
@@ -705,7 +705,7 @@ async def test_tj4_on_nine_disputes_in_c9_links_a_snapshot_with_the_c9_title(duo
     notes = _c9_return_done(duo)
     tj4 = [n.text for n in notes if n.text.startswith("⚠️ Не перенесен")]
     assert len(tj4) == 1, [n.text[:60] for n in notes]
-    assert tj4[0].startswith("⚠️ Не перенесены 9 правок бота на «Beta», сделанные после потери связи"), tj4[0]
+    assert tj4[0].startswith("⚠️ Не перенесены 9 изменений от бота на «Beta», сделанные после потери связи"), tj4[0]
     key = _tj4_link(tj4[0])
     assert _snap_keys(duo.a.db) == [key] and not _snap_keys(duo.gdb), (_snap_keys(duo.a.db), _snap_keys(duo.gdb))
     duo.b_keep.wipe()

@@ -425,7 +425,7 @@ def test_wiped_ends_the_return_with_a_new_k_and_the_old_package_is_unreadable_fo
         seal.open_parts(blob, old_k)
     assert svc.rsv_get("rsv_shares") == {}, "доли прежнего пакета не сброшены"
     texts = [n.text for n in notices(acts)]
-    assert any("снова здесь" in t and "1 новых профиля" in t for t in texts)
+    assert any("снова здесь" in t and "1 новый профиль" in t for t in texts)
     token_notice = [t for t in texts if "Токен API DNS" in t]
     assert bool(token_notice) is (kind == "dead"), \
         "просьба сменить токен нужна только после аварийного переезда (токен был у резерва)"
