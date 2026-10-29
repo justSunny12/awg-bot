@@ -442,6 +442,8 @@ async def test_the_liveness_job_sends_st_on_a_change_and_again_after_a_failed_se
     monkeypatch.setattr(pairlink, "online", lambda: True)
     monkeypatch.setattr(svc, "reserve_liveness_tick", lambda now=None: (None, []))
     monkeypatch.setattr(svc, "reserve_vote_tick", lambda: [])
+    monkeypatch.setattr(svc, "quorum_tick", lambda: [])          # кворум — своим тактом, здесь только st
+    monkeypatch.setattr(svc, "quorum_runtime_plan", lambda: {"responder": None, "probes": {}})
     sched = _Sched()
     jobs.setup_reserve_jobs(sched, svc, FakeBot())
     fn = sched.jobs["rsv_liveness"][0]
@@ -466,6 +468,8 @@ async def test_the_liveness_job_sends_no_st_without_the_pair_channel(mv, monkeyp
     monkeypatch.setattr(pairlink, "online", lambda: False)
     monkeypatch.setattr(mv.svc, "reserve_liveness_tick", lambda now=None: (None, []))
     monkeypatch.setattr(mv.svc, "reserve_vote_tick", lambda: [])
+    monkeypatch.setattr(mv.svc, "quorum_tick", lambda: [])
+    monkeypatch.setattr(mv.svc, "quorum_runtime_plan", lambda: {"responder": None, "probes": {}})
     sched = _Sched()
     jobs.setup_reserve_jobs(sched, mv.svc, FakeBot())
     await sched.jobs["rsv_liveness"][0]()

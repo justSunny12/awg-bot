@@ -122,11 +122,14 @@ class ReserveGwSideMixin:
         lines += ["", "[Peer]", f"PublicKey = {zone['pub']}", f"PresharedKey = {rec['psk']}",
                   f"AllowedIPs = {', '.join(allowed)}", f"Endpoint = {zone['host']}:{int(zone['port'])}",
                   f"PersistentKeepalive = {ka}"]
-        try:
-            gen, y = self.reserve_share_gateway(int(gw.id))
-            share = {"x": rsvkeys.gateway_x(int(gw.id)), "y": y, "gen": int(gen)}
-        except Exception:                                     # noqa: BLE001 — ключей ещё нет
-            share = {}
+        share = {}
+        quorum = bool(self.reserve_quorum_keys_on()) if hasattr(self, "reserve_quorum_keys_on") else False
+        if not quorum:                                        # доля прямой «2 из n» — только у линии на матрице
+            try:
+                gen, y = self.reserve_share_gateway(int(gw.id))
+                share = {"x": rsvkeys.gateway_x(int(gw.id)), "y": y, "gen": int(gen)}
+            except Exception:                                 # noqa: BLE001 — ключей ещё нет
+                share = {}
         from ..selfhost import own_host
         return {"self": own_host(), "name": str(config.SERVER_NAME or ""), "slot": int(gw.id),
                 "state": self.reserve_gw_state(), "move": self.reserve_move_gen(),

@@ -46,6 +46,14 @@ class ReserveQuorumInboundMixin:
                                                 "holder": str(body.get("holder") or ""), "r": str(body.get("r") or ""),
                                                 "at": timeutil.now_iso()}
             return []
+        if kind == "qmem":
+            return self.reserve_qmem_in(body)
+        if kind == "qmem_ok":
+            return self.reserve_qmem_ok_in(body)
+        if kind == "qkeys":
+            return self.reserve_qkeys_in(body)
+        if kind == "qkeys_ok":
+            return self.reserve_qkeys_ok_in(body)
         return []
 
     def _quorum_peer_node(self) -> str:

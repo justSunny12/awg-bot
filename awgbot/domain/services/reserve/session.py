@@ -321,6 +321,9 @@ class ReserveSessionMixin:
         self._jrn_sess_reset()                                # журнал: ничего не слать до сверки по st резерва
         if hasattr(self, "reserve_qprobe_reset"):
             self.reserve_qprobe_reset()                       # кворум: конфиг зонда второй стороне заново
+        if hasattr(self, "reserve_qmem_reset"):
+            self.reserve_qmem_reset()                         # и состав, пока он не подтверждён
+        self.__dict__.pop("_qkeys_sent", None)
         return self.reserve_liveness_word()
 
     def reserve_pair_confirm_tick(self) -> list[Notification]:

@@ -274,4 +274,5 @@ class GatewayQuorumMixin:
         v = self._gw_qvoters.get(name)
         view = dict((sec.get("views") or {}).get(name) or {})
         return {"w": v.view if v is not None else str(view.get("w") or ""), "since": str(view.get("since") or ""),
-                "g": int(sec.get("g") or 0), "e": int(v.epoch) if v is not None else int(sec.get("e") or 0)}
+                "g": int(sec.get("g") or 0), "e": int(v.epoch) if v is not None else int(sec.get("e") or 0),
+                "q": int((sec.get("point") or {}).get("q_gen") or 0)}      # поколение моей точки — подтверждение ключей

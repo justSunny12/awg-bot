@@ -41,10 +41,14 @@ class ReserveKeysMixin:
             self.rsv_put("rsv_keys", data)
             return data
 
-    def reserve_new_generation(self, reason: str) -> dict:
+    def reserve_new_generation(self, reason: str, *, code: bool = True, notify: bool = True) -> dict:
         """Новое поколение `M` — новые наклон, все точки и аварийный код; `K`
         тоже новый. Зовётся после возврата при скомпрометированной прямой,
-        при снятии или замене шлюза и по «🔄 Сменить код»."""
+        при снятии или замене шлюза и по «🔄 Сменить код». При ключах под
+        кворум (quorum/keys): ещё новый многочлен, а новая прямая кода — только
+        с `code` (снятие шлюза и возврат после переезда по кворуму код не
+        меняют); `notify` — слать ли код тактом (у включения — своё слово)."""
+        del notify
         with _LOCK:
             keys = self.reserve_keys()
             gen = rsvkeys.Generation.new(int(keys.get("m_gen") or 0) + 1)
@@ -53,6 +57,8 @@ class ReserveKeysMixin:
                         code_shown_at="", regenerated_at=timeutil.now_iso(), regenerated_why=reason)
             self.rsv_put("rsv_keys", keys)
             self.rsv_put("rsv_shares", None)
+        if hasattr(self, "reserve_quorum_after_m"):
+            self.reserve_quorum_after_m(reason, code=code)   # кворум: многочлен заново, прямая кода — по `code`
         if hasattr(self, "reserve_pkg_mark"):
             self.reserve_pkg_mark()                           # пакет прежнего поколения у резерва — заменить сразу
         return keys
@@ -63,8 +69,11 @@ class ReserveKeysMixin:
         if not self.reserve_paired():
             return
         try:
-            self.reserve_new_generation(why)
-            self.rsv_update("rsv_keys", code_notify_why=why)
+            quorum = bool(self.reserve_quorum_keys_on()) if hasattr(self, "reserve_quorum_keys_on") else False
+            # под кворумом прямая кода со шлюзом не связана: точку кода уходящий не знает — код прежний
+            self.reserve_new_generation(why, code=not quorum)
+            if not quorum:
+                self.rsv_update("rsv_keys", code_notify_why=why)
             self.reserve_pkg_mark() if hasattr(self, "reserve_pkg_mark") else None
         except Exception as e:                            # noqa: BLE001
             log.warning("резерв: поколение ключа после смены шлюза не сменено: %s", e)
@@ -109,7 +118,10 @@ class ReserveKeysMixin:
         return self.reserve_share(rsvkeys.gateway_x(slot))
 
     def reserve_code(self) -> str:
-        """Аварийный код — точка x = 255 текущего поколения, строкой для человека."""
+        """Аварийный код — точка x = 255 текущего поколения, строкой для человека;
+        при ключах под кворум — точка прямой аварийного ключа `Mc` (quorum/keys)."""
+        if hasattr(self, "reserve_quorum_keys_on") and self.reserve_quorum_keys_on():
+            return self.reserve_quorum_code()
         line = self._reserve_line()
         if line is None:
             return ""

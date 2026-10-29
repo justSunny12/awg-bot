@@ -2,8 +2,11 @@
 quorum — кворум взаимного резерва серверов на стороне основного бота
 (концепт «кворум», 4.2.0). Части:
 
-- `members`  — состав своей линии и поколение (`rsv_quorum`), сторона линии,
-               цифры времени, почему кворум не включён, поле `quo` в `st`;
+- `members`  — состав своей линии и поколение (`rsv_quorum`), подтверждение
+               второго сервера (`qmem`/`qmem_ok`), сторона линии, цифры времени,
+               почему кворум не включён, поле `quo` в `st`;
+- `keys`     — ключи кворума (`rsv_qkeys`): многочлен `Mq`, прямая кода `Mc`,
+               ящики, `qkeys`/`qkeys_ok`, точки шлюзам, включение и выключение;
 - `probes`   — пиры-зонды и второй адрес на интерфейсе AWG (`rsv_probes`),
                конфиги зондов второму серверу (`qprobe`) и своим шлюзам
                (раздел `quorum` документа), свои интерфейсы зондов в `awg-quo`;
@@ -22,6 +25,7 @@ runtime (`runtime/quorum.py` держит сокеты ответчика и п�
 from __future__ import annotations
 
 from .inbound import ReserveQuorumInboundMixin
+from .keys import ReserveQuorumKeysMixin
 from .leader import ReserveQuorumLeaderMixin
 from .members import ReserveQuorumMembersMixin
 from .probes import ReserveQuorumProbesMixin
@@ -30,7 +34,7 @@ from .tick import ReserveQuorumTickMixin
 from .voter import ReserveQuorumVoterMixin
 
 
-class ReserveQuorumMixin(ReserveQuorumMembersMixin, ReserveQuorumProbesMixin, ReserveQuorumLeaderMixin,
+class ReserveQuorumMixin(ReserveQuorumMembersMixin, ReserveQuorumKeysMixin, ReserveQuorumProbesMixin, ReserveQuorumLeaderMixin,
                          ReserveQuorumVoterMixin, ReserveQuorumInboundMixin, ReserveQuorumScreenMixin,
                          ReserveQuorumTickMixin):
     """Кворум резерва — одним миксином в ReserveMixin."""

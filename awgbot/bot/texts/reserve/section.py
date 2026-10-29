@@ -279,6 +279,8 @@ def _quorum_off_why(codes: list, peer: str) -> str:
             return f"«Шлюз {_e(c[5:])}»: номер слота больше 58 — в голосовании не участвует"
         if c == "not_acked":
             return "состав голосующих ждёт подтверждения"
+        if c == "keys":
+            return "ключи голосования ещё не у всех"
     return "голосующих нет"
 
 
@@ -294,6 +296,8 @@ def quorum_mine_lines(q: dict) -> list[str]:
         return []
     v, t = int(mine.get("v") or 0), int(mine.get("t") or 0)
     out = []
+    if q.get("pending"):
+        out.append(f"└ 🟡 Состав голосующих меняется: жду подтверждения {peer}")
     if mine.get("leader_here") and "y" in mine:
         y = int(mine.get("y") or 0)
         if mine.get("role") == "fenced" and not q.get("observe"):

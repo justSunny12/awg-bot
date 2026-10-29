@@ -52,8 +52,18 @@ class ReserveQuorumTickMixin:
             self._qvoters.clear()
             return []
         actions: list[tuple] = []
-        m = self.reserve_quorum_refresh()
+        m = self.reserve_quorum_refresh()                      # предложенный состав — по нему ключи и зонды
         if m is not None:
+            body = self.reserve_qmem_body()
+            if body is not None and self.reserve_online():
+                actions.append(("send", "qmem", body))
+            try:
+                actions += self.reserve_quorum_keys_sync(m, self.reserve_quorum_wanted())
+            except Exception as e:                            # noqa: BLE001
+                log.warning("кворум: ключи кворума: %s", e)
+            body = self.reserve_qkeys_body()
+            if body is not None and self.reserve_online():
+                actions.append(("send", "qkeys", body))
             try:
                 self.reserve_probes_refresh(m)
             except Exception as e:                            # noqa: BLE001

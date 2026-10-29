@@ -142,7 +142,7 @@ class ReserveQuorumProbesMixin:
         """Конфиг интерфейса зонда узла `node` своей линии: цель `h` — интерфейс
         AWG основы (Endpoint — мой адрес), `r` — её клон в зоне второго сервера
         (Endpoint — адрес второго сервера, тот же порт и ключ). Пусто — нечего."""
-        m = self.reserve_quorum_mine()
+        m = self.reserve_quorum_proposed()
         if m is None:
             return ""
         line = self.reserve_probes().get(m.l) or {}
@@ -162,7 +162,7 @@ class ReserveQuorumProbesMixin:
     def reserve_qprobe_body(self) -> dict | None:
         """`qprobe` второму серверу: его интерфейс зонда к моему AWG; None — не
         изменилось с последней отправки или слать нечего."""
-        m = self.reserve_quorum_mine()
+        m = self.reserve_quorum_proposed()
         if m is None or not self.reserve_quorum_peer_quo1():
             return None
         conf = self.reserve_probe_conf(probenet.other_side(m.l), "h")
@@ -204,7 +204,7 @@ class ReserveQuorumProbesMixin:
     def gwcfg_quorum(self, gw) -> dict | None:
         """Раздел `quorum` документа слота: состав, поколение, порог, порт, конфиги
         зондов (к основе и к клону), эпоха. None — пары нет или шлюз не в составе."""
-        m = self.reserve_quorum_mine()
+        m = self.reserve_quorum_proposed()
         if m is None:
             return None
         node = qm.gateway_node(m.l, int(gw.id))
@@ -213,8 +213,9 @@ class ReserveQuorumProbesMixin:
         probes = {"h": self.reserve_probe_conf(node, "h"), "r": self.reserve_probe_conf(node, "r")}
         if not probes["h"]:
             return None
+        point = self.reserve_quorum_gw_point(int(gw.id)) if hasattr(self, "reserve_quorum_gw_point") else {}
         return {"l": m.l, "g": int(m.g), "members": list(m.members), "t": m.t(m.l), "port": int(self.reserve_probes().get(m.l, {}).get("port") or 0),
-                "probes": {k: v for k, v in probes.items() if v}, "point": {}, "e": self.reserve_quorum_epoch()}
+                "probes": {k: v for k, v in probes.items() if v}, "point": point, "e": self.reserve_quorum_epoch()}
 
     # ── свои интерфейсы зондов ──────────────────────────────────────────────
     def reserve_quorum_probe_ifaces(self) -> dict:

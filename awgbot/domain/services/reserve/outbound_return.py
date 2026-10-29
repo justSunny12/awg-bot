@@ -333,8 +333,13 @@ class ReserveReturnMixin:
             # процесс открытия держал вторую точку прямой (или видел код) и конверт
             # DNS: новое поколение и код (Т-РУ14 — тактом планировщика), просьба сменить токен —
             # только если токен был (запись вручную — конверта DNS в пакете нет)
-            self.reserve_new_generation("возврат после аварийного переезда")
-            self.rsv_update("rsv_keys", code_notify_why="возврат после аварийного переезда")
+            # под кворумом резерв узнал Mq и M (по точкам) — многочлен и M заново, код прежний;
+            # по коду — узнал Mc: и прямая кода с кодом заново
+            quorum = bool(self.reserve_quorum_keys_on()) if hasattr(self, "reserve_quorum_keys_on") else False
+            by_code = str(self.reserve_peer_state().get("in_by") or "") == "code" or kind == "code"
+            self.reserve_new_generation("возврат после аварийного переезда", code=not quorum or by_code)
+            if not quorum or by_code:
+                self.rsv_update("rsv_keys", code_notify_why="возврат после аварийного переезда")
             if self.reserve_dns_automatic():
                 notes.append(Notification(tg_id=int(config.ADMIN_ID), text=rn.dns_token_rotate(name)))
         log.info("резерв: пользователи и бот вернулись с «%s»", name)

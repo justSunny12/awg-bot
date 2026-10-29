@@ -72,12 +72,16 @@ class ReserveTrafficMixin:
                 return None, None
             if proc.returncode != 0:
                 return None, None
-            # дамп: pub psk endpoint allowed_ips hs rx tx …; пиры-зонды кворума (адрес из блока) — не трафик пользователей
-            for line in proc.stdout.decode(errors="replace").splitlines()[1:]:
+            # дамп: pub psk endpoint allowed_ips hs rx tx …; пиры-зонды кворума (адрес из блока) — не трафик
+            # пользователей; строка интерфейса (первая) и пиры без рукопожатия (короткий формат) — мимо
+            for line in proc.stdout.decode(errors="replace").splitlines():
                 f = line.split("\t")
-                if len(f) >= 7 and f[5].isdigit() and f[6].isdigit():
+                if len(f) >= 7 and f[4].isdigit() and f[5].isdigit() and f[6].isdigit():
                     if probenet.is_probe(f[3].split(",")[0]):
                         continue
                     rx += int(f[5])
                     tx += int(f[6])
+                elif len(f) == 3 and f[1].isdigit() and f[2].isdigit():
+                    rx += int(f[1])                           # формат `transfer` (pub rx tx) — без разбора зондов
+                    tx += int(f[2])
         return rx, tx

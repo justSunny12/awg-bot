@@ -48,8 +48,13 @@ def setup_reserve_jobs(scheduler, services, bot) -> None:
         try:
             # кворум: ответчик на втором адресе интерфейса AWG, зонды в awg-quo, пробы и взгляды —
             # сокеты держит runtime/quorum, действия исполняет rsvactions
-            from awgbot.runtime import quorum as _quorum, rsvactions
-            await _quorum.tick(services, rsvactions.run)
+            from awgbot.runtime import pairlink, quorum as _quorum, rsvactions
+
+            async def _qact(acts) -> None:
+                if not pairlink.online():                 # канала пары нет — слова второй стороне подождут
+                    acts = [a for a in (acts or []) if a and a[0] != "send"]
+                await rsvactions.run(acts)
+            await _quorum.tick(services, _qact)
         except Exception as e:                           # noqa: BLE001
             log.warning("кворум: такт: %s", e)
 

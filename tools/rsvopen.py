@@ -25,6 +25,8 @@ reserve open` (root, без этой песочницы).
 Вход (один из ключей ключа плюс поля зоны):
     {"shares": [[x, "hex"], [x, "hex"]]}     две доли прямой (резерв + шлюз)
     {"share": [x, "hex"], "code": "…"}       доля резерва + аварийный код
+    {"qpoints": [[x, "hex"], …], "qbox": "hex"}   кворум: t точек многочлена Mq и ящик кворума
+    {"code": "…", "cpoint": [x, "hex"], "cbox": "hex"}   кворум: код + точка резерва прямой Mc и ящик кода
     {"k": "hex"}                             ключ пакета (ручной запуск: K открытым)
     {"await_k": true}                        переезд кнопкой: процесс выпускает разовую
                                              пару X25519, пишет её публичную часть и
@@ -203,6 +205,29 @@ def recover_keys(data: dict, blob: bytes) -> tuple[bytes | None, bytes]:
         if len(k) != seal.K_LEN:
             raise OpenError("ключ пакета не той длины")
         return None, k
+    if data.get("qpoints") and data.get("qbox"):
+        # кворум: t точек многочлена ключа кворума → Mq → ящик → M
+        pts = [_point(p) for p in list(data["qpoints"])]
+        if len(pts) < 2 or len({x for x, _ in pts}) != len(pts):
+            raise OpenError("точек ключа кворума мало или они одной точки")
+        try:
+            m = rsvkeys.recover_m_quorum(pts, bytes.fromhex(str(data["qbox"])))
+        except ValueError as e:
+            raise OpenError(f"ключ кворума не собрался: {e}") from e
+        try:
+            return m, seal.open_k(blob, m)
+        except seal.PackageError as e:
+            raise OpenError(f"ключ пакета: {e}") from e
+    if data.get("code") and data.get("cpoint") and data.get("cbox"):
+        # кворум: код + точка резерва прямой аварийного ключа → Mc → ящик → M
+        try:
+            m = rsvkeys.recover_m_code(str(data["code"]), _point(data["cpoint"]), bytes.fromhex(str(data["cbox"])))
+        except ValueError as e:
+            raise OpenError(f"аварийный код: {e}") from e
+        try:
+            return m, seal.open_k(blob, m)
+        except seal.PackageError as e:
+            raise OpenError(f"ключ пакета: {e}") from e
     if data.get("shares"):
         shares = list(data["shares"])
         if len(shares) < 2:

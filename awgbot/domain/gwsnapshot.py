@@ -232,7 +232,8 @@ def sanitize(raw: dict) -> dict:
         out["quo"] = {"w": w if w in ("see", "sus", "uns", "new", "held") else "",
                       "since": _clean_str(quo.get("since", ""))[:40],
                       "g": int(quo.get("g") or 0) if str(quo.get("g") or "0").isdigit() else 0,
-                      "e": int(quo.get("e") or 0) if str(quo.get("e") or "0").isdigit() else 0}
+                      "e": int(quo.get("e") or 0) if str(quo.get("e") or "0").isdigit() else 0,
+                      "q": int(quo.get("q") or 0) if str(quo.get("q") or "0").isdigit() else 0}
     elif "quo" in src and src["quo"] is None:
         out["quo"] = None
     return out

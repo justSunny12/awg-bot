@@ -104,8 +104,10 @@ class ReserveCodeWindowMixin:
         # видел бы taking при открытом окне и закрыл бы его «шлюз видит основу»
         cw.update(open=False, closed_why="used", closed_at=timeutil.now_iso(), pending=True)
         self.rsv_update("rsv_view", code=cw, moved_by={"code": True, "at": timeutil.now_iso()})
-        actions = self.reserve_open_by_points({"share": [rsvkeys.RESERVE_X, str(pkg_in.get("share") or "")], "code": norm},
-                                              "code", "H4")
+        secret = self.reserve_quorum_code_secret(norm) if hasattr(self, "reserve_quorum_code_secret") else None
+        if secret is None:
+            secret = {"share": [rsvkeys.RESERVE_X, str(pkg_in.get("share") or "")], "code": norm}
+        actions = self.reserve_open_by_points(secret, "code", "H4")
         if self.reserve_in() != "taking":
             cw.update(open=True, closed_why="", pending=False)
             self.rsv_update("rsv_view", code=cw)
