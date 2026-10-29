@@ -4133,3 +4133,139 @@ DNS — <code>10.8.0.1</code> через <code>awg0</code>
 = edit #2
 📋 Этого списка больше нет
   [⬅️ В меню | gw:panel:]
+
+### gw.snap.trace.transit — итог «➕ В туннель» — по ссылке «-n» следом из итога и «Скрыть», снимок новым сообщением
+> /start list-snap-snapkey001-n
+- delete #4
+= edit #3
+✅ Добавлено: 200 · пропущено: 200
+⚠️ <code>bad-name-000</code>: не домен, пропущен
+⚠️ <code>bad-name-001</code>: не домен, пропущен
+⚠️ <code>bad-name-002</code>: не домен, пропущен
+⚠️ <code>bad-name-003</code>: не домен, пропущен
+⚠️ <code>bad-name-004</code>: не домен, пропущен
+⚠️ <code>bad-name-005</code>: не домен, пропущен
+⚠️ <code>bad-name-006</code>: не домен, пропущен
+⚠️ <code>bad-name-007</code>: не домен, пропущен
+⚠️ <code>bad-name-008</code>: не домен, пропущен
+⚠️ <code>bad-name-009</code>: не домен, пропущен
+⚠️ <code>bad-name-010</code>: не домен, пропущен
+⚠️ <code>bad-name-011</code>: не домен, пропущен
+⚠️ <code>bad-name-012</code>: не домен, пропущен
+⚠️ <code>bad-name-013</code>: не домен, пропущен
+⚠️ <code>bad-name-014</code>: не домен, пропущен
+⚠️ <code>bad-name-015</code>: не домен, пропущен
+⚠️ <code>bad-name-016</code>: не домен, пропущен
+⚠️ <code>bad-name-017</code>: не домен, пропущен
+⚠️ <code>bad-name-018</code>: не домен, пропущен
+⚠️ <code>bad-name-019</code>: не домен, пропущен
+⚠️ <code>bad-name-020</code>: не домен, пропущен
+⚠️ <code>bad-name-021</code>: не домен, пропущен
+⚠️ <code>bad-name-022</code>: не домен, пропущен
+⚠️ <code>bad-name-023</code>: не домен, пропущен
+⚠️ <code>bad-name-024</code>: не домен, пропущен
+⚠️ <code>bad-name-025</code>: не домен, пропущен
+⚠️ <code>bad-name-026</code>: не домен, пропущен
+⚠️ <code>bad-name-027</code>: не домен, пропущен
+⚠️ <code>bad-name-028</code>: не домен, пропущен
+⚠️ <code>bad-name-029</code>: не домен, пропущен
+⚠️ <code>bad-name-030</code>: не домен, пропущен
+⚠️ <code>bad-name-031</code>: не домен, пропущен
+⚠️ <code>bad-name-032</code>: не домен, пропущен
+⚠️ <code>bad-name-033</code>: не домен, пропущен
+⚠️ <code>bad-name-034</code>: не домен, пропущен
+⚠️ <code>bad-name-035</code>: не домен, пропущен
+⚠️ <code>bad-name-036</code>: не домен, пропущен
+⚠️ <code>bad-name-037</code>: не домен, пропущен
+⚠️ <code>bad-name-038</code>: не домен, пропущен
+⚠️ <code>bad-name-039</code>: не домен, пропущен
+⚠️ <code>bad-name-040</code>: не домен, пропущен
+⚠️ <code>bad-name-041</code>: не домен, пропущен
+⚠️ <code>bad-name-042</code>: не домен, пропущен
+⚠️ <code>bad-name-043</code>: не домен, пропущен
+⚠️ <code>bad-name-044</code>: не домен, пропущен
+⚠️ <code>bad-name-045</code>: не домен, пропущен
+⚠️ <code>bad-name-046</code>: не домен, пропущен
+⚠️ <code>bad-name-047</code>: не домен, пропущен
+⚠️ <code>bad-name-048</code>: не домен, пропущен
+⚠️ <code>bad-name-049</code>: не домен, пропущен
+⚠️ <code>bad-name-050</code>: не домен, пропущен
+⚠️ <code>bad-name-051</code>: не домен, пропущен
+⚠️ <code>bad-name-052</code>: не домен, пропущен
+⚠️ <code>bad-name-053</code>: не домен, пропущен
+⚠️ <code>bad-name-054</code>: не домен, пропущен
+⚠️ <code>bad-name-055</code>: не домен, пропущен
+⚠️ <code>bad-name-056</code>: не домен, пропущен
+⚠️ <code>bad-name-057</code>: не домен, пропущен
+⚠️ <code>bad-name-058</code>: не домен, пропущен
+⚠️ <code>bad-name-059</code>: не домен, пропущен
+⚠️ <code>bad-name-060</code>: не домен, пропущен
+⚠️ <code>bad-name-061</code>: не домен, пропущен
+⚠️ <code>bad-name-062</code>: не домен, пропущен
+⚠️ <code>bad-name-063</code>: не домен, пропущен
+⚠️ <code>bad-name-064</code>: не домен, пропущен
+⚠️ <code>bad-name-065</code>: не домен, пропущен
+⚠️ <code>bad-name-066</code>: не домен, пропущен
+…<a href="https://t.me/test_bot?start=list-snap-snapkey001-n">и ещё 133 строки</a>
+  [Скрыть | hd]
++ send #5
+🔀 <b>Итог: в туннель, не добавленные</b> · 200 · стр. 1 из 7 · от 15.09 12:00 (UTC+5)
+
+⚠️ <code>bad-name-000</code>: не домен, пропущен
+⚠️ <code>bad-name-001</code>: не домен, пропущен
+⚠️ <code>bad-name-002</code>: не домен, пропущен
+⚠️ <code>bad-name-003</code>: не домен, пропущен
+⚠️ <code>bad-name-004</code>: не домен, пропущен
+⚠️ <code>bad-name-005</code>: не домен, пропущен
+⚠️ <code>bad-name-006</code>: не домен, пропущен
+⚠️ <code>bad-name-007</code>: не домен, пропущен
+⚠️ <code>bad-name-008</code>: не домен, пропущен
+⚠️ <code>bad-name-009</code>: не домен, пропущен
+⚠️ <code>bad-name-010</code>: не домен, пропущен
+⚠️ <code>bad-name-011</code>: не домен, пропущен
+⚠️ <code>bad-name-012</code>: не домен, пропущен
+⚠️ <code>bad-name-013</code>: не домен, пропущен
+⚠️ <code>bad-name-014</code>: не домен, пропущен
+⚠️ <code>bad-name-015</code>: не домен, пропущен
+⚠️ <code>bad-name-016</code>: не домен, пропущен
+⚠️ <code>bad-name-017</code>: не домен, пропущен
+⚠️ <code>bad-name-018</code>: не домен, пропущен
+⚠️ <code>bad-name-019</code>: не домен, пропущен
+⚠️ <code>bad-name-020</code>: не домен, пропущен
+⚠️ <code>bad-name-021</code>: не домен, пропущен
+⚠️ <code>bad-name-022</code>: не домен, пропущен
+⚠️ <code>bad-name-023</code>: не домен, пропущен
+⚠️ <code>bad-name-024</code>: не домен, пропущен
+⚠️ <code>bad-name-025</code>: не домен, пропущен
+⚠️ <code>bad-name-026</code>: не домен, пропущен
+⚠️ <code>bad-name-027</code>: не домен, пропущен
+⚠️ <code>bad-name-028</code>: не домен, пропущен
+⚠️ <code>bad-name-029</code>: не домен, пропущен
+  [След. страница ▶️ | pg|ls_snap|0|1|ls:snap:0:snapkey001:1]
+  [⬅️ Назад | gw:lan:]
+
+### gw.snap.trace.ssh — итог «➕ Адрес» SSH-доступа — по ссылке «-n» следом из итога и «Скрыть»
+> /start list-snap-snapkey001-n
+- delete #4
+= edit #3
+✅ Адреса для SSH-доступа: добавлено <code>198.51.100.1</code>, <code>198.51.100.2</code>, <code>198.51.100.3</code>, <code>198.51.100.4</code>, <code>198.51.100.5</code>, <code>198.51.100.6</code>, <code>198.51.100.7</code>, <code>198.51.100.8</code>, <code>198.51.100.9</code>, <code>198.51.100.10</code>, <code>198.51.100.11</code>, <code>198.51.100.12</code> <a href="https://t.me/test_bot?start=list-snap-snapkey001-n">и ещё 3</a>
+  [Скрыть | hd]
++ send #5
+✅ <b>Добавлено для SSH-доступа</b> · 15 · от 15.09 12:00 (UTC+5)
+
+<code>198.51.100.1</code>
+<code>198.51.100.2</code>
+<code>198.51.100.3</code>
+<code>198.51.100.4</code>
+<code>198.51.100.5</code>
+<code>198.51.100.6</code>
+<code>198.51.100.7</code>
+<code>198.51.100.8</code>
+<code>198.51.100.9</code>
+<code>198.51.100.10</code>
+<code>198.51.100.11</code>
+<code>198.51.100.12</code>
+<code>198.51.100.13</code>
+<code>198.51.100.14</code>
+<code>198.51.100.15</code>
+  [⬅️ Назад | gw:ssh:]
