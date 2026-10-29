@@ -120,3 +120,64 @@ def line_net(side: str) -> ipaddress.IPv4Network:
     if side == "b":
         return ipaddress.ip_network("169.254.88.64/26")
     raise ValueError(f"сторона линии — a или b, не {side!r}")
+
+
+# ── адреса узлов кворума (4.2.0) в подблоке линии ────────────────────────────
+# .1 ответчик на интерфейсе AWG основы линии, .2 ответчик на клоне в зоне второго
+# сервера, .3 зонд основы (к своему клону), .4 зонд второго сервера, .4+N зонд
+# шлюза основы слота N; слот выше MAX_SLOT в /26 не помещается.
+MAX_SLOT = 58
+RESPONDER_PORT = 8789
+
+
+def _at(side: str, k: int) -> str:
+    return str(line_net(side).network_address + k)
+
+
+def responder_addr(side: str, clone: bool = False) -> str:
+    """Адрес ответчика линии: на основе (.1) или на клоне в зоне (.2)."""
+    return _at(side, 2 if clone else 1)
+
+
+def responder_cidr(side: str, clone: bool = False) -> str:
+    """Второй адрес интерфейса — строкой `Address` (/26: маршрут на весь блок линии)."""
+    return f"{responder_addr(side, clone)}/{line_net(side).prefixlen}"
+
+
+def other_side(side: str) -> str:
+    if side == "a":
+        return "b"
+    if side == "b":
+        return "a"
+    raise ValueError(f"сторона линии — a или b, не {side!r}")
+
+
+def node_addr(side: str, node: str) -> str:
+    """Адрес зонда узла в линии `side`: сервер самой линии — .3, второй сервер — .4,
+    шлюз линии слота N — .4 + N. Шлюз другой стороны в линии не голосует — ValueError."""
+    n = str(node or "")
+    if n == side:
+        return _at(side, 3)
+    if n == other_side(side):
+        return _at(side, 4)
+    if len(n) >= 2 and n[0] == side and n[1:].isdigit():
+        slot = int(n[1:])
+        if 1 <= slot <= MAX_SLOT:
+            return _at(side, 4 + slot)
+        raise ValueError(f"слот {slot} в блоке линии не помещается (до {MAX_SLOT})")
+    raise ValueError(f"узел {node!r} в линии {side!r} не голосует")
+
+
+def node_of_addr(side: str, ip: str) -> str:
+    """Узел по адресу зонда в линии; не адрес зонда — ''."""
+    try:
+        k = int(ipaddress.ip_address(_value(ip))) - int(line_net(side).network_address)
+    except ValueError:
+        return ""
+    if k == 3:
+        return side
+    if k == 4:
+        return other_side(side)
+    if 5 <= k <= 4 + MAX_SLOT:
+        return f"{side}{k - 4}"
+    return ""

@@ -1,15 +1,17 @@
 """
-shamir.py — разделение секрета «2 из n» по Шамиру над GF(2⁸), побайтно; обе роли.
+shamir.py — разделение секрета по Шамиру над GF(2⁸), побайтно; обе роли.
 
-Прямая `f(x) = s ⊕ a·x` над полем GF(2⁸) (многочлен AES, 0x11B), отдельно для
-каждого байта секрета: `s` — байт секрета, `a` — случайный байт наклона.
-Точка держателя — `(x, f(x))`, x ∈ 1…255. Любые две точки с разными x дают и
-секрет, и наклон; одна точка о секрете не говорит ничего: при неизвестном `a`
-любое значение `s` равновероятно.
+Многочлен `f(x) = s ⊕ a₁·x ⊕ … ⊕ a_{t−1}·x^{t−1}` над полем GF(2⁸) (многочлен
+AES, 0x11B), отдельно для каждого байта секрета: `s` — байт секрета,
+`a_j` — случайные байты. Точка держателя — `(x, f(x))`, x ∈ 1…255. Любые t
+точек с разными x дают секрет (интерполяция Лагранжа в нуле); t − 1 точек о
+секрете не говорят ничего: при неизвестных коэффициентах любое `s`
+равновероятно. Прямая (`Line`, t = 2) — частный случай и прежний формат
+точек: точки прямой поколения `M` и прямой аварийного ключа читаются и
+`combine`, и `recover`.
 
-Здесь только арифметика и геометрия прямой. Кто на какой точке сидит
-(резерв — 1, шлюзы — по слотам, аварийный код — 255), поколения и ключи —
-`util/rsvkeys.py`.
+Здесь только арифметика. Кто на какой точке сидит (второй сервер — 1, шлюзы —
+по слотам, аварийный код — 255), пороги, поколения и ключи — `util/rsvkeys.py`.
 """
 from __future__ import annotations
 
@@ -100,6 +102,91 @@ def combine(p1: Point, p2: Point) -> Line:
     return Line(secret, slope)
 
 
-def recover(p1: Point, p2: Point) -> bytes:
-    """Секрет по двум точкам."""
-    return combine(p1, p2).secret
+def _pow(x: int, k: int) -> int:
+    r = 1
+    for _ in range(k):
+        r = mul(r, x)
+    return r
+
+
+@dataclass(frozen=True)
+class Poly:
+    """Многочлен степени t − 1: `coeffs[0]` — секрет, остальные — случайные.
+    Держит только тот, кто раздаёт точки."""
+    coeffs: tuple[bytes, ...]
+
+    def __post_init__(self) -> None:
+        if len(self.coeffs) < 2:
+            raise ValueError("порог многочлена — не меньше 2")
+        n = len(self.coeffs[0])
+        if not n or any(len(c) != n for c in self.coeffs):
+            raise ValueError("коэффициенты — непустые строки байт одной длины")
+
+    @classmethod
+    def new(cls, secret: bytes, t: int) -> "Poly":
+        """Новый многочлен под порог t (2…254) через секрет со случайными коэффициентами."""
+        t = int(t)
+        if not 2 <= t <= 254:
+            raise ValueError("порог — от 2 до 254")
+        if not secret:
+            raise ValueError("секрет пуст")
+        return cls((bytes(secret),) + tuple(secrets.token_bytes(len(secret)) for _ in range(t - 1)))
+
+    @property
+    def secret(self) -> bytes:
+        return self.coeffs[0]
+
+    @property
+    def t(self) -> int:
+        return len(self.coeffs)
+
+    def point(self, x: int) -> Point:
+        """Точка держателя x."""
+        x = _check_x(x)
+        out = bytearray(self.coeffs[0])
+        for j in range(1, len(self.coeffs)):
+            xj = _pow(x, j)
+            for i, a in enumerate(self.coeffs[j]):
+                out[i] ^= mul(a, xj)
+        return x, bytes(out)
+
+    def line(self) -> Line:
+        """Прямая того же секрета и первого коэффициента (только при t = 2)."""
+        if self.t != 2:
+            raise ValueError("прямая — только у порога 2")
+        return Line(self.coeffs[0], self.coeffs[1])
+
+
+def lagrange_zero(points: list[Point]) -> bytes:
+    """Значение многочлена в нуле по точкам с разными x: секрет, если точек не
+    меньше порога (больше — тоже верно, если все с одного многочлена)."""
+    pts = [(_check_x(x), bytes(y)) for x, y in points]
+    if len(pts) < 2:
+        raise ValueError("нужны хотя бы две точки")
+    xs = [x for x, _ in pts]
+    if len(set(xs)) != len(xs):
+        raise ValueError("две точки с одним x секрет не задают")
+    n = len(pts[0][1])
+    if not n or any(len(y) != n for _, y in pts):
+        raise ValueError("точки разной длины — это не один многочлен")
+    out = bytearray(n)
+    for i, (xi, yi) in enumerate(pts):
+        num, den = 1, 1
+        for j, (xj, _) in enumerate(pts):
+            if j != i:
+                num = mul(num, xj)
+                den = mul(den, xi ^ xj)
+        li = div(num, den)
+        for k, y in enumerate(yi):
+            out[k] ^= mul(y, li)
+    return bytes(out)
+
+
+def recover(*points) -> bytes:
+    """Секрет по точкам: `recover(p1, p2)` (прямая, прежний вызов) или
+    `recover([p1, p2, p3])` / `recover(p1, p2, p3)` — любые t точек многочлена."""
+    if len(points) == 1 and not isinstance(points[0], tuple):
+        points = tuple(points[0])
+    if len(points) == 2:
+        return combine(points[0], points[1]).secret
+    return lagrange_zero(list(points))
