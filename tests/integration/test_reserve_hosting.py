@@ -777,6 +777,18 @@ def test_the_in_tick_without_a_pair_does_nothing(services, rsv):
 
 # ── учёт трафика клона ──────────────────────────────────────────────────────
 
+def _dump(transfer: str) -> str:
+    """Счётчики клона в виде `awg show <if> dump` (их читает учёт трафика клона с
+    4.2.0, чтобы пропускать пиры-зонды кворума): строка интерфейса и по пиру
+    `pub psk endpoint allowed_ips hs rx tx keepalive`; на входе — прежний вид
+    `pub rx tx` построчно."""
+    out = "PRIV\tPUB\t45877\toff\n"
+    for i, line in enumerate(transfer.splitlines()):
+        pub, rx, tx = line.split("\t")
+        out += f"{pub}\t(none)\t203.0.113.5:1\t10.8.1.{i + 2}/32\t1800000000\t{rx}\t{tx}\t25\n"
+    return out
+
+
 @pytest.fixture()
 def counters(host, monkeypatch):
     box = types.SimpleNamespace(out="", code=0, error=None, calls=0)
@@ -794,9 +806,9 @@ def counters(host, monkeypatch):
 def test_the_clone_counters_are_summed_into_the_month_total_while_serving(counters):
     svc = counters.svc
     _serving(counters)
-    counters.counters.out = "pubA\t100\t200\npubB\t50\t60\n"
+    counters.counters.out = _dump("pubA\t100\t200\npubB\t50\t60\n")
     svc.reserve_traffic_in_tick()
-    counters.counters.out = "pubA\t400\t300\npubB\t50\t60\n"
+    counters.counters.out = _dump("pubA\t400\t300\npubB\t50\t60\n")
     svc.reserve_traffic_in_tick()
     acc = svc.rsv_get("rsv_traffic")["in"]
     assert (acc["rx"], acc["tx"]) == (450, 360), acc
@@ -806,9 +818,9 @@ def test_the_clone_counters_are_summed_into_the_month_total_while_serving(counte
 def test_a_restart_of_the_clone_does_not_lose_traffic(counters):
     svc = counters.svc
     _serving(counters)
-    counters.counters.out = "pubA\t1000\t2000\n"
+    counters.counters.out = _dump("pubA\t1000\t2000\n")
     svc.reserve_traffic_in_tick()
-    counters.counters.out = "pubA\t10\t20\n"                  # счётчики обнулились — клон перезапущен
+    counters.counters.out = _dump("pubA\t10\t20\n")                  # счётчики обнулились — клон перезапущен
     svc.reserve_traffic_in_tick()
     acc = svc.rsv_get("rsv_traffic")["in"]
     assert (acc["rx"], acc["tx"]) == (1010, 2020)
@@ -823,7 +835,7 @@ def test_no_counters_are_read_when_nothing_is_hosted(counters):
 def test_unreadable_counters_change_nothing(counters, fail, monkeypatch):
     svc = counters.svc
     _serving(counters)
-    counters.counters.out = "pubA\t100\t200\n"
+    counters.counters.out = _dump("pubA\t100\t200\n")
     svc.reserve_traffic_in_tick()
     before = svc.rsv_get("rsv_traffic")
     if fail == "code":
@@ -842,7 +854,7 @@ def test_a_new_month_archives_the_previous_one(counters):
     svc = counters.svc
     _serving(counters)
     svc.rsv_put("rsv_traffic", {"in": {"month": "2020-01", "rx": 5, "tx": 7, "last_rx": 5, "last_tx": 7}})
-    counters.counters.out = "pubA\t1\t2\n"
+    counters.counters.out = _dump("pubA\t1\t2\n")
     svc.reserve_traffic_in_tick()
     months = svc.db.reserve_traffic_months()
     assert [(m["month"], m["dir"], m["rx"], m["tx"]) for m in months] == [("2020-01", "in", 5, 7)]
@@ -852,9 +864,9 @@ def test_a_new_month_archives_the_previous_one(counters):
 def test_the_close_takes_a_last_measure_and_forgets_the_previous_counters(counters):
     svc = counters.svc
     _serving(counters)
-    counters.counters.out = "pubA\t100\t200\n"
+    counters.counters.out = _dump("pubA\t100\t200\n")
     svc.reserve_traffic_in_tick()
-    counters.counters.out = "pubA\t150\t260\n"
+    counters.counters.out = _dump("pubA\t150\t260\n")
     svc.reserve_traffic_in_close()
     acc = svc.rsv_get("rsv_traffic")["in"]
     assert (acc["rx"], acc["tx"]) == (150, 260) and acc["last_rx"] == 0 and acc["last_tx"] == 0

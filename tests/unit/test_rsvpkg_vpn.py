@@ -315,3 +315,96 @@ def test_a_block_peer_with_a_users_address_as_well_is_not_dropped_as_a_probe():
     i = vpn.iface_part("awg0", live)
     assert {"pub": q7, "psk": "", "ip": "10.8.1.9"} in i["peers"], f"пир пропущен как зонд: {i['peers']}"
     assert not {p["pub"] for p in i["peers"]} & _PROBE_KEYS
+
+
+# ── поле probes и ответчик клона (4.2.0) ─────────────────────────────────────
+
+def _probe_part(how: str = "second_line") -> dict:
+    return vpn.build([("awg0", _with_probe_address(how))], admin=["10.8.1.2"], dns=["10.8.1.1"],
+                     upstreams=["198.51.100.53"], tz="Asia/Yekaterinburg")
+
+
+def test_the_part_carries_probe_peers_with_their_keys_and_one_address_each():
+    i = vpn.iface_part("awg0", _with_probe_address("second_line"))
+    assert i["probes"] == [{"pub": Q4, "psk": "", "ip": "169.254.88.4"}, {"pub": Q5, "psk": PSK1, "ip": "169.254.88.5"},
+                           {"pub": Q6, "psk": "", "ip": "169.254.88.6"}], i.get("probes")
+    assert i["probe_resp"] == "169.254.88.2/26", "ответчик клона линии a — не .2 того же /26"
+
+
+def test_the_line_b_responder_of_the_clone_is_66():
+    i = vpn.iface_part("awg0", _with_probe_address("comma_second"))
+    assert i["probe_resp"] == "169.254.88.66/26"
+
+
+def test_without_the_second_address_the_part_has_no_probe_fields():
+    """Пиры блока без второго адреса — ответчика на основе нет: на клон их не
+    ставим (часть как у выпуска без кворума)."""
+    i = vpn.iface_part("awg0", LIVE + _PROBES)
+    assert "probes" not in i and "probe_resp" not in i, i
+    conf = vpn.clone_conf(vpn.check(vpn.build([("awg0", LIVE + _PROBES)], admin=[], dns=[], upstreams=[],
+                                              tz="UTC"))["ifaces"][0])
+    assert "169.254.88" not in conf
+
+
+def test_a_second_address_without_probe_peers_gives_no_probe_fields():
+    live = LIVE.replace("Address = 10.8.1.1/24", "Address = 10.8.1.1/24\nAddress = 169.254.88.1/26")
+    assert "probe_resp" not in vpn.iface_part("awg0", live)
+
+
+def test_a_block_peer_with_anything_else_in_allowed_ips_is_neither_probe_nor_user():
+    """Инвариант записи: зонд — ровно один /32 из блока. Пир «зонд + 0.0.0.0/0» —
+    чужой: ни на клон зондом, ни пользователем."""
+    live = _with_probe_address("second_line") + f"\n[Peer]\nPublicKey = {_k(43)}\nAllowedIPs = 169.254.88.7/32, 0.0.0.0/0\n"
+    i = vpn.iface_part("awg0", live)
+    assert _k(43) not in {p["pub"] for p in i["probes"]} | {p["pub"] for p in i["peers"]}
+
+
+def test_the_clone_conf_sets_each_probe_to_exactly_one_32():
+    part = vpn.check(_probe_part())
+    conf = vpn.clone_conf(part["ifaces"][0])
+    for q, ip in ((Q4, "169.254.88.4"), (Q5, "169.254.88.5"), (Q6, "169.254.88.6")):
+        block = conf.split(f"PublicKey = {q}\n", 1)[1].split("\n\n", 1)[0]
+        allowed = [ln for ln in block.splitlines() if ln.startswith("AllowedIPs")]
+        assert allowed == [f"AllowedIPs = {ip}/32"], f"у зонда {ip} на клоне не ровно один /32: {block!r}"
+    assert "169.254.88.2" not in conf.split("[Peer]", 1)[0], "второй адрес клона в конфиге — его ставит скрипт зоны"
+
+
+def test_probes_without_a_clone_responder_are_not_put_on_the_clone():
+    part = vpn.check(_probe_part())
+    iface = dict(part["ifaces"][0])
+    iface.pop("probe_resp")
+    assert "169.254.88" not in vpn.clone_conf(iface)
+
+
+@pytest.mark.parametrize("over, why", [
+    ({"probes": [{"pub": Q4, "psk": "", "ip": "10.8.1.9"}]}, "зонд вне блока"),
+    ({"probes": [{"pub": Q4, "psk": "", "ip": "169.254.88.4/32"}]}, "зонд с префиксом"),
+    ({"probes": [{"pub": Q4, "psk": "", "ip": "169.254.88.4/0"}]}, "зонд маршрутом"),
+    ({"probes": [{"pub": "DUMMY", "psk": "", "ip": "169.254.88.4"}]}, "не ключ"),
+    ({"probes": [{"pub": Q4, "psk": "DUMMY", "ip": "169.254.88.4"}]}, "не PSK"),
+    ({"probes": [{"pub": Q4, "psk": "", "ip": "169.254.88.4"}] * 65}, "больше 64"),
+    ({"probes": "все"}, "не список"),
+    ({"probes": ["169.254.88.4"]}, "не словарь"),
+    ({"probe_resp": "10.8.1.2/26"}, "ответчик вне блока"),
+    ({"probe_resp": "169.254.88.2/24"}, "ответчик не /26"),
+    ({"probe_resp": "169.254.88.2/26\nPostUp = id"}, "строка в ответчике"),
+])
+def test_foreign_probe_fields_that_do_not_fit_are_refused(over, why):
+    part = _probe_part()
+    part["ifaces"][0].update(over)
+    with pytest.raises(vpn.VpnPartError):
+        vpn.check(part)
+        pytest.fail(f"часть VPN принята: {why}")
+
+
+def test_probes_without_a_responder_field_are_refused():
+    part = _probe_part()
+    part["ifaces"][0].pop("probe_resp")
+    with pytest.raises(vpn.VpnPartError):
+        vpn.check(part)
+
+
+def test_a_part_without_probe_fields_still_passes():
+    """Пакет основы без кворума (или 4.1.x) — проверка как прежде."""
+    part = _part()
+    assert "probes" not in part["ifaces"][0] and vpn.check(part) is part
