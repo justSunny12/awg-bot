@@ -119,6 +119,6 @@ def _load(data: bytes) -> dict | None:
         d = json.loads(bytes(data).decode("ascii"))
     except (ValueError, UnicodeDecodeError):
         return None
-    if not isinstance(d, dict) or d.get("q") != Q:
+    if not isinstance(d, dict) or _int(d.get("q"), Q, Q) is None:
         return None
     return d

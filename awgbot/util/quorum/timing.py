@@ -48,9 +48,9 @@ class Timing:
         need_up = self.yes_window_s + self.down_s + self.tick_s + 15
         if self.up_s < need_up:
             return f"up_seconds {self.up_s} < yes_window_seconds + down_seconds + {self.tick_s + 15} = {need_up}"
-        need_w = int(1.4 * self.probe_s + 10 + 5)
+        need_w = 1.4 * self.probe_s + 10 + 5
         if self.yes_window_s < need_w:
-            return f"yes_window_seconds {self.yes_window_s} < 1,4·probe_seconds + 15 = {need_w}"
+            return f"yes_window_seconds {self.yes_window_s} < 1,4·probe_seconds + 15 = {need_w:g}"
         if self.rf_block_s <= self.up_s:
             return f"rf_block_minutes·60 = {self.rf_block_s} ≤ up_seconds {self.up_s}"
         if self.no_s < 2 * self.probe_s:

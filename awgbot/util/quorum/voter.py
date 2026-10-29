@@ -101,6 +101,7 @@ class Voter:
         if lost:
             for s in lost:
                 del self.pending[s]
+            self.streak = 0                                    # «вижу» из uns/new — два ответа ПОДРЯД
             if self.view == "see":
                 self._set("sus", now)
                 out.append("sus")

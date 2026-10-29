@@ -168,6 +168,8 @@ class Composition:
         return int(self.mine.g) != int(self.acked)
 
     def propose(self, m: Members) -> None:
+        if int(self.mine.g) == int(self.acked) and int(self.acked) not in self.history:
+            self.history[int(self.acked)] = self.mine          # действующий состав (поднят с диска) — остаётся
         self.history[int(m.g)] = m
         self.mine = m
 
