@@ -266,7 +266,7 @@ RESERVE = [
     Shot("adm.rsv.ready_off.yes", role="admin", press=[RSV, RsvCB(action="ready"), RsvCB(action="ready_off_yes")],
          data=_rsv(ready=True, gw="rsv", paired=True), title="готовность выключена"),
     Shot("adm.rsv.rfmine", role="admin", press=[RSV, RsvCB(action="rfmine")],
-         data=_rsv(ready=True, gw="rsv", paired=True), title="Мои шлюзы для его РФ-доступа: выкл"),
+         data=_rsv(ready=True, gw="rsv", paired=True), title="Мои шлюзы для резерва: выкл"),
     Shot("adm.rsv.ret", role="admin", press=[RSV, RsvCB(action="ret")],
          data=_rsv(ready=True, gw="rsv", paired=True), title="рычаг возврата: по кнопке"),
     Shot("adm.rsv.unpair", role="admin", press=[RSV, RsvCB(action="unpair")],

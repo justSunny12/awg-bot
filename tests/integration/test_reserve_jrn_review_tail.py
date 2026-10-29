@@ -154,7 +154,7 @@ def test_a_failing_own_tail_move_is_retried_each_minute_and_told_once_after_five
         assert len(calls) == n + 1, f"перенос повторён не раз в минуту: {len(calls)} попыток за {n + 1} мин"
         assert duo.a.db.jrn_tail_rows(), "хвост снят при сбое переноса"
         duo.clock.advance(61)
-    failed = [t for t in (n.text for n in told) if t.startswith("⚠️ Правки, сделанные здесь перед переездом на «Beta», пока не перенесены")]
+    failed = [t for t in (n.text for n in told) if t.startswith("⚠️ Изменения, сделанные здесь перед переездом на «Beta», пока не перенесены")]
     assert len(failed) == 1 and "database is locked" in failed[0], [n.text for n in told]
     assert "journalctl -u awg-bot" in failed[0], failed[0]
     monkeypatch.setattr(duo.a.db, "jrn_rebase", real)
@@ -479,7 +479,7 @@ def test_an_open_gap_is_told_to_the_reserve_admin_once_and_goes_to_the_keep_view
     told = [n.text for n in rm.notices(first)]
     name = duo.b.reserve_peer_name()
     assert len(told) == 1 and told[0].startswith(f"⚠️ База бота «{name}» собрана не по всему журналу"), told
-    assert "не встало событий: 1" in told[0] and not told[0].endswith("."), told[0]
+    assert "не применено изменений: 1" in told[0] and not told[0].endswith("."), told[0]
     assert ("send", "up", {}) in first, first
     assert rm.notices(duo.b._tick_taking(duo.b._inn())) == [], "о разрыве сказано второй раз"
     assert duo.b.reserve_keep_view().get("gap") == 12, duo.b.reserve_keep_view()
@@ -611,7 +611,7 @@ def test_force_home_with_the_journal_speaks_of_the_tail_not_of_a_replica(duo):
     duo.a.reserve_force_home()
     acts = duo.a.reserve_stuck_home()
     (text,) = [n.text for n in rm.notices(acts)]
-    assert "перенесутся, когда он выйдет на связь; спорное останется здешним" in text, text
+    assert "перенесутся, когда он выйдет на связь; конфликтующие правки с «Beta» применены не будут" in text, text
     assert "вольётся" not in text and not text.endswith("."), text
 
 
@@ -623,7 +623,7 @@ def test_force_home_without_the_journal_keeps_the_merge_wording(mv):
     mv.svc.rsv_update("rsv_peer_state", session=False, down_since=_ago(11))
     mv.svc.reserve_force_home()
     (text,) = [n.text for n in rm.notices(mv.svc.reserve_stuck_home())]
-    assert "всё, что изменилось там, вольётся, когда он выйдет на связь" in text, text
+    assert "изменения с него применятся, когда он выйдет на связь" in text, text
 
 
 def test_the_guest_return_button_waits_for_my_tail(duo):

@@ -45,7 +45,7 @@ def test_the_extension_footer_of_twelve_or_fewer_has_no_counter():
 
 
 @pytest.mark.parametrize("err, head", [
-    ("Telegram server says - Bad Request: message is too long", "⚠️ Превью не отправлено: вместе с подвалом"),
+    ("Telegram server says - Bad Request: message is too long", "⚠️ Превью не отправлено: текст длиннее лимита Telegram"),
     ("Bad Request: can't parse entities: unclosed tag", "⚠️ Разметка бракованная"),
 ])
 def test_the_refusal_of_a_preview_is_named_by_its_cause(err, head):

@@ -96,7 +96,7 @@ class ReserveDnsMixin:
         авторитетного сервера. {ok, text, ip}."""
         name = self.reserve_dns_name()
         if not name:
-            return {"ok": False, "text": "Адрес для пользователей — IP, записи DNS у него нет", "ip": ""}
+            return {"ok": False, "text": "Вместо доменного имени сервера — IP, записи DNS у него нет", "ip": ""}
         busy = self.reserve_busy() if hasattr(self, "reserve_busy") else ""
         if busy:
             # у DuckDNS и DynDNS2 проверка — это запись: посреди переезда она вернула бы прежний адрес
@@ -123,7 +123,7 @@ class ReserveDnsMixin:
         if len(auth) > 1:
             warn = f" ⚠️ у записи {len(auth)} адреса: {', '.join(auth)} — оставь одну A-запись"
         elif ttl > TTL_WARN_S:
-            warn = f" ⚠️ TTL {ttl} с — часть пользователей перейдёт на новый адрес не раньше чем через {ttl // 60} мин, лучше ≤ {TTL_WARN_S}"
+            warn = f" ⚠️ TTL {ttl} с — часть пользователей перейдёт на новый адрес не раньше чем через {ttl // 60} мин, рекомендуется ≤ {TTL_WARN_S}"
         head = f"Запись {name} доступна для правки: сейчас {cur}" if ip else f"Запись {name}: сейчас {cur}"
         return {"ok": not warn, "text": head + warn, "ip": cur, "ttl": int(ttl), "addrs": list(auth)}
 
@@ -131,7 +131,7 @@ class ReserveDnsMixin:
         """Сменить запись на `ip` через API; «вручную» и отказ — ServiceError."""
         name = self.reserve_dns_name()
         if not name:
-            raise ServiceError("Адрес для пользователей — IP, записи нет")
+            raise ServiceError("Вместо доменного имени сервера — IP, записи нет")
         d = self.reserve_dns()
         try:
             dnsapi.provider_for(d).set(d, ip)
@@ -187,7 +187,7 @@ class ReserveDnsMixin:
 
     # ── экран ────────────────────────────────────────────────────────────────
     def reserve_dns_line_data(self) -> dict:
-        """Описание записи по настройке «🌐 Запись DNS» без запросов в сеть — один
+        """Описание записи по настройке «🌐 DNS-запись» без запросов в сеть — один
         сборщик для строки раздела без пары и карточки пары: провайдер и его
         подпись, токен, итог последней проверки (включая адреса и TTL — строка
         предупреждает о нескольких A и большом TTL, а не зеленеет)."""
@@ -201,7 +201,7 @@ class ReserveDnsMixin:
                 "ttl_warn": TTL_WARN_S}
 
     def reserve_dns_screen_data(self) -> dict:
-        """Экран «🌐 Запись DNS» и карточка пары: описание записи плюс имя,
+        """Экран «🌐 DNS-запись» и карточка пары: описание записи плюс имя,
         текущий адрес и свой (резолв через системный резолвер, кэш 10 мин)."""
         d = self.reserve_dns()
         own = self.reserve_own_ip()

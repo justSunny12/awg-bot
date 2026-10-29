@@ -18,8 +18,9 @@
 #      не нужно». Зовёт `awg-bot update <архив>` с AWG_UPDATE_KEEP=1 (вопроса
 #      об удалении данных нет). Установка ниже минимума обновления поставки
 #      (UPDATE_FROM в awgbot/core/compat.py — src_update_from/update_from_why)
-#      видит «Обновить до … сразу нельзя: …», выбор пункта — отказ той же
-#      причиной до `awg-bot update`; шлюз с командой подключения (--join) меню не
+#      видит «Обновиться с … сразу до … нельзя — сначала обнови до …» с командой
+#      (скачать поставку минимума и `awg-bot update` ею), выбор пункта — отказ
+#      той же причиной и командой; шлюз с командой подключения (--join) меню не
 #      видит — см. «ШЛЮЗ ОДНОЙ КОМАНДОЙ» ниже;
 #   2) удалить прошлую установку вместе с данными и настройками, затем чистая
 #      установка (второе подтверждение): код, /etc/awg-bot, /var/lib/awg-bot; у
@@ -373,8 +374,11 @@ src_update_from() {
 update_from_why() {   # update_from_why HAVE NEW — причина отказа, если установка HAVE ниже минимума поставки NEW; иначе пусто
     local from; from="$(src_update_from)"
     if [[ -n "$1" && -n "$from" ]] && ver_lt "$1" "$from"; then
-        printf 'с v%s сразу на v%s нельзя — сначала обнови до v%s (её поставка — в выпусках на GitHub), затем повтори' "$1" "$2" "$from"
+        printf 'с v%s сразу до v%s нельзя — сначала обнови до v%s' "$1" "$2" "$from"
     fi
+}
+update_from_cmd() {   # update_from_cmd — команда человеку: скачать поставку выпуска-минимума и обновиться ею
+    printf 'curl -4 -fL --connect-timeout 5 --retry 3 --speed-time 10 --speed-limit 1024 -o /tmp/awg-bot.tgz https://github.com/%s/releases/download/v%s/awg-bot.tgz && sudo awg-bot update /tmp/awg-bot.tgz' "${REPO:-${AWG_BOT_REPO:-justSunny12/awg-bot}}" "$(src_update_from)"
 }
 wipe_previous() {
     # Снять прошлую установку целиком, вместе с данными и настройками — то же,
@@ -496,7 +500,7 @@ if [[ -n "${JOIN_TOKEN:-}" && -x "$INSTALL_DIR/venv/bin/python" ]]; then
     fi
     # агент ниже минимума поставки — сначала выпуск-минимум (пока поставка ещё на месте)
     why="$(update_from_why "$have_ver" "$JOIN_VER")"
-    [[ -z "$why" ]] || die "$why"
+    [[ -z "$why" ]] || die "обновиться $why:"$'\n'"$(update_from_cmd)"
     if [[ -z "$TGZ" ]]; then
         TGZ="$(mktemp -d)/awg-bot.tgz"
         tar czf "$TGZ" -C "$SRC_ROOT" .
@@ -536,7 +540,7 @@ if [[ -x "$INSTALL_DIR/venv/bin/python" ]]; then
     printf '\n%s[install]%s awg-bot уже установлен в %s: версия %s, в поставке %s. Что делаем?\n' \
         "$c_info" "$c_off" "$INSTALL_DIR" "${have_ver:-?}" "${new_ver:-?}" >&2
     if [[ -n "$from_why" ]]; then
-        printf '  1) Обновить до %s сразу нельзя: %s\n' "$new_ver" "$from_why" >&2
+        printf '  1) Обновиться %s (%s)\n' "$from_why" "$(update_from_cmd)" >&2
     elif [[ "$newer" -eq 1 ]]; then
         printf '  1) Обновить до %s, сохранив данные и настройки\n' "$new_ver" >&2
     else
@@ -552,7 +556,7 @@ if [[ -x "$INSTALL_DIR/venv/bin/python" ]]; then
                 [[ "$inst_role" == "gateway" ]] && hint=". Настройки установленному агенту присылает сервер AWG по каналу конфигурации"
                 die "обновление не требуется: установлена ${have_ver:-?}, в поставке ${new_ver:-?}$hint"
             fi
-            [[ -z "$from_why" ]] || die "$from_why"
+            [[ -z "$from_why" ]] || die "обновиться $from_why:"$'\n'"$(update_from_cmd)"
             if [[ -z "$TGZ" ]]; then
                 # поставка распакована, архива рядом нет — awg-bot update ждёт архив
                 TGZ="$(mktemp -d)/awg-bot.tgz"

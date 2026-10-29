@@ -210,7 +210,8 @@ class ReserveInboundMixin:
                 # база гостя собрана не по всему журналу (порча записи, дыра): его решения с этого места
                 # основа примет поверх своих — ей об этом скажет st, админу резерва — здесь
                 from awgbot.domain.notices import reserve_tail as rt
-                log.warning("резерв: база гостя открыта с разрывом журнала основы: не прочитано событий %d, не встало %d",
+                log.warning("резерв: база переехавшего инстанса открыта с разрывом журнала основы: не прочитано событий: %d, "
+                            "не применено изменений: %d",
                             jgap, jlost)
                 self.rsv_update("rsv_in", jgap=jgap, jlost=jlost)
                 actions.append(("notify", [Notification(tg_id=int(config.ADMIN_ID),
@@ -222,7 +223,7 @@ class ReserveInboundMixin:
                        "pool": "в пуле reserve.zone_pool нет свободного блока или подсети клонов в него не влезают",
                        "bad_pool": "пул reserve.zone_pool не разобран"}.get(str(zst.get("netmap_why") or ""),
                                                                              "причина не записана")
-                log.warning("резерв: NETMAP подсетей клонов не встал (%s) — устройства основы выходят одним адресом "
+                log.warning("резерв: NETMAP подсетей клонов не применён (%s) — устройства основы выходят одним адресом "
                             "зоны, CAKE делит загрузку по назначению", why)
             elif zst.get("netmap") and zst.get("netmap_miss"):
                 log.warning("резерв: NETMAP не на все клоны — без блока: %s (подсеть не влезает в пул "

@@ -77,7 +77,11 @@ cmd_update() {
     have="$(tree_version "$INSTALL_DIR")"; from="$(update_from "$src")"
     if [[ -n "$have" && -n "$from" ]] && version_lt "$have" "$from"; then
         rm -rf "$tmp"
-        die "с v$have сразу на v$newver нельзя — сначала обнови до v$from (её поставка — в выпусках на GitHub): sudo awg-bot update <архив v$from>"
+        local repo; repo="$(yaml_get "$CONF_DIR/updates.yaml" repo)"
+        [[ -n "$repo" ]] || repo="$(yaml_get "$INSTALL_DIR/conf/updates.yaml" repo)"
+        [[ -n "$repo" ]] || repo="justSunny12/awg-bot"
+        die "обновиться с v$have сразу до v$newver нельзя — сначала обнови до v$from:
+curl -4 -fL --connect-timeout 5 --retry 3 --speed-time 10 --speed-limit 1024 -o /tmp/awg-bot.tgz https://github.com/${repo// /}/releases/download/v$from/awg-bot.tgz && sudo awg-bot update /tmp/awg-bot.tgz"
     fi
     note_installed_digest "$tgz" "$newver"     # архив из выпуска — бэкапы будут знать выпуск
     if declare -F reserve_busy_guard >/dev/null 2>&1; then reserve_busy_guard "обновление"; fi

@@ -1,6 +1,6 @@
 """Снимки админа: «🛟 Резерв» — переезд кнопкой и возврат (карточка по
 состояниям, диалог перевода в ручном и автоматическом режиме, живое сообщение
-хода, возврат пользователей к основе у резерва, «🌐 Запись DNS» и ввод токена,
+хода, возврат пользователей к основе у резерва, «🌐 DNS-запись» и ввод токена,
 строка главной, диалог возврата в боте основы на резерве, уведомление о
 записи не туда с кнопкой).
 
@@ -161,11 +161,11 @@ RESERVE_MOVE = [
          title="карточка: пользователи возвращены без резерва, жду его реплику"),
     # ── запись DNS (Т-Р16) ──────────────────────────────────────────────
     Shot("adm.rsv.dns.ip", role="admin", press=[RSV, DNS], data=_rsv(host="203.0.113.9", ready=True),
-         title="«🌐 Запись DNS» при адресе-IP: записи нет"),
+         title="«🌐 DNS-запись» при адресе-IP: записи нет"),
     Shot("adm.rsv.dns.manual", role="admin", press=[RSV, DNS], data=_paired(),
-         title="«🌐 Запись DNS»: вручную"),
+         title="«🌐 DNS-запись»: вручную"),
     Shot("adm.rsv.dns.auto", role="admin", press=[RSV, DNS], data=_paired(_automatic),
-         title="«🌐 Запись DNS»: Cloudflare, токен задан"),
+         title="«🌐 DNS-запись»: Cloudflare, токен задан"),
     Shot("adm.rsv.dns.prov", role="admin", press=[RSV, DNS, RsvCB(action="dns_prov")], data=_paired(),
          title="провайдер переключён циклом: Cloudflare без токена"),
     Shot("adm.rsv.dns.token", role="admin", press=[RSV, DNS, RsvCB(action="dns_prov"), RsvCB(action="dns_token")],

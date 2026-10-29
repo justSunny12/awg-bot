@@ -299,7 +299,7 @@ def test_an_emergency_opening_is_refused_when_the_primary_record_is_manual(box):
     pkg = box.s.rsv_get("rsv_pkg_in")
     box.s.rsv_put("rsv_pkg_in", {**pkg, "has_dns": False})
     why = box.s.reserve_open_block()
-    assert why == "запись DNS у основы «вручную» — аварийный переезд невозможен", why
+    assert why.startswith("DNS-запись у «") and why.endswith("» настраивается вручную"), why
     assert box.s.reserve_auto_block() == why, "карточка не называет причину"
     box.primary(False)
     box.hello(1, sees=False)
@@ -337,7 +337,7 @@ def test_the_opening_process_by_shares_without_a_provider_fails_with_the_readme_
     from awgbot.infra import rsvzone
     st = rsvzone.open_status()
     assert st["step"] == "fail", st
-    assert st["reason"] == "запись DNS: провайдер «вручную» — аварийный переезд невозможен", st
+    assert st["reason"] == "DNS-запись сервера настраивается вручную — аварийный переезд невозможен", st
     assert "set_record" not in open_box.kinds() and not rsvzone.TG_TAKE_FILE.exists()
 
 
@@ -345,7 +345,7 @@ def test_the_opening_process_by_shares_with_a_manual_provider_fails_too(open_box
     open_box.write_package(dns={**DNS, "provider": ""})
     assert open_box.open(shares=open_box.shares(1)) != 0, open_box.out
     from awgbot.infra import rsvzone
-    assert rsvzone.open_status().get("reason", "").startswith("запись DNS: провайдер «вручную»")
+    assert rsvzone.open_status().get("reason", "").startswith("DNS-запись сервера настраивается вручную")
 
 
 def test_the_opening_process_by_k_without_dns_still_opens(open_box):

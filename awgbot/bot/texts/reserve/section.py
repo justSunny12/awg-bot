@@ -64,47 +64,44 @@ MORE = ("Резерв хранит у себя зашифрованные дан
 
 
 def _checked(iso: str) -> str:
-    """«проверено …» строки записи DNS: сегодня — «в 14:05 (UTC+5)», в другой день
-    — «12.10 14:05 (UTC+5)»: без пары проверка обычно давняя, и одно время на
-    следующий день читалось бы как сегодняшнее."""
+    """«проверено …» строки DNS-записи: всегда с датой и без года — «24.10 09:05
+    (UTC+5)»: экран может висеть в чате сколько угодно, и одно время назавтра
+    читалось бы как сегодняшнее; на стыке лет месяц говорит сам за себя."""
     try:
         at = timeutil.parse_iso(iso)
     except ValueError:
         return ""
-    now = timeutil.now()
-    if at.astimezone(timeutil.TZ).date() == now.astimezone(timeutil.TZ).date():
-        return "в " + timeutil.fmt_clock_ui(at)
-    return timeutil.fmt_dt_ui(at, now)
+    return f"{timeutil.fmt_date_ui(at, at)} {timeutil.fmt_clock_ui(at)}"
 
 
 def dns_line(dns: dict) -> str:
-    """Строка записи DNS раздела — по настройке «🌐 Запись DNS» (данные —
+    """Строка DNS-записи раздела — по настройке «🌐 DNS-запись» (данные —
     reserve_dns_line_data): провайдер, токен, итог последней проверки; несколько
     A-адресов или большой TTL — ⚠️ с причиной, как на экране записи (без домена
     в адресе строки нет вовсе)."""
     label = _e(dns.get("provider_label") or "вручную")
     if (dns.get("provider") or "manual") == "manual":
-        return "🔴 Запись DNS: вручную — переезд только кнопкой, запись меняешь у провайдера сам"
+        return "🔴 DNS-запись: вручную — переезд только кнопкой, запись меняешь у провайдера сам"
     if not dns.get("has_token"):
-        return f"🔴 Запись DNS: {label}, токен не задан — переезд только кнопкой, задай его в «🌐 Запись DNS»"
+        return f"🔴 DNS-запись: {label}, токен не задан — задай его в «🌐 DNS-запись». Пока токен не задан, переезд только кнопкой"
     if dns.get("check_ok") is False:
         why = dns.get("check_why") or "провайдер отказал"
-        return f"🔴 Запись DNS: {label} — проверка не прошла: {_e(why)}"
+        return f"🔴 DNS-запись: {label} — проверка не прошла: {_e(why)}"
     if dns.get("check_ok") is None or not dns.get("checked_at"):
-        return f"⚠️ Запись DNS: {label}, токен задан — не проверена: «🌐 Запись DNS» → «🧪 Проверить»"
+        return f"⚠️ DNS-запись: {label}, токен задан — не проверена: «🌐 DNS-запись» → «🧪 Проверить»"
     at = _checked(dns.get("checked_at") or "")
     tail = f" · проверено {_e(at)}" if at else ""
     addrs = [str(a) for a in (dns.get("addrs") or [])]
     ttl, warn = int(dns.get("ttl") or 0), int(dns.get("ttl_warn") or 300)
     if len(addrs) > 1:
         n = len(addrs)
-        return (f"⚠️ Запись DNS: {label} — у записи {n} {plural_ru(n, 'адрес', 'адреса', 'адресов')} "
+        return (f"⚠️ DNS-запись: {label} — у записи {n} {plural_ru(n, 'адрес', 'адреса', 'адресов')} "
                 f"({_e(', '.join(addrs))}), оставь одну A-запись: при переезде часть пользователей осталась бы "
-                f"на прежнем{tail}")
+                f"на прежнем сервере{tail}")
     if ttl > warn:
-        return (f"⚠️ Запись DNS: {label} — TTL {ttl} с (лучше ≤ {warn}): часть пользователей перейдёт на новый "
+        return (f"⚠️ DNS-запись: {label} — TTL {ttl} с (рекомендуется ≤ {warn}): часть пользователей перейдёт на новый "
                 f"адрес не раньше чем через {ttl // 60} мин{tail}")
-    return f"🟢 Запись DNS: {label} — бот меняет её сам{tail}"
+    return f"🟢 DNS-запись: {label} — бот меняет её сам{tail}"
 
 
 def section_text(d: dict) -> str:
@@ -112,14 +109,14 @@ def section_text(d: dict) -> str:
     lines = ["🛟 <b>Резерв</b>", "", ABOUT, ""]
     host = d.get("host") or ""
     if not host:
-        lines.append("⛔ Адрес для пользователей не задан — задай домен в «🖥 Сервер AWG»")
+        lines.append("⛔ Доменное имя сервера не задано — задай его в «🖥 Сервер AWG»")
     elif d.get("host_is_ip"):
-        lines.append(f"⛔ Адрес для пользователей — IP <code>{_e(host)}</code>: переезд меняет A-запись домена, а у IP "
+        lines.append(f"⛔ Вместо доменного имени сервера — IP <code>{_e(host)}</code>: переезд меняет A-запись домена, а у IP "
                      "её нет. Задай домен в «🖥 Сервер AWG» — новые конфигурации получат его, выданные — нет")
     else:
-        lines.append(f"🟢 Адрес для пользователей: <code>{_e(host)}</code>")
+        lines.append(f"🟢 Доменное имя сервера: <code>{_e(host)}</code>")
     if d.get("port"):
-        lines.append(f"🟢 Порт пользователей: <code>{int(d['port'])}</code>")
+        lines.append(f"🟢 Порт AWG: <code>{int(d['port'])}</code>")
     if host and not d.get("host_is_ip"):
         lines.append(dns_line(d.get("dns") or {}))
     gws = d.get("gateways") or []
@@ -232,7 +229,7 @@ def card_text(d: dict) -> str:
         if d.get("code_open"):
             lines.append(f"└ 🆘 {_n(name)} и его шлюзы не отвечают — жду аварийный код его админа")
         elif d.get("auto_block"):
-            lines.append("└ ⚠️ переезд по взглядам не идёт: " + _e(d["auto_block"]))
+            lines.append("└ ⚠️ автоматический аварийный переезд невозможен: " + _e(d["auto_block"]))
         elif d.get("rf_line"):
             lines.append("└ " + _e(d["rf_line"]))
     dns = d.get("dns") or {}
@@ -392,9 +389,9 @@ DNS_MORE = ("▸ подробнее: Бот меняет только эту A-�
 def dns_text(d: dict) -> str:
     name = d.get("name") or ""
     if not name:
-        return ("🌐 <b>Запись DNS</b>\n\n⛔ Адрес для пользователей — IP, записи DNS у него нет. Задай домен в "
+        return ("🌐 <b>DNS-запись</b>\n\n⛔ Вместо доменного имени сервера — IP, записи DNS у него нет. Задай домен в "
                 "«🖥 Сервер AWG» — без записи переезд невозможен")
-    lines = [f"🌐 <b>Запись DNS</b> · <code>{_e(name)}</code>", ""]
+    lines = [f"🌐 <b>DNS-запись</b> · <code>{_e(name)}</code>", ""]
     cur = d.get("current") or ""
     addrs = [a for a in (d.get("addrs") or []) if a]
     if cur:

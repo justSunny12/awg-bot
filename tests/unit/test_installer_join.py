@@ -198,7 +198,7 @@ def test_an_installed_agent_below_the_update_from_of_the_release_is_refused_befo
     join не зовутся."""
     r, calls = _existing(tmp_path, "3.4.1", "4.1.0", "y", update_from="4.0.0")
     assert r.returncode != 0 and calls == [], (r.stderr, calls)
-    assert "с v3.4.1 сразу на v4.1.0 нельзя — сначала обнови до v4.0.0" in r.stderr, r.stderr
+    assert "обновиться с v3.4.1 сразу до v4.1.0 нельзя — сначала обнови до v4.0.0:" in r.stderr, r.stderr
     r, calls = _existing(tmp_path / "ok", "4.0.2", "4.1.0", "y", update_from="4.0.0")
     assert r.returncode == 0 and len(calls) == 1 and calls[0].startswith("awg-bot update "), (r.stderr, calls)
 
@@ -252,7 +252,7 @@ def test_with_an_archive_the_join_path_reads_the_minimum_from_inside_the_archive
         f"минимум не читался из архива: {reads}"
     if refused:
         assert r.returncode != 0 and calls == [], (r.stderr, calls)
-        assert "с v3.4.1 сразу на v4.1.0 нельзя — сначала обнови до v4.0.0" in r.stderr, r.stderr
+        assert "обновиться с v3.4.1 сразу до v4.1.0 нельзя — сначала обнови до v4.0.0:" in r.stderr, r.stderr
     else:
         assert r.returncode == 0, r.stderr
         assert len(calls) == 1 and calls[0].startswith(f"awg-bot update {tgz} "), calls

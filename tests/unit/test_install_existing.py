@@ -331,9 +331,10 @@ def test_an_install_below_the_update_from_of_the_delivery_is_refused_in_the_menu
     before = host.snapshot()
     r = host.run(["1"], **kw)
     assert r.returncode != 0, r.stderr
-    assert "1) Обновить до 4.1.0 сразу нельзя: с v3.4.1 сразу на v4.1.0 нельзя — сначала обнови до v4.0.0" in r.stderr, \
-        r.stderr
-    assert "[install:ОШИБКА] с v3.4.1 сразу на v4.1.0 нельзя" in r.stderr
+    assert ("1) Обновиться с v3.4.1 сразу до v4.1.0 нельзя — сначала обнови до v4.0.0 (curl -4 -fL --connect-timeout 5 --retry 3 --speed-time 10 --speed-limit 1024 -o /tmp/awg-bot.tgz "
+            "https://github.com/") in r.stderr, r.stderr
+    assert "/releases/download/v4.0.0/awg-bot.tgz && sudo awg-bot update /tmp/awg-bot.tgz)" in r.stderr, r.stderr
+    assert "[install:ОШИБКА] обновиться с v3.4.1 сразу до v4.1.0 нельзя" in r.stderr
     assert host.updates() == [] and host.snapshot() == before
     assert "CONTINUE_FRESH_INSTALL" not in r.stdout
 

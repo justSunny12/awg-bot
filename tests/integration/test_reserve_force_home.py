@@ -178,7 +178,7 @@ def test_the_reserve_back_without_my_guest_drops_the_mark_with_a_new_k_and_one_n
     assert gone.svc.reserve_out() == "home" and not gone.svc.rsv_get("rsv_out").get("await_merge")
     assert gone.svc.reserve_k() != k and _pkg_due(gone.svc), "реплики не будет, а K прежний — резерв его знает"
     texts = [n.text for n in notices(acts)]
-    assert len(texts) == 1 and "не вольются" in texts[0] and "«Beta»" in texts[0], texts
+    assert len(texts) == 1 and "будут утеряны" in texts[0] and "«Beta»" in texts[0], texts
     assert not texts[0].rstrip().endswith(".")
     assert gone.svc.reserve_out_tick() == [], "уведомление «не вольются» повторилось"
 
@@ -204,7 +204,7 @@ def test_a_stale_view_of_the_reserve_does_not_leave_the_return_hanging(gone):
     assert not out.get("await_merge") and gone.svc.reserve_k() != k and _pkg_due(gone.svc), \
         f"возврат без слияния не снял рычаг или оставил K, который знает резерв: {out}"
     texts = [n.text for n in notices(acts)]
-    assert len(texts) == 1 and "не вольются" in texts[0], texts
+    assert len(texts) == 1 and "будут утеряны" in texts[0], texts
 
 
 def test_the_end_of_the_return_drops_the_mark(gone):

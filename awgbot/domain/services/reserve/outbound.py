@@ -121,7 +121,7 @@ class ReserveOutboundMixin:
         if not ok:
             return why
         if not self.reserve_dns_name():
-            return "адрес для пользователей — IP, записи DNS нет: переезд невозможен"
+            return "вместо доменного имени сервера — IP, записи DNS нет: переезд невозможен"
         if not self.reserve_peer_ip():
             return f"адрес «{self.reserve_peer_name()}» не определился"
         if settings.get_bool("app.reserve.ready", False) is False:

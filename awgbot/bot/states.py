@@ -158,7 +158,7 @@ class ReserveInviteCode(StatesGroup):
 
 
 class ReserveDnsToken(StatesGroup):
-    """Токен API DNS (раздел «🌐 Запись DNS»): сообщение удаляется после приёма."""
+    """Токен API DNS (раздел «🌐 DNS-запись»): сообщение удаляется после приёма."""
     value = State()
 
 
@@ -169,5 +169,5 @@ class PeerCode(StatesGroup):
 
 class ReserveAcceptToken(StatesGroup):
     """Строка приглашения AWGP1 (принявший): сообщение удаляется после приёма;
-    в данных диалога — token и rf (РФ-доступ через мои шлюзы)."""
+    в данных диалога — token и rf (Мои шлюзы для резерва)."""
     value = State()

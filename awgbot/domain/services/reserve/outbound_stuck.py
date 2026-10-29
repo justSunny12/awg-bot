@@ -73,6 +73,7 @@ class ReserveStuckMixin:
             log.warning("резерв: вебхук «%s» снят — запись на мне, пользователей он не нёс; поллю сам", name)
             return [("live",), ("notify", [Notification(tg_id=int(config.ADMIN_ID), text=rn.webhook_stuck_removed(name))])]
         journal = bool(self.reserve_jrn_on())                 # пара без журнала — реплика, как прежде
-        log.warning("резерв: пользователи возвращены без «%s» — %s, когда он выйдет на связь", name,
-                    "его правки перенесутся хвостом" if journal else "его реплика вольётся")
+        log.warning("резерв: пользователи возвращены без данных с «%s» — %s, когда он выйдет на связь%s", name,
+                    "его изменения перенесутся" if journal else "его реплика вольётся",
+                    "; конфликтующие записи будут отброшены" if journal else "")
         return [("live",), ("notify", [Notification(tg_id=int(config.ADMIN_ID), text=rn.forced_home(name, journal))])]

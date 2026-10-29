@@ -33,7 +33,7 @@ class ReserveScreenMixin:
         live = self.reserve_invite_live()
         return {"paired": self.reserve_paired(), "host": host, "host_is_ip": is_ip,
                 "port": int(config.SERVER_PORT or 0), "gateways": self._reserve_gateways_view(),
-                # запись DNS — по настройке «🌐 Запись DNS»: тот же сборщик, что у карточки пары (без DNS-запросов)
+                # запись DNS — по настройке «🌐 DNS-запись»: тот же сборщик, что у карточки пары (без DNS-запросов)
                 "dns": self.reserve_dns_line_data(),
                 "ready": settings.get_bool("app.reserve.ready", False),
                 "invite_live": live and inv.get("role") != "acceptor",

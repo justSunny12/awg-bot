@@ -262,8 +262,9 @@ class ReserveVoteMixin:
         if not pkg_in.get("gen") or (need_share and not pkg_in.get("share")):
             return "данных для переезда нет"
         if need_share and pkg_in.get("has_dns") is False:
-            # запись меняет процесс открытия на резерве — без конверта DNS (провайдер «вручную») ему нечем
-            return "запись DNS у основы «вручную» — аварийный переезд невозможен"
+            # запись меняет процесс открытия на резерве — без конверта DNS (провайдер «вручную») ему нечем;
+            # карточка ставит строку под «автоматический аварийный переезд невозможен: …», уведомление — хвост
+            return f"DNS-запись у «{self.reserve_peer_name()}» настраивается вручную"
         return ""
 
     def reserve_auto_block(self) -> str:
@@ -349,7 +350,8 @@ class ReserveVoteMixin:
         why = self.reserve_auto_block() if kind != "code" else self._code_block()
         if why:
             log.warning("резерв: процесс открытия (%s) не запущен: %s", kind, why)
-            return [("notify", [Notification(tg_id=int(config.ADMIN_ID), text=_fail_text(self.reserve_peer_name(), why))])]
+            return [("notify", [Notification(tg_id=int(config.ADMIN_ID),
+                                             text=_fail_text(self.reserve_peer_name(), f"{why} — аварийный переезд невозможен"))])]
         pkg_in = self.rsv_get("rsv_pkg_in")
         self.reserve_zone_shell_ensure()
         payload = self._open_payload(kind)

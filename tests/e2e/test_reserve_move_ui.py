@@ -1,7 +1,7 @@
 """Переезд кнопкой, возврат и запись DNS в боте — что нажатия показывают и
 меняют: карточка с кнопками по возможностям, диалог перевода (Т-Р10, ручной и
 автоматический режим), живое сообщение хода (Т-Р10б), «вернуть пользователей к
-нему» у резерва (Т-Р12), экран «🌐 Запись DNS» (Т-Р16) и ввод токена,
+нему» у резерва (Т-Р12), экран «🌐 DNS-запись» (Т-Р16) и ввод токена,
 строка главной (Т-Р17), кнопка «↩️ Вернуть запись» на уведомлении Т-РУ16.
 
 Нажатия идут через настоящий диспетчер роли (AccessMiddleware, порядок
@@ -116,7 +116,7 @@ async def _card(ui) -> tuple[str, list[str]]:
 
 async def test_the_card_offers_the_move_when_it_is_possible_and_the_dns_screen_always(ui):
     text, labels = await _card(ui)
-    assert "🔀 Переезд на «Beta»" in labels and "🌐 Запись DNS" in labels
+    assert "🔀 Переезд на «Beta»" in labels and "🌐 DNS-запись" in labels
     assert not any("Вернуть" in x for x in labels)
     assert "🌐 Запись <code>" not in text or rc.HOST_A in text
 
@@ -320,7 +320,7 @@ async def test_the_dns_screen_without_a_name_says_the_record_does_not_exist(ui):
     from awgbot.core import settings
     settings.set_value("app.network.server_host", "203.0.113.5")
     e = _edits(await ui.run.press(RsvCB(action="dns")))
-    assert "Адрес для пользователей — IP" in e[0].text and "без записи переезд невозможен" in e[0].text
+    assert "Вместо доменного имени сервера — IP" in e[0].text and "без записи переезд невозможен" in e[0].text
     assert _labels(e[0]) == ["⬅️ Назад"], "кнопок провайдера и токена у IP быть не должно"
 
 

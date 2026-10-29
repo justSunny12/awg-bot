@@ -1,6 +1,6 @@
 """card.py — раздел «🛟 Резерв»: экран без пары (Т-Р1) и карточка резерва
 (Т-Р9), тумблеры «Готов быть резервом» (выключение при паре — через диалог
-Т-Р14) и «РФ-доступ через мои шлюзы», рычаг возврата (Т-Р15), «🆘 На крайний
+Т-Р14) и «Мои шлюзы для резерва», рычаг возврата (Т-Р15), «🆘 На крайний
 случай» (Т-Р18: показать, сменить), «🗑 Удалить резерв» (Т-Р13)."""
 from __future__ import annotations
 
@@ -82,7 +82,7 @@ async def rf_mine_toggle(cb: CallbackQuery, services):
     if not await _set(cb, "app.reserve.rf_via_mine", not on):
         return
     await _render(cb, "rsv", services)
-    await cb.answer("Мои шлюзы для его РФ-доступа: " + ("выкл" if on else "вкл"))
+    await cb.answer("Мои шлюзы для резерва: " + ("выкл" if on else "вкл"))
 
 
 @router.callback_query(RsvCB.filter(F.action == "ret"))

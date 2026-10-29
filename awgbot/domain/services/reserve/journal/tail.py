@@ -240,7 +240,7 @@ class ReserveTailMixin:
         except Exception as ex:                                # noqa: BLE001
             fails = int(self.__dict__.get("_tail_self_fails") or 0) + 1
             self.__dict__["_tail_self_fails"] = fails
-            log.error("резерв: свой хвост не перенесён (%d): %s", fails, ex)
+            log.error("резерв: свои изменения не перенесены (%d): %s", fails, ex)
             if fails == TAIL_SELF_TELL:                        # один раз на эпизод: дальше — строки журнала
                 return [Notification(tg_id=int(config.ADMIN_ID), text=rt.tail_self_failed(self.reserve_peer_name(), str(ex)))]
             return []

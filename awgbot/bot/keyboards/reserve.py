@@ -26,7 +26,7 @@ def section(ready: bool, *, invite_live: bool, accepting: bool) -> InlineKeyboar
         ("📤 Пригласить", RsvCB(action="invite")) if not busy else None,
         ("📥 Принять приглашение", RsvCB(action="accept")) if not busy else None,
         ("⬅️ Отменить приглашение", RsvCB(action="cancel")) if busy else None,
-        ("🌐 Запись DNS", RsvCB(action="dns")),
+        ("🌐 DNS-запись", RsvCB(action="dns")),
         _back())
 
 
@@ -44,7 +44,7 @@ def accept_dialog(rf_on: bool, *, has_gateway: bool) -> InlineKeyboardMarkup:
     """«Отмена» первой: принять чужих пользователей — действие с последствиями."""
     return ui.rows(
         ("⬅️ Отмена", SetCB(sec="rsv")),
-        (f"{_chk(rf_on)} РФ-доступ через мои шлюзы", RsvCB(action="rf")) if has_gateway else None,
+        (f"{_chk(rf_on)} Мои шлюзы для резерва", RsvCB(action="rf")) if has_gateway else None,
         ("🛟 Подключиться", RsvCB(action="connect")))
 
 
@@ -73,9 +73,9 @@ def card(*, ready: bool, rf_on: bool, has_gateway: bool, ret_immediate: bool, na
         (f"⚠️ Вернуть без «{name}»", RsvCB(action="force")) if can_force else None,
         (f"↩️ Вернуть всё на «{name}»", RsvCB(action="evict")) if can_evict else None,
         (f"{_chk(ready)} Готов быть резервом", RsvCB(action="ready")),
-        (f"{_chk(rf_on)} Мои шлюзы для его РФ-доступа", RsvCB(action="rfmine")) if has_gateway else None,
+        (f"{_chk(rf_on)} Мои шлюзы для резерва", RsvCB(action="rfmine")) if has_gateway else None,
         ("⏱ Возврат: сразу" if ret_immediate else "⏱ Возврат: по кнопке", RsvCB(action="ret")),
-        ("🌐 Запись DNS", RsvCB(action="dns")),
+        ("🌐 DNS-запись", RsvCB(action="dns")),
         (f"🛰 Для «{name}»", RsvCB(action="role")) if self_admin else None,
         ("🆘 Аварийный код", RsvCB(action="emerg")),
         ("🗑 Удалить резерв", RsvCB(action="unpair")),

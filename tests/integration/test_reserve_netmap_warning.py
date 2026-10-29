@@ -29,7 +29,7 @@ rsv = rc.rsv
 mv = rm.mv
 __all__ = ["host", "mv", "rsv"]
 
-MARK = "NETMAP подсетей клонов не встал"
+MARK = "NETMAP подсетей клонов не применён"
 
 
 def _clone_up(host, monkeypatch, caplog, **zone_state):
