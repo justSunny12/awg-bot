@@ -250,9 +250,9 @@
 #                          сервер AWG, взаимный резерв: гостевая зона и процесс
 #                          открытия. status — линк пары и зона (reserve-pair-setup.sh
 #                          --status, reserve-zone-setup.sh --status) и РФ-доступ
-#                          через второй сервер: rfpeer=offer|slot|off (файл
-#                          согласия $DATA_DIR/reserve/rfpeer.json: даю шлюзы /
-#                          хожу через шлюзы второго / нет) и allowed= (AllowedIPs
+#                          через второй сервер: rfpeer=offer|slot|offer,slot|off
+#                          (файл согласия $DATA_DIR/reserve/rfpeer.json: даю шлюзы /
+#                          хожу через шлюзы второго / обе метки / нет) и allowed= (AllowedIPs
 #                          линка пары в ядре: у просящего — с 0.0.0.0/0); plan — что
 #                          умеет хост (хранилище в памяти, порт вебхука, dnsmasq,
 #                          conntrack, python);

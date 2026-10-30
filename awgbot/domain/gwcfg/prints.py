@@ -98,7 +98,7 @@ def uplink_print(conf_text: str, pubkey: str = "", prev_pubkey: str = "") -> str
 
 def quorum_print(sec: dict | None) -> str:
     """Отпечаток раздела quorum: линия, поколение, состав, порог, порт, канонические конфиги
-    зондов, точка (номер и поколение), эпоха. Раздела нет — пусто."""
+    зондов, точка (номер и поколение), эпоха, цифры лидера (`timing`). Раздела нет — пусто."""
     if not sec or not sec.get("l"):
         return ""
     probes = sec.get("probes") or {}
