@@ -150,7 +150,11 @@ class ReserveCodeWindowMixin:
         self.rsv_update("rsv_view", code=cw, moved_by={"code": True, "at": timeutil.now_iso()})
         secret = self.reserve_quorum_code_secret(norm) if hasattr(self, "reserve_quorum_code_secret") else None
         if secret is None:
-            secret = {"share": [rsvkeys.RESERVE_X, str(pkg_in.get("share") or "")], "code": norm}
+            cw.update(open=True, closed_why="", pending=False)
+            self.rsv_update("rsv_view", code=cw)
+            log.warning("резерв: аварийный код введён, а ящика кода поколения пакета %s нет", pkg_in.get("m_gen"))
+            return {"ok": False, "why": "open_failed", "checked": True, "left": max(0, CODE_TRIES - len(tries)),
+                    "reason": "данных для переезда нет: ящик кода не получен", "actions": []}
         actions = self.reserve_open_by_points(secret, "code", "H4")
         if self.reserve_in() != "taking":
             cw.update(open=True, closed_why="", pending=False)

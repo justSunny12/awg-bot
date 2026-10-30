@@ -31,7 +31,7 @@ import random
 import time
 
 from awgbot.core import config, settings
-from awgbot.util import pairproto, rsvjrn, rsvkeys, timeutil
+from awgbot.util import pairproto, rsvjrn, timeutil
 from awgbot.util.rsvpkg import bot as pkgbot, seal, vpn as pkgvpn
 
 from ..gateway_link.common import log
@@ -241,13 +241,12 @@ class ReservePackageMixin:
                              pkg_gen=gen, m_gen=int(keys.get("m_gen") or 0), dns=dns)
             if not journal:
                 self._pkg_store_base(gen, db_bytes)           # база слияния — только прежнему пути
-            m_gen, share = self.reserve_share_reserve()
             fp = seal.digest(blob)
             self.rsv_update("rsv_pkg_sent", pending_gen=gen, pending_fp=fp, pending_logical=logical,
                             pending_at=timeutil.now_iso(), pending_jrn=jrn)
             log.info("резерв: %s %s собран (%d КБ%s)", "снимок" if journal else "пакет", gen, len(blob) // 1024,
                      f", журнал по {marks['i']}" if journal else "")
-            built = {"gen": gen, "fp": fp, "blob": blob.hex(), "share": share, "m_gen": m_gen}
+            built = {"gen": gen, "fp": fp, "blob": blob.hex()}
             if jrn:
                 # открыто — только то, что резерву нужно для снятия учтённого (номер строки счётчиков
                 # cs — внутри: по нему видно, сколько раз устройства были активны)
@@ -346,16 +345,16 @@ class ReservePackageMixin:
             self.reserve_pkg_mark()
 
     def reserve_pkg_in_present(self) -> bool:
-        """Пакет второй стороны и доля на месте — переезд к себе возможен."""
+        """Пакет второй стороны на месте — переезд к себе возможен (ящик кода проверяет
+        reserve_open_block)."""
         pkg_in = self.rsv_get("rsv_pkg_in")
-        return bool(pkg_in.get("share")) and os.path.exists(guest_pkg_path())
+        return bool(pkg_in.get("gen")) and os.path.exists(guest_pkg_path())
 
     # ── приём (резерв) ──────────────────────────────────────────────────────
 
-    def reserve_pkg_in(self, gen: int, fp: str, blob: bytes, share: str, m_gen: int,
-                       jrn: dict | None = None) -> tuple[str, str]:
-        """Целый пакет от основы: проверка, запись на диск, доля. Возвращает
-        (ответ: pkg_ok | pkg_bad, причина)."""
+    def reserve_pkg_in(self, gen: int, fp: str, blob: bytes, jrn: dict | None = None) -> tuple[str, str]:
+        """Целый пакет от основы: проверка, запись на диск; поколение `M` — из заголовка
+        (с ним сверяется ящик кода, `qkeys`). Возвращает (ответ: pkg_ok | pkg_bad, причина)."""
         if self.reserve_in() in HOSTING:
             return "pkg_bad", "зона занята"                  # гость стартовал с прежнего пакета — новый сбил бы поколение слияния
         try:
@@ -364,14 +363,6 @@ class ReservePackageMixin:
             return "pkg_bad", str(e)
         if head.pkg_gen != int(gen) or head.digest != str(fp):
             return "pkg_bad", "поколение или отпечаток не сошлись"
-        if head.m_gen != int(m_gen):
-            return "pkg_bad", "поколение ключа не сошлось с долей"
-        try:
-            bytes.fromhex(str(share or ""))
-            if len(bytes.fromhex(str(share or ""))) != rsvkeys.M_LEN:
-                raise ValueError
-        except ValueError:
-            return "pkg_bad", "доля не той длины"
         os.makedirs(reserve_dir(), mode=0o700, exist_ok=True)
         path = guest_pkg_path()
         tmp = path + ".tmp"
@@ -382,7 +373,7 @@ class ReservePackageMixin:
             os.fsync(f.fileno())                              # пакет — опора переезда после смерти основы: на диск
         os.replace(tmp, path)
         self.rsv_put("rsv_pkg_in", {"gen": int(gen), "fp": str(fp), "size": len(blob), "at": timeutil.now_iso(),
-                                    "share": str(share), "m_gen": int(m_gen), "has_dns": head.has_dns})
+                                    "m_gen": int(head.m_gen), "has_dns": head.has_dns})
         if jrn:
             self.reserve_keep_snapshot_in(dict(jrn))          # учтённое снимком — из сегментов прочь
         elif self.reserve_keep_line():

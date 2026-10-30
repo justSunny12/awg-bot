@@ -12,7 +12,7 @@ from __future__ import annotations
 import ipaddress
 
 from awgbot.core import config, settings
-from awgbot.util import rsvkeys, timeutil, wgkeys
+from awgbot.util import timeutil, wgkeys
 
 from ..types import Notification
 from ..gateway_link.common import log
@@ -128,19 +128,11 @@ class ReserveGwSideMixin:
         lines += ["", "[Peer]", f"PublicKey = {zone['pub']}", f"PresharedKey = {rec['psk']}",
                   f"AllowedIPs = {', '.join(allowed)}", f"Endpoint = {zone['host']}:{int(zone['port'])}",
                   f"PersistentKeepalive = {ka}"]
-        share = {}
-        quorum = self.reserve_quorum_keys_on() if hasattr(self, "reserve_quorum_keys_on") else False
-        if not quorum:                                        # доля прямой «2 из n» — пока ключи кворума не включены
-            try:
-                gen, y = self.reserve_share_gateway(int(gw.id))
-                share = {"x": rsvkeys.gateway_x(int(gw.id)), "y": y, "gen": int(gen)}
-            except Exception:                                 # noqa: BLE001 — ключей ещё нет
-                share = {}
         from ..selfhost import own_host
         return {"self": own_host(), "name": str(config.SERVER_NAME or ""), "peer_name": self.reserve_peer_name(), "slot": int(gw.id),
                 "state": self.reserve_gw_state(), "move": self.reserve_move_gen(),
                 "record": self.reserve_dns_name(), "peer_host": self.reserve_peer_ip(), "chan": int(zone.get("chan") or 0),
-                "share": share, "tg": tg, "link": {"conf": "\n".join(lines) + "\n"}}
+                "tg": tg, "link": {"conf": "\n".join(lines) + "\n"}}
 
     def reserve_gw_state(self) -> str:
         """Слово основы шлюзам: `away` — пользователи у резерва (после подъёма клона),

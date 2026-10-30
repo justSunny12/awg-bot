@@ -23,10 +23,8 @@ reserve open` (root, без этой песочницы).
     echo '<JSON>' | python -m tools.rsvopen         вход — только stdin
 
 Вход (один из ключей ключа плюс поля зоны):
-    {"shares": [[x, "hex"], [x, "hex"]]}     две доли прямой (резерв + шлюз)
-    {"share": [x, "hex"], "code": "…"}       доля резерва + аварийный код
-    {"qpoints": [[x, "hex"], …], "qbox": "hex"}   кворум: t точек многочлена Mq и ящик кворума
-    {"code": "…", "cpoint": [x, "hex"], "cbox": "hex"}   кворум: код + точка резерва прямой Mc и ящик кода
+    {"qpoints": [[x, "hex"], …], "qbox": "hex"}   t точек многочлена Mq и ящик кворума
+    {"code": "…", "cpoint": [x, "hex"], "cbox": "hex"}   аварийный код + точка резерва прямой Mc и ящик кода
     {"k": "hex"}                             ключ пакета (ручной запуск: K открытым)
     {"await_k": true}                        переезд кнопкой: процесс выпускает разовую
                                              пару X25519, пишет её публичную часть и
@@ -194,7 +192,7 @@ def _point(item) -> tuple[int, bytes]:
 
 
 def recover_keys(data: dict, blob: bytes) -> tuple[bytes | None, bytes]:
-    """(M или None, K) по входу: две доли, доля + код, или K."""
+    """(M или None, K) по входу: точки ключа кворума с ящиком, код с точкой и ящиком, или K."""
     from awgbot.util import rsvkeys
     from awgbot.util.rsvpkg import seal
     if data.get("k"):
@@ -228,30 +226,7 @@ def recover_keys(data: dict, blob: bytes) -> tuple[bytes | None, bytes]:
             return m, seal.open_k(blob, m)
         except seal.PackageError as e:
             raise OpenError(f"ключ пакета: {e}") from e
-    if data.get("shares"):
-        shares = list(data["shares"])
-        if len(shares) < 2:
-            raise OpenError("нужны две доли")
-        p1, p2 = _point(shares[0]), _point(shares[1])
-    elif data.get("share") and data.get("code"):
-        p1 = _point(data["share"])
-        try:
-            p2 = rsvkeys.code_point(str(data["code"]))
-        except ValueError as e:
-            raise OpenError(f"аварийный код: {e}") from e
-    else:
-        raise OpenError("нет ни долей, ни кода, ни ключа пакета")
-    if p1[0] == p2[0]:
-        raise OpenError("две доли одной точки")
-    try:
-        m = rsvkeys.recover_m(p1, p2)
-    except ValueError as e:
-        raise OpenError(f"доли не сошлись: {e}") from e
-    try:
-        k = seal.open_k(blob, m)
-    except seal.PackageError as e:
-        raise OpenError(f"ключ пакета: {e}") from e
-    return m, k
+    raise OpenError("нет ни точек ключа кворума, ни кода с ящиком, ни ключа пакета")
 
 
 def _db_from_snapshot(k: bytes, pkg_gen: int) -> tuple[bytes | None, str]:

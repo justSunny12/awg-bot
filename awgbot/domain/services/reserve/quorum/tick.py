@@ -53,6 +53,8 @@ class ReserveQuorumTickMixin:
             self._qvoters.clear()
             return []
         actions: list[tuple] = []
+        if hasattr(self, "reserve_keys_ensure"):
+            self.reserve_keys_ensure()                        # защитная ветка: ключи прежних выпусков → ящик кода
         m = self.reserve_quorum_refresh()                      # предложенный состав — по нему ключи и зонды
         if m is not None:
             body = self.reserve_qmem_body()

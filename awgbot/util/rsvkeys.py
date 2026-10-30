@@ -79,41 +79,8 @@ def gateway_x(slot: int) -> int:
     return slot + 1
 
 
-@dataclass(frozen=True)
-class Generation:
-    """Поколение `M`: номер, ключ и наклон прямой. Живёт только у основы."""
-    gen: int
-    line: shamir.Line
-
-    @classmethod
-    def new(cls, gen: int) -> "Generation":
-        return cls(int(gen), shamir.Line.new(new_master()))
-
-    @property
-    def m(self) -> bytes:
-        return self.line.secret
-
-    def reserve_point(self) -> shamir.Point:
-        return self.line.point(RESERVE_X)
-
-    def gateway_point(self, slot: int) -> shamir.Point:
-        return self.line.point(gateway_x(slot))
-
-    def code(self) -> str:
-        """Аварийный код — точка x = 255, строкой для человека."""
-        return code_encode(self.line.point(CODE_X)[1])
-
-
-def recover_m(p1: shamir.Point, p2: shamir.Point) -> bytes:
-    """`M` по двум точкам (резерв + шлюз, резерв + код)."""
-    m = shamir.recover(p1, p2)
-    if len(m) != M_LEN:
-        raise ValueError("точки не той длины")
-    return m
-
-
 def code_point(code: str) -> shamir.Point:
-    """Точка аварийного кода из строки человека; порча — ValueError."""
+    """Точка аварийного кода из строки человека (x = 255 прямой `Mc`); порча — ValueError."""
     return CODE_X, code_decode(code)
 
 

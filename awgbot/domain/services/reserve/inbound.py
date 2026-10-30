@@ -141,7 +141,7 @@ class ReserveInboundMixin:
         pkg_in = self.rsv_get("rsv_pkg_in")
         if int(pkg_in.get("gen") or 0) != int(gen):
             return f"у меня пакет {pkg_in.get('gen') or 'нет'}, а не {gen}"
-        why = self.reserve_open_block(need_share=False)       # по K основы доля не нужна
+        why = self.reserve_open_block(need_box=False)         # по K основы ящик кода не нужен
         if why:
             return why
         if hasattr(self, "reserve_zone_shell_ensure"):

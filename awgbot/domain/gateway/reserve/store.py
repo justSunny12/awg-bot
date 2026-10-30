@@ -147,7 +147,7 @@ class ReserveStoreMixin:
         sec = self.reserve_section()
         if not sec.get("conf"):
             return ""
-        return gwcfg.reserve_print({"link": {"conf": sec["conf"]}, "share": sec.get("share") or {},
+        return gwcfg.reserve_print({"link": {"conf": sec["conf"]},
                                     "state": sec.get("state") or "idle", "move": int(sec.get("move") or 0),
                                     "self": sec.get("self") or "", "chan": int(sec.get("chan") or 0), "tg": bool(sec.get("tg")),
                                     "peer_host": sec.get("peer_host") or "", "record": sec.get("record") or "",
@@ -163,7 +163,7 @@ class ReserveStoreMixin:
                 return {"changed": False, "note": ""}
             self.reserve_remove()
             return {"changed": True, "note": "🛟 Резерв у сервера AWG снят — линк к резерву опущен"}
-        new = {"conf": str(checked.get("conf_text") or ""), "share": dict(checked.get("share") or {}),
+        new = {"conf": str(checked.get("conf_text") or ""),
                "state": str(checked.get("state") or "idle"), "move": int(checked.get("move") or 0),
                "self": str(checked.get("self") or ""), "name": str(checked.get("name") or ""),
                "peer_name": str(checked.get("peer_name") or ""),
@@ -176,7 +176,7 @@ class ReserveStoreMixin:
         for k in _KEEP_KEYS:                                  # своё о ходе дел — не из документа, не стирать
             if k in cur:
                 new[k] = cur[k]
-        changed = any(cur.get(k) != new[k] for k in ("conf", "share", "state", "move", "self", "chan", "tg"))
+        changed = any(cur.get(k) != new[k] for k in ("conf", "state", "move", "self", "chan", "tg"))
         # слово возврата: основа вернула пользователей (idle, номер не меньше номера резерва) — аплинк
         # на адрес основы по записи сразу, не через 180 с рукопожатия (концепт «кворум» §4.12, решение 17)
         done = dict(new.get("reresolved") or {})
@@ -201,8 +201,6 @@ class ReserveStoreMixin:
                 note = f"⚠️ Линк к резерву не поднялся: {str(e)[:120]} — повторю"
                 log.warning("reserve: линк к резерву не поднялся: %s — повтор тактом", e)
         _write(new, self._RSV_STORE)
-        if cur.get("share", {}).get("gen") != new["share"].get("gen") and new["share"]:
-            log.info("reserve: доля ключа переезда поколения %s принята", new["share"].get("gen"))
         self.reserve_forward_decide()
         return {"changed": changed, "note": note}
 
@@ -370,7 +368,7 @@ class ReserveStoreMixin:
         return {"name": str(cur.get("name") or ""), "peer_name": str(cur.get("peer_name") or ""), "seen": seen or "absent", "since": since,
                 "open": rsvlink.is_open(), "state": str(cur.get("reserve_state") or "idle"),
                 "since_open": str(cur.get("open_at") or ""), "rx": int(c[0]), "tx": int(c[1]),
-                "share": bool((cur.get("share") or {}).get("y")) or self._quorum_point_present(),
+                "share": self._quorum_point_present(),             # «часть ключа» — точка ключа кворума
                 "tg_via": bool(cur.get("tg_via")), "tg_since": str(cur.get("tg_since") or ""),   # Т-К23
                 "uplink_ip": self._uplink_conf_ip(), "primary": str(cur.get("self") or "")}    # Т-К27
 

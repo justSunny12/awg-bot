@@ -116,8 +116,8 @@ def quorum_print(sec: dict | None) -> str:
 
 
 def reserve_print(sec: dict | None) -> str:
-    """Отпечаток раздела reserve: канонический конфиг линка к резерву, доля
-    (точка и поколение), состояние пересылки с номером переезда, адрес основы.
+    """Отпечаток раздела reserve: канонический конфиг линка к резерву, состояние
+    пересылки с номером переезда, адрес основы.
     Раздела нет — пусто."""
     if not sec:
         return ""
@@ -126,9 +126,7 @@ def reserve_print(sec: dict | None) -> str:
         canon = wgconf.canonical(wgconf.parse(str(link.get("conf") or "")), "rsvlink") if link.get("conf") else ""
     except wgconf.WgConfError:
         return ""
-    share = sec.get("share") or {}
     text = (f"{canon}self={norm(sec.get('self'))}\nstate={norm(sec.get('state'))}\nmove={int(sec.get('move') or 0)}\n"
-            f"share={int(share.get('x') or 0)}:{norm(share.get('y'))}:{int(share.get('gen') or 0)}\n"
             f"chan={int(sec.get('chan') or 0)}\n"
             # адрес основы и имя записи — опора факта записи и текстов: их смена тянет документ
             f"peer_host={norm(sec.get('peer_host'))}\nrecord={norm(sec.get('record'))}\n"

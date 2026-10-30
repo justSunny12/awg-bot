@@ -1,24 +1,23 @@
 """
-keys.py — часть пакета quorum (см. __init__): ключи кворума (`rsv_qkeys`) —
-многочлен большинства `Mq`, прямая аварийного ключа `Mc`, два ящика вокруг
-`M` (util/rsvkeys), обмен `qkeys`/`qkeys_ok` со вторым сервером, точки
-шлюзам разделом `quorum` документа, включение и выключение (концепт
-«кворум» §2.7, §3.7.10, §8.1).
+keys.py — часть пакета quorum (см. __init__): ключи вокруг `M` (`rsv_qkeys`) —
+прямая аварийного ключа `Mc` и ящик кода (с сопряжения, всегда), многочлен
+большинства `Mq` и ящик кворума (пока кворум линии решает: v ≥ 2), обмен
+`qkeys`/`qkeys_ok` со вторым сервером, точки шлюзам разделом `quorum`
+документа (util/rsvkeys).
 
-У основы: `{"on", "q_gen", "t", "poly": [hex…], "c_gen", "mc", "ma", "acked":
+У основы: `{"on", "c_gen", "mc", "ma", "q_gen", "t", "poly": [hex…], "acked":
 {m_gen, q_gen, c_gen}}` — коэффициенты многочлена и прямая кода живут только
-здесь. У второго сервера: `{"peer": {l, m_gen, q_gen, t, x, y, qbox, c_gen,
-cy, cbox, at}}` — его точки и ящики рядом с пакетом (`rsv_pkg_in`).
+здесь. У второго сервера: `{"peer": {l, m_gen, c_gen, cy, cbox, q_gen, t, x, y,
+qbox, at}}` — его точки и ящики рядом с пакетом (`rsv_pkg_in`); часть
+многочлена пуста, пока кворум линии не решает.
 
-Включение — один раз новое поколение `M` и новый код (прежняя прямая `M` у
-шлюзов и прежний код открывали бы `M` мимо большинства) — Т-К12 админу
-основы, Т-К12б админу второго сервера. Смена состава без снятия держателя —
-новый многочлен под новое t, `M`, `K`, код прежние; снятие или замена
-держателя и возврат после переезда по кворуму — новое поколение `M` и `K`
-(keys.reserve_new_generation) и многочлен, код прежний; после переезда по
-коду и по «🔄 Сменить код» — ещё новая прямая и новый код. Выключение
-(второй сервер без `quo1`, последний шлюз `quo1` снят) — поколение `M` на
-прямой «2 из n» и новый код, как было.
+Включение кворума (шлюз `quo1` в составе) — только новый многочлен и ящик
+кворума: `M`, `K`, пакет, прямая кода и код прежние (Т-К12 без звука).
+Смена порога — новый многочлен. Снятие или замена держателя точки и возврат
+после переезда по точкам — новое поколение `M` и `K` (keys.reserve_new_generation),
+оба ящика заново, код прежний; после переезда по коду и по «🔄 Сменить код» —
+ещё новая прямая и новый код. Выключение (шлюзов `quo1` в составе не
+осталось) — многочлен и ящик кворума прочь, код прежний.
 """
 from __future__ import annotations
 
@@ -48,8 +47,21 @@ class ReserveQuorumKeysMixin:
         return self.rsv_get("rsv_qkeys")
 
     def reserve_quorum_keys_on(self) -> bool:
-        """Ключи под кворум: аварийный код — на прямой `Mc`, точки — многочлена `Mq`."""
+        """Ящик кода есть (с сопряжения): аварийный код — на прямой `Mc`."""
         return bool(self.reserve_qkeys().get("on"))
+
+    def reserve_quorum_poly_on(self) -> bool:
+        """Ящик кворума есть: многочлен `Mq` (пока кворум линии решает)."""
+        return self._quorum_poly() is not None
+
+    def reserve_quorum_keys_init(self) -> None:
+        """С сопряжения: прямая кода и ящик кода; многочлена нет, пока нет шлюза в составе."""
+        with _LOCK:
+            gen = rsvkeys.CodeGen.new(1)
+            self.rsv_put("rsv_qkeys", {"on": True, "enabled_at": timeutil.now_iso(), "c_gen": gen.c_gen, "mc": gen.mc.hex(),
+                                       "ma": gen.line.slope.hex(), "code_at": timeutil.now_iso(), "q_gen": 0, "t": 0,
+                                       "poly": [], "acked": {}})
+        log.info("кворум: ящик кода создан — прямая аварийного ключа 1")
 
     # ── поколения ───────────────────────────────────────────────────────────
     def _quorum_poly(self) -> shamir.Poly | None:
@@ -86,13 +98,14 @@ class ReserveQuorumKeysMixin:
         log.info("кворум: прямая аварийного ключа %s — %s", gen.c_gen, why)
 
     def reserve_quorum_after_m(self, why: str, *, code: bool) -> None:
-        """Крючок после нового поколения `M` (keys.reserve_new_generation): при ключах
-        под кворум — новый многочлен; `code` — и новая прямая кода."""
+        """Крючок после нового поколения `M` (keys.reserve_new_generation): многочлен заново,
+        если он есть; `code` — и новая прямая кода."""
         if not self.reserve_quorum_keys_on():
             return
-        m = self.reserve_quorum_proposed() if hasattr(self, "reserve_quorum_proposed") else None
-        t = m.t(m.l) if m is not None else int(self.reserve_qkeys().get("t") or 2)
-        self._quorum_new_poly(t, why)
+        if self.reserve_quorum_poly_on():
+            m = self.reserve_quorum_proposed() if hasattr(self, "reserve_quorum_proposed") else None
+            t = m.t(m.l) if m is not None else int(self.reserve_qkeys().get("t") or 2)
+            self._quorum_new_poly(t, why)
         if code:
             self._quorum_new_code(why)
 
@@ -103,28 +116,28 @@ class ReserveQuorumKeysMixin:
 
     # ── включение и выключение ──────────────────────────────────────────────
     def reserve_quorum_keys_sync(self, m: qm.Members | None, want_on: bool) -> list[tuple]:
-        """Ключи по составу: включить (новое поколение `M`, многочлен, прямая кода,
-        Т-К12/Т-К12б), выключить (поколение `M` на прямой «2 из n», код заново),
-        при смене порога — новый многочлен. Действия — уведомления."""
-        on = self.reserve_quorum_keys_on()
+        """Многочлен по составу: `want_on` — кворум линии решает (шлюз `quo1` в составе, v ≥ 2):
+        нет многочлена — создать (Т-К12/Т-К12б, `M` и код прежние); состав без шлюзов или
+        кворум выключен — многочлен и ящик кворума прочь, код прежний; смена порога — новый
+        многочлен. Действия — уведомления."""
+        if not self.reserve_quorum_keys_on():
+            return []
+        poly_on = self.reserve_quorum_poly_on()
+        decide = bool(want_on and m is not None and m.enabled)
         actions: list[tuple] = []
-        if want_on and m is not None and not on:
-            with _LOCK:
-                self.rsv_update("rsv_qkeys", on=True, enabled_at=timeutil.now_iso(), acked={})
-            self.reserve_new_generation("включение голосования о сервере", code=True, notify=False)
-            self.rsv_update("rsv_keys", code_notify_why="включено голосование о сервере — прежний код не действует")
+        if decide and not poly_on:
+            self._quorum_new_poly(m.t(m.l), f"включение голосования о сервере (состав {m.g})")
             actions += self._quorum_enabled_notes(m)
-            log.warning("кворум: голосование о «%s» включено — состав %s, порог %d; новое поколение ключа и код",
+            log.warning("кворум: голосование о «%s» включено — состав %s, порог %d; ключ и код прежние",
                         str(config.SERVER_NAME or m.l), ", ".join(m.members), m.t(m.l))
             return actions
-        if on and (not want_on or m is None):
+        if poly_on and not decide:
             with _LOCK:
-                self.rsv_update("rsv_qkeys", on=False, disabled_at=timeutil.now_iso(), poly=[], mc="", ma="")
-            self.reserve_new_generation("выключение голосования о сервере")
-            self.rsv_update("rsv_keys", code_notify_why="голосование о сервере выключено — код на прежних правилах")
-            log.warning("кворум: голосование о «%s» выключено — поколение ключа и код заново", str(config.SERVER_NAME or ""))
+                self.rsv_update("rsv_qkeys", poly=[], t=0, disabled_at=timeutil.now_iso())
+            log.warning("кворум: голосование о «%s» выключено — многочлен и ящик кворума прочь, код прежний",
+                        str(config.SERVER_NAME or ""))
             return actions
-        if on and m is not None and int(self.reserve_qkeys().get("t") or 0) != max(2, m.t(m.l)):
+        if poly_on and m is not None and int(self.reserve_qkeys().get("t") or 0) != max(2, m.t(m.l)):
             self._quorum_new_poly(m.t(m.l), f"порог {m.t(m.l)} по составу {m.g}")
         return actions
 
@@ -132,7 +145,7 @@ class ReserveQuorumKeysMixin:
         from awgbot.domain.notices import reserve as rn
         from ...types import Notification
         names = [self._quorum_node_name(n, m.l) for n in m.gateways] if hasattr(self, "_quorum_node_name") else list(m.gateways)
-        notes = [Notification(tg_id=int(config.ADMIN_ID), text=rn.quorum_enabled(self.reserve_peer_name(), names, str(config.SERVER_NAME or "")), force_sound=True)]
+        notes = [Notification(tg_id=int(config.ADMIN_ID), text=rn.quorum_enabled(self.reserve_peer_name(), names, str(config.SERVER_NAME or "")), silent=True)]
         pid = self.reserve_peer_admin_id() if hasattr(self, "reserve_peer_admin_id") else 0
         if pid and bool(self.rsv_get("rsv_peer_admin").get("opened")):
             notes.append(Notification(tg_id=pid, text=rn.quorum_enabled_peer(str(config.SERVER_NAME or "")), silent=True))
@@ -156,10 +169,11 @@ class ReserveQuorumKeysMixin:
         poly, line = self._quorum_poly(), self._quorum_code_line()
         side = self.reserve_quorum_side()
         keys = self.reserve_keys()
-        if poly is None or line is None or not side or not keys.get("m"):
+        if line is None or not side or not keys.get("m"):
             return None
         q = self.reserve_qkeys()
-        want = {"m_gen": int(keys.get("m_gen") or 0), "q_gen": int(q.get("q_gen") or 0), "c_gen": int(q.get("c_gen") or 0)}
+        want = {"m_gen": int(keys.get("m_gen") or 0), "q_gen": int(q.get("q_gen") or 0) if poly is not None else 0,
+                "c_gen": int(q.get("c_gen") or 0)}
         if dict(q.get("acked") or {}) == want:
             return None
         now = time.monotonic()
@@ -167,11 +181,13 @@ class ReserveQuorumKeysMixin:
             return None
         self.__dict__["_qkeys_sent_at"], self.__dict__["_qkeys_sent"] = now, want
         m = bytes.fromhex(keys["m"])
-        qg = rsvkeys.QuorumGen(want["q_gen"], poly)
         cg = rsvkeys.CodeGen(want["c_gen"], line)
-        return {"l": side, "m_gen": want["m_gen"], "q_gen": want["q_gen"], "t": poly.t, "x": rsvkeys.RESERVE_X,
-                "y": qg.reserve_point()[1].hex(), "qbox": qg.qbox(m).hex(), "c_gen": want["c_gen"],
+        body = {"l": side, "m_gen": want["m_gen"], "x": rsvkeys.RESERVE_X, "c_gen": want["c_gen"],
                 "cy": cg.reserve_point()[1].hex(), "cbox": cg.cbox(m).hex()}
+        if poly is not None:                                  # ящик кворума — пока кворум линии решает
+            qg = rsvkeys.QuorumGen(want["q_gen"], poly)
+            body.update(q_gen=want["q_gen"], t=poly.t, y=qg.reserve_point()[1].hex(), qbox=qg.qbox(m).hex())
+        return body
 
     def reserve_qkeys_in(self, body: dict) -> list[tuple]:
         """`qkeys` от основы второй линии: точки и ящики — рядом с пакетом; ответ `qkeys_ok`."""
@@ -179,20 +195,25 @@ class ReserveQuorumKeysMixin:
         if l not in qm.SIDES or l == self.reserve_quorum_side():
             return []
         try:
-            _hex16(body.get("y"))
             _hex16(body.get("cy"))
-            qbox, cbox = bytes.fromhex(str(body.get("qbox") or "")), bytes.fromhex(str(body.get("cbox") or ""))
-            if len(qbox) != rsvkeys.BOX_LEN or len(cbox) != rsvkeys.BOX_LEN:
-                raise ValueError("ящик не той длины")
+            cbox = bytes.fromhex(str(body.get("cbox") or ""))
+            if len(cbox) != rsvkeys.BOX_LEN:
+                raise ValueError("ящик кода не той длины")
             x = int(body.get("x") or 0)
             if x != rsvkeys.RESERVE_X:
                 raise ValueError("не моя точка")
+            poly_part = bool(body.get("y") or body.get("qbox"))
+            if poly_part:
+                _hex16(body.get("y"))
+                if len(bytes.fromhex(str(body.get("qbox") or ""))) != rsvkeys.BOX_LEN:
+                    raise ValueError("ящик кворума не той длины")
         except (ValueError, TypeError) as e:
             log.warning("кворум: qkeys линии %s не приняты: %s", l, e)
             return []
-        rec = {"l": l, "m_gen": int(body.get("m_gen") or 0), "q_gen": int(body.get("q_gen") or 0), "t": int(body.get("t") or 0),
-               "x": x, "y": str(body["y"]), "qbox": str(body["qbox"]), "c_gen": int(body.get("c_gen") or 0),
-               "cy": str(body["cy"]), "cbox": str(body["cbox"]), "at": timeutil.now_iso()}
+        rec = {"l": l, "m_gen": int(body.get("m_gen") or 0), "x": x, "c_gen": int(body.get("c_gen") or 0),
+               "cy": str(body["cy"]), "cbox": str(body["cbox"]), "at": timeutil.now_iso(),
+               "q_gen": int(body.get("q_gen") or 0) if poly_part else 0, "t": int(body.get("t") or 0) if poly_part else 0,
+               "y": str(body.get("y") or "") if poly_part else "", "qbox": str(body.get("qbox") or "") if poly_part else ""}
         with _LOCK:
             self.rsv_update("rsv_qkeys", peer=rec)
         log.info("кворум: точки и ящики линии %s приняты (M %s, многочлен %s, прямая кода %s, порог %s)", l, rec["m_gen"],
@@ -214,16 +235,20 @@ class ReserveQuorumKeysMixin:
         return dict(self.reserve_qkeys().get("peer") or {})
 
     def reserve_quorum_keys_ok(self, m: qm.Members | None) -> bool:
-        """Ключи кворума на месте у всех держателей: второй сервер подтвердил текущие
-        поколения, у каждого шлюза состава — точка текущего многочлена (поле `quo.q`
-        снимка)."""
+        """Ключи на месте у всех держателей: второй сервер подтвердил текущие поколения
+        (ящик кода; многочлен — если кворум линии решает), у каждого шлюза состава — точка
+        текущего многочлена (поле `quo.q` снимка)."""
         if m is None or not self.reserve_quorum_keys_on():
             return False
         q = self.reserve_qkeys()
         keys = self.reserve_keys()
-        want = {"m_gen": int(keys.get("m_gen") or 0), "q_gen": int(q.get("q_gen") or 0), "c_gen": int(q.get("c_gen") or 0)}
+        poly_on = self.reserve_quorum_poly_on()
+        want = {"m_gen": int(keys.get("m_gen") or 0), "q_gen": int(q.get("q_gen") or 0) if poly_on else 0,
+                "c_gen": int(q.get("c_gen") or 0)}
         if dict(q.get("acked") or {}) != want:
             return False
+        if not poly_on:
+            return not m.enabled                              # без шлюзов многочлен не нужен; с шлюзами — ещё не создан
         for node in m.gateways:
             try:
                 _side, slot = qm.parse_node(node)
@@ -237,8 +262,8 @@ class ReserveQuorumKeysMixin:
 
     # ── вход процесса открытия ──────────────────────────────────────────────
     def reserve_quorum_code_secret(self, code: str) -> dict | None:
-        """Вход процесса открытия по коду при ключах под кворум у второй линии: точка резерва
-        прямой кода и ящик кода (поколение `M` — как у пакета); None — путь прежний."""
+        """Вход процесса открытия по коду: точка резерва прямой кода и ящик кода второй линии
+        (поколение `M` — как у пакета); None — ящика кода текущего `M` нет."""
         peer = self.reserve_quorum_peer_keys()
         pkg_in = self.rsv_get("rsv_pkg_in")
         if not peer.get("cbox") or int(peer.get("m_gen") or 0) != int(pkg_in.get("m_gen") or 0):

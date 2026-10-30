@@ -244,8 +244,8 @@ _HEX32_RE = re.compile(r"^[0-9a-f]{32}$")
 
 def check_reserve(sec: dict) -> dict:
     """Раздел reserve: конфиг линка к резерву (белый список rsvlink, Table = off,
-    Endpoint есть), доля ключа переезда (точка 2…254, 16 байт hex, поколение),
-    состояние пересылки idle|away с номером переезда, адрес основы."""
+    Endpoint есть), состояние пересылки idle|away с номером переезда, адрес основы;
+    точка ключа кворума — в разделе quorum."""
     if not isinstance(sec, dict):
         raise CfgError("reserve — не словарь")
     link = sec.get("link") or {}
@@ -260,17 +260,13 @@ def check_reserve(sec: dict) -> dict:
         raise CfgError("конфиг линка к резерву: нет Endpoint")
     if not wgconf.pubkey_of(conf.get("Interface", "PrivateKey")) or not wgconf.is_pubkey(conf.get("Peer", "PublicKey")):
         raise CfgError("конфиг линка к резерву: ключи не разобрались")
-    share = sec.get("share") or {}
-    x, y, gen = int(share.get("x") or 0), str(share.get("y") or ""), int(share.get("gen") or 0)
-    if y and (not 2 <= x <= 254 or not _HEX32_RE.match(y) or gen <= 0):
-        raise CfgError("доля ключа переезда не того вида")
     state = norm(sec.get("state")) or "idle"
     if state not in ("idle", "away"):
         raise CfgError(f"состояние резерва {state!r} неизвестно")
     host = norm(sec.get("self"))
     if host and not _HOST_RE.match(host):
         raise CfgError("адрес основы не похож на адрес")
-    return {"conf": conf, "conf_text": wgconf.render(conf, "rsvlink"), "share": {"x": x, "y": y, "gen": gen} if y else {},
+    return {"conf": conf, "conf_text": wgconf.render(conf, "rsvlink"),
             "state": state, "move": int(sec.get("move") or 0), "self": host, "name": str(sec.get("name") or "")[:64],
             "peer_name": str(sec.get("peer_name") or "")[:64],   # имя второго сервера — для панели и уведомлений агента
             "slot": int(sec.get("slot") or 0), "record": norm(sec.get("record"))[:253], "peer_host": norm(sec.get("peer_host"))[:253],

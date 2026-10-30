@@ -98,7 +98,7 @@ PAIR_KINDS: dict[str, tuple[str, dict]] = {
     "slots":        (BOTH, {"slots": (_L, MAX_LIST)}),
     "slots_ok":     (BOTH, {"slots": (_L, MAX_LIST)}),
     "pkg":          (BOTH, {"gen": (_I, None), "fp": (_S, 64), "i": (_I, None), "n": (_I, None),
-                            "blob": (_S, MAX_BLOB), "share": (_S, 64), "m_gen": (_I, None), "jrn": (_D, None)}),
+                            "blob": (_S, MAX_BLOB), "jrn": (_D, None)}),
     "pkg_ok":       (BOTH, {"gen": (_I, None), "fp": (_S, 64)}),
     "pkg_bad":      (BOTH, {"gen": (_I, None), "reason": (_S, MAX_REASON)}),
     "ask":          (BOTH, {"case": (_S, 8), "since": (_S, 32)}),    # кандидат кворума: case = "q"
@@ -192,6 +192,7 @@ OPTIONAL: dict[str, frozenset] = {"st": frozenset({"healthy", "can_return", "in_
                                   "state": frozenset({"reason", "e"}), "qview": frozenset({"i"}),
                                   "go": frozenset({"ttl", "k", "sealed", "oid"}), "go_req": frozenset({"ttl"}),
                                   "pkg": frozenset({"jrn"}), "released": frozenset({"epoch", "last"}),
+                                  "qkeys": frozenset({"q_gen", "t", "y", "qbox"}),   # многочлен — пока кворум линии решает
                                   "jstale": frozenset({"F"}),
                                   # hello обычной сессии несёт только nonce (и seen); поля сопряжения — у hello с pair
                                   "hello": frozenset({"pair", "eph", "name", "version", "caps", "gen", "ports", "seen", "bot", "gw"})}

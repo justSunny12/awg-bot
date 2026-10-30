@@ -24,10 +24,11 @@ CODE_WINDOW_S = 3600
 
 
 class ReserveOpeningMixin:
-    def reserve_open_block(self, *, need_share: bool = True) -> str:
+    def reserve_open_block(self, *, need_box: bool = True) -> str:
         """Общие предусловия открытия зоны (кнопка, точки, код): зона свободна,
         мои пользователи на этом сервере, готовность включена, направление «к себе» готово,
-        пакет (и доля) на месте. Пусто — можно; иначе причина."""
+        пакет на месте (и ящик кода его поколения `M` — для открытия без K основы).
+        Пусто — можно; иначе причина."""
         if not self.reserve_zone_free():
             return "зона занята"
         if self.reserve_out() != "home":
@@ -38,9 +39,13 @@ class ReserveOpeningMixin:
         if not ok:
             return why
         pkg_in = self.rsv_get("rsv_pkg_in")
-        if not pkg_in.get("gen") or (need_share and not pkg_in.get("share")):
+        if not pkg_in.get("gen"):
             return "данных для переезда нет"
-        if need_share and pkg_in.get("has_dns") is False:
+        if need_box:
+            peer = self.reserve_quorum_peer_keys() if hasattr(self, "reserve_quorum_peer_keys") else {}
+            if not peer.get("cbox") or int(peer.get("m_gen") or 0) != int(pkg_in.get("m_gen") or 0):
+                return "данных для переезда нет"              # ящика кода текущего поколения ключа нет
+        if need_box and pkg_in.get("has_dns") is False:
             # запись меняет процесс открытия на резерве — без конверта DNS (провайдер «вручную») ему нечем;
             # карточка ставит строку под «автоматический аварийный переезд невозможен: …», уведомление — хвост
             return f"DNS-запись у «{self.reserve_peer_name()}» настраивается вручную"

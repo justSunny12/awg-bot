@@ -111,15 +111,12 @@ def parse(msg: dict) -> dict:
         out["sections"]["server"] = {"name": norm(server.get("name"))}
     reserve = src.get("reserve")
     if isinstance(reserve, dict):
-        share = reserve.get("share") if isinstance(reserve.get("share"), dict) else {}
         link = reserve.get("link") if isinstance(reserve.get("link"), dict) else {}
         out["sections"]["reserve"] = {"self": norm(reserve.get("self")), "state": norm(reserve.get("state")),
                                       "move": _int(reserve.get("move")), "name": _s(reserve.get("name"), 64),
                                       "slot": _int(reserve.get("slot")), "record": norm(reserve.get("record")),
                                       "peer_host": norm(reserve.get("peer_host")), "chan": _int(reserve.get("chan")),
                                       "tg": bool(reserve.get("tg")), "peer_name": _s(reserve.get("peer_name"), 64),
-                                      "share": {"x": _int(share.get("x")), "y": _hex(share.get("y")),
-                                                "gen": _int(share.get("gen"))},
                                       "link": {"conf": _s(link.get("conf"), _MAX_CONF)}}
     quorum = src.get("quorum")
     if isinstance(quorum, dict):
