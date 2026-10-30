@@ -26,10 +26,12 @@
 #   --down <имя>    интерфейс и конфиг прочь; пространство остаётся
 #   --wipe          все интерфейсы, конфиги и пространство прочь
 #   --status        key=value: ns=present|absent, ifaces=<через пробел>, hs_<имя>=<секунд с
-#                   рукопожатия|never>, conf_<имя>=present
+#                   рукопожатия|never>, conf_<имя>=present|absent; без root видно только ns=
+#                   (интерфейсы в пространстве читает ip netns exec)
 #   --selftest      «сокет у хоста» на модуле ядра этой машины: интерфейс, созданный у хоста и
 #                   перенесённый в пространство, принимает пакеты через сокет хоста; код 0 — да
-# Окружение: QUO_NS (awg-quo), QUO_CONF_DIR (/var/lib/awg-bot/quorum), QUO_PORT (8789),
+# Окружение: QUO_NS (awg-quo), QUO_CONF_DIR (/var/lib/awg-bot/quorum; у шлюза обёртка
+# infra/quoprobe передаёт /var/lib/awg-gw/quorum), QUO_PORT (8789, app.reserve.quorum.port),
 # QUO_IF (имя интерфейса для --up), QUO_SELFTEST_PORT (45998).
 # Имена интерфейсов — awgq<линия><цель>: awgqah — зонд к основе линии a, awgqar — к её клону.
 set -u

@@ -25,6 +25,11 @@
 #   postrouting (srcnat): адрес стороны зоны (первый AllowedIPs пира в
 #             конфиге) наружу — masquerade: с него идут зонды живости бота
 #             основы на резерве, обвязка его не знает
+#   при tg=1 в RSV_STATE (--tg on) ещё набор tg_nets4 (диапазоны Telegram,
+#             те же, что TG_NETS обвязки), цепочка rsv_tgout (output, type
+#             route) с меткой TG_MARK сокетам процесса TG_CGROUP к набору и
+#             rsv_tgpost (srcnat) — masquerade в awgrsv по метке; правило
+#             ip rule fwmark TG_MARK lookup 152 ставят --tg on и --reassert
 # Маскарад подсетей пользователей (@tunnel_nets4) наружу делает таблица обвязки.
 # Чужая политика DROP в ip filter FORWARD (iptables) — ACCEPT для awgrsv в обе
 # стороны (fwd_allow при --up/--reassert, снимается --down/--remove), как у
