@@ -6,8 +6,8 @@ inbound.py — часть пакета quorum (см. __init__): слова ка�
 карточки и ничьей; на свою — если он голосующий о клоне); `qstate{l, e,
 holder, r}` — эпоха и роль держателя. Гостевой канал: `qview` шлюзов основы
 о её линии (кандидату). Канал конфигурации: `qview` своих шлюзов о моей
-линии — о сервере дома (`t = h`) и, в отъезде, о моём клоне у резерва
-(`t = r`, аварийный возврат). Снимок шлюза (`quo`) — взгляд и поколение, как
+линии — о сервере дома (`tgt = h`) и, в отъезде, о моём клоне у резерва
+(`tgt = r`, аварийный возврат). Снимок шлюза (`quo`) — взгляд и поколение, как
 поле `rsv`.
 """
 from __future__ import annotations
@@ -111,7 +111,8 @@ class ReserveQuorumInboundMixin:
             return []
         side = self.reserve_quorum_side()
         node = f"{side}{int(slot)}" if side else f"?{int(slot)}"
-        t = "r" if str(body.get("t") or "h") == "r" else "h"  # цель зонда: основа дома или её клон у резерва
+        t = "r" if str(body.get("tgt") or "h") == "r" else "h"  # цель зонда: основа дома или её клон у резерва (поле
+        #                                                     tgt: t — вид сообщения в конверте канала)
         self._qgwviews[node if t == "h" else node + ":r"] = {
             "w": w, "since": str(body.get("since") or ""), "e": int(body.get("e") or 0),
             "g": int(body.get("g") or 0), "l": str(body.get("l") or side), "at": timeutil.now_iso(),

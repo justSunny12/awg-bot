@@ -337,6 +337,16 @@ def quorum_peer_lines(q: dict) -> list[str]:
     if not p.get("active"):
         return []
     w = p.get("my_w") or ""
+    cand = p.get("cand") or {}
+    unseen = [g for g in p.get("gw_views") or [] if g.get("w") == "uns"]
+    if cand.get("tie"):                                       # Т-К4 у кандидата: ничья о втором сервере
+        since = _when(p.get("tie_since") or "")
+        return [f"└ ⚠️ Ничья{(' с ' + _e(since)) if since else ''}: {peer} видят {int(cand.get('see') or 0)}, "
+                f"не видят {int(cand.get('no') or 0)} — сам бот пользователей не переведёт"]
+    if unseen and cand.get("deadline_at") and w in ("see", "held"):   # Т-К3б: случай 3
+        first = min((g.get("since") or "" for g in unseen), default="")
+        return [f"└ 🟡 Шлюзы {peer} не видят его{(' с ' + _e(_when(first))) if first else ''}, а этот сервер видит — если так "
+                f"останется до {_e(_when(cand['deadline_at']))}, пользователи переедут сюда"]
     if w in ("see", "held"):
         y, v = int(p.get("y") or 0), int(p.get("yv") or p.get("v") or 0)
         others = [g for g in p.get("gw_views") or [] if g.get("w") in ("see", "held")]
@@ -350,14 +360,6 @@ def quorum_peer_lines(q: dict) -> list[str]:
             return [f"└ 🟡 Этот сервер не видит {peer}{(' с ' + _e(since)) if since else ''}, а его шлюзы видят — похоже, дело в сети этого сервера"]
         n = 1 + len(unseen)
         return [f"└ 🟡 {peer} не видят {n} из {int(p.get('v') or 0)}{(' с ' + _e(since)) if since else ''}" + _cand_tail(p)]
-    unseen = [g for g in p.get("gw_views") or [] if g.get("w") == "uns"]
-    if unseen and w == "new":
-        return []
-    cand = p.get("cand") or {}
-    if unseen and cand.get("deadline_at") and w in ("see", "held"):
-        first = min((g.get("since") or "" for g in unseen), default="")
-        return [f"└ 🟡 Шлюзы {peer} не видят его{(' с ' + _e(_when(first))) if first else ''}, а этот сервер видит — если так "
-                f"останется до {_e(_when(cand['deadline_at']))}, пользователи переедут сюда"]
     return []
 
 

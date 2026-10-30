@@ -3,7 +3,8 @@
 (quorum/inbound), такт и план сокетов (quorum/tick), бот основы на резерве
 (ответчик на клоне, `quorum` и `qcount` локального канала), карточка
 (quorum/screen и bot/texts/reserve/section) — концепт «кворум» §3.2, §3.3,
-§6.1, §6.2. Решений этап не принимает: такт лидера действий не даёт.
+§6.1, §6.2. Решения лидера проверены здесь только на старте и при выключенных
+`act`; полностью — в test_reserve_quorum_fence.
 
 Хост — подмены `_reserve_quorum_common`; модельные часы — monotonic модулей
 кворума; дамп интерфейса AWG — текстом в формате `awg show … dump` через
@@ -14,7 +15,8 @@
 голос дважды; справка с зондами — «трафик идёт», когда пользователей нет;
 `qview` без смены взгляда или второму серверу без `quo1` — шум или разрыв
 канала пары; взгляд шлюза из канала не той линии — карточка врёт, кто кого
-видит; решение (действие) на этапе наблюдения — переезд без кворума.
+видит; лидер, пишущий решения на старте без большинства «да», или решения при
+выключенных `act` — переезд и запись без кворума.
 """
 from __future__ import annotations
 
@@ -22,7 +24,7 @@ import logging
 
 import pytest
 
-from awgbot.core import config
+from awgbot.core import config, settings
 from awgbot.infra import awg
 from awgbot.util.quorum.probe import Info, Probe, Reply
 from tests.integration import _reserve_common as rc
@@ -37,8 +39,9 @@ ADDR = {"b": "169.254.88.4", "a1": "169.254.88.5", "a2": "169.254.88.6", "a": "1
 
 @pytest.fixture()
 def lead(quo, monkeypatch):
-    """Линия «Alpha» включена, пиры-зонды на awg0; дамп awg0 — без устройств."""
-    m = quo.reserve_quorum_refresh()
+    """Линия «Alpha» включена (состав подтверждён, ключи кворума на месте), пиры-зонды
+    на awg0; дамп awg0 — без устройств."""
+    m = qc.enable(quo)
     quo.reserve_probes_refresh(m)
     quo.reserve_probe_peers_sync(m)
     quo.dump = "PRIV\tPUB\t43125\toff\n"
@@ -62,10 +65,19 @@ def test_the_responder_listens_on_the_second_address_at_home(lead):
     assert lead.quorum_runtime_plan()["responder"] == ("169.254.88.1", 8789)
 
 
-def test_no_responder_while_the_users_are_away_or_the_vote_is_off(lead):
+def test_while_the_users_are_away_the_home_responder_keeps_counting_for_the_return(lead):
+    """В отъезде ответчик дома не умолкает: его «да» — счёт Q2 для возврата «сразу».
+    Умолкни он — основа не узнает, что голосующие снова до неё доходят, и
+    пользователи не вернутся сами."""
     lead.rsv_update("rsv_out", state="away")
-    assert lead.reserve_quorum_responder_addr() is None, "ответчик основы при пользователях у резерва"
-    lead.rsv_update("rsv_out", state="home")
+    assert lead.reserve_quorum_responder_addr() == ("169.254.88.1", 8789), "ответчик дома умолк в отъезде"
+    r = _ask(lead, "b")
+    assert r is not None and r.r == "follow", f"в отъезде ответчик дома — не в роли счёта для возврата: {r}"
+
+
+def test_no_responder_while_the_vote_is_off(lead):
+    """Голосование выключено (второй сервер 4.1.x) — ответчика нет: иначе пробы
+    считаются без кворума и карточка рисует голоса, которых нет."""
     qc.peer_old(lead)
     assert lead.reserve_quorum_responder_addr() is None, "ответчик при выключенном голосовании"
 
@@ -117,19 +129,48 @@ def test_a_greater_epoch_in_probes_is_logged_once(lead, caplog):
     assert len(told) == 1, f"предупреждение об эпохе не один раз: {[r.getMessage() for r in told]}"
 
 
-def test_the_leader_tick_takes_no_decisions(lead):
-    """Этап зондов — только наблюдение: ни ограждения, ни переезда."""
+def _jrn(s) -> tuple[str, str]:
+    m = s.db.jrn_meta()
+    return str(m["holder"]), str(m["role"])
+
+
+def test_the_starting_leader_is_fenced_until_the_first_majority_of_yes(lead):
+    """Старт лидера — без права записи: журнал ограждён (держатель self, роль
+    follower), пока большинство «да» не придёт; первое большинство снимает
+    ограждение молча. Пиши лидер на старте — после перезапуска без голосов
+    у пользователей два бота с расходящимися базами; Т-К7/Т-К8 на старте — ложная
+    тревога админу."""
+    acts = lead.reserve_quorum_leader_tick()
+    assert acts == [], f"старт лидера дал уведомление: {acts}"
+    assert _jrn(lead) == ("self", "follower"), f"стартующий лидер пишет решения: {_jrn(lead)}"
+    assert lead.reserve_quorum_count()["role"] == "fenced"
+    assert (lead.rsv_get("rsv_qlog").get("fenced") or {}).get("on"), "эпизод старта без отметки"
+    e = lead.reserve_quorum_epoch()
     for n in ("b", "a1"):
-        _ask(lead, n)
-    assert lead.reserve_quorum_leader_tick() == []
+        _ask(lead, n, e=e)
+    acts = lead.reserve_quorum_leader_tick()
+    assert acts == [], f"первое большинство после старта дало уведомление: {acts}"
+    assert _jrn(lead) == ("self", "holder"), f"большинство «да» не вернуло право записи: {_jrn(lead)}"
+    assert lead.reserve_quorum_count()["role"] == "lead"
+
+
+def test_with_act_off_the_leader_counts_but_takes_no_decisions(lead):
+    """`app.reserve.quorum.act = false` — только наблюдение: счёт идёт, журнал не
+    трогается, действий нет. Иначе выключатель решений не выключает ничего, и
+    сбой голосования оставляет пользователей без бота."""
+    settings.set_value("app.reserve.quorum", {**lead.reserve_quorum_settings(), "act": False})
+    before = dict(lead.db.jrn_meta())
+    e = lead.reserve_quorum_epoch()
+    for n in ("b", "a1"):
+        _ask(lead, n, e=e)
+    acts = lead.reserve_quorum_leader_tick()
+    assert lead.reserve_quorum_count()["y"] == 2, "счёт «да» не идёт при выключенных решениях"
     lead.clock.t += 300
-    acts = []
     for _ in range(20):
         acts += lead.reserve_quorum_leader_tick()
         lead.clock.t += 5
-    assert acts == [], f"такт лидера дал действия на этапе наблюдения: {acts}"
-    assert lead.reserve_quorum_count()["role"] == "fenced"
-    assert lead.reserve_quorum_count()["fenced_since"], "эпизод без отметки — строка «Без кворума с …» пуста"
+    assert acts == [], f"такт лидера дал действия при act = false: {acts}"
+    assert dict(lead.db.jrn_meta()) == before, "журнал тронут при act = false"
 
 
 # ── справка ──────────────────────────────────────────────────────────────────
@@ -231,7 +272,7 @@ def test_while_hosting_the_tick_sends_the_line_to_the_guest_once(quo):
 
 
 def test_the_guests_count_reaches_the_card(quo):
-    quo.reserve_quorum_refresh()
+    qc.enable(quo)
     quo.rsv_update("rsv_out", state="away")
     quo.reserve_quorum_qcount_in({"y": 3, "v": 3, "r": "lead"})
     mine = quo.reserve_quorum_card()["mine"]
@@ -432,18 +473,6 @@ def test_the_card_text_carries_the_vote_block(lead):
     text = card_text({**lead.reserve_card_data(), "dir_out": (True, "")})
     assert "🗳 Этот сервер видят 2 из 3 — пользователи переедут, если не увидят 2" in text, text
     assert "«Beta» — видит · «GW1» — видит · «GW2» — молчит" in text, text
-
-
-def test_in_the_observation_stage_the_card_never_says_the_bot_stopped_answering(lead):
-    """Этап зондов решений не принимает: лидер без большинства по-прежнему
-    отвечает пользователям. Строка Т-К2 «бот не принимает решений и не отвечает
-    пользователям» здесь — неправда, админ кинется чинить то, что работает."""
-    from awgbot.bot.texts.reserve.section import card_text
-    _ask(lead, "b")
-    lead.reserve_quorum_leader_tick()
-    text = card_text({**lead.reserve_card_data(), "dir_out": (True, "")})
-    assert "этот сервер видят 1 из 3" in text.lower(), text
-    assert "не отвечает пользователям" not in text, "карточка этапа наблюдения обещает ограждение, которого нет"
 
 
 def test_the_card_says_why_the_vote_is_off(quo):

@@ -370,9 +370,18 @@ def quorum_enabled_peer(primary: str) -> str:
     return f"🗳 Голосование о {_n(primary)} включено: этот сервер и шлюзы {_n(primary)} решают, когда его пользователям переезжать сюда"
 
 
+def _qn(name: str) -> str:
+    """Имя узла кворума: чужой шлюз приходит уже с кавычками («шлюз 3 «Beta»») — не удваивать."""
+    return html.escape(name) if "«" in name else _n(name)
+
+
+def _qnames(names) -> str:
+    return ", ".join(_qn(x) for x in names or [])
+
+
 def _tie_head(name: str, since: str, see: list, no: list) -> list[str]:
     return [f"🚨 Ничья о сервере {_n(name)} с {_when(since)}: половина голосующих его видит, половина — нет",
-            "Видят: " + (_names(see) or "никто"), "Не видят: " + (_names(no) or "никто")]
+            "Видят: " + (_qnames(see) or "никто"), "Не видят: " + (_qnames(no) or "никто")]
 
 
 def _tie_info(name: str, info: dict | None, said: str = "") -> str:
@@ -380,7 +389,7 @@ def _tie_info(name: str, info: dict | None, said: str = "") -> str:
         return f"Справки о трафике {_n(name)} нет: видящие не на связи с этим сервером"
     hs = int(info.get("hs") or 0)
     flow = "трафик идёт" if info.get("flow") else "трафика нет"
-    tail = f" (со слов {_n(said)}, {_when(str(info.get('at') or ''))})" if said else ""
+    tail = f" (со слов {_qn(said)}, {_when(str(info.get('at') or ''))})" if said else ""
     return f"На {_n(name)}: на связи {hs} {plural_ru(hs, 'устройство', 'устройства', 'устройств')}, {flow}{tail}"
 
 
@@ -402,7 +411,7 @@ def quorum_tie_candidate(name: str, since: str, see: list, no: list, info: dict 
 def quorum_tie_peer(name: str, since: str, see: list, no: list, info: dict | None, said: str) -> str:
     """Т-К5в (админу спорного сервера в его роли, со звуком, кнопка peer_code)."""
     return "\n".join([f"🚨 Ничья о твоём сервере {_n(name)} с {_when(since)}",
-                       "Видят: " + (_names(see) or "никто"), "Не видят: " + (_names(no) or "никто"), _tie_info(name, info, said),
+                       "Видят: " + (_qnames(see) or "никто"), "Не видят: " + (_qnames(no) or "никто"), _tie_info(name, info, said),
                        f"Если {_n(name)} не доходит до пользователей, а в её бот не попасть, — пришли аварийный код"])
 
 

@@ -82,3 +82,39 @@ RESERVE_VOTE = [
     Shot("adm.rsv.peer.offer", role="admin", start="", call=_offer, data=_peer_admin(),
          title="админ «Beta»: Т-РУ7б с кнопкой ввода кода"),
 ]
+
+
+# ── ничья кворума (4.2.0): уведомления Т-К5 лидеру и Т-К5б кандидату с клавиатурами ──
+def _tie_leader(services, bot):
+    """Т-К5: ничья о моём сервере — клавиатура quorum_tie (переезд кнопкой и раздел);
+    настоящий отправитель — quorum/tie.py (reserve_quorum_leader_tie_tick)."""
+    async def run():
+        from awgbot.core import config
+        from awgbot.bot.notifier import send_notifications
+        from awgbot.domain.notices import reserve as rn
+        from awgbot.domain.services import Notification
+        text = rn.quorum_tie_leader("Alpha", "Beta", SINCE, ["Beta", "Шлюз 3"], ["Шлюз 1", "Шлюз 2"],
+                                    {"hs": 37, "flow": True, "at": SINCE})
+        await send_notifications(bot, [Notification(tg_id=int(config.ADMIN_ID), text=text, force_sound=True, keyboard="quorum_tie")])
+    return run()
+
+
+def _tie_candidate(services, bot):
+    """Т-К5б: ничья о втором сервере глазами кандидата — клавиатура quorum_tie_cand (раздел)."""
+    async def run():
+        from awgbot.core import config
+        from awgbot.bot.notifier import send_notifications
+        from awgbot.domain.notices import reserve as rn
+        from awgbot.domain.services import Notification
+        text = rn.quorum_tie_candidate("Beta", SINCE, ["шлюз 3 «Beta»"], ["Alpha", "шлюз 1 «Beta»", "шлюз 2 «Beta»"],
+                                       {"hs": 37, "flow": True, "at": SINCE}, "шлюз 3 «Beta»", True)
+        await send_notifications(bot, [Notification(tg_id=int(config.ADMIN_ID), text=text, force_sound=True, keyboard="quorum_tie_cand")])
+    return run()
+
+
+RESERVE_VOTE += [
+    Shot("adm.rsv.tie.leader", role="admin", start="", call=_tie_leader, data=_rsv(ready=True, gw="rsv", paired=True),
+         title="ничья о моём сервере: Т-К5 с кнопками переезда и раздела"),
+    Shot("adm.rsv.tie.cand", role="admin", start="", call=_tie_candidate, data=_rsv(ready=True, gw="rsv", paired=True),
+         title="ничья о «Beta» глазами кандидата: Т-К5б с кнопкой раздела"),
+]

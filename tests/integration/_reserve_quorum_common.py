@@ -8,9 +8,13 @@
 правят его, `ip` и `apply_config` — журналом. `ProbeHost` — скрипт зондов
 (infra/quoprobe) моделью: какие интерфейсы стоят, что ушло в `--up`.
 `Clock` — модельные часы модулей кворума (monotonic одно число).
+`enable` — линия включена путём этапа ключей (шаги `_reserve_quorum`): состав
+подтверждён вторым сервером, ключи кворума им приняты, снимки шлюзов состава
+несут поколение точки.
 """
 from __future__ import annotations
 
+import json
 import types
 from pathlib import Path
 
@@ -20,6 +24,7 @@ from awgbot.core import config
 from awgbot.infra import awg, quoprobe
 from awgbot.util import wgkeys
 from tests.integration import _reserve_common as rc
+from tests.integration import _reserve_quorum as rq
 
 OWN_IP = "203.0.113.10"
 PEER_IP = "198.51.100.7"
@@ -159,3 +164,22 @@ def peer_old(services) -> None:
     """Второй сервер — 4.1.x: возможностей кворума нет."""
     from awgbot.domain.services.reserve import compat
     services.rsv_update("rsv_peer_state", caps=[c for c in compat.CAPS if c != "quo1"])
+
+
+def gateways_applied(services) -> None:
+    """Шлюзы состава применили документ с точкой текущего многочлена — снимок слота
+    в базе (как его кладёт канал) несёт поколение точки."""
+    m = services.reserve_quorum_mine() or services.reserve_quorum_proposed()
+    for node in (m.gateways if m is not None else ()):
+        slot = int(node[1:])
+        snap = {**services.gwlink_snapshot(slot), **rq.applied_snap(services)}
+        services.db.set_state(services._gwlink_key(services._GWLINK_SNAP_KEY, slot), json.dumps(snap, ensure_ascii=False))
+
+
+def enable(services):
+    """Линия «Alpha» включена по-настоящему: qmem_ok, ключи под кворум, qkeys_ok,
+    точки у шлюзов. Возвращает действующий состав."""
+    if not services.reserve_keys().get("m"):
+        services.reserve_keys_init()
+    rq.enable(services, lambda: gateways_applied(services))
+    return services.reserve_quorum_mine()

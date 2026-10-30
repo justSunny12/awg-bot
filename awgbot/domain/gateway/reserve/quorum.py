@@ -243,18 +243,19 @@ class GatewayQuorumMixin:
         if w == "sus":
             return []
         body = {"l": str(rec.get("l") or ""), "g": int(cur.get("g") or 0), "w": w, "since": views[name]["since"], "e": int(v.epoch),
-                "t": str(rec.get("target") or "h")}
+                "tgt": str(rec.get("target") or "h")}
         info = v.info()
         if info is not None and w == "see":
             body["i"] = info.to_dict()
         if w == "uns" and rec.get("target") == "h":
             v.said_no(time.monotonic())                       # «нет» кандидату — обязательство под этой эпохой
             self._pledge_store(name, {"e": int(v.epoch), "at": timeutil.now_iso()})
-        return [("guest", "qview", body), ("link", "qview", body), ("push",)]
+        # взгляд о клоне — только своему серверу: резерв цель не различает, «не вижу клон» лёг бы взглядом на основу
+        return ([("guest", "qview", body)] if rec.get("target") != "r" else []) + [("link", "qview", body), ("push",)]
 
     def quorum_guest_in(self, kind: str, body: dict) -> list[tuple]:
         """Слово кандидата (резерв по гостевому каналу или свой сервер по каналу
-        конфигурации в отъезде, `t = r` — о своём клоне): `qstate` — эпоха линии; `qask` — опрос (взгляд сразу
+        конфигурации в отъезде, `tgt = r` — о своём клоне): `qstate` — эпоха линии; `qask` — опрос (взгляд сразу
         или после трёх свежих проб); `qtake{e}` — забирает под e + 1; `qrel{e}` —
         обязательство снято; `qneed` — точка ключа кворума, если сам не вижу основу и
         поколение совпало; `qpause{until}` — «не вижу» кандидату не уходит до срока."""
@@ -263,7 +264,7 @@ class GatewayQuorumMixin:
         if not sec.get("l") or (l and l != str(sec.get("l"))):
             return []
         now = time.monotonic()
-        name = f"awgq{sec['l']}{'r' if str(body.get('t') or 'h') == 'r' else 'h'}"   # t = r — свой сервер в отъезде о клоне
+        name = f"awgq{sec['l']}{'r' if str(body.get('tgt') or 'h') == 'r' else 'h'}"   # tgt = r — свой сервер в отъезде о клоне
         v = self._gw_qvoters.get(name)
         if kind == "qstate":
             e = int(body.get("e") or 0)
@@ -313,14 +314,14 @@ class GatewayQuorumMixin:
         cur = self.quorum_section()
         body = {"l": str(rec.get("l") or ""), "g": int(cur.get("g") or 0), "w": w,
                 "since": str((cur.get("views") or {}).get(name, {}).get("since") or timeutil.now_iso()), "e": int(v.epoch),
-                "t": str(rec.get("target") or "h")}
+                "tgt": str(rec.get("target") or "h")}
         info = v.info()
         if info is not None and w == "see":
             body["i"] = info.to_dict()
         if w == "uns":
             v.said_no(time.monotonic())
             self._pledge_store(name, {"e": int(v.epoch), "at": timeutil.now_iso()})
-        return [("guest", "qview", body), ("link", "qview", body)]
+        return ([("guest", "qview", body)] if rec.get("target") != "r" else []) + [("link", "qview", body)]
 
     def _quorum_need_in(self, sec: dict, v: Voter, q_gen: int, since: str) -> list[tuple]:
         point = sec.get("point") or {}

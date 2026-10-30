@@ -241,10 +241,15 @@ def test_no_points_for_twice_need_retry_opens_the_code_window(c):
 # ── снятие ──────────────────────────────────────────────────────────────────
 
 def test_own_see_back_drops_the_majority_and_releases_who_said_no(c):
+    """Свой взгляд снова «вижу» — большинство «нет» распалось, qrel уходит всем
+    голосующим с живым каналом, а не только тем, кто сейчас «не вижу»:
+    обязательство «нет» держит и тот, кто уже снова видит лидера (шлюз 2 —
+    после qask), и без qrel его пробы лидеру идут `held` до срока."""
     _majority(c, both=False)                            # ушёл qask шлюзу 2
     c.own("see")
     acts = c.tick()
-    assert gw_sent(acts, "qrel") == [(1, {"l": LINE, "e": 7})], "«нет» ниже половины — без qrel сказавшему «нет»"
+    assert sorted(gw_sent(acts, "qrel")) == [(1, {"l": LINE, "e": 7})], \
+        f"«нет» ниже половины — qrel не всем голосующим с живым каналом: {gw_sent(acts, 'qrel')}"
 
 
 def test_a_gateway_that_said_no_and_now_sees_still_gets_qrel(c):

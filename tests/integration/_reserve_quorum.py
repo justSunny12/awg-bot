@@ -104,37 +104,68 @@ class Line:
         return self.s.reserve_quorum_refresh()
 
     def ack_members(self) -> None:
-        m = self.s.reserve_quorum_proposed()
-        assert m is not None, "предпосылка: состав не предложен"
-        self.s.reserve_qmem_ok_in({"l": m.l, "g": int(m.g)})
+        ack_members(self.s)
 
     def sync_keys(self) -> list[tuple]:
-        return self.s.reserve_quorum_keys_sync(self.s.reserve_quorum_proposed(), self.s.reserve_quorum_wanted())
+        return sync_keys(self.s)
 
     def gens(self) -> dict:
-        q, k = self.s.reserve_qkeys(), self.s.reserve_keys()
-        return {"m_gen": int(k.get("m_gen") or 0), "q_gen": int(q.get("q_gen") or 0), "c_gen": int(q.get("c_gen") or 0)}
+        return gens(self.s)
 
     def ack_keys(self) -> None:
         """«Beta» приняла qkeys текущих поколений (qkeys_ok)."""
-        self.s.reserve_qkeys_ok_in({"l": "a", **self.gens()})
+        ack_keys(self.s)
 
     def gateways_applied(self, *slots: int) -> None:
         """Шлюзы применили документ с точкой текущего многочлена: их снимок несёт её поколение."""
-        q = self.gens()["q_gen"]
         for slot in slots or [int(g.id) for g in self.s.db.gateways()]:
-            self.snaps[int(slot)] = {"quo": {"w": "see", "g": 1, "e": 0, "q": q}}
+            self.snaps[int(slot)] = applied_snap(self.s)
 
     def enable(self) -> list[tuple]:
         """Состав предложен и подтверждён, ключи включены (Т-К12), «Beta» и шлюзы их приняли."""
-        self.propose()
-        self.ack_members()
-        acts = self.sync_keys()
-        assert self.s.reserve_quorum_keys_on(), f"предпосылка: ключи кворума не включились: {self.s.reserve_quorum_off_reasons()}"
-        self.ack_keys()
-        self.gateways_applied()
-        assert self.s.reserve_quorum_active(), f"предпосылка: кворум не включён: {self.s.reserve_quorum_off_reasons()}"
-        return acts
+        return enable(self.s, self.gateways_applied)
+
+
+# ── шаги включения линии (общие с _reserve_quorum_common) ───────────────────
+
+def ack_members(s) -> None:
+    """«Beta» подтвердила предложенный состав (qmem_ok)."""
+    m = s.reserve_quorum_proposed()
+    assert m is not None, "предпосылка: состав не предложен"
+    s.reserve_qmem_ok_in({"l": m.l, "g": int(m.g)})
+
+
+def sync_keys(s) -> list[tuple]:
+    return s.reserve_quorum_keys_sync(s.reserve_quorum_proposed(), s.reserve_quorum_wanted())
+
+
+def gens(s) -> dict:
+    q, k = s.reserve_qkeys(), s.reserve_keys()
+    return {"m_gen": int(k.get("m_gen") or 0), "q_gen": int(q.get("q_gen") or 0), "c_gen": int(q.get("c_gen") or 0)}
+
+
+def ack_keys(s) -> None:
+    """«Beta» приняла qkeys текущих поколений (qkeys_ok)."""
+    s.reserve_qkeys_ok_in({"l": s.reserve_quorum_side(), **gens(s)})
+
+
+def applied_snap(s) -> dict:
+    """Снимок шлюза, применившего документ с точкой текущего многочлена."""
+    return {"quo": {"w": "see", "g": 1, "e": 0, "q": gens(s)["q_gen"]}}
+
+
+def enable(s, gateways_applied) -> list[tuple]:
+    """Путь включения линии: состав предложен и подтверждён, ключи включены
+    (Т-К12), второй сервер их принял, шлюзы применили документ
+    (`gateways_applied()` — как снимки доезжают в данном сценарии)."""
+    s.reserve_quorum_refresh()
+    ack_members(s)
+    acts = sync_keys(s)
+    assert s.reserve_quorum_keys_on(), f"предпосылка: ключи кворума не включились: {s.reserve_quorum_off_reasons()}"
+    ack_keys(s)
+    gateways_applied()
+    assert s.reserve_quorum_active(), f"предпосылка: кворум не включён: {s.reserve_quorum_off_reasons()}"
+    return acts
 
 
 def notes(actions) -> list:
@@ -163,4 +194,5 @@ def line(services, rsv, make_active_client, monkeypatch):
     return setup_line(services, monkeypatch, make_active_client)
 
 
-__all__ = ["Line", "line", "setup_line", "notes", "probe_conf", "PEER_ADMIN"]
+__all__ = ["Line", "line", "setup_line", "notes", "probe_conf", "PEER_ADMIN", "ack_members", "sync_keys", "gens",
+           "ack_keys", "applied_snap", "enable"]

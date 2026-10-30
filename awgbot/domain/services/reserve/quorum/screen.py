@@ -89,6 +89,7 @@ class ReserveQuorumScreenMixin:
                                          "since": str(gv.get("since") or "")} for n, gv in sorted(gw_views.items())]}
             if hasattr(self, "reserve_quorum_candidate_view"):
                 out["peer"]["cand"] = self.reserve_quorum_candidate_view()
+                out["peer"]["tie_since"] = str(self.reserve_quorum_tie_view("cand").get("since") or "")
         return out
 
     def _quorum_correlation_cached(self) -> list:

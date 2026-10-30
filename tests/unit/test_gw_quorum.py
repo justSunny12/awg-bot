@@ -375,7 +375,7 @@ def test_the_snapshot_carries_the_view_generation_and_epoch(gw, clock):
     gw.quorum_apply(_sec())
     gw.quorum_tick(clock.t)
     snap = gw.quorum_snapshot()
-    assert snap == {"w": "new", "since": "", "g": 4, "e": 12}, snap
+    assert snap == {"w": "new", "since": "", "g": 4, "e": 12, "q": 0}, snap
     from awgbot.domain import gwsnapshot
     assert gwsnapshot.sanitize({"quo": snap})["quo"] == snap, "снимок агента не проходит чистку сервера"
 

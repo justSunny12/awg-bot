@@ -34,7 +34,7 @@ PAIR_BODIES = {
     "qprobe": {"l": "a", "g": 3, "conf": "[Interface]\n"},
     "qkeys": {"l": "a", "m_gen": 2, "q_gen": 1, "t": 2, "x": 4, "y": "ab" * 16, "qbox": "cd" * 40, "c_gen": 1,
               "cy": "ef" * 16, "cbox": "01" * 40},
-    "qkeys_ok": {"l": "a", "q_gen": 1, "c_gen": 1},
+    "qkeys_ok": {"l": "a", "m_gen": 1, "q_gen": 1, "c_gen": 1},
     "qview": {"l": "b", "g": 2, "w": "see", "since": "2026-11-02T14:05:00", "e": 12, "i": {"hs": 3}},
     "qstate": {"l": "a", "e": 12, "holder": "self", "r": "lead"},
     "qpause": {"l": "a", "until": "2026-11-02T14:10:00"},
@@ -223,13 +223,14 @@ def test_the_snapshot_sections_are_the_document_sections():
 
 def test_the_snapshot_quo_is_cleaned():
     out = gwsnapshot.sanitize({"quo": {"w": "see", "since": "2026-11-02T14:05:00", "g": 4, "e": 12, "evil": "x"}})
-    assert out["quo"] == {"w": "see", "since": "2026-11-02T14:05:00", "g": 4, "e": 12}
+    assert out["quo"] == {"w": "see", "since": "2026-11-02T14:05:00", "g": 4, "e": 12, "q": 0}, \
+        "чужое поле прошло чистку или нет поколения точки (q = 0 — точки не было)"
 
 
 @pytest.mark.parametrize("raw, want", [
-    ({"w": "lead"}, {"w": "", "since": "", "g": 0, "e": 0}),
-    ({"w": "see", "g": "4; rm", "e": -3}, {"w": "see", "since": "", "g": 0, "e": 0}),
-    ({"w": "uns", "since": "x" * 100}, {"w": "uns", "since": "x" * 40, "g": 0, "e": 0}),
+    ({"w": "lead"}, {"w": "", "since": "", "g": 0, "e": 0, "q": 0}),
+    ({"w": "see", "g": "4; rm", "e": -3}, {"w": "see", "since": "", "g": 0, "e": 0, "q": 0}),
+    ({"w": "uns", "since": "x" * 100}, {"w": "uns", "since": "x" * 40, "g": 0, "e": 0, "q": 0}),
 ])
 def test_garbage_in_the_snapshot_quo_never_becomes_a_view(raw, want):
     assert gwsnapshot.sanitize({"quo": raw})["quo"] == want

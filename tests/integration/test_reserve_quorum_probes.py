@@ -84,7 +84,9 @@ def test_without_a_pair_there_is_no_line(quo):
 
 
 def test_the_vote_is_on_with_a_quo1_peer_and_a_quo1_gateway(quo):
-    quo.reserve_quorum_refresh()
+    """Пара с `quo1`, шлюзы `quo1`, состав подтверждён и ключи на месте — причин «не
+    включено» нет: иначе голосование не включается никогда."""
+    qc.enable(quo)
     assert quo.reserve_quorum_off_reasons() == [] and quo.reserve_quorum_active()
 
 
@@ -121,7 +123,7 @@ def test_the_leader_host_is_this_server_at_home_and_the_reserve_while_away(quo):
 
 
 def test_st_carries_the_line_for_the_second_server(quo):
-    quo.reserve_quorum_refresh()
+    qc.enable(quo)
     part = quo.reserve_st_body().get("quo")
     assert part == {"l": "a", "g": 1, "members": ["a", "b", "a1", "a2"], "active": True, "why": []}, part
 

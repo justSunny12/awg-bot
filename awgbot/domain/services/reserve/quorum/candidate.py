@@ -122,14 +122,14 @@ class ReserveQuorumCandidateMixin:
         return [("gw", slot, kind, body)]
 
     def _quorum_rel(self, c: Candidate) -> list[tuple]:
-        """«Нет» ушло ниже половины или открытие не пускают: `qrel` всем голосующим с
-        живым каналом — обязательство «нет» держит и тот, кто снова видит лидера."""
+        """«Нет» ушло ниже половины или открытие не пускают: `qrel` всем, кто сказал
+        «нет» — обязательство держит и тот, кто снова видит лидера."""
         e = self._quorum_known_e(c)
         out: list[tuple] = []
-        for node in c.voters:
-            vt = c.votes.get(node)
-            if vt is not None and vt.alive:
-                out += self._quorum_to_gw(node, "qrel", {"l": c.l, "e": e})
+        pledged = c.pledged()
+        for node in pledged:
+            out += self._quorum_to_gw(node, "qrel", {"l": c.l, "e": e})
+        c.unpledge(pledged)
         self.__dict__.pop("_quo_exec", None)
         if self.reserve_code_window()["open"] and hasattr(self, "_code_window"):
             out += self._code_window("6")                     # окно кода — закрыть
@@ -151,6 +151,7 @@ class ReserveQuorumCandidateMixin:
             vt = c.votes.get(node)
             if vt is not None and vt.w == "uns":
                 actions += self._quorum_to_gw(node, "qtake", {"l": c.l, "e": e})
+        c.unpledge(c.pledged())                               # qtake снимает обязательство на шлюзе
         since = self._quorum_no_since(c)
         self.__dict__["_quo_exec"] = {"stage": "ask", "at": now, "e": e, "since": since, "points": {}, "need_at": 0.0}
         log.warning("кворум: забираю «%s» под эпоху %s: «нет» %d из %d", self.reserve_peer_name(), e + 1, len(c.no_nodes()), c.v)

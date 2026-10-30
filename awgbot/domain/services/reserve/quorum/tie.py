@@ -26,7 +26,7 @@ class ReserveQuorumTieMixin:
         from awgbot.domain.notices import reserve as rn
         from ...types import Notification
         name = self.reserve_peer_name()
-        since = timeutil.now_iso()
+        since = _episode_iso(now, c.tie_since)
         see = [self._quorum_node_name(n, c.l) for n in c.see_nodes()]
         no = [self._quorum_node_name(n, c.l) for n in c.no_nodes()]
         info, said = self._quorum_tie_info(c)
@@ -40,7 +40,7 @@ class ReserveQuorumTieMixin:
                                       text=rn.quorum_tie_peer(name, since, see, no, info, said)))
         actions: list[tuple] = [("notify", notes)]
         if c.own == "uns" and hasattr(self, "_code_window") and not self.reserve_code_window()["open"]:
-            actions += self._code_window("H4")                # окно кода — пока свой взгляд «не вижу» и ничья длится
+            actions += self._code_window("H4", quiet=True)    # окно кода — пока свой взгляд «не вижу» и ничья длится; без Н4
         log.warning("кворум: ничья о «%s» с %s — видят %s, не видят %s", name, since, see, no)
         return actions
 
@@ -60,7 +60,7 @@ class ReserveQuorumTieMixin:
             notes.append(Notification(tg_id=pid, force_sound=True, text=rn.quorum_tie_over(name, y, v, outcome)))
         actions: list[tuple] = [("notify", notes)]
         if self.reserve_code_window()["open"] and not self.__dict__.get("_quo_exec") and hasattr(self, "_code_window"):
-            actions += self._code_window("6")
+            actions += self._code_window("6", quiet=True)
         log.info("кворум: ничьей о «%s» больше нет — %s", name, outcome)
         return actions
 
@@ -83,7 +83,7 @@ class ReserveQuorumTieMixin:
         T_tie — Т-К5 поимённо; прошло — Т-К6."""
         from awgbot.domain.notices import reserve as rn
         from ...types import Notification
-        if ld.v % 2:
+        if ld.v % 2 or not self.reserve_quorum_act():
             return []
         yes = set(ld.yes_nodes(now))
         views = self.reserve_quorum_gw_views(ld.l)
@@ -101,7 +101,7 @@ class ReserveQuorumTieMixin:
                 st["since"] = now
             if not st["told"] and now - st["since"] >= t.tie_s:
                 st["told"] = True
-                since = timeutil.now_iso()
+                since = _episode_iso(now, st["since"])
                 self.rsv_update("rsv_qlog", tie={"episode": since, "told": True, "side": "lead", "l": ld.l})
                 see_n = [self._quorum_node_name(n, ld.l) for n in sorted(yes)]
                 no_n = [self._quorum_node_name(n, ld.l) for n in sorted(no)]
@@ -122,10 +122,17 @@ class ReserveQuorumTieMixin:
             st["since"] = None
         return []
 
-    def reserve_quorum_tie_view(self) -> dict:
-        """Для карточки: {since} — ничья длится; пусто — нет."""
+    def reserve_quorum_tie_view(self, side: str = "lead") -> dict:
+        """Для карточки: {since} — ничья длится; пусто — нет. `side` — чья: `lead` —
+        о моём сервере (блок «📤», Т-К18), `cand` — о втором (блок «📥»)."""
         tie = dict(self.rsv_get("rsv_qlog").get("tie") or {})
-        return {"since": str(tie.get("episode") or "")} if tie.get("told") else {}
+        return {"since": str(tie.get("episode") or "")} if tie.get("told") and str(tie.get("side") or "lead") == side else {}
+
+
+def _episode_iso(now: float, since_mono: float | None) -> str:
+    """Момент начала эпизода (монотонное время такта → ISO): «с HH:MM» — когда ничья началась, не когда о ней сказали."""
+    back = max(0.0, float(now) - float(since_mono)) if since_mono is not None else 0.0
+    return timeutil.to_iso(timeutil.shift(timeutil.now(), -back))
 
 
 __all__ = ["ReserveQuorumTieMixin"]

@@ -8,7 +8,7 @@ returns.py — часть пакета quorum (см. __init__): возвраты
 — «да» строго больше половины v (вместо «свой AWG отвечает» и «шлюз на
 связи»). Аварийный возврат — Q1 о боте основы на резерве: я — кандидат о
 своём клоне (свой зонд `awgq<l>r`, взгляды своих шлюзов на клон по каналу
-конфигурации, `t = r`); «не видят» > v/2 дольше T_up — забираю своих сам:
+конфигурации, `tgt = r`); «не видят» > v/2 дольше T_up — забираю своих сам:
 `qtake` своим шлюзам, запись на свой адрес, `deleteWebhook`, поллинг — как
 С9, без условия «резерв не на связи 10 мин».
 """
@@ -97,10 +97,10 @@ class ReserveQuorumReturnsMixin:
                     actions += self._quorum_to_own_gw(node, "qask", {"l": c.l, "g": int(self.reserve_quorum_mine().g)})
             elif act == "rel":
                 e = int(v.epoch) if v is not None else 0
-                for node in c.voters:
-                    vt = c.votes.get(node)
-                    if vt is not None and vt.w == "uns":
-                        actions += self._quorum_to_own_gw(node, "qrel", {"l": c.l, "e": e})
+                pledged = c.pledged()                         # сказали «нет» — и те, кто снова видит клон
+                for node in pledged:
+                    actions += self._quorum_to_own_gw(node, "qrel", {"l": c.l, "e": e})
+                c.unpledge(pledged)
             elif act == "take":
                 actions += self._quorum_force_return(c, v)
             elif act == "tie":
@@ -112,7 +112,7 @@ class ReserveQuorumReturnsMixin:
             _s, slot = qm.parse_node(node)
         except ValueError:
             return []
-        return [("gwlink", slot, kind, {**body, "t": "r"})]
+        return [("gwlink", slot, kind, {**body, "tgt": "r"})]
 
     def _quorum_force_return(self, c: Candidate, v) -> list[tuple]:
         """«Не видят» бот основы на резерве > v/2 дольше T_up: забираю своих сам."""
@@ -126,6 +126,7 @@ class ReserveQuorumReturnsMixin:
             vt = c.votes.get(node)
             if vt is not None and vt.w == "uns":
                 actions += self._quorum_to_own_gw(node, "qtake", {"l": c.l, "e": e})
+        c.unpledge(c.pledged())
         log.warning("кворум: бот на «%s» не видят %d из %d — возвращаю пользователей сам", self.reserve_peer_name(),
                     len(c.no_nodes()), c.v)
         self.rsv_update("rsv_out", quorum_return={"at": timeutil.now_iso(), "no": len(c.no_nodes()), "v": c.v})

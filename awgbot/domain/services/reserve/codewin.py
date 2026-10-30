@@ -32,7 +32,9 @@ class ReserveCodeWindowMixin:
         cw = self.rsv_get("rsv_view").get("code") or {}
         return {"open": bool(cw.get("open")), "since": str(cw.get("since") or "")}
 
-    def _code_window(self, case: str) -> list[tuple]:
+    def _code_window(self, case: str, *, quiet: bool = False) -> list[tuple]:
+        if quiet:
+            return self._code_window_quiet(case)
         view = self.rsv_get("rsv_view")
         cw = dict(view.get("code") or {})
         actions: list[tuple] = []
@@ -72,6 +74,23 @@ class ReserveCodeWindowMixin:
                 actions.append(("notify", [Notification(tg_id=pid, text=self._rn().code_window_closed(
                     primary if why == "primary_seen" else gw_name, why))]))
         return actions
+
+    def _code_window_quiet(self, case: str) -> list[tuple]:
+        """Окно кода без уведомлений Н4 — ничья кворума: тревогу обоим админам шлёт
+        quorum/tie (Т-К5в несёт кнопку кода), отбой — Т-К6."""
+        view = self.rsv_get("rsv_view")
+        cw = dict(view.get("code") or {})
+        if case == "H4" and self.reserve_in() == "idle":
+            if not cw.get("open"):
+                since = timeutil.now_iso()
+                self.rsv_update("rsv_view", code={"open": True, "since": since, "told": False, "tries": [],
+                                                  "episode": str(cw.get("episode") or since)})
+                log.warning("резерв: ничья — приём аварийного кода открыт")
+        elif cw.get("open"):
+            self.rsv_update("rsv_view", code={"open": False, "closed_why": "tie_over", "closed_at": timeutil.now_iso(),
+                                              "episode": str(cw.get("episode") or ""), "told": False})
+            log.info("резерв: приём аварийного кода закрыт (ничьей нет)")
+        return []
 
     def _code_block(self) -> str:
         cw = self.rsv_get("rsv_view").get("code") or {}

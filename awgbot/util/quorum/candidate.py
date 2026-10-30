@@ -34,6 +34,7 @@ class Vote:
     e: int = 0
     at: float = 0.0            # когда пришёл (monotonic)
     alive: bool = True         # канал голосующего жив
+    said_no: bool = False      # сказал «нет» под этой эпохой — держит обязательство до qrel/qtake
     info: Info = field(default_factory=Info)
     info_at: float = 0.0
 
@@ -75,6 +76,8 @@ class Candidate:
             return
         vt = self.votes.get(node) or Vote()
         vt.w, vt.since, vt.e, vt.at, vt.alive = w, since, int(e), now, True
+        if w == "uns":
+            vt.said_no = True
         if info is not None:
             vt.info, vt.info_at = info, now
         self.votes[node] = vt
@@ -85,6 +88,16 @@ class Candidate:
             vt.alive = bool(alive)
         elif node in self.voters:
             self.votes[node] = Vote(alive=bool(alive))
+
+    def pledged(self) -> list[str]:
+        """Кто держит обязательство «нет» (сказал «нет» и ещё не получил qrel/qtake) при живом канале."""
+        return [n for n, vt in self.votes.items() if vt.said_no and vt.alive]
+
+    def unpledge(self, nodes) -> None:
+        for n in nodes:
+            vt = self.votes.get(n)
+            if vt is not None:
+                vt.said_no = False
 
     def reset(self) -> None:
         """После решения (взято, отказано предусловиями) или смены лидера — счёт заново."""

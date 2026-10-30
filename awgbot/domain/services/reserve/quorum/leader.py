@@ -110,7 +110,7 @@ class ReserveQuorumLeaderMixin:
         act = ld.probe_in(p, now)
         if act == "ignore":
             return None
-        if act == "adopt":
+        if act == "adopt" and not ld.q2:                       # Q2 (отъезд): эпоха пробы не сверяется, журнал не трогаем
             if not self.__dict__.get("_quo_adopt_told"):
                 self.__dict__["_quo_adopt_told"] = True
                 log.warning("кворум: проба %s несёт эпоху %s, у меня %s — эпоху держит другая сторона", p.n, p.e, ld.epoch)
