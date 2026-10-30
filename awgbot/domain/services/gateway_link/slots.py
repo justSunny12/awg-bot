@@ -306,6 +306,8 @@ class SlotsMixin:
         active = self.active_gateway()
 
         def _name(g) -> str:
+            if self._gw_virtual(g):
+                return g.label or f"шлюз {g.id}"             # «шлюзы «Beta»» — устройства нет
             dev = self.db.get_device(g.device_id)
             name = dev.name if dev is not None else f"шлюз {g.id}"
             return f"{name} ({g.label})" if g.label else name
@@ -322,6 +324,7 @@ class SlotsMixin:
         return {"ok": self.routing_link_ok(),
                 "active": _name(active) if active is not None else "",
                 "active_slot": active.id if active is not None else 0,
+                "active_virtual": bool(active is not None and self._gw_virtual(active)),
                 "standby": standby}
 
     def gateway_screen_state(self, slot_id: int, *, lazy_ping: bool = True) -> dict:

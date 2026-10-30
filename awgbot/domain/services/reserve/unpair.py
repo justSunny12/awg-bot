@@ -55,6 +55,11 @@ class ReserveUnpairMixin:
         with _LOCK:
             peer = self.reserve_peer() or {}
             self._unpair_zone(why)                            # клон, пересылка хвоста, хранилище — прочь
+            if hasattr(self, "reserve_rfpeer_drop"):
+                try:
+                    self.reserve_rfpeer_drop()                # РФ-доступ через второй сервер — до отката линка (адреса из его конфига)
+                except Exception as e:                        # noqa: BLE001
+                    log.warning("резерв: транзит не снят при удалении пары: %s", e)
             try:
                 self._run_pair_script("--rollback", self._pair_env())
             except ServiceError as e:
@@ -67,11 +72,6 @@ class ReserveUnpairMixin:
                 self.reserve_pkg_in_drop()                    # пакет и доля второй стороны — прочь
             except Exception as e:                            # noqa: BLE001
                 log.warning("резерв: пакет второй стороны не снят при удалении пары: %s", e)
-            if hasattr(self, "reserve_rfpeer_drop"):
-                try:
-                    self.reserve_rfpeer_drop()                # РФ-доступ через второй сервер: правило, файл, AllowedIPs — прочь
-                except Exception as e:                        # noqa: BLE001
-                    log.warning("резерв: транзит не снят при удалении пары: %s", e)
             if hasattr(self, "reserve_quorum_drop"):
                 try:
                     self.reserve_quorum_drop()                # кворум: зонды, второй адрес, пространство — прочь

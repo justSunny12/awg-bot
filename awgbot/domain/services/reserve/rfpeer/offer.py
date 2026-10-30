@@ -8,9 +8,11 @@ from awgbot.util import timeutil
 from ...gateway_link.common import log
 from ...types import Notification
 
-WHY_WORDS = {"off": "его админ выключил «Мои шлюзы для резерва»", "no_gw": "у него нет шлюзов",
-             "rt_off": "у него не задействован РФ-доступ", "down": "его шлюз сейчас не отвечает",
-             "peer": "он сам ходит в РФ через шлюзы этого сервера"}
+def why_words(peer: str) -> dict:
+    """Причины отсутствия согласия словами (Т-РТ2/Т-РТ9), имя второго сервера — в кавычках."""
+    return {"off": "его админ выключил «Мои шлюзы для резерва»", "no_gw": f"у «{peer}» нет шлюзов",
+            "rt_off": f"у «{peer}» не задействован РФ-доступ", "down": f"шлюз «{peer}» сейчас не отвечает",
+            "peer": f"«{peer}» сам ходит в РФ через шлюзы этого сервера"}
 
 
 class ReserveRfOfferMixin:
@@ -28,10 +30,12 @@ class ReserveRfOfferMixin:
             if not self.routing_engaged():
                 return False, "rt_off"
             active = self.active_gateway()
-            if active is None or not self.routing_link_ok() or self._rt_unavailable(active.id):
+            if active is None or not self.routing_link_ok():
                 return False, "down"
             if hasattr(self, "rt_is_spare") and self.rt_is_spare(active):
-                return False, "peer"
+                return False, "peer"                          # сам хожу через чужие шлюзы — петли нет
+            if self._rt_unavailable(active.id):
+                return False, "down"
         except Exception as e:                                # noqa: BLE001
             log.info("РФ-доступ через второй сервер: согласие не посчиталось: %s", e)
             return False, "down"
@@ -51,7 +55,7 @@ class ReserveRfOfferMixin:
         """Согласие по смене (файл, файервол, правило, `st`), эпизод второй стороны
         (Т-РТ10/Т-РТ11), слот просящего (rfpeer/slot)."""
         if not self.reserve_paired():
-            return []
+            return list(self.__dict__.pop("_rf_pending_notes", None) or [])   # уход со слота при удалении пары (reserve_rfpeer_drop)
         notes: list[Notification] = []
         try:
             notes += self._rf_offer_sync()
@@ -72,12 +76,21 @@ class ReserveRfOfferMixin:
         on, why = self.reserve_rf_offer()
         cur = self.rsv_get("rsv_rfpeer")
         prev = dict(cur.get("offer") or {})
+        tick = int(self.__dict__.get("_rf_offer_tick", 0))
+        self.__dict__["_rf_offer_tick"] = tick + 1
         if prev.get("on") == on and str(prev.get("why") or "") == why and prev.get("since"):
+            if on and tick % 10 == 0:
+                conf = rfp.pair_conf()
+                if conf.get("peer4"):
+                    try:
+                        rfp.ensure_rule(str(conf["peer4"]))      # страховка: после перезагрузки хоста правила в ядре нет
+                    except Exception as e:                    # noqa: BLE001
+                        log.info("РФ-доступ через второй сервер: правило маршрутизации: %s", e)
             return []
-        self.rsv_update("rsv_rfpeer", offer={"on": bool(on), "why": why, "since": timeutil.now_iso()})
-        self._rf_file_sync()
         conf = rfp.pair_conf()
-        peer4 = str(conf.get("peer4") or "")
+        peer4 = str(conf.get("peer4") or cur.get("peer4") or "")
+        self.rsv_update("rsv_rfpeer", offer={"on": bool(on), "why": why, "since": timeutil.now_iso()}, peer4=peer4)
+        self._rf_file_sync()
         if peer4:
             try:
                 rfp.ensure_rule(peer4) if on else rfp.drop_rule(peer4)
@@ -142,9 +155,10 @@ class ReserveRfOfferMixin:
     def _rf_peer_episode_bytes(self, ep: dict) -> tuple[int, int]:
         now = self.reserve_rf_peer_counters()
         base = dict(ep.get("base") or {})
-        up = int(now.get("up") or 0) - int(base.get("up") or 0)
-        dn = int(now.get("dn") or 0) - int(base.get("dn") or 0)
-        return (max(0, up), max(0, dn))                       # счётчики с нуля после перезагрузки — не отрицательно
+        cu, cd = int(now.get("up") or 0), int(now.get("dn") or 0)
+        bu, bd = int(base.get("up") or 0), int(base.get("dn") or 0)
+        # счётчики с нуля после перезагрузки: показание ниже базы — всё текущее прошло после неё
+        return (cu - bu if cu >= bu else cu, cd - bd if cd >= bd else cd)
 
     def reserve_rf_peer_episode(self) -> dict:
         """Эпизод второй стороны для карточки: {since, up, dn}; пусто — нет."""
@@ -156,11 +170,26 @@ class ReserveRfOfferMixin:
 
     # ── удаление пары ───────────────────────────────────────────────────────
     def reserve_rfpeer_drop(self) -> None:
-        """Пара снята: правило, файл согласия, широкие `AllowedIPs` — прочь."""
-        conf = rfp.pair_conf()
-        if conf.get("peer4"):
+        """Пара снимается (до отката линка пары): уход со слота 29, если он активен (Т-РТ8
+        «резерв удалён» — следующим тактом), правило, политика слота, файл согласия, широкие
+        `AllowedIPs` — прочь."""
+        from awgbot.infra.routing import slots as slotpolicy
+        from .slot import RF_PEER_ID, RF_PEER_IF
+        cur = self.rsv_get("rsv_rfpeer")
+        if cur.get("slot") and hasattr(self, "_rf_slot_gone"):
             try:
-                rfp.drop_rule(str(conf["peer4"]))
+                self.__dict__["_rf_pending_notes"] = self._rf_slot_gone(cur, "unpaired")
+            except Exception as e:                            # noqa: BLE001
+                log.warning("транзит: уход со слота при удалении пары: %s", e)
+        try:
+            slotpolicy.drop_slot_policy(RF_PEER_ID, RF_PEER_IF)
+        except Exception as e:                                # noqa: BLE001
+            log.info("транзит: политика слота при удалении пары: %s", e)
+        conf = rfp.pair_conf()
+        peer4 = str(conf.get("peer4") or cur.get("peer4") or "")
+        if peer4:
+            try:
+                rfp.drop_rule(peer4)
             except Exception as e:                            # noqa: BLE001
                 log.info("транзит: правило при удалении пары: %s", e)
         try:

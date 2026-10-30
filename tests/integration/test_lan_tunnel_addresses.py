@@ -164,7 +164,7 @@ def test_a_fwmark_on_the_slot_bits_turns_the_addresses_off(two, fake_routing, mo
     card = two.lan_space_card(two.db.gateway(1))
     assert card["key"] == "routing.fwmark"
     assert lan_space_lines(card) == [
-        "⚠️ Адреса в туннеле выключены: метка РФ-доступа 0x4 задевает биты меток слотов 0x6 — "
+        "⚠️ Адреса в туннеле выключены: метка РФ-доступа 0x4 задевает биты меток слотов 0x60000006 — "
         "поправь <code>routing.fwmark</code> в <code>app.yaml</code>"]
 
 

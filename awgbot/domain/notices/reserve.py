@@ -484,6 +484,9 @@ def rf_peer_use(primary: str, since: str) -> str:
 
 
 def rf_peer_done(primary: str, up: int, dn: int) -> str:
-    """Т-РТ11 (админу транзитного, без звука): эпизод кончился, объём за него."""
-    return f"🇷🇺 РФ-доступ {_n(primary)} снова идёт через его шлюзы — через твои прошло ↑ {_bytes(up)} ↓ {_bytes(dn)}"
+    """Т-РТ11 (админу транзитного, без звука): эпизод кончился, объём за него (нули не выводим)."""
+    head = f"🇷🇺 РФ-доступ {_n(primary)} снова идёт через его шлюзы"
+    if not int(up or 0) and not int(dn or 0):
+        return head
+    return f"{head} — через твои прошло ↑ {_bytes(up)} ↓ {_bytes(dn)}"
 

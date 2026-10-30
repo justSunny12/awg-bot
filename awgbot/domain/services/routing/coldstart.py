@@ -23,6 +23,8 @@ class RoutingColdStartMixin:
         if not slots:
             return None
         saved = self.active_gateway()
+        if hasattr(self, "rt_is_spare") and self.rt_is_spare(saved):
+            saved = next((g for g in slots if g.preferred), slots[0])   # виртуальный слот на холодном старте не выбирается
         preferred = self.preferred_gateway()
         if not self._rt_is_cold_start():
             return saved

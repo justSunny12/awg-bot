@@ -13,6 +13,8 @@ from .common import log
 class RoutingLivenessMixin:
     """Живость слотов: стрики, окно доступности, объявления."""
     # ── стрики по слоту ──────────────────────────────────────────────────────
+    _RT_PEER_SLOT = 29                 # слот «шлюзы второго сервера» (reserve/rfpeer): объявления — свои
+
     def _rt_keys(self, slot_id) -> tuple[str, str]:
         """(up, announced) ключи слота; без слотов (линк обвязки без назначенного
         шлюза) — прежние общие."""
@@ -143,6 +145,7 @@ class RoutingLivenessMixin:
         if engaged:
             results = self._probe_slots(slots, active) if slots else {None: self.routing_probe()}
         akey = active.id if active is not None else None
+        prev_akey = akey                                      # активный на входе такта (для объявлений)
         verdict = results.get(akey, routing.PROBE_DOWN) if engaged else routing.PROBE_DOWN
         # Обвязку утверждаем по событию — смена вердикта, первый тик после
         # старта — и страховочно каждый 10-й тик (5 мин): утверждать маршрут и
@@ -220,6 +223,10 @@ class RoutingLivenessMixin:
                             # переключение — его «снова в строю» придёт с
                             # хвостом «остаётся в резерве»
                             self.db.set_state(self._rt_keys(akey)[1], "1")
+                            if hasattr(self, "rt_is_peer_slot") and self.rt_is_peer_slot(active):
+                                # возврат со «шлюзов второго сервера» объявляет rfpeer (Т-РТ7): обычного
+                                # «снова в строю» у своего слота не будет
+                                self.db.set_state(self._rt_keys(cand.id)[1], "0")
                             # оба — с чистого листа: у нового активного в окне
                             # могли остаться неудачи со времён резерва, и они
                             # тут же потянули бы его обратно
@@ -238,7 +245,10 @@ class RoutingLivenessMixin:
                 if verdict == routing.PROBE_OK:
                     ok = True if (was_on or switched_to is not None) else a_up >= self._RT_UP_STREAK
                 else:
-                    ok = was_on and not unavailable
+                    # окно после переключения свежее: отметка падения (снята только тремя
+                    # хорошими) держит рубильник выключенным, пока слот не ожил по-настоящему
+                    fell = akey is not None and bool(self.db.get_state(f"routing_gw_{akey}_down_since"))
+                    ok = was_on and not unavailable and not fell
 
         if switched_to is not None:
             try:
@@ -270,7 +280,7 @@ class RoutingLivenessMixin:
             # критичны только отказы, оставившие людей без РФ-доступа.
             # слот «шлюзы второго сервера» объявляет сам (reserve/rfpeer): «останусь на нём» для не
             # липкого слота неверно
-            peer_slot = hasattr(self, "rt_is_peer_slot") and (self.rt_is_peer_slot(switched_to) or (prev is not None and self.rt_is_peer_slot(prev)))
+            peer_slot = hasattr(self, "rt_is_peer_slot") and (self.rt_is_peer_slot(switched_to) or prev_akey == self._RT_PEER_SLOT)
             if not peer_slot:
                 notes.append(Notification(config.ADMIN_ID,
                                           self._txt_rt_switched(prev, switched_to, results.get(prev.id) if prev else verdict)))
@@ -296,6 +306,8 @@ class RoutingLivenessMixin:
             _u, ann_k = self._rt_keys(g.id)
             g_ann = self.db.get_state(ann_k) == "1"
             if g_ann and ups[g.id] >= self._RT_UP_STREAK:
+                if akey == self._RT_PEER_SLOT:
+                    continue                                  # на шлюзах второго сервера: свой ожил — ждём интервал молча (Т-РТ7 скажет)
                 self.db.set_state(ann_k, "0")
                 notes.append(Notification(config.ADMIN_ID, self._txt_rt_standby_up(g, active)))
             elif not g_ann and self._rt_dead(g.id):

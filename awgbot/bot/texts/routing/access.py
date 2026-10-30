@@ -138,7 +138,7 @@ def routing_admin_status_line(info: dict, bot_username: str = "") -> str:
         line = f"🇷🇺 {ROUTING_NAME}: {dot} работает"
         gw = []
         if active:
-            gw.append(f"шлюз: {_link(active, info.get('active_slot'))}")
+            gw.append(f"шлюз: {_e(active) if info.get('active_virtual') else _link(active, info.get('active_slot'))}")
         if standby:
             # ссылка — только на слове «резерв»: состояние остаётся текстом
             st = standby[0]
