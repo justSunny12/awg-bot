@@ -425,7 +425,7 @@ def test_unpairing_drops_the_peers_package_and_the_merge_snapshots(mv, tmp_path)
     rm.put_base(svc, gen=7)
     pkg = tmp_path / "reserve" / "guest.pkg"
     pkg.write_bytes(b"DUMMY-package")
-    svc.rsv_put("rsv_pkg_in", {"gen": 3, "fp": "DUMMY-fp", "share": "DUMMY"})
+    svc.rsv_put("rsv_pkg_in", {"gen": 3, "fp": "DUMMY-fp", "m_gen": 1})
     svc.reserve_unpair("button")
     assert not pkg.exists(), "пакет второй стороны пережил удаление пары"
     assert not (tmp_path / "reserve" / "out").exists(), "снимки base-* с базой пользователей остались"

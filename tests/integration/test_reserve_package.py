@@ -396,11 +396,16 @@ def test_the_package_opens_with_k_from_m_and_carries_no_host_secrets(paired, mak
         seal.open_parts(blob, other)
 
 
-def test_the_share_that_goes_with_the_package_is_the_reserves_point_of_the_current_generation(paired, make_active_client, clock):
+def test_the_package_carries_no_point_of_m_and_its_key_generation_only_in_the_header(paired, make_active_client, clock):
+    """Прямой самого `M` нет: с пакетом не уходит ни точка ключа, ни поколение отдельным
+    полем. Точка в пакете — резерв сам собирал бы `M` с одной точкой шлюза мимо
+    большинства; поколение — только в заголовке, с ним сверяется ящик кода."""
     make_active_client(name="Профиль", tg_id=7001)
     built = _tick(paired, clock)
-    gen, share = paired.reserve_share_reserve()
-    assert (built["m_gen"], built["share"]) == (gen, share)
+    assert set(built) <= {"gen", "fp", "blob", "jrn"}, f"с пакетом уходит лишнее: {sorted(built)}"
+    keys = paired.reserve_keys()
+    assert seal.header(bytes.fromhex(built["blob"])).m_gen == int(keys["m_gen"]), "в заголовке не текущее поколение M"
+    assert keys["m"] not in built["blob"], "M открытым в пакете"
 
 
 def test_the_replica_that_went_out_is_kept_as_base_until_the_next_one_is_confirmed(paired, make_active_client, clock, tmp_path):
@@ -444,27 +449,29 @@ def built(paired, make_active_client, clock):
 
 
 def _receive(svc, b, **over):
-    args = dict(gen=b["gen"], fp=b["fp"], blob=bytes.fromhex(b["blob"]), share=b["share"], m_gen=b["m_gen"])
+    args = dict(gen=b["gen"], fp=b["fp"], blob=bytes.fromhex(b["blob"]))
     args.update(over)
-    return svc.reserve_pkg_in(args["gen"], args["fp"], args["blob"], args["share"], args["m_gen"])
+    return svc.reserve_pkg_in(args["gen"], args["fp"], args["blob"])
 
 
-def test_a_good_package_is_stored_privately_with_the_share_and_confirmed(paired, built, tmp_path):
+def test_a_good_package_is_stored_privately_with_the_key_generation_of_its_header_and_confirmed(paired, built, tmp_path):
+    """Пакет без доли принят; поколение `M` записи — из заголовка пакета: по нему
+    открытие сверяет ящик кода (данных для переезда нет, если ящика того же поколения нет)."""
     assert _receive(paired, built) == ("pkg_ok", "")
     path = tmp_path / "reserve" / "guest.pkg"
     assert path.read_bytes() == bytes.fromhex(built["blob"])
     assert stat.S_IMODE(os.stat(path).st_mode) == 0o600
     rec = paired.rsv_get("rsv_pkg_in")
-    assert (rec["gen"], rec["fp"], rec["share"], rec["m_gen"]) == (built["gen"], built["fp"], built["share"], built["m_gen"])
+    head = seal.header(bytes.fromhex(built["blob"]))
+    assert (rec["gen"], rec["fp"], rec["m_gen"]) == (built["gen"], built["fp"], head.m_gen), rec
+    assert "share" not in rec, "запись о пакете несёт долю, которой больше нет"
+    assert paired.reserve_pkg_in_present(), "пакет без доли не считается на месте — переезд к себе невозможен"
     assert _receive(paired, built) == ("pkg_ok", ""), "повторная доставка того же пакета — не ошибка"
 
 
 @pytest.mark.parametrize("over, word", [
     ({"fp": "00" * 32}, "отпечат"),
     ({"gen": 99}, "поколение"),
-    ({"m_gen": 7}, "поколение ключа"),
-    ({"share": "ab" * 5}, "доля"),
-    ({"share": "не-hex"}, "доля"),
     ({"blob": b"AWGK" + b"\x00" * 100}, ""),
     ({"blob": b""}, ""),
 ])
@@ -526,7 +533,11 @@ async def test_send_package_sends_numbered_chunks_and_stops_at_the_first_failure
     assert len(sent) == 2, "после оборванной части остальные уходить не должны"
     assert [(k, b["i"]) for k, b in sent] == [("pkg", 0), ("pkg", 1)]
     assert sent[0][1]["n"] == len(package.ReservePackageMixin.pkg_chunks(built["blob"]))
-    assert sent[0][1]["share"] == built["share"] and sent[0][1]["fp"] == built["fp"]
+    assert sent[0][1]["fp"] == built["fp"]
+    assert "share" not in sent[0][1] and "m_gen" not in sent[0][1], f"часть пакета несёт долю: {sorted(sent[0][1])}"
+    from awgbot.util import pairproto
+    for _kind, body in sent:                            # каждая часть проходит схему канала второй стороны
+        pairproto.check(pairproto.PAIR_PROTO, "pkg", dict(body), pairproto.INVITER)
 
 
 async def test_send_package_reports_success_when_every_chunk_went(built, small_chunks, monkeypatch):
@@ -558,8 +569,7 @@ class _Inbox:
     async def deliver(self, built, order=None, **over):
         chunks = package.ReservePackageMixin.pkg_chunks(built["blob"])
         for i in (order if order is not None else range(len(chunks))):
-            body = {"gen": built["gen"], "fp": built["fp"], "i": i, "n": len(chunks), "blob": chunks[i],
-                    "share": built["share"], "m_gen": built["m_gen"]}
+            body = {"gen": built["gen"], "fp": built["fp"], "i": i, "n": len(chunks), "blob": chunks[i]}
             body.update(over)
             await self.handler(self.obj, self.sess, body)
 
@@ -592,7 +602,7 @@ async def test_chunk_numbers_out_of_range_are_a_protocol_error(paired, built, mo
     from awgbot.util import pairproto
     inbox = _Inbox(paired, monkeypatch)
     with pytest.raises(pairproto.ProtocolError):
-        await inbox.handler(inbox.obj, inbox.sess, {"gen": 1, "fp": "x", "i": i, "n": n, "blob": "", "share": "", "m_gen": 1})
+        await inbox.handler(inbox.obj, inbox.sess, {"gen": 1, "fp": "x", "i": i, "n": n, "blob": ""})
 
 
 # ── досылка при расхождении и копия в бэкапе ─────────────────────────────────
@@ -618,16 +628,16 @@ def test_a_peer_that_has_no_package_yet_is_not_a_reason_to_resend_what_was_never
     assert paired.__dict__.get("_rsv_pkg_due_at") is None
 
 
-def test_the_share_of_the_other_servers_key_does_not_go_into_a_backup_of_this_one():
-    """Запись о пакете второй стороны в копию не идёт целиком: половинная
-    (поколение и отпечаток без доли) после восстановления выглядела бы для
-    основы как «пакет доставлен», и основа не прислала бы его заново."""
+def test_the_record_of_the_other_servers_package_does_not_go_into_a_backup_of_this_one():
+    """Запись о пакете второй стороны в копию не идёт целиком: восстановленная
+    (поколение и отпечаток без файла пакета) выглядела бы для основы как «пакет
+    доставлен», и основа не прислала бы его заново."""
     import json
     from awgbot.domain.backup import archive
     con = sqlite3.connect(":memory:")
     con.execute("CREATE TABLE server_state (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
     con.execute("INSERT INTO server_state VALUES ('rsv_pkg_in', ?)",
-                (json.dumps({"gen": 4, "fp": "ab", "share": "DUMMY-share-hex", "m_gen": 2}),))
+                (json.dumps({"gen": 4, "fp": "ab", "m_gen": 2}),))
     con.execute("INSERT INTO server_state VALUES ('rsv_out', '{\"state\": \"home\"}')")
     con.execute("INSERT INTO server_state VALUES ('rsv_pkg_sent', '{\"gen\": 9}')")
     archive._strip_foreign_share(con)

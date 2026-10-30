@@ -1,24 +1,24 @@
-"""Ключи кворума на стороне основы и второго сервера (quorum/keys.py, keys.py,
-outbound_return.py, gwside.py, codewin.py; концепт «кворум» §2.7, §3.3,
-§3.7.10, §3.7.11, §4.9, §7.3, §8.1): включение — новое поколение `M` и `K`,
-многочлен большинства и прямая кода, Т-К12 и Т-К12б; смена порога — только
-многочлен; снятие шлюза — `M`, `K` и многочлен новые, код прежний; возврат
-после переезда по точкам — код прежний, по коду — новый; выключение — прямая
-«2 из n» и новый код; `qkeys`/`qkeys_ok`; точка шлюзу разделом `quorum` и
-доля прямой «2 из n» только у линии на матрице; подтверждение ключей по
-`qkeys_ok` и полю `quo.q` снимков шлюзов; вход процесса открытия.
+"""Ключи вокруг `M` на стороне основы и второго сервера (quorum/keys.py, keys.py,
+outbound_return.py, gwside.py, codewin.py): прямой «2 из n» самого `M` нет;
+с сопряжения — прямая аварийного ключа `Mc` и ящик кода (код админу), `qkeys`
+без многочлена; включение кворума (шлюз `quo1` в составе) — только многочлен
+большинства и ящик кворума, `M`, `K`, пакет, ящик кода и код прежние, Т-К12 без
+звука и без слов о коде, Т-К12б; смена порога — только многочлен; снятие шлюза —
+`M`, `K` и многочлен новые, код прежний; выключение — многочлен и ящик кворума
+прочь, код прежний; возврат после переезда по точкам — код прежний, по коду —
+новый; `qkeys`/`qkeys_ok`; точка шлюзу разделом `quorum`; подтверждение ключей
+по `qkeys_ok` и полю `quo.q` снимков шлюзов; вход процесса открытия.
 
 Ключи и пакеты — настоящие (util/rsvkeys, util/rsvpkg/seal, tools/rsvopen),
 хост и сеть не трогаются.
 
-Цена ошибки: прежний код или прежняя доля «2 из n» у шлюза, открывающие `M`
-после включения, — пользователей увозят мимо большинства; код, сменившийся
-при снятии шлюза, — админ основы держит в сейфе код, который больше не
-действует, и узнаёт об этом в аварию; ключ кворума, не собирающийся из точек
-резерва и шлюзов, — кворум решил переезд, а пакет не открыть; ящик или точка
-чужой длины, принятые резервом, — открытие падает уже в аварии; кворум,
-объявленный включённым до того, как точки дошли до всех, — голоса есть, а
-ключа под них нет.
+Цена ошибки: код, сменившийся при включении голосования или при снятии шлюза, —
+админ основы держит в сейфе код, который больше не действует, и узнаёт об этом в
+аварию; ключ кворума, не собирающийся из точек резерва и шлюзов, — кворум решил
+переезд, а пакет не открыть; ящик или точка чужой длины, принятые резервом, —
+открытие падает уже в аварии; кворум, объявленный включённым до того, как точки
+дошли до всех, — голоса есть, а ключа под них нет; многочлен при одном голосующем
+— порог 1, и единственная точка второго сервера открывает `M` в одиночку.
 """
 from __future__ import annotations
 
@@ -28,12 +28,12 @@ from awgbot.bot.texts.reserve import section
 from awgbot.domain import gwcfg
 from awgbot.domain.gwcfg import check as gwcheck, prints as gwprints
 from awgbot.domain.notices import reserve as rn
-from awgbot.util import rsvkeys, shamir, timeutil, wgkeys
+from awgbot.util import pairproto, rsvkeys, shamir, timeutil, wgkeys
 from awgbot.util.rsvpkg import seal
 from tests.integration import _reserve_common as rc
 from tests.integration import _reserve_move as rm
 from tests.integration._reserve_quorum import PEER_ADMIN, line, notes, setup_line
-from tests.integration._reserve_vote_common import M_GEN, RSV_SHARE, box
+from tests.integration._reserve_vote_common import box
 from tools import rsvopen
 
 pytestmark = pytest.mark.integration
@@ -46,10 +46,16 @@ def _keys(s) -> dict:
     return dict(s.reserve_keys())
 
 
-def _prime_code(s) -> str:
-    """Код на прямой «2 из n» самого `M` (как до кворума)."""
-    k = _keys(s)
-    return rsvkeys.code_encode(shamir.Line(bytes.fromhex(k["m"]), bytes.fromhex(k["a"])).point(rsvkeys.CODE_X)[1])
+def _line_code(s) -> str:
+    """Код — точка x = 255 прямой аварийного ключа `Mc` из хранилища основы."""
+    q = s.reserve_qkeys()
+    return rsvkeys.code_encode(shamir.Line(bytes.fromhex(q["mc"]), bytes.fromhex(q["ma"])).point(rsvkeys.CODE_X)[1])
+
+
+def _code_opens(s, code: str, body: dict, blob: bytes) -> bytes:
+    """`M` из кода, точки второго сервера и ящика кода тела qkeys (процесс открытия)."""
+    m, _k = rsvopen.recover_keys({"code": code, "cpoint": [body["x"], body["cy"]], "cbox": body["cbox"]}, blob)
+    return m
 
 
 def _blob(s) -> bytes:
@@ -83,39 +89,44 @@ def on(line):
 
 # ── включение ───────────────────────────────────────────────────────────────
 
-def test_enabling_makes_a_new_m_and_k_a_majority_polynomial_and_a_code_line(line):
+def test_enabling_makes_only_the_polynomial_and_keeps_m_k_the_code_line_and_the_code(line):
+    """Шлюзы вошли в состав: многочлен под порог состава и ящик кворума; `M`, `K`,
+    прямая кода и сам код — прежние байт в байт, нового пакета и нового кода админу нет
+    (код в сейфе админа с сопряжения продолжает действовать)."""
     line.add_gw(1)
     line.add_gw(2)
-    before = _keys(line.s)
-    old_code = line.s.reserve_code()
+    k0, q0, code0 = _keys(line.s), dict(line.s.reserve_qkeys()), line.s.reserve_code()
+    assert not line.s.reserve_quorum_poly_on() and q0["poly"] == [] and q0["t"] == 0, "предпосылка: многочлен до состава"
+    line.s.__dict__.pop("_rsv_pkg_due_at", None)
     line.propose()
     line.ack_members()
     line.sync_keys()
-    after, q = _keys(line.s), line.s.reserve_qkeys()
-    assert q["on"] is True
-    assert int(after["m_gen"]) == int(before["m_gen"]) + 1 and after["m"] != before["m"], "включение без нового поколения M"
-    assert int(after["k_gen"]) == int(before["k_gen"]) + 1 and after["k"] != before["k"], "включение без нового K"
+    k1, q1 = _keys(line.s), line.s.reserve_qkeys()
     m = line.s.reserve_quorum_proposed()
-    assert (q["q_gen"], q["t"], len(q["poly"])) == (1, m.t("a"), m.t("a")), f"многочлен не под порог состава: {q}"
-    assert q["c_gen"] == 1 and q["mc"] and q["ma"]
-    code = line.s.reserve_code()
-    assert code != old_code, "аварийный код не сменился при включении"
-    want = rsvkeys.code_encode(shamir.Line(bytes.fromhex(q["mc"]), bytes.fromhex(q["ma"])).point(rsvkeys.CODE_X)[1])
-    assert code == want, "показанный код — не точка прямой аварийного ключа Mc"
-    assert code != _prime_code(line.s), "код под кворумом — точка прямой самого M (открывает M мимо ящика)"
-    assert "голосование" in line.s.reserve_code_notify_pending(), "новый код админу не поставлен в очередь"
+    assert line.s.reserve_quorum_poly_on() and (q1["q_gen"], q1["t"], len(q1["poly"])) == (1, m.t("a"), m.t("a")), \
+        f"многочлен не под порог состава: {q1}"
+    for f in ("m", "m_gen", "k", "k_gen"):
+        assert k1[f] == k0[f], f"включение сменило {f}: {k0[f]} → {k1[f]}"
+    assert (q1["c_gen"], q1["mc"], q1["ma"]) == (q0["c_gen"], q0["mc"], q0["ma"]), "включение сменило прямую кода"
+    assert line.s.reserve_code() == code0 == _line_code(line.s), "включение сменило аварийный код"
+    assert line.s.reserve_code_notify_pending() == "", "новый код админу при включении голосования"
+    assert line.s.__dict__.get("_rsv_pkg_due_at") is None, "включение заказало новый пакет — M и K прежние"
+    body, blob = _qkeys(line.s), _blob(line.s)
+    assert _code_opens(line.s, code0, body, blob).hex() == k0["m"], "код с сопряжения не открывает ящик кода после включения"
+    assert body["qbox"] and body["t"] == m.t("a"), "ящик кворума не ушёл второму серверу"
 
 
 @pytest.mark.parametrize("opened", [True, False], ids=["peer_admin_opened", "peer_admin_never_opened"])
-def test_enabling_tells_the_admin_loudly_once_and_the_peer_admin_only_if_he_opened_the_bot(line, opened):
+def test_enabling_tells_the_admin_silently_once_without_a_word_about_the_code(line, opened):
     line.add_gw(1, name="Дача")
     line.s.rsv_update("rsv_peer_admin", opened=opened)
     line.propose()
     line.ack_members()
     told = notes(line.sync_keys())
     mine = [n for n in told if n.tg_id == rc.ADMIN]
-    assert len(mine) == 1 and mine[0].force_sound, f"Т-К12 админу основы — один раз и со звуком: {told}"
-    assert "«Beta»" in mine[0].text and "«Дача»" in mine[0].text and "прежний больше не действует" in mine[0].text, mine[0].text
+    assert len(mine) == 1 and mine[0].silent and not mine[0].force_sound, f"Т-К12 админу основы — один раз и без звука: {told}"
+    assert "«Beta»" in mine[0].text and "«Дача»" in mine[0].text, mine[0].text
+    assert "код" not in mine[0].text.lower(), f"Т-К12 говорит о коде, а код прежний: {mine[0].text}"
     peer = [n for n in told if n.tg_id == PEER_ADMIN]
     if opened:
         assert len(peer) == 1 and peer[0].silent and "«Alpha»" in peer[0].text, f"Т-К12б: {told}"
@@ -135,49 +146,40 @@ def test_voting_is_not_announced_before_the_second_server_confirmed_the_line(lin
     line.add_gw(1)
     line.propose()
     acts = line.sync_keys()
-    assert not line.s.reserve_qkeys().get("on"), "ключи переведены под кворум до подтверждения состава"
+    assert not line.s.reserve_quorum_poly_on(), "многочлен создан до подтверждения состава"
     assert not notes(acts), f"Т-К12 до qmem_ok: {[n.text for n in notes(acts)]}"
 
 
-def test_the_old_code_does_not_open_the_package_after_enabling(line):
-    """Прежний код (точка прямой M) с ящиком кода и с прежней долей резерва
-    процесс открытия не принимает; новый код открывает тот же пакет."""
+def test_the_code_from_pairing_and_the_quorum_points_both_open_the_package_after_enabling(line):
+    """После включения два пути к `M`: код с сопряжения (ящик кода) и точки большинства
+    (ящик кворума); прежних входов прямой самого `M` нет."""
     line.add_gw(1)
-    old_code = line.s.reserve_code()
-    _gen, old_share = line.s.reserve_share_reserve()
+    code = line.s.reserve_code()
     line.propose()
     line.ack_members()
     line.sync_keys()
     body, blob = _qkeys(line.s), _blob(line.s)
-    with pytest.raises(rsvopen.OpenError):
-        rsvopen.recover_keys({"code": old_code, "cpoint": [1, body["cy"]], "cbox": body["cbox"]}, blob)
-    with pytest.raises(rsvopen.OpenError):
-        rsvopen.recover_keys({"share": [1, old_share], "code": old_code}, blob)
-    m, k = rsvopen.recover_keys({"code": line.s.reserve_code(), "cpoint": [1, body["cy"]], "cbox": body["cbox"]}, blob)
-    assert (m.hex(), k.hex()) == (_keys(line.s)["m"], _keys(line.s)["k"]), "новый код не открыл пакет"
+    assert _code_opens(line.s, code, body, blob).hex() == _keys(line.s)["m"], "код с сопряжения не открыл пакет"
+    point = line.s.gwcfg_quorum(line.s.db.gateways()[0])["point"]
+    m, _k = rsvopen.recover_keys({"qpoints": [[body["x"], body["y"]], [point["x"], point["y"]]], "qbox": body["qbox"]}, blob)
+    assert m.hex() == _keys(line.s)["m"], "точки резерва и шлюза не открыли пакет"
 
 
-@pytest.mark.parametrize("why", ["peer_old", "no_quo1_gateway"])
-def test_without_the_conditions_the_keys_stay_on_the_line_of_m(line, why):
-    """Смешанная пара (§3.7.11): «Beta» 4.1.x или ни одного шлюза с quo1 —
-    ключей кворума нет, код и доли шлюзов — на прямой «2 из n», как было."""
-    if why == "peer_old":
-        line.peer_quo1(False)
-        line.add_gw(1)
-    else:
-        line.add_gw(1, quo=False)
-    before = _keys(line.s)
+def test_a_gateway_without_quo1_makes_no_polynomial_and_the_keys_stay(line):
+    """Шлюз без `quo1` в состав не входит: многочлена нет — порог при одном голосующем
+    был бы 1 (единственная точка второго сервера открыла бы `M`); `M` и код прежние,
+    `qkeys` уходит без многочлена (ящик кода)."""
+    line.add_gw(1, quo=False)
+    before, code = _keys(line.s), line.s.reserve_code()
     line.propose()
-    if line.s.reserve_quorum_proposed().gateways:
-        line.ack_members()
-    assert not line.s.reserve_quorum_wanted()
-    line.sync_keys()
-    line.s.quorum_tick()
-    assert not line.s.reserve_quorum_keys_on() and int(_keys(line.s)["m_gen"]) == int(before["m_gen"])
-    assert line.s.reserve_code() == _prime_code(line.s)
-    assert line.s.reserve_qkeys_body() is None, "qkeys второму серверу при линии на матрице"
-    reasons = line.s.reserve_quorum_off_reasons()
-    assert ("peer_old" if why == "peer_old" else "no_gateways") in reasons, reasons
+    assert not line.s.reserve_quorum_proposed().gateways, "предпосылка: шлюз без quo1 в составе"
+    for _ in range(3):
+        line.s.quorum_tick()
+        line.sync_keys()
+    assert not line.s.reserve_quorum_poly_on() and int(_keys(line.s)["m_gen"]) == int(before["m_gen"])
+    assert line.s.reserve_code() == code, "код сменился без многочлена"
+    body = _qkeys(line.s)
+    assert "qbox" not in body and body["cbox"], f"qkeys без ящика кода или с многочленом: {sorted(body)}"
 
 
 # ── смена состава ───────────────────────────────────────────────────────────
@@ -232,14 +234,28 @@ def test_a_removed_gateway_gets_new_m_k_and_polynomial_but_the_code_stays(on):
     assert q1["q_gen"] == q0["q_gen"] + 1 and q1["poly"] != q0["poly"], "многочлен прежний после снятия шлюза"
     assert on.s.reserve_code() == code0 and q1["c_gen"] == q0["c_gen"], "код сменился при снятии шлюза"
     assert on.s.reserve_code_notify_pending() == "", "Т-РУ14 «новый код» при снятии шлюза под кворумом"
+    body, blob = _qkeys(on.s), _blob(on.s)
+    assert body["m_gen"] == int(k1["m_gen"]) and body["q_gen"] == q1["q_gen"], "qkeys не про новые поколения"
+    assert _code_opens(on.s, code0, body, blob).hex() == k1["m"], "ящик кода не пересобран вокруг нового M"
+    pt = on.s.gwcfg_quorum(on.s.db.gateways()[0])["point"]
+    m, _k = rsvopen.recover_keys({"qpoints": [[1, body["y"]], [pt["x"], pt["y"]]], "qbox": body["qbox"]}, blob)
+    assert m.hex() == k1["m"], "ящик кворума не пересобран вокруг нового M"
 
 
-def test_without_the_quorum_a_removed_gateway_still_changes_the_code(line):
+def test_without_the_polynomial_a_removed_gateway_changes_m_but_not_the_code(line):
+    """Линия без многочлена (шлюз ещё не в составе): снятие шлюза — новое `M` и `K` и
+    ящик кода вокруг нового `M`; прямая кода со шлюзом не связана — код прежний, Т-РУ14 нет."""
     line.add_gw(1)
-    code0, gen0 = line.s.reserve_code(), int(_keys(line.s)["m_gen"])
+    k0, q0, code0 = _keys(line.s), dict(line.s.reserve_qkeys()), line.s.reserve_code()
     line.s._reserve_after_gateway_change("после снятия шлюза")
-    assert int(_keys(line.s)["m_gen"]) == gen0 + 1 and line.s.reserve_code() != code0
-    assert line.s.reserve_code_notify_pending() == "после снятия шлюза"
+    k1, q1 = _keys(line.s), line.s.reserve_qkeys()
+    assert int(k1["m_gen"]) == int(k0["m_gen"]) + 1 and k1["m"] != k0["m"] and k1["k"] != k0["k"]
+    assert line.s.reserve_code() == code0 and q1["c_gen"] == q0["c_gen"], "код сменился при снятии шлюза"
+    assert line.s.reserve_code_notify_pending() == "", "Т-РУ14 при снятии шлюза"
+    assert not line.s.reserve_quorum_poly_on(), "снятие шлюза создало многочлен"
+    body = _qkeys(line.s)
+    assert body["m_gen"] == int(k1["m_gen"]) and "qbox" not in body
+    assert _code_opens(line.s, code0, body, _blob(line.s)).hex() == k1["m"], "прежний код не открывает ящик нового M"
 
 
 def test_after_a_new_m_the_second_server_gets_qkeys_again(on):
@@ -251,25 +267,54 @@ def test_after_a_new_m_the_second_server_gets_qkeys_again(on):
 
 # ── выключение ──────────────────────────────────────────────────────────────
 
-@pytest.mark.parametrize("why", ["peer_rolled_back", "last_gateway_rolled_back"])
-def test_switching_off_returns_the_code_to_the_line_of_m_with_a_new_generation(on, why):
-    k0, code0 = _keys(on.s), on.s.reserve_code()
-    if why == "peer_rolled_back":
-        on.peer_quo1(False)
+@pytest.mark.parametrize("why", ["not_wanted", "last_gateway_rolled_back"])
+def test_switching_off_drops_the_polynomial_and_the_quorum_box_and_keeps_m_and_the_code(on, why):
+    """Шлюзов `quo1` в составе не осталось (или условия кворума пропали): многочлен
+    прочь, `qkeys` второму серверу — без части многочлена (его ящик кворума уходит);
+    `M`, `K`, прямая кода и код прежние, нового кода админу и уведомлений нет."""
+    k0, q0, code0 = _keys(on.s), dict(on.s.reserve_qkeys()), on.s.reserve_code()
+    if why == "not_wanted":
+        acts = on.s.reserve_quorum_keys_sync(on.s.reserve_quorum_proposed(), False)
     else:
         on.gw_quo(1, False)
         on.propose()
         on.ack_members()
-    acts = on.sync_keys()
-    assert not on.s.reserve_quorum_keys_on(), f"{why}: ключи остались под кворумом"
+        acts = on.sync_keys()
+    q1 = on.s.reserve_qkeys()
+    assert not on.s.reserve_quorum_poly_on() and q1["poly"] == [] and q1["t"] == 0, f"{why}: многочлен остался"
+    assert on.s.reserve_quorum_keys_on(), f"{why}: вместе с многочленом снят ящик кода"
     k1 = _keys(on.s)
-    assert int(k1["m_gen"]) == int(k0["m_gen"]) + 1 and k1["m"] != k0["m"], "выключение без нового поколения M"
-    code = on.s.reserve_code()
-    assert code != code0 and code == _prime_code(on.s), "после выключения код не на прямой M"
-    assert on.s.reserve_code_notify_pending(), "новый код после выключения админу не поставлен"
-    assert not on.s.reserve_qkeys().get("poly") and not on.s.reserve_qkeys().get("mc"), "коэффициенты ключей кворума остались"
-    assert on.s.reserve_qkeys_body() is None
-    assert not notes(acts)
+    assert (k1["m"], k1["m_gen"], k1["k"]) == (k0["m"], k0["m_gen"], k0["k"]), f"{why}: выключение сменило M или K"
+    assert (q1["c_gen"], q1["mc"], q1["ma"]) == (q0["c_gen"], q0["mc"], q0["ma"]) and on.s.reserve_code() == code0, \
+        f"{why}: выключение сменило код"
+    assert on.s.reserve_code_notify_pending() == "" and not notes(acts), f"{why}: уведомление при выключении"
+    on.advance(61)
+    body = on.s.reserve_qkeys_body()
+    assert body is not None, f"{why}: второму серверу не ушло, что ящика кворума больше нет"
+    assert not {"q_gen", "t", "y", "qbox"} & set(body), f"{why}: qkeys после выключения несёт многочлен: {sorted(body)}"
+    pairproto.check(pairproto.PAIR_PROTO, "qkeys", dict(body), pairproto.INVITER)
+
+
+def test_after_switching_off_the_ack_without_a_polynomial_confirms_the_keys(on):
+    """Подтверждение `qkeys` без многочлена (q_gen 0) закрывает ключи: повтора нет, ключи
+    на месте у второго сервера — иначе qkeys шёл бы раз в минуту вечно."""
+    on.s.reserve_quorum_keys_sync(on.s.reserve_quorum_proposed(), False)
+    on.s.reserve_qkeys_ok_in({"l": "a", "m_gen": int(_keys(on.s)["m_gen"]), "q_gen": 0, "c_gen": on.gens()["c_gen"]})
+    on.advance(120)
+    assert on.s.reserve_qkeys_body() is None, "после qkeys_ok без многочлена ключи шлются снова"
+
+
+def test_the_second_server_drops_the_quorum_box_when_qkeys_comes_without_a_polynomial(line):
+    """У второго сервера ящик кворума и точка многочлена уходят по `qkeys` без части
+    многочлена; ящик кода остаётся — переезд по коду возможен и после выключения."""
+    line.s.reserve_qkeys_in(_peer_body())
+    assert line.s.reserve_quorum_peer_keys()["qbox"], "предпосылка: ящик кворума принят"
+    bare = {k: v for k, v in _peer_body().items() if k not in ("q_gen", "t", "y", "qbox")}
+    acts = line.s.reserve_qkeys_in(bare)
+    assert acts and acts[0][2]["q_gen"] == 0, f"подтверждение без многочлена не с q_gen 0: {acts}"
+    peer = line.s.reserve_quorum_peer_keys()
+    assert (peer["q_gen"], peer["t"], peer["y"], peer["qbox"]) == (0, 0, "", ""), f"ящик кворума у второго сервера остался: {peer}"
+    assert peer["cbox"] == bare["cbox"] and peer["cy"] == bare["cy"], "вместе с ящиком кворума ушёл ящик кода"
 
 
 # ── возврат после переезда ──────────────────────────────────────────────────
@@ -299,12 +344,20 @@ def test_the_return_after_a_crash_move_changes_the_code_only_after_a_move_by_cod
     k1, q1 = _keys(s), s.reserve_qkeys()
     assert int(k1["m_gen"]) == int(k0["m_gen"]) + 1 and k1["k"] != k0["k"], "после переезда без моего K — прежнее M"
     assert q1["q_gen"] == q0["q_gen"] + 1, "резерв знал Mq — многочлен прежний"
+    body, blob = _qkeys(s), _blob(s)
+    assert body["m_gen"] == int(k1["m_gen"]), "второму серверу не ушёл ящик кода нового M"
     if code_changes:
-        assert q1["c_gen"] == q0["c_gen"] + 1 and s.reserve_code() != code0, "после переезда по коду код прежний"
+        assert q1["c_gen"] == q0["c_gen"] + 1 and q1["mc"] != q0["mc"] and s.reserve_code() != code0, \
+            "после переезда по коду прямая кода и код прежние — резерв знает Mc"
         assert s.reserve_code_notify_pending(), "новый код после переезда по коду админу не поставлен"
+        with pytest.raises(rsvopen.OpenError):
+            _code_opens(s, code0, body, blob)                 # код, который видел резерв, больше не действует
+        assert _code_opens(s, s.reserve_code(), body, blob).hex() == k1["m"], "новый код не открывает ящик"
     else:
-        assert q1["c_gen"] == q0["c_gen"] and s.reserve_code() == code0, "после переезда по точкам код сменился"
+        assert (q1["c_gen"], q1["mc"]) == (q0["c_gen"], q0["mc"]) and s.reserve_code() == code0, \
+            "после переезда по точкам код сменился"
         assert s.reserve_code_notify_pending() == "", "Т-РУ14 после переезда по точкам"
+        assert _code_opens(s, code0, body, blob).hex() == k1["m"], "прежний код не открывает ящик нового M"
 
 
 def test_the_return_after_a_move_by_my_k_keeps_every_key(qaway):
@@ -356,10 +409,36 @@ def test_a_new_pair_session_sends_unconfirmed_qkeys_at_once(line):
     assert line.s.reserve_qkeys_body() is not None, "после новой сессии пары qkeys ждут 60 с"
 
 
-def test_no_qkeys_to_a_peer_that_lost_quo1(on):
-    on.s.rsv_update("rsv_qkeys", acked={})
-    on.peer_quo1(False)
-    assert on.s.reserve_qkeys_body() is None, "qkeys второму серверу 4.1.x — незнакомый вид рвёт сессию"
+def test_qkeys_goes_from_pairing_without_a_polynomial_and_stops_after_qkeys_ok(line):
+    """Сразу после сопряжения (шлюзов в составе нет): `qkeys` несёт точку прямой кода
+    и ящик кода, без части многочлена, проходит схему канала; `qkeys_ok` без многочлена
+    закрывает ключи — без него переезд по коду невозможен с первого дня пары."""
+    acts = line.s.quorum_tick()
+    sent = [a[2] for a in acts if a[:2] == ("send", "qkeys")]
+    assert len(sent) == 1, f"qkeys после сопряжения не ушёл тактом: {[a[:2] for a in acts]}"
+    body = sent[0]
+    assert set(body) == {"l", "m_gen", "x", "c_gen", "cy", "cbox"}, f"qkeys без многочлена: {sorted(body)}"
+    pairproto.check(pairproto.PAIR_PROTO, "qkeys", dict(body), pairproto.INVITER)
+    assert _code_opens(line.s, line.s.reserve_code(), body, _blob(line.s)).hex() == _keys(line.s)["m"], \
+        "код с сопряжения не открывает ящик кода"
+    m = line.s.reserve_quorum_proposed()
+    assert not line.s.reserve_quorum_keys_ok(m), "ключи на месте до qkeys_ok"
+    line.s.reserve_qkeys_ok_in({"l": "a", "m_gen": body["m_gen"], "q_gen": 0, "c_gen": body["c_gen"]})
+    assert line.s.reserve_quorum_keys_ok(m), "qkeys_ok без многочлена не подтвердил ключи линии без шлюзов"
+    line.advance(120)
+    assert not [a for a in line.s.quorum_tick() if a[:2] == ("send", "qkeys")], "после qkeys_ok ключи шлются снова"
+
+
+def test_a_qkeys_ok_of_older_m_does_not_confirm_the_code_box(line):
+    """Подтверждение ящика кода прежнего поколения `M` (снятие шлюза до ответа) не
+    закрывает ключи: у второго сервера ящик старого `M` — код нового пакета не откроет."""
+    body = _qkeys(line.s)
+    line.add_gw(1)
+    line.s._reserve_after_gateway_change("после снятия шлюза")
+    line.s.reserve_qkeys_ok_in({"l": "a", "m_gen": body["m_gen"], "q_gen": 0, "c_gen": body["c_gen"]})
+    assert line.s.reserve_qkeys_body() is not None or line.s.reserve_qkeys().get("acked", {}).get("m_gen") != \
+        int(_keys(line.s)["m_gen"]), "подтверждение старого M сочтено подтверждением нового"
+    assert not line.s.reserve_quorum_keys_ok(line.s.reserve_quorum_proposed())
 
 
 @pytest.mark.parametrize("body", [{"l": "b", "m_gen": 9, "q_gen": 9, "c_gen": 9}, {"m_gen": 2, "q_gen": 1, "c_gen": 1}],
@@ -389,14 +468,27 @@ def test_the_second_server_keeps_the_points_and_boxes_and_answers_qkeys_ok(line)
     assert acts == [("send", "qkeys_ok", {"l": "b", "m_gen": 3, "q_gen": 4, "c_gen": 2})], acts
     peer = line.s.reserve_quorum_peer_keys()
     assert {k: peer[k] for k in body} == body, "точки и ящики второй линии легли не как пришли"
-    assert not line.s.reserve_quorum_keys_on(), "приём чужих ключей включил мои"
+    mine = line.s.reserve_qkeys()
+    assert not line.s.reserve_quorum_poly_on() and mine["poly"] == [], "приём чужих ключей создал мой многочлен"
+
+
+def test_the_second_server_takes_qkeys_without_a_polynomial(line):
+    """`qkeys` линии без шлюзов в составе: только прямая кода и ящик кода — принят,
+    подтверждён с q_gen 0, часть многочлена у второго сервера пуста."""
+    body = {k: v for k, v in _peer_body().items() if k not in ("q_gen", "t", "y", "qbox")}
+    pairproto.check(pairproto.PAIR_PROTO, "qkeys", dict(body), pairproto.ACCEPTOR)
+    acts = line.s.reserve_qkeys_in(body)
+    assert acts == [("send", "qkeys_ok", {"l": "b", "m_gen": 3, "q_gen": 0, "c_gen": 2})], acts
+    peer = line.s.reserve_quorum_peer_keys()
+    assert (peer["cbox"], peer["cy"], peer["m_gen"]) == (body["cbox"], body["cy"], 3)
+    assert (peer["q_gen"], peer["t"], peer["y"], peer["qbox"]) == (0, 0, "", "")
 
 
 @pytest.mark.parametrize("over", [
     {"x": 2}, {"x": 255}, {"qbox": "ab" * 55}, {"cbox": "ab" * 57}, {"y": "ab" * 15}, {"cy": "ab" * 17},
-    {"y": "zz" * 16}, {"qbox": ""}, {"l": "a"}, {"l": "c"}],
+    {"y": "zz" * 16}, {"qbox": ""}, {"l": "a"}, {"l": "c"}, {"cbox": ""}, {"cy": ""}],
     ids=["gateway_point", "code_point", "short_qbox", "long_cbox", "short_y", "long_cy", "y_not_hex", "no_qbox",
-         "my_own_line", "bad_line"])
+         "my_own_line", "bad_line", "no_code_box", "no_code_point"])
 def test_a_wrong_qkeys_is_refused_and_not_kept(line, over):
     acts = line.s.reserve_qkeys_in(_peer_body(**over))
     assert acts == [], f"{over}: на негодные ключи ушло подтверждение"
@@ -473,16 +565,18 @@ def _links(s, *slots: int) -> None:
     s.rsv_put("rsv_gw_links", links)
 
 
-def test_the_reserve_section_carries_the_2_of_n_share_only_on_the_matrix(line):
+def test_the_reserve_section_never_carries_a_share_of_m(line):
+    """Прямой самого `M` нет: ни до включения кворума, ни после в разделе reserve
+    документа шлюза доли нет — с ней шлюз и резерв открыли бы `M` мимо большинства."""
     line.add_gw(1)
     _links(line.s, 1)
     gw = line.s.db.gateways()[0]
-    sec = line.s.gwcfg_reserve(gw)
-    assert sec["share"] and sec["share"]["x"] == 2, "на матрице шлюз без доли прямой — переезд по долям невозможен"
-    line.enable()
-    sec = line.s.gwcfg_reserve(gw)
-    assert sec is not None and sec["share"] == {}, "под кворумом шлюз держит долю прямой M — с резервом откроет M мимо большинства"
-    gwcfg.check_reserve(gwcfg.parse({"gen": 1, "hash": "ab" * 8, "reserve": sec})["sections"]["reserve"])
+    for stage in ("до включения", "после включения"):
+        if stage == "после включения":
+            line.enable()
+        sec = line.s.gwcfg_reserve(gw)
+        assert sec is not None and "share" not in sec, f"{stage}: в разделе reserve доля прямой M: {sec}"
+        gwcfg.check_reserve(gwcfg.parse({"gen": 1, "hash": "ab" * 8, "reserve": sec})["sections"]["reserve"])
 
 
 def test_the_quorum_section_carries_the_gateways_point_and_passes_its_check(on):
@@ -498,7 +592,7 @@ def test_the_quorum_section_carries_the_gateways_point_and_passes_its_check(on):
     assert gwprints.quorum_print(on.s.gwcfg_quorum(gw)) != before, "новый многочлен не меняет отпечаток раздела — шлюз не применит"
 
 
-def test_no_point_in_the_quorum_section_while_the_keys_are_on_the_matrix(line):
+def test_no_point_in_the_quorum_section_without_the_polynomial(line):
     line.add_gw(1)
     line.propose()
     sec = line.s.gwcfg_quorum(line.s.db.gateways()[0])
@@ -578,30 +672,35 @@ def h4(box, monkeypatch):
 CODE = rsvkeys.code_encode(bytes(range(16)))
 
 
-def test_under_the_quorum_the_code_goes_to_the_opening_with_the_code_point_and_box(h4):
+def _pkg_m_gen(s) -> int:
+    return int(s.rsv_get("rsv_pkg_in").get("m_gen") or 0)
+
+
+def test_the_code_goes_to_the_opening_with_the_code_point_and_box(h4):
     cg, m = rsvkeys.CodeGen.new(1), rsvkeys.new_master()
     cy, cbox = cg.reserve_point()[1].hex(), cg.cbox(m).hex()
-    h4.s.rsv_update("rsv_qkeys", peer={"l": "b", "m_gen": M_GEN, "q_gen": 1, "t": 2, "x": 1, "y": "ab" * 16,
-                                       "qbox": "cd" * 56, "c_gen": 1, "cy": cy, "cbox": cbox})
+    h4.s.rsv_update("rsv_qkeys", peer={"l": "b", "m_gen": _pkg_m_gen(h4.s), "q_gen": 0, "t": 0, "x": 1, "y": "",
+                                       "qbox": "", "c_gen": 1, "cy": cy, "cbox": cbox})
     res = h4.s.reserve_code_in(PEER_ADMIN, CODE)
     assert res["ok"], res
     assert h4.launched == [{"kind": "code", "code": CODE.replace("-", ""), "cpoint": [1, cy], "cbox": cbox}], h4.launched
-    assert RSV_SHARE not in repr(h4.launched), "под кворумом процессу открытия ушла доля прямой M"
 
 
-def test_keys_of_another_generation_of_m_leave_the_code_on_the_old_path(h4):
-    """Ящик кода не того поколения M, что пакет у резерва, — открытие по нему
-    упадёт; код идёт прежним путём с долей резерва из пакета."""
-    h4.s.rsv_update("rsv_qkeys", peer={"l": "b", "m_gen": M_GEN + 1, "x": 1, "cy": "ab" * 16, "cbox": "cd" * 56})
-    assert h4.s.reserve_code_in(PEER_ADMIN, CODE)["ok"]
-    assert h4.launched == [{"kind": "code", "share": [1, RSV_SHARE], "code": CODE.replace("-", "")}], h4.launched
+def test_a_code_box_of_another_generation_of_m_is_no_data_for_the_move(h4):
+    """Ящик кода не того поколения `M`, что пакет у резерва: прежнего пути с долей нет —
+    процесс открытия не запускается, ответ — «данных для переезда нет»."""
+    h4.s.rsv_update("rsv_qkeys", peer={"l": "b", "m_gen": _pkg_m_gen(h4.s) + 1, "x": 1, "cy": "ab" * 16, "cbox": "cd" * 56})
+    res = h4.s.reserve_code_in(PEER_ADMIN, CODE)
+    assert not res["ok"] and res["why"] == "open_failed" and "данных для переезда нет" in res["reason"], res
+    assert h4.launched == [], "процесс открытия запущен без ящика кода"
 
 
 # ── тексты ──────────────────────────────────────────────────────────────────
 
 def test_the_enabling_notices_name_the_servers_and_end_without_a_period():
     t = rn.quorum_enabled("Beta", ["Дача", "Офис"])
-    assert "«Beta»" in t and "«Дача»" in t and "«Офис»" in t and "🆘 Аварийный код" in t and not t.endswith("."), t
+    assert "«Beta»" in t and "«Дача»" in t and "«Офис»" in t and not t.endswith("."), t
+    assert "код" not in t.lower(), f"Т-К12 говорит о коде, а включение код не меняет: {t}"
     assert "шлюзы" not in rn.quorum_enabled("Beta", []), "«и шлюзы» без шлюзов"
     p = rn.quorum_enabled_peer("Alpha")
     assert "«Alpha»" in p and not p.endswith("."), p

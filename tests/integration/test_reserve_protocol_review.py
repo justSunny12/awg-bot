@@ -106,11 +106,13 @@ def test_the_st_of_the_reserve_triggers_the_resend(paired, make_active_client, c
     assert paired.__dict__.get("_rsv_pkg_due_at") is not None, "st без пакета не заставил прислать его"
 
 
-@pytest.mark.parametrize("share, file, want", [(True, True, True), (False, True, False), (True, False, False)])
-def test_the_package_of_the_other_side_is_present_only_with_the_share_and_the_file(services, share, file, want):
+@pytest.mark.parametrize("rec, file, want", [(True, True, True), (False, True, False), (True, False, False)])
+def test_the_package_of_the_other_side_is_present_only_with_the_record_and_the_file(services, rec, file, want):
+    """Доли в пакете нет: «пакет на месте» — запись о принятом поколении и файл; ящик
+    кода поколения проверяет reserve_open_block."""
     from awgbot.domain.services.reserve.package import guest_pkg_path
     import os
-    services.rsv_put("rsv_pkg_in", {"gen": 3, "fp": "ab", "share": "DUMMY-share" if share else ""})
+    services.rsv_put("rsv_pkg_in", {"gen": 3, "fp": "ab", "m_gen": 1} if rec else None)
     path = guest_pkg_path()
     if file:
         os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -202,14 +204,14 @@ def test_a_zone_that_lacks_something_closes_the_direction_towards_it():
 @pytest.mark.parametrize("state", ["taking", "serving", "releasing"])
 def test_a_package_while_the_zone_hosts_is_refused_and_nothing_is_written(services, state):
     """Гость стартовал с прежнего пакета: новый на диске сбил бы поколение
-    слияния при возврате — pkg_bad «зона занята», пакет и доля не тронуты."""
+    слияния при возврате — pkg_bad «зона занята», пакет и запись о нём не тронуты."""
     from awgbot.domain.services.reserve.package import guest_pkg_path
     import os
-    services.rsv_put("rsv_pkg_in", {"gen": 3, "fp": "ab", "share": "DUMMY-old"})
+    services.rsv_put("rsv_pkg_in", {"gen": 3, "fp": "ab", "m_gen": 1})
     services.reserve_set_in(state)
     before = os.path.exists(guest_pkg_path())
-    assert services.reserve_pkg_in(4, "cd", b"DUMMY-blob", "DUMMY-new", 1) == ("pkg_bad", "зона занята")
-    assert services.rsv_get("rsv_pkg_in") == {"gen": 3, "fp": "ab", "share": "DUMMY-old"}
+    assert services.reserve_pkg_in(4, "cd", b"DUMMY-blob") == ("pkg_bad", "зона занята")
+    assert services.rsv_get("rsv_pkg_in") == {"gen": 3, "fp": "ab", "m_gen": 1}
     assert os.path.exists(guest_pkg_path()) == before
 
 

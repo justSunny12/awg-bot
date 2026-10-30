@@ -117,11 +117,10 @@ class Duo:
         return built
 
     def deliver_pkg(self, built: dict) -> tuple[str, str]:
-        body = {"gen": built["gen"], "fp": built["fp"], "i": 0, "n": 1, "blob": "00", "share": built["share"],
-                "m_gen": built["m_gen"], **({"jrn": built["jrn"]} if built.get("jrn") else {})}
+        body = {"gen": built["gen"], "fp": built["fp"], "i": 0, "n": 1, "blob": "00",
+                **({"jrn": built["jrn"]} if built.get("jrn") else {})}
         checked("pkg", body)
-        reply = self.b.reserve_pkg_in(built["gen"], built["fp"], bytes.fromhex(built["blob"]), built["share"],
-                                      built["m_gen"], built.get("jrn"))
+        reply = self.b.reserve_pkg_in(built["gen"], built["fp"], bytes.fromhex(built["blob"]), built.get("jrn"))
         if reply[0] == "pkg_ok":
             self.a.reserve_pkg_ok(built["gen"], built["fp"])
         return reply

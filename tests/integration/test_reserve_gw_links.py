@@ -25,7 +25,7 @@ from awgbot.core import config
 from awgbot.domain import gwcfg
 from awgbot.infra import rsvzone
 from awgbot.infra.nftguard import collect
-from awgbot.util import netns, rsvkeys, timeutil, wgconf, wgkeys
+from awgbot.util import netns, timeutil, wgconf, wgkeys
 from tests.integration import _reserve_common as rc
 
 pytestmark = pytest.mark.integration
@@ -133,24 +133,26 @@ def test_a_repeated_slots_keeps_keys_and_ports_and_a_dropped_slot_is_removed(bot
 
 def test_the_document_section_passes_the_gateways_own_check(both):
     """Шлюз проверяет раздел своим check_reserve: конфиг по белому списку
-    rsvlink, Table = off, Endpoint, доля (точка слот + 1, 16 байт, поколение)."""
+    rsvlink, Table = off, Endpoint; доли прямой самого `M` в разделе нет (точка шлюза —
+    только точка многочлена кворума в разделе quorum)."""
     _exchange(both)
     gw = both.db.gateways()[1]
     sec = both.gwcfg_reserve(gw)
     parsed = gwcfg.parse({"gen": 1, "hash": "ab" * 8, "reserve": sec})["sections"]["reserve"]
     checked = gwcfg.check_reserve(parsed)
-    gen, y = both.reserve_share_gateway(gw.id)
-    assert checked["share"] == {"x": rsvkeys.gateway_x(gw.id), "y": y, "gen": gen}
+    assert "share" not in sec and "share" not in checked, f"в разделе reserve доля прямой M: {sec.get('share')}"
+    keys = both.reserve_keys()
+    assert keys["m"] not in str(sec) and "a" not in keys, "раздел или ключи несут M или наклон прямой"
     assert checked["state"] == "idle" and checked["slot"] == gw.id and checked["record"] == rc.HOST_A
     assert gwcfg.reserve_print(sec) and gwcfg.reserve_print(sec) == gwcfg.reserve_print(dict(sec))
 
 
-def test_the_section_print_changes_with_state_move_and_share(both):
+def test_the_section_print_changes_with_state_and_move(both):
     _exchange(both)
     gw = both.db.gateways()[0]
     sec = both.gwcfg_reserve(gw)
     base = gwcfg.reserve_print(sec)
-    for change in ({"state": "away"}, {"move": 7}, {"share": {**sec["share"], "gen": 9}}):
+    for change in ({"state": "away"}, {"move": 7}):
         assert gwcfg.reserve_print({**sec, **change}) != base, f"отпечаток не заметил {change}"
 
 

@@ -268,6 +268,10 @@ def test_pair_admin_commits_the_keys_and_writes_the_pair(services, rsv):
     assert services.reserve_invite() == {} and invitemod._live() == {}, "приглашение пережило сопряжение"
     keys = services.reserve_keys()
     assert keys["m_gen"] == 1 and keys["k_gen"] == 1 and services.reserve_code(), "нет ключей первого поколения"
+    q = services.reserve_qkeys()
+    assert q.get("on") is True and q.get("c_gen") == 1 and q.get("mc"), "сопряжение не создало прямую кода и ящик кода"
+    assert not services.reserve_quorum_poly_on() and "a" not in keys, "с сопряжения многочлен или прямая самого M"
+    assert services.reserve_code() == services.reserve_quorum_code(), "код с сопряжения — не точка прямой кода"
     assert (services.reserve_out(), services.reserve_in()) == ("home", "idle")
     assert services.rsv_get("rsv_peer_admin")["admin_id"] == PEER_ADMIN
     assert services.reserve_channel_secret() == acc.secrets["psk"], "канал пары не на PSK после кода"

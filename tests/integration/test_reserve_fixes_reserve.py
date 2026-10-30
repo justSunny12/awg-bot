@@ -479,14 +479,21 @@ async def test_the_liveness_job_sends_no_st_without_the_pair_channel(mv, monkeyp
 # ── замена устройства шлюза ─────────────────────────────────────────────────
 
 def test_replacing_the_gateway_device_starts_a_new_generation(mv, monkeypatch):
-    """У прежнего устройства шлюза осталась доля ключа переезда: замена —
-    новое поколение M и код админу, иначе прежнее устройство вместе с долей
-    резерва собирает ключ."""
+    """У прежнего устройства шлюза могла остаться точка ключа кворума: замена —
+    новое поколение M и K (оба ящика заново), иначе прежнее устройство вместе с
+    точками резерва и других шлюзов собирает ключ. Прямая кода со шлюзом не связана:
+    код прежний и новый админу не шлётся — иначе код в сейфе админа перестаёт
+    действовать без причины."""
     svc = mv.svc
     monkeypatch.setattr(svc.db, "gateway_update", lambda *a, **kw: None)
     monkeypatch.setattr(svc, "_backup_event", lambda *a: None, raising=False)
     monkeypatch.setattr(svc, "gwlink_forget", lambda *a: None, raising=False)
-    m_gen = int(svc.reserve_keys()["m_gen"])
+    before, code = dict(svc.reserve_keys()), svc.reserve_code()
+    assert code, "предпосылка: у пары с сопряжения есть код"
     svc.gateway_device_replace(1, 42)
-    assert int(svc.reserve_keys()["m_gen"]) == m_gen + 1, "поколение после замены устройства шлюза прежнее"
-    assert svc.reserve_code_notify_pending(), "новый код админу не запланирован"
+    after = svc.reserve_keys()
+    assert int(after["m_gen"]) == int(before["m_gen"]) + 1 and after["m"] != before["m"], \
+        "поколение после замены устройства шлюза прежнее"
+    assert after["k"] != before["k"], "K после замены устройства прежний"
+    assert svc.reserve_code() == code, "замена устройства шлюза сменила аварийный код"
+    assert not svc.reserve_code_notify_pending(), "новый код админу при замене шлюза"

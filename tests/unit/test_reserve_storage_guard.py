@@ -22,7 +22,8 @@ pytestmark = pytest.mark.unit
 ROOT = Path(__file__).resolve().parents[2]
 
 # снятие K/M и разбор частей пакета — единственный потребитель tools/rsvopen.py
-OPENERS = {"open_k", "open_dns", "open_parts", "recover_m"}
+# сборка M из точек и ящика (по точкам кворума, по коду) и сам ящик — тоже снятие M
+OPENERS = {"open_k", "open_dns", "open_parts", "recover_m_quorum", "recover_m_code", "open_box"}
 OPENER_HOMES = {"awgbot/util/rsvpkg/seal.py", "awgbot/util/rsvkeys.py", "tools/rsvopen.py"}
 
 # модули бота основы на резерве и обёртки зоны: всё, что работает в гостевом режиме
@@ -81,14 +82,17 @@ def test_only_the_open_process_removes_k_and_m_or_reads_the_parts_of_a_package()
 
 def test_the_guard_sees_the_open_process_so_it_can_fail():
     used = _opener_uses(ast.parse((ROOT / "tools/rsvopen.py").read_text(encoding="utf-8")))
-    assert used == OPENERS, f"сторож не узнаёт вызовы процесса открытия: {used}"
+    # ящик процесс открытия снимает через сборку M (rsvkeys), не сам
+    assert used == OPENERS - {"open_box"}, f"сторож не узнаёт вызовы процесса открытия: {used}"
 
 
 @pytest.mark.parametrize("src, want", [
     ("from awgbot.util.rsvpkg import seal\nseal.open_parts(b, k)", {"open_parts"}),
     ("from awgbot.util.rsvpkg.seal import open_k\nopen_k(b, m)", {"open_k"}),
     ("from awgbot.util.rsvpkg.seal import open_dns as od\nod(b, m)", {"open_dns"}),
-    ("rsvkeys.recover_m(p1, p2)", {"recover_m"}),
+    ("rsvkeys.recover_m_quorum(pts, box)", {"recover_m_quorum"}),
+    ("from awgbot.util.rsvkeys import recover_m_code\nrecover_m_code(c, p, b)", {"recover_m_code"}),
+    ("rsvkeys.open_box(key, box)", {"open_box"}),
     ("seal.header(b); seal.digest(b)", set()),
 ])
 def test_the_opener_detector_catches_every_way_to_call_the_openers(src, want):

@@ -293,11 +293,20 @@ def test_a_stuck_webhook_over_a_dead_link_waits_for_the_link_timeout_not_for_the
 
 # ── A14: аварийное открытие при записи «вручную» ────────────────────────────
 
+def _code_box_of_the_package(s) -> None:
+    """У резерва ящик кода того же поколения `M`, что и пакет (qkeys основы принят):
+    без него открытие без K основы упирается в «данных для переезда нет» раньше записи."""
+    m_gen = int(s.rsv_get("rsv_pkg_in").get("m_gen") or 1)
+    s.rsv_update("rsv_qkeys", peer={"l": "b", "m_gen": m_gen, "x": 1, "c_gen": 1, "cy": "ab" * 16,
+                                    "cbox": "00" * 56, "q_gen": 0, "t": 0, "y": "", "qbox": ""})
+
+
 def test_an_emergency_opening_is_refused_when_the_primary_record_is_manual(box):
     """Пакет без конверта DNS (запись у основы «вручную»): доли шлюзов не открывают —
     записью некому управлять; причина — строкой карточки."""
     pkg = box.s.rsv_get("rsv_pkg_in")
     box.s.rsv_put("rsv_pkg_in", {**pkg, "has_dns": False})
+    _code_box_of_the_package(box.s)
     why = box.s.reserve_open_block()
     assert why.startswith("DNS-запись у «") and why.endswith("» настраивается вручную"), why
     assert box.s.reserve_auto_block() == why, "карточка не называет причину"
@@ -314,7 +323,7 @@ def test_a_button_move_is_not_refused_for_a_manual_record(box):
     """Кнопкой запись меняет основа — ей конверт DNS у резерва не нужен."""
     pkg = box.s.rsv_get("rsv_pkg_in")
     box.s.rsv_put("rsv_pkg_in", {**pkg, "has_dns": False})
-    assert box.s.reserve_open_block(need_share=False) == ""
+    assert box.s.reserve_open_block(need_box=False) == ""
 
 
 def test_an_emergency_opening_goes_with_the_dns_envelope(box):
@@ -329,11 +338,11 @@ def test_an_emergency_opening_goes_with_the_dns_envelope(box):
     assert len(box.launched) == 1
 
 
-def test_the_opening_process_by_shares_without_a_provider_fails_with_the_readme_text(open_box):
-    """Доли (ключ M) и пакет без конверта DNS: процесс открытия не идёт к «done record=skipped»
+def test_the_opening_process_by_points_without_a_provider_fails_with_the_readme_text(open_box):
+    """Точки кворума с ящиком (ключ M) и пакет без конверта DNS: процесс открытия не идёт к «done record=skipped»
     (гость без записи и без вебхука), а отказывает словами README."""
     open_box.write_package(dns=None)
-    assert open_box.open(shares=open_box.shares(1)) != 0, open_box.out
+    assert open_box.open(**open_box.points(1)) != 0, open_box.out
     from awgbot.infra import rsvzone
     st = rsvzone.open_status()
     assert st["step"] == "fail", st
@@ -341,9 +350,9 @@ def test_the_opening_process_by_shares_without_a_provider_fails_with_the_readme_
     assert "set_record" not in open_box.kinds() and not rsvzone.TG_TAKE_FILE.exists()
 
 
-def test_the_opening_process_by_shares_with_a_manual_provider_fails_too(open_box):
+def test_the_opening_process_by_points_with_a_manual_provider_fails_too(open_box):
     open_box.write_package(dns={**DNS, "provider": ""})
-    assert open_box.open(shares=open_box.shares(1)) != 0, open_box.out
+    assert open_box.open(**open_box.points(1)) != 0, open_box.out
     from awgbot.infra import rsvzone
     assert rsvzone.open_status().get("reason", "").startswith("DNS-запись сервера настраивается вручную")
 

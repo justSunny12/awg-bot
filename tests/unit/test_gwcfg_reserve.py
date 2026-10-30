@@ -3,9 +3,9 @@
 голосования без точки в конце.
 
 Цена ошибки: конфиг линка к резерву с PostUp или без Table = off — команда
-или маршрут по умолчанию на шлюзе от сервера; доля в точке резерва (x = 1)
-или аварийного кода (x = 255) у шлюза — шлюз вместе с резервом или с кодом
-собирает ключ без аварии; неизвестное состояние пересылки, принятое как
+или маршрут по умолчанию на шлюзе от сервера; доля прямой самого `M` в
+разделе — шлюз вместе с резервом собирает ключ без большинства и без
+аварии (прямой больше нет, точка шлюза — только в разделе quorum); неизвестное состояние пересылки, принятое как
 есть, — решение о пересылке по мусору.
 """
 from __future__ import annotations
@@ -31,14 +31,15 @@ def _conf(extra: str = "", table: str = "Table = off\n", endpoint: str = "Endpoi
 def _sec(**over) -> dict:
     sec = {"self": "203.0.113.10", "state": "idle", "move": 0, "name": "Beta", "slot": 1,
            "record": "vpn-a.example.org", "peer_host": "198.51.100.7",
-           "share": {"x": 2, "y": "cd" * 16, "gen": 1}, "link": {"conf": _conf()}}
+           "link": {"conf": _conf()}}
     sec.update(over)
     return gwcfg.parse({"gen": 1, "hash": "ab" * 8, "reserve": sec})["sections"]["reserve"]
 
 
 def test_a_good_section_passes_and_renders_the_conf_by_the_allow_list():
     out = gwcfg.check_reserve(_sec())
-    assert out["state"] == "idle" and out["share"] == {"x": 2, "y": "cd" * 16, "gen": 1}
+    assert out["state"] == "idle"
+    assert "share" not in out, "раздел reserve несёт долю прямой M"
     assert "Table = off" in out["conf_text"] and "PersistentKeepalive = 25-35" in out["conf_text"]
 
 
@@ -54,19 +55,24 @@ def test_a_link_conf_outside_the_allow_list_is_refused(conf, why):
         gwcfg.check_reserve(_sec(link={"conf": conf}))
 
 
-@pytest.mark.parametrize("share", [
-    {"x": 1, "y": "cd" * 16, "gen": 1}, {"x": 255, "y": "cd" * 16, "gen": 1},
-    {"x": 2, "y": "cd" * 15, "gen": 1}, {"x": 2, "y": "cd" * 16, "gen": 0}],
-    ids=["reserve_point", "code_point", "short", "no_generation"])
-def test_a_share_not_of_a_gateway_point_is_refused(share):
-    with pytest.raises(gwcfg.CfgError):
-        gwcfg.check_reserve(_sec(share=share))
+@pytest.mark.parametrize("share", [{"x": 2, "y": "cd" * 16, "gen": 1}, {"x": 1, "y": "cd" * 16, "gen": 1}, {}],
+                         ids=["gateway_point", "reserve_point", "empty"])
+def test_a_share_from_an_older_server_is_not_taken_into_the_section(share):
+    """Сервер прежнего выпуска ещё кладёт долю прямой в раздел: разбор её не берёт,
+    проверка не отказывает разделу (линк к резерву нужен и так), на шлюз доля не ложится."""
+    raw = {"self": "203.0.113.10", "state": "idle", "move": 0, "name": "Beta", "slot": 1,
+           "record": "vpn-a.example.org", "peer_host": "198.51.100.7", "share": share, "link": {"conf": _conf()}}
+    parsed = gwcfg.parse({"gen": 1, "hash": "ab" * 8, "reserve": raw})["sections"]["reserve"]
+    assert "share" not in parsed, f"разбор взял долю: {parsed.get('share')}"
+    assert "share" not in gwcfg.check_reserve(parsed)
 
 
-def test_no_share_yet_is_fine_and_a_non_hex_share_is_dropped_at_parsing():
-    assert gwcfg.check_reserve(_sec(share={}))["share"] == {}
-    assert gwcfg.check_reserve(_sec(share={"x": 2, "y": "zz" * 16, "gen": 1}))["share"] == {}, \
-        "доля не hex легла на шлюз как есть"
+def test_the_section_print_does_not_depend_on_a_share_any_more():
+    """Отпечаток раздела без доли: сервер прежнего выпуска с долей и без неё даёт тот же
+    отпечаток — документ не гоняется зря при смене поколения `M`."""
+    sec = {"self": "203.0.113.10", "state": "idle", "move": 0, "link": {"conf": _conf()}}
+    assert gwcfg.reserve_print(sec) == gwcfg.reserve_print({**sec, "share": {"x": 2, "y": "cd" * 16, "gen": 5}})
+    assert "share=" not in gwcfg.reserve_print(sec)
 
 
 @pytest.mark.parametrize("state", ["serving", "open", "rm -rf /"])
