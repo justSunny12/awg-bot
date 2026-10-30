@@ -98,6 +98,9 @@ class _Link:
         self.sent.append((slot, kind, body))
         return self.ok
 
+    async def send_quorum(self, slot, kind, body=None):       # как DeliverMixin.send_quorum
+        return await self.send(slot, kind, body)
+
 
 async def test_gwlink_goes_over_the_config_channel(monkeypatch):
     link = _Link()

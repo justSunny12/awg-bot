@@ -11,6 +11,19 @@ from .common import SERVER_CAPS, log
 
 
 class DeliverMixin:
+    async def send_quorum(self, slot_id: int, kind: str, body: dict | None = None) -> bool:
+        """Слова кворума своему шлюзу (runtime/rsvactions, действие «gwlink») — каждый вид
+        своей отправкой: сторож видов канала (tests/unit/test_gwlink_kinds) читает литералы,
+        а шлюз разбирает ровно эти шесть."""
+        senders = {"qask": lambda: self.send(slot_id, "qask", body), "qtake": lambda: self.send(slot_id, "qtake", body),
+                   "qrel": lambda: self.send(slot_id, "qrel", body), "qneed": lambda: self.send(slot_id, "qneed", body),
+                   "qpause": lambda: self.send(slot_id, "qpause", body), "qstate": lambda: self.send(slot_id, "qstate", body)}
+        fn = senders.get(kind)
+        if fn is None:
+            log.warning("канал конфигурации: слово кворума «%s» неизвестно — не ушло", kind)
+            return False
+        return await fn()
+
     async def send(self, slot_id: int, kind: str, body: dict | None = None,
                    pad: int = gwlink.PAD_DELTA) -> bool:
         sess = self._sessions.get(slot_id)

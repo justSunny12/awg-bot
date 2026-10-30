@@ -82,7 +82,7 @@ async def _one(act: tuple) -> None:
         # своему шлюзу по каналу конфигурации (кворум: qask, qtake, qrel, qneed, qpause, qstate)
         from awgbot.runtime import linkserver
         srv = linkserver._server
-        if srv is None or not await srv.send(int(act[1]), act[2], act[3] if len(act) > 3 else None):
+        if srv is None or not await srv.send_quorum(int(act[1]), act[2], act[3] if len(act) > 3 else None):
             log.info("резерв: шлюзу %s «%s» по каналу не ушло — сессии нет", act[1], act[2])
     elif kind == "notify":
         from awgbot.bot.notifier import send_notifications

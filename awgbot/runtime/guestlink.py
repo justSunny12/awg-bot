@@ -200,11 +200,16 @@ async def _one(services, act: tuple) -> None:
         if lc is not None and getattr(lc, "_writer", None) is not None:
             await lc._send("ping", {"n": str(act[1])})      # noqa: SLF001 — проба живости по каналу конфигурации
     elif kind == "link":
-        # слово своему серверу по каналу конфигурации (кворум: qview, qshare)
+        # слово своему серверу по каналу конфигурации (кворум: qview) — литералом вида: сторож
+        # видов канала (tests/unit/test_gwlink_kinds) читает отправителей
         from awgbot.runtime import linkclient
         lc = linkclient.ensure(services)
+        body = dict(act[2] if len(act) > 2 else {})
         if lc is not None and getattr(lc, "_writer", None) is not None:
-            await lc._send(str(act[1]), dict(act[2] if len(act) > 2 else {}))      # noqa: SLF001
+            if str(act[1]) == "qview":
+                await lc._send("qview", body)                 # noqa: SLF001
+            else:
+                log.warning("канал конфигурации: слово «%s» серверу неизвестно — не ушло", act[1])
     elif kind == "open":
         from awgbot.infra.gwguard import rsv as rsvlink
         await asyncio.to_thread(rsvlink.open_forward, list(act[1]))

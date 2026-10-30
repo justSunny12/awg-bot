@@ -107,7 +107,7 @@ class InboundMixin:
             # проба живости сервера по подозрению шлюза (резерв): ответ тем же нонсом
             await self.send(gw.id, "pong", {"n": str(msg.get("n") or "")[:32]})
             return
-        if kind in ("qview", "qshare"):
+        if kind == "qview":
             # кворум: взгляд своего шлюза на мою линию, точка ключа кворума
             if hasattr(self.services, "reserve_quorum_link_in"):
                 from awgbot.runtime import rsvactions

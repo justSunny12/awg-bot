@@ -203,6 +203,28 @@ def _line(kind: str, body: dict | None, pad: int) -> bytes:
     return gwlink.pack(gwlink.channel_key(DUMMY_PRIV), kind, body, seq=3, pad=pad, now=NOW, nonce=nonce)
 
 
+# слова кворума (4.2.0): сервер → шлюз по каналу конфигурации (rsvactions «gwlink» → send_quorum),
+# шлюз → сервер — взгляд голосующего (guestlink «link»)
+_SERVER_REFS.update({
+    "qask": ({'l': 'a', 'g': 4, 'tgt': 'r'}, gwlink.PAD_DELTA,
+            "967f0fb1c55c004fb3358dbc4fe7fe8fc099d6602356c9a556a51e1ebda39ca1"),
+    "qtake": ({'l': 'a', 'e': 12, 'tgt': 'r'}, gwlink.PAD_DELTA,
+             "4fc1bc01dc63417fa611198be17b5e89ac6242b2ebf4d2d7624054e85e519202"),
+    "qrel": ({'l': 'a', 'e': 12}, gwlink.PAD_DELTA,
+            "91f47cb9b0cff0e82c95f78c3983d10ff40b211e338c65dad573987ec80758bb"),
+    "qneed": ({'l': 'a', 'q_gen': 3, 'since': '2026-10-30T14:05:00+03:00'}, gwlink.PAD_DELTA,
+             "fa63ba4fe86c85fb03b13bf8a9ec5acc08b7777755a322860ac32e66f4c4be00"),
+    "qpause": ({'l': 'a', 'until': '2026-10-30T14:10:00+03:00'}, gwlink.PAD_DELTA,
+              "9354ccbf5a76b1a516921e9fba9e333b5f19cfddb0412d4821ccfd1859326c6f"),
+    "qstate": ({'l': 'a', 'e': 12, 'holder': 'self', 'r': 'lead'}, gwlink.PAD_DELTA,
+              "4d59848b382eae5bf0c03bdc2b53d0573e2fadd8cb2cb090fe20559b36b89c26"),
+})
+_CLIENT_REFS.update({
+    "qview": ({'l': 'a', 'g': 4, 'w': 'see', 'since': '2026-10-30T14:05:00+03:00', 'e': 12, 'tgt': 'h', 'i': {'hs': 37, 'flow': True, 'at': '2026-10-30T14:05:00+03:00'}}, gwlink.PAD_DELTA,
+             "8f29ab74658a38c22758ac0ab5e7c46d04ad2f1442ec1135545a14454f2d231f"),
+})
+
+
 def test_the_reference_table_names_every_kind_and_nothing_else():
     """Новый вид обязан получить эталон; снятый — потерять его."""
     assert set(_SERVER_REFS) == SERVER_SENDS, sorted(set(_SERVER_REFS) ^ SERVER_SENDS)

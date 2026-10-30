@@ -673,7 +673,7 @@ cmd_take() {
     state_write admin="${GUEST_ADMIN:-}" netmap="$nm" netmap_why="$why" netmap_miss="$miss" \
         probe_addr="${GUEST_PROBE_ADDR:-}" probe_net="${GUEST_PROBE_NET:-}" probe_port="${GUEST_PROBE_PORT:-8789}"
     # ответчик кворума бота основы — второй адрес клона (тем же /26, что у основы: маршрут на подблок)
-    [ -n "${GUEST_PROBE_ADDR:-}" ] && { nsx ip addr replace "$GUEST_PROBE_ADDR" dev "$iface" || say "ВНИМАНИЕ: второй адрес клона $GUEST_PROBE_ADDR не встал"; }
+    [ -n "${GUEST_PROBE_ADDR:-}" ] && { nsx ip addr replace "${GUEST_PROBE_ADDR:-}" dev "$iface" || say "ВНИМАНИЕ: второй адрес клона ${GUEST_PROBE_ADDR:-} не встал"; }
     zone_nft "$ifaces" || die "nft отверг таблицу зоны"
     # ответы на блоки пула — через veth в зону (иначе хост увёл бы их маршрутом по умолчанию)
     for pair in $(state_get netmap); do ip route replace "${pair#*=}" via "$ZONE_V" dev "$VH"; done

@@ -27,6 +27,7 @@ RESERVE = {
     "pair_channel_port": 8788,
     "zone_cidr": "169.254.77.0/30",
     "zone_rf_cidr": "169.254.77.4/30",
+    "zone_tg_cidr": "169.254.77.8/30",
     "zone_pool": "169.254.96.0/19",
     "rsv_cidrs": ["10.99.97.0/30", "10.99.97.4/30"],
     "suspect_seconds": 40,
@@ -44,6 +45,8 @@ RESERVE = {
     "tg_pool_max": 256,
     "tg_pool_learn_syn": 3,
     "tg_pool_stale_days": 3,
+    "quorum": {"port": 8789, "probe_seconds": 15, "no_seconds": 45, "yes_window_seconds": 40, "down_seconds": 20,
+               "up_seconds": 100, "pledge_minutes": 10, "tie_minutes": 3, "act": True},
 }
 
 
