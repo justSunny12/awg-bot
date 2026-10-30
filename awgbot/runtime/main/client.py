@@ -55,6 +55,12 @@ async def main() -> None:
     # сброса карточка слота зажгла бы «на связи» у шлюза, который ещё не
     # переподключился. До поллинга — чтобы ни один экран их не увидел.
     services.gwlink_sessions_reset()
+    try:
+        # кворум резерва: лидер линии стартует без права записи — до поллинга, не первым тактом
+        if hasattr(services, "reserve_quorum_leader_start"):
+            services.reserve_quorum_leader_start()
+    except Exception as e:                                    # noqa: BLE001
+        log.warning("кворум: ограждение на старте: %s", e)
 
     from awgbot.runtime import tgsession
     bot = pkg.Bot(

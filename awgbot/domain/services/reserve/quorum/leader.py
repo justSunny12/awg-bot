@@ -54,7 +54,7 @@ class ReserveQuorumLeaderMixin:
                 self.__dict__.pop("_rsv_qleader", None)
                 return None
             q2 = self.reserve_quorum_leader_host() != m.l        # отъезд: ответчик дома считает «да» для Q2
-            if q2 and self.reserve_out() != "away":
+            if q2 and not self._quorum_away_for_q2():
                 self.__dict__.pop("_rsv_qleader", None)
                 return None
             l, g, members, leader_host = m.l, int(m.g), list(m.members), m.l
@@ -81,6 +81,28 @@ class ReserveQuorumLeaderMixin:
             ld.set_epoch(self.reserve_quorum_epoch())
         return ld
 
+    def reserve_quorum_leader_start(self) -> None:
+        """Старт процесса основы (до поллинга): лидер своей линии дома — без права записи, пока
+        правило не наберёт первое большинство «да». Ограждение ставится здесь, а не первым тактом
+        кворума: между стартом и тактом правка была бы принята, хотя эпоху мог забрать кандидат,
+        пока основа лежала."""
+        if getattr(self, "guest", False):
+            return
+        ld = self._quorum_leader_setup()
+        if ld is None or ld.q2 or ld.v < 2:
+            return
+        if self.__dict__.pop("_quo_start_pending", False) and hasattr(self, "reserve_quorum_fence_apply"):
+            self.reserve_quorum_fence_apply("start", ld)      # действий у «старта» нет (Т-К7 — по сроку, тактом)
+
+    def _quorum_away_for_q2(self) -> bool:
+        """Пользователи уходят или ушли к резерву: `away`, шаги передачи `leaving` (record/release/
+        released — шлюзам уже сказано «away», их пробы домой должны получать ответ, иначе «не вижу» и
+        обязательство «нет» закрыли бы возврат «сразу» по Q2 до срока обязательства) и возврат до
+        `relay`."""
+        state, step = self.reserve_out(), str(self.rsv_get("rsv_out").get("step") or "")
+        return state == "away" or (state == "leaving" and step in ("record", "release", "released")) \
+            or (state == "returning" and step != "relay")
+
     def reserve_quorum_responder_addr(self) -> tuple[str, int] | None:
         """(адрес, порт) ответчика, если я лидер своей линии; иначе None."""
         from awgbot.infra import quoprobe
@@ -92,7 +114,7 @@ class ReserveQuorumLeaderMixin:
         m = self.reserve_quorum_mine()
         if m is None or not self.reserve_quorum_active():
             return None
-        if self.reserve_quorum_leader_host() != m.l and self.reserve_out() != "away":
+        if self.reserve_quorum_leader_host() != m.l and not self._quorum_away_for_q2():
             return None
         return probenet.responder_addr(m.l), int(self.reserve_probes().get(m.l, {}).get("port") or quoprobe.port())
 

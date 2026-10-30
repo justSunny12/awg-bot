@@ -118,8 +118,10 @@ class Voter:
         if base and now - base >= t.no_s and self.view != "uns" and not self.paused(now):
             self._set("uns", now)
             out.append("uns")
-        # обязательство — по сроку
-        if self.pledge is not None and now - float(self.pledge.get("at") or 0) >= t.pledge_s:
+        # обязательство — по сроку; и когда линия ушла за его эпоху (клон или новый лидер ответил
+        # эпохой больше): «не скажу «да» лидеру под e» больше не о ком — переезд состоялся
+        if self.pledge is not None and (now - float(self.pledge.get("at") or 0) >= t.pledge_s
+                                        or int(self.epoch) > int(self.pledge.get("e") or 0)):
             self.pledge = None
             out.append("unpledge")
         if now >= self.next_probe:

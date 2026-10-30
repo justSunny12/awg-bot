@@ -209,13 +209,24 @@ class ReserveQuorumCandidateMixin:
         since = self._quorum_no_since(c)
         self.__dict__["_quo_exec"] = {"stage": "ask", "at": now, "e": e, "since": since, "points": {}, "need_at": 0.0, "own": c.own}
         log.warning("кворум: забираю «%s» под эпоху %s: «нет» %d из %d", self.reserve_peer_name(), e + 1, len(c.no_nodes()), c.v)
-        if self.reserve_online():
+        if self._quorum_peer_reachable():
             actions.append(("send", "ask", {"case": "q", "since": since, "kind": self._quorum_kind(c)}))
             self.__dict__["_quo_exec"]["asked"] = True
         else:
             self.__dict__["_quo_exec"]["stage"] = "points"
             actions += self._quorum_need(c, since)
         return actions
+
+    def _quorum_peer_reachable(self) -> bool:
+        """Второй сервер на связи живым словом: сеанс канала есть и живость не `down`. Один флаг
+        сеанса — не то: сеанс отрезанного сервера держится до ~23 мин, и просьба ждала бы
+        `ask_seconds` впустую вместо пути по точкам."""
+        if not self.reserve_online():
+            return False
+        try:
+            return self.reserve_peer_seen() != "down"
+        except Exception:                                     # noqa: BLE001
+            return True
 
     @staticmethod
     def _quorum_kind(c: Candidate) -> str:
@@ -301,7 +312,7 @@ class ReserveQuorumCandidateMixin:
             return self._quorum_take(c, now)
         ask_s = settings.get_int("app.reserve.ask_seconds", 60)
         if stage == "ask" and now - float(ex.get("at") or now) >= ask_s:
-            if 0 < int(ex.get("busy") or 0) < 3 and self.reserve_online():
+            if 0 < int(ex.get("busy") or 0) < 3 and self._quorum_peer_reachable():
                 # лидер ответил «занят» (плановая пауза) — повторить просьбу (§3.6), не сразу по точкам
                 ex["at"] = now
                 log.info("кворум: «%s» был занят — прошу снова (%d)", self.reserve_peer_name(), int(ex["busy"]))

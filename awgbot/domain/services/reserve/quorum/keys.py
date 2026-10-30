@@ -193,7 +193,7 @@ class ReserveQuorumKeysMixin:
                 "cy": cg.reserve_point()[1].hex(), "cbox": cg.cbox(m).hex()}
         if poly is not None:                                  # ящик кворума — пока кворум линии решает
             qg = rsvkeys.QuorumGen(want["q_gen"], poly)
-            body.update(q_gen=want["q_gen"], t=poly.t, y=qg.reserve_point()[1].hex(), qbox=qg.qbox(m).hex())
+            body.update(q_gen=want["q_gen"], thr=poly.t, y=qg.reserve_point()[1].hex(), qbox=qg.qbox(m).hex())
         return body
 
     def reserve_qkeys_in(self, body: dict) -> list[tuple]:
@@ -219,7 +219,7 @@ class ReserveQuorumKeysMixin:
             return []
         rec = {"l": l, "m_gen": int(body.get("m_gen") or 0), "x": x, "c_gen": int(body.get("c_gen") or 0),
                "cy": str(body["cy"]), "cbox": str(body["cbox"]), "at": timeutil.now_iso(),
-               "q_gen": int(body.get("q_gen") or 0) if poly_part else 0, "t": int(body.get("t") or 0) if poly_part else 0,
+               "q_gen": int(body.get("q_gen") or 0) if poly_part else 0, "t": int(body.get("thr") or 0) if poly_part else 0,
                "y": str(body.get("y") or "") if poly_part else "", "qbox": str(body.get("qbox") or "") if poly_part else ""}
         with _LOCK:
             old = dict(self.reserve_qkeys().get("peer") or {})

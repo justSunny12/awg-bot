@@ -32,7 +32,7 @@ PAIR_BODIES = {
     "qmem": {"l": "a", "g": 3, "members": ["a", "b", "a1"]},
     "qmem_ok": {"l": "a", "g": 3},
     "qprobe": {"l": "a", "g": 3, "conf": "[Interface]\n"},
-    "qkeys": {"l": "a", "m_gen": 2, "q_gen": 1, "t": 2, "x": 4, "y": "ab" * 16, "qbox": "cd" * 40, "c_gen": 1,
+    "qkeys": {"l": "a", "m_gen": 2, "q_gen": 1, "thr": 2, "x": 4, "y": "ab" * 16, "qbox": "cd" * 40, "c_gen": 1,
               "cy": "ef" * 16, "cbox": "01" * 40},
     "qkeys_ok": {"l": "a", "m_gen": 1, "q_gen": 1, "c_gen": 1},
     "qview": {"l": "b", "g": 2, "w": "see", "since": "2026-11-02T14:05:00", "e": 12, "i": {"hs": 3}},

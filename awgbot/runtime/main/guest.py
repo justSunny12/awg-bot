@@ -133,12 +133,6 @@ async def run_guest() -> None:
             except Exception as e:                       # noqa: BLE001
                 log.warning("гость: «переподключи VPN» не разослано: %s", e)
         await _primary_back_notice(bot, services, told)
-        try:
-            # кворум: ответчик на втором адресе клона, счёт «да» — боту резерва (qcount)
-            from awgbot.runtime import quorum as _quorum, rsvactions
-            await _quorum.tick(services, rsvactions.run)
-        except Exception as e:                           # noqa: BLE001
-            log.warning("гость: кворум: %s", e)
         if tg_set.is_set() and wh is not None and asyncio.get_running_loop().time() >= watch_due:
             watch_due = asyncio.get_running_loop().time() + webhook.watch_delay()
             await _watch(wh, bot, services, ctl)

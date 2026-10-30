@@ -155,7 +155,7 @@ class Cand:
         self.members = list(MEMBERS if members is None else members)
         b.peer_line(members=self.members)
         assert self.s.reserve_quorum_side() == "a", "подготовка: резерв в тестах — сторона a"
-        acts = self.s.reserve_qkeys_in({"l": LINE, "m_gen": M_GEN, "q_gen": Q_GEN, "t": 2, "x": rsvkeys.RESERVE_X,
+        acts = self.s.reserve_qkeys_in({"l": LINE, "m_gen": M_GEN, "q_gen": Q_GEN, "thr": 2, "x": rsvkeys.RESERVE_X,
                                         "y": RSV_Y, "qbox": QBOX, "c_gen": 1, "cy": RSV_Y, "cbox": QBOX})
         assert acts, "подготовка: точки линии b не приняты"
         self.v = Voter(LINE, "a")

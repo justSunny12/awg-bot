@@ -28,7 +28,7 @@ SNAPSHOT_TICK_SECONDS = 30
 CTL_TICK_SECONDS = 5
 # задания гостя — сторож-тест сверяет с планировщиком
 GUEST_JOBS: tuple[str, ...] = ("poll", "expiry", "monthly", "monthly_catchup", "purge_history", "email_resume",
-                               "tg_names", "tg_names_startup", "guest_monitor", "guest_snapshot", "guest_ctl",
+                               "tg_names", "tg_names_startup", "guest_monitor", "guest_snapshot", "guest_ctl", "guest_quorum",
                                "guest_routing", "routing_liveness", "listsnap_nightly", "listsnap_startup")
 
 
@@ -115,6 +115,15 @@ def setup_guest_scheduler(services, bot, db, on_ctl_tick=None) -> AsyncIOSchedul
         except Exception as e:                       # noqa: BLE001
             log.warning("гость: такт канала: %s", e)
 
+    async def job_guest_quorum():
+        # кворум: ответчик на втором адресе клона, счёт «да» — боту резерва (qcount). Своим заданием:
+        # в такте канала вызовы Telegram (вебхук, рассылка) с таймаутами задержали бы ответчик
+        try:
+            from awgbot.runtime import quorum as _quorum, rsvactions
+            await _quorum.tick(services, rsvactions.run)
+        except Exception as e:                       # noqa: BLE001
+            log.warning("гость: кворум: %s", e)
+
     scheduler.add_job(core["poll"], _trig_poll(), id="poll", max_instances=1, coalesce=True,
                       next_run_time=now, misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
     scheduler.add_job(core["expiry"], _trig_expiry(), id="expiry", max_instances=1, coalesce=True,
@@ -141,6 +150,9 @@ def setup_guest_scheduler(services, bot, db, on_ctl_tick=None) -> AsyncIOSchedul
                       misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
     scheduler.add_job(job_guest_ctl, IntervalTrigger(seconds=CTL_TICK_SECONDS, timezone=_TZ),
                       id="guest_ctl", max_instances=1, coalesce=True,
+                      misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
+    scheduler.add_job(job_guest_quorum, IntervalTrigger(seconds=CTL_TICK_SECONDS, timezone=_TZ),
+                      id="guest_quorum", max_instances=1, coalesce=True,
                       misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
 
     def _make_reschedule(job_id, factory):

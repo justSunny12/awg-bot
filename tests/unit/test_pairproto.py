@@ -193,7 +193,7 @@ def test_qkeys_without_the_polynomial_passes_and_the_code_box_is_required():
     проходит; без ящика или точки кода — рвёт сессию (второй сервер иначе молча остался
     бы без пути кода)."""
     assert pp.check(pp.PAIR_PROTO, "qkeys", dict(_QK), pp.INVITER) == _QK
-    full = {**_QK, "q_gen": 3, "t": 2, "y": "ef" * 16, "qbox": "01" * 56}
+    full = {**_QK, "q_gen": 3, "thr": 2, "y": "ef" * 16, "qbox": "01" * 56}
     assert pp.check(pp.PAIR_PROTO, "qkeys", dict(full), pp.INVITER) == full, "часть многочлена потеряна схемой"
     for name in ("cbox", "cy", "m_gen", "c_gen", "x", "l"):
         body = {k: v for k, v in _QK.items() if k != name}

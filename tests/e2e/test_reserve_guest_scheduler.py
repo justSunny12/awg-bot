@@ -24,7 +24,7 @@ pytestmark = pytest.mark.e2e
 
 # задания данных пользователей основы + задача шифрованного снимка + монитор без хоста + такт канала
 CORE = {"poll", "expiry", "monthly", "monthly_catchup", "purge_history", "email_resume", "tg_names", "tg_names_startup"}
-OWN = {"guest_monitor", "guest_snapshot", "guest_ctl"}
+OWN = {"guest_monitor", "guest_snapshot", "guest_ctl", "guest_quorum"}
 # РФ-доступ пользователей основы в зоне — тем же кодом, что на основе
 ROUTING = {"guest_routing", "routing_liveness"}
 # снимки списков и «Скрыть» в базе зоны: такт после полуночи и догон на старте

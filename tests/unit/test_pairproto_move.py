@@ -157,7 +157,7 @@ def test_the_optional_fields_are_only_the_listed_ones_of_st_and_state():
                            "go": frozenset({"ttl", "k", "sealed", "oid"}), "go_req": frozenset({"ttl"}),
                            "pkg": frozenset({"jrn"}), "released": frozenset({"epoch", "last"}),
                            # часть многочлена в qkeys — пока кворум линии решает (с сопряжения — только ящик кода)
-                           "qkeys": frozenset({"q_gen", "t", "y", "qbox"}),
+                           "qkeys": frozenset({"q_gen", "thr", "y", "qbox"}),
                            # точка расхождения в jstale — у выпуска с хвостом старой эпохи
                            "jstale": frozenset({"F"}),
                            "hello": frozenset({"pair", "eph", "name", "version", "caps", "gen", "ports", "seen",

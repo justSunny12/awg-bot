@@ -113,7 +113,7 @@ def test_enabling_makes_only_the_polynomial_and_keeps_m_k_the_code_line_and_the_
     assert line.s.__dict__.get("_rsv_pkg_due_at") is None, "включение заказало новый пакет — M и K прежние"
     body, blob = _qkeys(line.s), _blob(line.s)
     assert _code_opens(line.s, code0, body, blob).hex() == k0["m"], "код с сопряжения не открывает ящик кода после включения"
-    assert body["qbox"] and body["t"] == m.t("a"), "ящик кворума не ушёл второму серверу"
+    assert body["qbox"] and body["thr"] == m.t("a"), "ящик кворума не ушёл второму серверу"
 
 
 @pytest.mark.parametrize("opened", [True, False], ids=["peer_admin_opened", "peer_admin_never_opened"])
@@ -409,7 +409,7 @@ def test_the_return_after_a_move_by_my_k_keeps_every_key(qaway):
 def test_qkeys_carries_the_reserve_points_and_both_boxes_of_the_current_generations(on):
     body = _qkeys(on.s)
     q, k = on.s.reserve_qkeys(), _keys(on.s)
-    assert (body["l"], body["x"], body["m_gen"], body["q_gen"], body["c_gen"], body["t"]) == \
+    assert (body["l"], body["x"], body["m_gen"], body["q_gen"], body["c_gen"], body["thr"]) == \
         ("a", 1, int(k["m_gen"]), q["q_gen"], q["c_gen"], q["t"]), body
     poly = shamir.Poly(tuple(bytes.fromhex(c) for c in q["poly"]))
     assert body["y"] == poly.point(1)[1].hex(), "в qkeys не точка резерва многочлена"
@@ -492,7 +492,7 @@ def _peer_body(**over) -> dict:
     """qkeys линии «Beta» (`b`) — как его собрала бы она сама."""
     m = rsvkeys.new_master()
     qg, cg = rsvkeys.QuorumGen.new(4, 2), rsvkeys.CodeGen.new(2)
-    body = {"l": "b", "m_gen": 3, "q_gen": 4, "t": 2, "x": 1, "y": qg.reserve_point()[1].hex(), "qbox": qg.qbox(m).hex(),
+    body = {"l": "b", "m_gen": 3, "q_gen": 4, "thr": 2, "x": 1, "y": qg.reserve_point()[1].hex(), "qbox": qg.qbox(m).hex(),
             "c_gen": 2, "cy": cg.reserve_point()[1].hex(), "cbox": cg.cbox(m).hex()}
     body.update(over)
     return body
@@ -503,7 +503,8 @@ def test_the_second_server_keeps_the_points_and_boxes_and_answers_qkeys_ok(line)
     acts = line.s.reserve_qkeys_in(body)
     assert acts == [("send", "qkeys_ok", {"l": "b", "m_gen": 3, "q_gen": 4, "c_gen": 2})], acts
     peer = line.s.reserve_quorum_peer_keys()
-    assert {k: peer[k] for k in body} == body, "точки и ящики второй линии легли не как пришли"
+    assert {("thr" if k == "t" else k): peer[k] for k in peer if k in body or k == "t"} == body, \
+        "точки и ящики второй линии легли не как пришли (порог thr хранится как t)"
     mine = line.s.reserve_qkeys()
     assert not line.s.reserve_quorum_poly_on() and mine["poly"] == [], "приём чужих ключей создал мой многочлен"
 
@@ -661,7 +662,7 @@ def test_with_threshold_3_two_points_do_not_open_and_three_do(on):
     on.ack_members()
     on.sync_keys()
     body, blob = _qkeys(on.s), _blob(on.s)
-    assert body["t"] == 3
+    assert body["thr"] == 3
     pts = [[body["x"], body["y"]]]
     for gw in on.s.db.gateways()[:2]:
         p = on.s.gwcfg_quorum(gw)["point"]
