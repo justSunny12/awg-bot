@@ -340,12 +340,16 @@ def test_two_replies_make_see_and_a_qview_goes_to_the_second_server_once(voter):
     assert _answer(voter, _next_probe(voter)) == [], "qview без смены взгляда"
 
 
-def test_no_qview_to_a_peer_without_quo1_or_offline(voter):
+def test_no_probe_to_a_peer_without_quo1(voter):
+    """Второй сервер 4.1.x: его порт AWG пробы не ждёт — зонд к нему не стоит, пробы не идут
+    (бесполезный трафик и вечное «не вижу»); вернулся quo1 — зонд снова в плане."""
     qc.peer_old(voter)
-    _answer(voter, _next_probe(voter))
-    voter.clock.t += 1
-    assert _answer(voter, _next_probe(voter)) == [], "qview второму серверу 4.1.x — разрыв канала пары"
-    assert voter.rsv_get("rsv_view")["quo_views"]["awgqbh"]["w"] == "see", "взгляд не записан, хотя слать некому"
+    assert "awgqbh" not in voter.reserve_quorum_probe_ifaces(), "зонд к серверу AWG без quo1"
+    acts = []
+    for _ in range(10):
+        acts += voter.reserve_quorum_voter_tick()
+        voter.clock.t += 5
+    assert not [a for a in acts if a[0] == "probe"], f"пробы второму серверу 4.1.x: {acts}"
 
 
 def test_no_qview_while_the_pair_link_is_down(voter):

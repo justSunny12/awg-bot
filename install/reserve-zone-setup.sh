@@ -307,14 +307,14 @@ zone_nft() {   # zone_nft "клоны" — таблица зоны; NETMAP от�
     state_write netmap= netmap_why=kernel netmap_miss=
 }
 
-link_nets() {   # /30 линков шлюзов основы по Address сторон зоны: с этих адресов агенты идут в Telegram
+link_nets() {   # адреса шлюзовых сторон линков (/32): сторона зоны — первый адрес /30, шлюз — второй
     local f addr base last
     for f in "$LINKS_DIR"/*.conf; do
         [ -f "$f" ] || continue
         addr="$(awk -F'[ =]+' '/^Address/{print $2; exit}' "$f")"; addr="${addr%/*}"
         case "$addr" in *.*.*.*) ;; *) continue ;; esac
         base="${addr%.*}"; last="${addr##*.}"
-        printf '%s.%s/30 ' "$base" "$(( last - last % 4 ))"
+        printf '%s.%s/32 ' "$base" "$(( last - last % 4 + 2 ))"
     done
 }
 
@@ -382,6 +382,7 @@ $( [ -n "$iface" ] && printf '        iifname "awglink*" oifname %s ct state est
 $( [ -n "$tgsrc" ] && printf '        iifname "awglink*" ip saddr %s ip daddr @tg_out4 tcp dport 443 ct state new meter tg_src { ip saddr ct count over 8 } drop\n        iifname "awglink*" oifname "%s" ip saddr %s ip daddr @tg_out4 tcp dport 443 accept\n' "$tgsrc" "$XN" "$tgsrc" )
         iifname "awglink*" drop
     }
+$( [ -n "$tgsrc" ] && printf '    chain zone_mss {\n        type filter hook postrouting priority mangle; policy accept;\n        oifname "%s" tcp flags syn tcp option maxseg size set rt mtu\n    }\n' "$XN" )
     chain zone_post {
         type nat hook postrouting priority srcnat; policy accept;
 $( for pair in $nm; do printf '        oifname "%s" ip saddr %s snat ip prefix to ip saddr map { %s : %s }\n' "$VN" "${pair%%=*}" "${pair%%=*}" "${pair#*=}"; done )

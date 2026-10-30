@@ -1164,6 +1164,20 @@ cmd_post_uninstall() {
     # пространство зондов кворума резерва (обе роли) и его конфиги — работа бота, прочь
     ip netns del awg-quo 2>/dev/null || true
     rm -rf /var/lib/awg-gw/quorum
+    if [[ "${AWG_ROLE:-}" != "gateway" ]]; then
+        # ВПС: пиры-зонды и второй адрес ответчика (169.254.88.0/24) на интерфейсах AWG — тоже работа бота;
+        # интерфейсы с пользователями остаются
+        local qf qi pub
+        for qf in /etc/amnezia/amneziawg/*.conf; do
+            [[ -f "$qf" ]] && grep -q '169\.254\.88\.' "$qf" || continue
+            qi="$(basename "$qf" .conf)"
+            while read -r pub _; do
+                [[ -n "$pub" ]] && awg set "$qi" peer "$pub" remove 2>/dev/null || true
+            done < <(awg show "$qi" allowed-ips 2>/dev/null | grep '169\.254\.88\.' || true)
+            ip -4 addr show dev "$qi" 2>/dev/null | awk '/inet 169\.254\.88\./{print $2}' | while read -r a; do ip addr del "$a" dev "$qi" 2>/dev/null || true; done
+            awk -v RS= -v ORS='\n\n' '!/AllowedIPs *= *169\.254\.88\./' "$qf" | sed '/^Address *= *169\.254\.88\./d' > "$qf.tmp" && mv "$qf.tmp" "$qf"
+        done
+    fi
     if [[ "${AWG_ROLE:-}" == "gateway" ]]; then
         # Обвязка шлюза — целиком работа бота: линк до сервера AWG, юнит
         # реассерта, таблицы (в них же SSH-фильтр шлюза), /etc/awg-gw,

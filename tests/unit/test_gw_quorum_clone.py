@@ -52,7 +52,7 @@ def ag(tmp_path, monkeypatch):
     clock = _Clock()
     ups: list[str] = []
     monkeypatch.setattr(quomod, "time", types.SimpleNamespace(monotonic=clock.monotonic))
-    monkeypatch.setattr(quoprobe, "up", lambda name, conf: ups.append(name) or "up: ok")
+    monkeypatch.setattr(quoprobe, "up", lambda name, conf, port=0: ups.append(name) or "up: ok")
     monkeypatch.setattr(quoprobe, "down", lambda name: "down: ok")
     monkeypatch.setattr(quoprobe, "standing", lambda: list(ups))
     monkeypatch.setattr(quoprobe, "wipe", lambda: "wipe: ok")

@@ -441,12 +441,14 @@ def q3(mv, monkeypatch):
     return w
 
 
-def test_an_adopted_epoch_with_the_majority_back_comes_home_with_a_new_epoch(q3):
+def test_an_adopted_epoch_with_the_majority_back_comes_home_with_a_new_epoch(q3, monkeypatch):
     """Основу не видят — она лишена кворума; кандидат забирал (qtake{e} →
     голосующие под e + 1), основа приняла эпоху по пробе, а открытие не
-    состоялось и большинство снова видит основу: правило лидера возвращает её к
-    записи под новой эпохой здесь — иначе бот основы молчит пользователям, пока
-    держатель «у второй стороны», которая пользователей не взяла."""
+    состоялось. Большинство «да» снова здесь — само по себе не доказательство
+    (это обычное Q2 после переезда): запись возвращается только по факту живой
+    второй стороны, сказавшей после принятия, что моих пользователей у неё нет;
+    до него основа следует (один писатель)."""
+    from awgbot.util import timeutil
     e = q3.s.reserve_quorum_epoch()
     q3.t += W + 1                                         # «да» вышли из окна
     q3.s.reserve_quorum_leader_tick(q3.t)
@@ -457,14 +459,26 @@ def test_an_adopted_epoch_with_the_majority_back_comes_home_with_a_new_epoch(q3)
     assert q3.meta() == ("peer", "follower", e + 1), "предпосылка: эпоха по пробе не принята"
     q3.s.reserve_epoch_check()
     assert q3.meta()[0] == "peer", "страховка такта сняла принятую эпоху"
-    for _ in range(40):                                   # «да» под e + 1 дольше окна U
+    assert q3.s.reserve_quorum_adopted(), "отметка принятия не на диске"
+    for _ in range(40):                                   # «да» под e + 1 дольше окна U — без слова второй стороны
+        q3.t += 5
+        q3.probe_e("b", e + 1)
+        q3.probe_e("a1", e + 1)
+        q3.s.reserve_quorum_leader_tick(q3.t)
+    assert q3.meta()[0] == "peer", f"большинство «да» вернуло запись без слова второй стороны: {q3.meta()}"
+    # вторая сторона жива и после принятия говорит, что моих пользователей у неё нет
+    monkeypatch.setattr(q3.s, "reserve_peer_seen", lambda: "ok")
+    q3.s.rsv_update("rsv_peer_state", session=True, inn="idle", st_stale=False,
+                    at=timeutil.to_iso(timeutil.shift(timeutil.now(), 3600)))
+    for _ in range(40):
         q3.t += 5
         q3.probe_e("b", e + 1)
         q3.probe_e("a1", e + 1)
         q3.s.reserve_quorum_leader_tick(q3.t)
         if q3.meta()[0] == "self":
             break
-    assert q3.meta() == ("self", "holder", e + 2), f"возврат правилом лидера не дал эпоху здесь + 1: {q3.meta()}"
+    assert q3.meta() == ("self", "holder", e + 2), f"возврат по факту второй стороны не дал эпоху здесь + 1: {q3.meta()}"
+    assert not q3.s.reserve_quorum_adopted(), "отметка принятия не снята"
 
 
 def test_a_holder_peer_not_adopted_by_the_quorum_is_not_taken_back(q3):

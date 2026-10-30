@@ -122,11 +122,13 @@ class ReserveQuorumReturnsMixin:
             return []
         e = int(v.epoch) if v is not None else 0
         actions: list[tuple] = []
-        for node in c.voters:
+        sent = []
+        for node in c.voters:                                 # всем голосующим с живым каналом
             vt = c.votes.get(node)
-            if vt is not None and vt.w == "uns":
+            if vt is not None and vt.alive:
                 actions += self._quorum_to_own_gw(node, "qtake", {"l": c.l, "e": e})
-        c.unpledge(c.pledged())
+                sent.append(node)
+        c.unpledge(sent)
         log.warning("кворум: бот на «%s» не видят %d из %d — возвращаю пользователей сам", self.reserve_peer_name(),
                     len(c.no_nodes()), c.v)
         self.rsv_update("rsv_out", quorum_return={"at": timeutil.now_iso(), "no": len(c.no_nodes()), "v": c.v})

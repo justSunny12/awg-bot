@@ -89,7 +89,7 @@ class QuorumRuntime:
         except Exception as e:                                # noqa: BLE001
             log.warning("кворум: план сокетов не собрался: %s", e)
             return
-        await self._ensure_responder(plan.get("responder"))
+        await self._ensure_responder(plan.get("responder"), str(plan.get("responder_if") or ""))
         await self._ensure_probes(plan.get("probes") or {})
         try:
             actions = await asyncio.to_thread(self.services.quorum_tick)
@@ -117,7 +117,7 @@ class QuorumRuntime:
         except OSError as e:
             log.info("кворум: проба %s не ушла: %s", name, e)
 
-    async def _ensure_responder(self, want) -> None:
+    async def _ensure_responder(self, want, iface: str = "") -> None:
         want = (str(want[0]), int(want[1])) if want else None
         if self._resp is not None and self._resp[0] != want:
             self._resp[1].close()
@@ -127,7 +127,15 @@ class QuorumRuntime:
             return
         loop = asyncio.get_running_loop()
         try:
-            transport, _proto = await loop.create_datagram_endpoint(lambda: _Responder(self.services), local_addr=want)
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            if iface:
+                try:
+                    sock.setsockopt(socket.SOL_SOCKET, 25, iface.encode() + b"\x00")   # SO_BINDTODEVICE
+                except OSError:
+                    pass
+            sock.bind(want)
+            sock.setblocking(False)
+            transport, _proto = await loop.create_datagram_endpoint(lambda: _Responder(self.services), sock=sock)
         except OSError as e:
             now = loop.time()
             if now - self._failed.get("resp", 0.0) > 300:

@@ -205,7 +205,7 @@ class ReserveQuorumProbesMixin:
     def gwcfg_quorum(self, gw) -> dict | None:
         """Раздел `quorum` документа слота: состав, поколение, порог, порт, конфиги
         зондов (к основе и к клону), эпоха. None — пары нет или шлюз не в составе."""
-        m = self.reserve_quorum_proposed()
+        m = self.reserve_quorum_mine() or self.reserve_quorum_proposed()   # действующий состав; новому узлу — после qmem_ok
         if m is None or not self.reserve_quorum_peer_quo1():  # второй сервер 4.1.x: линия на матрице, зондов нет (§3.7.11)
             return None
         node = qm.gateway_node(m.l, int(gw.id))
@@ -226,10 +226,11 @@ class ReserveQuorumProbesMixin:
         out: dict = {}
         probes = self.reserve_probes()
         side = self.reserve_quorum_side()
-        for name, rec in (probes.get("mine") or {}).items():
-            conf = str(rec.get("conf") or "")
-            if name.startswith("awgq") and len(name) == 6 and conf:
-                out[name] = {"conf": conf, "l": name[4], "target": "h", **_conf_addrs(conf)}
+        if self.reserve_quorum_peer_quo1():                   # второй сервер 4.1.x: его порт AWG пробы не ждёт
+            for name, rec in (probes.get("mine") or {}).items():
+                conf = str(rec.get("conf") or "")
+                if name.startswith("awgq") and len(name) == 6 and conf:
+                    out[name] = {"conf": conf, "l": name[4], "target": "h", **_conf_addrs(conf)}
         if side and self.reserve_quorum_leader_host() == probenet.other_side(side):
             conf = self.reserve_probe_conf(side, "r")
             if conf:
@@ -256,7 +257,7 @@ class ReserveQuorumProbesMixin:
                 log.warning("кворум: интерфейс зонда %s не снят: %s", name, e)
         for name, rec in want.items():
             try:
-                out = quoprobe.up(name, rec["conf"])
+                out = quoprobe.up(name, rec["conf"], int(rec.get("port") or 0))
                 if "same" not in out:
                     log.info("кворум: интерфейс зонда %s поднят", name)
             except quoprobe.QuoError as e:

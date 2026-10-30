@@ -92,7 +92,11 @@ class ReserveQuorumTieMixin:
         if peer_node in ld.voters and peer_node not in yes and (views.get(peer_node) or {}).get("w") == "uns":
             no.add(peer_node)
         tie_now = len(yes) == ld.v // 2 and len(no) == ld.v // 2
-        st = self.__dict__.setdefault("_quo_ltie", {"since": None, "told": False, "gone": None})
+        if "_quo_ltie" not in self.__dict__:
+            tie0 = dict(self.rsv_get("rsv_qlog").get("tie") or {})
+            told0 = bool(tie0.get("told")) and tie0.get("side") == "lead"   # после перезапуска эпизод не повторяется
+            self.__dict__["_quo_ltie"] = {"since": None, "told": told0, "gone": None}
+        st = self.__dict__["_quo_ltie"]
         t = self.reserve_quorum_timing()
         name = str(config.SERVER_NAME or "")
         if tie_now:
@@ -115,6 +119,9 @@ class ReserveQuorumTieMixin:
                 st["gone"] = now
             if now - st["gone"] >= t.tie_clear_s:
                 st.update(since=None, told=False, gone=None)
+                tie = dict(self.rsv_get("rsv_qlog").get("tie") or {})
+                if tie.get("side") == "lead":
+                    self.rsv_update("rsv_qlog", tie={**tie, "told": False, "over": timeutil.now_iso()})
                 outcome = "fenced" if ld.fenced else "stayed"
                 return [("notify", [Notification(tg_id=int(config.ADMIN_ID), force_sound=True,
                                                  text=rn.quorum_tie_over(name, len(yes), ld.v, outcome, mine=True))])]

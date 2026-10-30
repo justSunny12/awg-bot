@@ -81,7 +81,31 @@ class ReserveVoteMixin:
         log.info("резерв: шлюз %s основы на гостевом канале (взгляд: %s, доля поколения %s)", slot,
                  "не видит" if rec["seen"] else "видит", rec["m_gen"])
         actions = [("gw", int(slot), "view", self._view_body()), ("gw", int(slot), "state", self._state_body())]
+        qs = self._quorum_qstate_body()
+        if qs is not None:
+            actions.append(("gw", int(slot), "qstate", qs))   # эпоха линии первым словом новой сессии (§3.3)
         return actions + self.reserve_vote_eval()
+
+    def _quorum_line_epoch_for_gw(self) -> int:
+        """Эпоха линии основы, как её знает кандидат: из `st.jrn` второй стороны и ответов зонда."""
+        if not hasattr(self, "reserve_quorum_side") or not self.reserve_quorum_side():
+            return 0
+        from awgbot.util import probenet
+        other = probenet.other_side(self.reserve_quorum_side())
+        v = self._qvoters.get(f"awgq{other}h") if hasattr(self, "_qvoters") else None
+        known = int(self._quorum_known_epoch(other)) if hasattr(self, "_quorum_known_epoch") else 0
+        return max(known, int(v.epoch) if v is not None else 0)
+
+    def _quorum_qstate_body(self) -> dict | None:
+        if not hasattr(self, "reserve_quorum_peer_line") or not self.reserve_quorum_peer_line().get("active"):
+            return None
+        e = self._quorum_line_epoch_for_gw()
+        if not e:
+            return None
+        from awgbot.util import probenet
+        l = probenet.other_side(self.reserve_quorum_side())
+        holder = "self" if self.reserve_hosting() else l
+        return {"l": l, "e": e, "holder": holder, "r": "cand"}
 
     def reserve_guest_closed(self, slot: int) -> list[tuple]:
         rec = self._gwv.get(int(slot))
@@ -199,6 +223,9 @@ class ReserveVoteMixin:
         inn = self.rsv_get("rsv_in")
         serving = str(inn.get("state") or "idle") in ("taking", "serving", "releasing")   # до возврата — открыто
         body = {"state": "serving" if serving else "idle", "move": int(inn.get("gen") or 0)}
+        e = self._quorum_line_epoch_for_gw()
+        if e:
+            body["e"] = e                                     # эпоха линии основы, как её знаю я (кворум)
         if reason:
             body["reason"] = str(reason)[:200]                 # срыв открытия после отданной доли — шлюзу Т-РА5
         return body

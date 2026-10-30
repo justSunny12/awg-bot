@@ -29,7 +29,8 @@ class ReserveQuorumTickMixin:
             return {"responder": self.reserve_quorum_responder_addr(), "probes": {}}
         if not self.reserve_paired():
             return {"responder": None, "probes": {}}
-        return {"responder": self.reserve_quorum_responder_addr(), "probes": self.reserve_quorum_probe_ifaces()}
+        return {"responder": self.reserve_quorum_responder_addr(), "probes": self.reserve_quorum_probe_ifaces(),
+                "responder_if": config.AWG_INTERFACE}         # сокет привязан к интерфейсу: подделка с eth0 не доходит
 
     def quorum_probe_in(self, data: bytes, src: str) -> bytes | None:
         return self.reserve_quorum_probe_in(data, src)

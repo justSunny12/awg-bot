@@ -200,7 +200,8 @@ def test_no_majority_on_the_clone_for_t_up_takes_the_users_home(aw):
     acts += aw.run(T_UP - 10)
     assert ("take_home",) not in acts and not gwlink(acts, "qtake"), "аварийный возврат раньше T_up"
     acts = aw.run(15)
-    assert gwlink(acts, "qtake") == [(1, {"l": "a", "e": 9, "tgt": "r"})], f"qtake о клоне: {gwlink(acts, 'qtake')}"
+    assert sorted(gwlink(acts, "qtake")) == [(1, {"l": "a", "e": 9, "tgt": "r"}), (2, {"l": "a", "e": 9, "tgt": "r"})], \
+        f"qtake о клоне — всем голосующим с живым каналом: {gwlink(acts, 'qtake')}"
     assert ("take_home",) in acts, "большинство не видит клон дольше T_up — Telegram не забран"
     assert aw.s.reserve_online(), "предпосылка: резерв на связи — условие «10 мин не на связи» не ждётся"
     out = aw.s.rsv_get("rsv_out")

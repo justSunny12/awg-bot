@@ -75,7 +75,7 @@ class Leader:
     # ── счёт ────────────────────────────────────────────────────────────────
     def yes_nodes(self, now: float) -> tuple[str, ...]:
         out = []
-        for n, s in self.seen.items():
+        for n, s in list(self.seen.items()):             # ответчик правит словарь в другом потоке
             if s.w == "see" and (self.q2 or s.e == int(self.epoch)) and self.gen.accepts(s.g, now) \
                     and now - s.at <= self.timing.yes_window_s:
                 out.append(n)

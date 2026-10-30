@@ -234,8 +234,13 @@ async def _one(services, act: tuple) -> None:
     elif kind == "reresolve":
         from awgbot.domain.gateway.reserve import uplink
         p = dict(act[1] or {})
-        await asyncio.to_thread(uplink.reresolve_now, str(p.get("name") or ""), str(p.get("expect") or ""),
-                                str(p.get("why") or ""), int(p.get("move") or 0))
+        res = await asyncio.to_thread(uplink.reresolve_now, str(p.get("name") or ""), str(p.get("expect") or ""),
+                                      str(p.get("why") or ""), int(p.get("move") or 0))
+        if hasattr(services, "reserve_reresolve_done"):
+            await asyncio.to_thread(services.reserve_reresolve_done, p, str(res or ""))
+    elif kind == "tg_assert":
+        from awgbot.infra.gwguard import rsv as rsvlink
+        await asyncio.to_thread(rsvlink.run, "tg", str(act[1]))   # правило метки заново, сессия Bot API прежняя
 
 
 async def _renew_session(*, check: bool) -> None:

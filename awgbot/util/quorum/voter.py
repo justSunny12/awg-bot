@@ -73,6 +73,7 @@ class Voter:
         self.pending.clear()
         self.last_reply, self.last = now, r
         self.resends = 0
+        self.pause_until = 0.0                                # пауза — до срока или первого ответа
         if int(r.e) > int(self.epoch):
             self.epoch = int(r.e)
             out.append(f"adopt:{self.epoch}")

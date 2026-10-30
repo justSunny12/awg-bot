@@ -72,6 +72,7 @@ class ReserveQuorumLeaderMixin:
             log.info("кворум: ответчик линии %s%s — голосующих %d, поколение %s", l, " (отъезд, счёт для возврата)" if q2 else "",
                      len(voters), g)
             self.__dict__["_quo_start_pending"] = not q2      # старт лидера — без права записи до первого большинства
+            self.__dict__["_quo_ld_at"] = now
         else:
             if tuple(ld.voters) != tuple(voters) or ld.gen.g != g:
                 ld.set_members(voters, len(voters), g, now)
@@ -169,6 +170,10 @@ class ReserveQuorumLeaderMixin:
             self.__dict__["_quo_fenced_since"] = ""
         if act in ("fence", "unfence") and hasattr(self, "reserve_quorum_fence_apply"):
             actions += self.reserve_quorum_fence_apply(act, ld)
+        if not act and ld.fenced and ld.starting and now - float(self.__dict__.get("_quo_ld_at") or now) >= ld.timing.down_s \
+                and not (self.rsv_get("rsv_qlog").get("fenced") or {}).get("told") and hasattr(self, "reserve_quorum_fence_apply"):
+            actions += self.reserve_quorum_fence_apply("fence", ld)   # старт без большинства дольше T_down — Т-К7
+            self.__dict__["_quo_fenced_since"] = str((self.rsv_get("rsv_qlog").get("fenced") or {}).get("since") or "")
         if hasattr(self, "reserve_quorum_leader_tie_tick"):
             actions += self.reserve_quorum_leader_tie_tick(ld, now)
         return actions
@@ -199,7 +204,9 @@ class ReserveQuorumLeaderMixin:
             s = ld.seen.get(n)
             voters[n] = ({"w": s.w, "e": s.e, "g": s.g, "age": int(now - s.at)} if s is not None else {"w": "", "age": -1})
         return {"l": ld.l, "y": ld.yes_count(now), "v": ld.v, "t": qm.threshold(ld.v), "role": ld.role(),
-                "fenced_since": str(self.__dict__.get("_quo_fenced_since") or ""), "voters": voters}
+                "fenced_since": str(self.__dict__.get("_quo_fenced_since")
+                                    or ((self.rsv_get("rsv_qlog").get("fenced") or {}).get("since") if ld.fenced else "") or ""),
+                "voters": voters}
 
     # ── бот основы на резерве ───────────────────────────────────────────────
     def reserve_quorum_guest_in(self, body: dict) -> None:

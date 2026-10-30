@@ -58,7 +58,7 @@ class ReserveVoteMixin:
             return []
         if kind == "state":
             actions = self.reserve_state_in(str(body.get("state") or ""), int(body.get("move") or 0),
-                                            str(body.get("reason") or ""))
+                                            str(body.get("reason") or ""), e=int(body.get("e") or 0))
             return actions + [("push",)]                      # Т-РА3 даёт само открытие (reserve_forward_decide)
         if kind == "view":
             cur = self.reserve_section()

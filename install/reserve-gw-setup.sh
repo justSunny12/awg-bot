@@ -132,11 +132,15 @@ zone_addr() {   # адрес стороны зоны в /30 — первый All
     sed -n 's/^[[:space:]]*AllowedIPs[[:space:]]*=[[:space:]]*\([0-9.]*\).*/\1/p' "$CONF" 2>/dev/null | head -n1
 }
 
-guard_write() {   # таблица nft: вход, пересылка, connmark; набор rsv_open4 — из состояния
+tg_ready() {   # блок tg рисуется, только когда cgroup юнита агента есть: nft переводит путь в id при загрузке
+    [ "$(state_get tg)" = "1" ] && [ -d "/sys/fs/cgroup/$TG_CGROUP" ]
+}
+
+guard_write() {   # таблица nft: вход, пересылка, connmark; набор rsv_open4 — из состояния; отказ nft — код 1
     _open="$(state_get src | tr ',' ' ')"
     _admins="$(printf '%s' "${ADMIN_IPS:-$(state_get admins)}" | tr ',' ' ')"
     _zone="$(zone_addr)"
-    nft -f - <<EOF
+    nft -f - <<EOF || return 1
 table $GUARD_TABLE
 delete table $GUARD_TABLE
 table $GUARD_TABLE {
@@ -178,7 +182,7 @@ $( [ -n "$_admins" ] && printf '        elements = { %s }\n' "$(ipv4_list $_admi
         ct mark $RSV_MARK ct direction reply meta mark set $RSV_MARK
     }
 $( [ -n "$_zone" ] && printf '    chain rsv_post {\n        type nat hook postrouting priority srcnat; policy accept;\n        oifname != "%s" ip saddr %s masquerade\n    }\n' "$RSV_IF" "$_zone" )
-$( [ "$(state_get tg)" = "1" ] && cat <<EOF2
+$( tg_ready && cat <<EOF2
     set tg_nets4 {
         type ipv4_addr
         flags interval
@@ -191,6 +195,10 @@ $( [ "$(state_get tg)" = "1" ] && cat <<EOF2
     chain rsv_tgpost {
         type nat hook postrouting priority srcnat; policy accept;
         oifname "$RSV_IF" meta mark $TG_MARK masquerade
+    }
+    chain rsv_tgmss {
+        type filter hook postrouting priority mangle; policy accept;
+        oifname "$RSV_IF" meta mark $TG_MARK tcp flags syn tcp option maxseg size set rt mtu
     }
 EOF2
 )
@@ -210,6 +218,16 @@ fwd_disallow() {
     for d in -i -o; do
         while iptables -w -C FORWARD "$d" "$RSV_IF" -j ACCEPT 2>/dev/null; do iptables -w -D FORWARD "$d" "$RSV_IF" -j ACCEPT 2>/dev/null || break; done
     done
+}
+
+guard_apply() {   # таблица; не принята с блоком tg — без него (tg=0, скажем), не принята вовсе — отказ
+    guard_write && return 0
+    if tg_ready; then
+        say "ВНИМАНИЕ: nft не принял таблицу с блоком tg — обход Telegram снят"
+        state_write open="$(state_get open)" src="$(state_get src)" admins="$(state_get admins)" tg=0
+        guard_write && return 0
+    fi
+    die "nft не принял таблицу $GUARD_TABLE"
 }
 
 routes_up() {
@@ -285,11 +303,11 @@ cmd_up() {
     # адреса админов — в состояние: --reassert при загрузке и --open их не получают
     state_write open="$(state_get open)" src="$(state_get src)" admins="${ADMIN_IPS:-}"
     if [ -f "$CONF" ] && cmp -s "$1" "$CONF" && ip link show "$RSV_IF" >/dev/null 2>&1; then
-        guard_write; routes_up; fwd_allow; ensure_unit; say "up: same"; return 0
+        guard_apply; routes_up; fwd_allow; ensure_unit; say "up: same"; return 0
     fi
     install -m 0600 "$1" "$CONF"
     link_up || die "линк к резерву не поднялся"
-    guard_write; routes_up; fwd_allow; ensure_unit
+    guard_apply; routes_up; fwd_allow; ensure_unit
     [ -n "$(state_get open)" ] || state_write open=0 src= admins="${ADMIN_IPS:-}"
     say "up: ok"
 }
@@ -298,7 +316,7 @@ cmd_reassert() {
     need_root
     [ -f "$CONF" ] || { say "reassert: конфига нет"; return 0; }
     link_up || die "линк к резерву не поднялся"
-    guard_write; routes_up; fwd_allow
+    guard_apply; routes_up; fwd_allow
     say "reassert: ok"
 }
 
@@ -323,8 +341,8 @@ cmd_tg() {   # --tg on|off: метка сокетов Bot API агента и п
     need_root
     case "${1:-}" in on) _v=1 ;; off) _v=0 ;; *) die "tg: on|off" ;; esac
     state_write open="$(state_get open)" src="$(state_get src)" admins="$(state_get admins)" tg="$_v"
-    if [ -f "$CONF" ] && ip link show "$RSV_IF" >/dev/null 2>&1; then guard_write; fi
-    if [ "$_v" = 1 ]; then tg_routes_up; else tg_routes_down; fi
+    if [ -f "$CONF" ] && ip link show "$RSV_IF" >/dev/null 2>&1; then guard_apply; fi
+    if [ "$(state_get tg)" = "1" ]; then tg_routes_up; else tg_routes_down; fi
     say "tg: $1"
 }
 

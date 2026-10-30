@@ -86,14 +86,18 @@ def status() -> dict:
     return {"ns": kv.get("ns", "absent"), "ifaces": ifaces, "hs": hs}
 
 
-def up(name: str, conf_text: str) -> str:
-    """Конфиг зонда → скрипту (временный файл 0600): интерфейс поднят или обновлён."""
+def up(name: str, conf_text: str, port: int = 0) -> str:
+    """Конфиг зонда → скрипту (временный файл 0600): интерфейс поднят или обновлён.
+    `port` — порт ответчика той линии (правило output таблицы awg_quo), иначе свой."""
     fd, tmp = tempfile.mkstemp(prefix="awgq-", suffix=".conf")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(conf_text if conf_text.endswith("\n") else conf_text + "\n")
         os.chmod(tmp, 0o600)
-        return run("up", tmp, env={"QUO_IF": str(name)})
+        env = {"QUO_IF": str(name)}
+        if int(port or 0):
+            env["QUO_PORT"] = str(int(port))
+        return run("up", tmp, env=env)
     finally:
         try:
             os.unlink(tmp)

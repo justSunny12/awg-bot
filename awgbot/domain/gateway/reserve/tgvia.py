@@ -35,6 +35,9 @@ from ..base import log
 from .store import _write
 
 CHECK_EVERY_S = 15            # рукопожатия аплинка и awgrsv — не чаще
+ASSERT_EVERY_S = 600          # пока обход включён — --tg on заново (cgroup юнита после перезапуска новый)
+RERESOLVE_EVERY_S = 20        # повтор перерезолва по записи (± 40 %), пока запись не дала адрес
+RERESOLVE_MAX_S = 600         # дольше не повторяем: запасной путь по рукопожатию
 PROBE_EVERY_S = 60            # проба аплинка во время обхода (± 40 %)
 OFF_STREAK = 2                # ответов пробы подряд при свежем рукопожатии — обход выключен
 
@@ -51,13 +54,12 @@ class ReserveTgViaMixin:
             self.__dict__.pop("_tgvia", None)
             return []
         actions: list[tuple] = []
-        pending = cur.get("reresolve_pending")
-        if isinstance(pending, dict) and pending.get("expect"):
-            cur["reresolve_pending"] = None
-            _write(cur, self._RSV_STORE)
-            actions.append(("reresolve", dict(pending)))
-        st = self.__dict__.setdefault("_tgvia", {"at": 0.0, "probe_at": 0.0, "streak": 0})
+        actions += self._reresolve_tick(cur, now)
+        st = self.__dict__.setdefault("_tgvia", {"at": 0.0, "probe_at": 0.0, "streak": 0, "assert_at": None})
         via = bool(cur.get("tg_via"))
+        if via and (st.get("assert_at") is None or now - float(st["assert_at"]) >= ASSERT_EVERY_S):
+            st["assert_at"] = now
+            actions.append(("tg_assert", "on"))              # после перезапуска агента правило метки надо ставить заново
         if not cur.get("tg") or not self._tgvia_link_present():
             if via:
                 actions += self._tgvia_off(cur, "раздел без флага tg или линка нет")
@@ -75,10 +77,11 @@ class ReserveTgViaMixin:
             if uplink_stale and self._tgvia_fresh(self._tgvia_rsv_if()):
                 actions += self._tgvia_on(cur, now)
             return actions
-        # обход включён: проба аплинка раз в 60 с ± 40 %, два ответа подряд при свежем рукопожатии — выключить
+        # обход включён: проба аплинка раз в 60 с ± 40 %, два ответа подряд при свежем рукопожатии — выключить;
+        # проба — к резолверу подсети пользователей через аплинк, куда бы он ни смотрел (дома или на клон)
         if now >= float(st["probe_at"]):
             st["probe_at"] = now + PROBE_EVERY_S * random.uniform(0.6, 1.4)
-            ok = (not uplink_stale) and bool(self._uplink_probe()) if hasattr(self, "_uplink_probe") else not uplink_stale
+            ok = (not uplink_stale) and self._tgvia_probe(iface)
             st["streak"] = st["streak"] + 1 if ok else 0
             if st["streak"] >= OFF_STREAK:
                 actions += self._tgvia_off(cur, "аплинк снова отвечает")
@@ -126,6 +129,51 @@ class ReserveTgViaMixin:
             return bool(rsvlink.present())
         except Exception:                                     # noqa: BLE001
             return False
+
+    @staticmethod
+    def _tgvia_probe(iface: str) -> bool:
+        """DNS-запрос к резолверу подсети пользователей через аплинк — любой ответ: аплинк
+        жив (до основы дома или до её клона после переезда)."""
+        from awgbot.infra import gwguard
+        from .watch import _dns_probe
+        try:
+            subnet = str(gwguard.unit_env("CLIENT_SUBNET") or "").split("/")[0]
+            parts = subnet.split(".")
+            resolver = ".".join(parts[:3] + ["1"]) if len(parts) == 4 else ""
+        except Exception:                                     # noqa: BLE001
+            resolver = ""
+        return bool(resolver) and _dns_probe(resolver, iface)
+
+    # ── перерезолв сразу (§4.12): повтор, пока запись не дала адрес ─────────
+    def _reresolve_tick(self, cur: dict, now: float) -> list[tuple]:
+        pending = cur.get("reresolve_pending")
+        if not isinstance(pending, dict) or not pending.get("expect"):
+            return []
+        st = self.__dict__.setdefault("_reresolve", {"next": 0.0, "since": None, "key": None})
+        key = (str(pending.get("why") or ""), int(pending.get("move") or 0))
+        if st["key"] != key:
+            st.update(key=key, since=now, next=now)
+        if now - float(st["since"]) > RERESOLVE_MAX_S:
+            cur["reresolve_pending"] = None
+            _write(cur, self._RSV_STORE)
+            log.info("аплинк: перерезолв по записи (%s, move %s) не удался за %d с — запасной путь по рукопожатию",
+                     key[0], key[1], RERESOLVE_MAX_S)
+            return []
+        if now < float(st["next"]):
+            return []
+        st["next"] = now + RERESOLVE_EVERY_S * random.uniform(0.6, 1.4)
+        return [("reresolve", dict(pending))]
+
+    def reserve_reresolve_done(self, pending: dict, result: str) -> None:
+        """Исход `uplink.reresolve_now`: адрес встал или уже тот — повод закрыт."""
+        if result not in ("set", "same", "skip:ip", "skip:no-uplink", "skip:no-endpoint", "skip:other-name"):
+            return
+        cur = self.reserve_section()
+        cur_p = cur.get("reresolve_pending")
+        if isinstance(cur_p, dict) and (str(cur_p.get("why")), int(cur_p.get("move") or 0)) == \
+                (str(pending.get("why")), int(pending.get("move") or 0)):
+            cur["reresolve_pending"] = None
+            _write(cur, self._RSV_STORE)
 
     @staticmethod
     def _tgvia_stale(iface: str) -> bool:

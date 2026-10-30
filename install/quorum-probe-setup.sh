@@ -112,6 +112,8 @@ iface_up() {   # iface_up NAME CONF
     if nsx ip link show "$_name" >/dev/null 2>&1; then
         if nsx awg syncconf "$_name" "$_sc"; then
             rm -f -- "${_sc:?}"
+            nsx ip addr flush dev "$_name" 2>/dev/null || true     # прежний адрес — прочь: источник пробы сверяет ответчик
+            nsx ip route flush dev "$_name" 2>/dev/null || true
             nsx ip addr replace "$_addr" dev "$_name"
             nsx ip route replace "$_resp" dev "$_name"
             return 0

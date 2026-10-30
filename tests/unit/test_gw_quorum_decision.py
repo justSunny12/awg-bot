@@ -59,7 +59,7 @@ class _Agent:
         self.clock = clock
         self.ups: list[str] = []
         monkeypatch.setattr(quomod, "time", types.SimpleNamespace(monotonic=clock.monotonic))
-        monkeypatch.setattr(quoprobe, "up", lambda name, conf: self.ups.append(name) or "up: ok")
+        monkeypatch.setattr(quoprobe, "up", lambda name, conf, port=0: self.ups.append(name) or "up: ok")
         monkeypatch.setattr(quoprobe, "down", lambda name: "down: ok")
         monkeypatch.setattr(quoprobe, "standing", lambda: list(self.ups))
         monkeypatch.setattr(quoprobe, "wipe", lambda: "wipe: ok")

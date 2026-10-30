@@ -51,9 +51,9 @@ class ReserveQuorumVoterMixin:
                 v = Voter(str(rec["l"]), me, timing=timing)
                 v.start(now)
                 self._qvoters[name] = v
-                line_e = self._quorum_known_epoch(str(rec["l"]))
-                if line_e:
-                    v.epoch_in(line_e)
+            line_e = self._quorum_known_epoch(str(rec["l"]))
+            if line_e > int(v.epoch):
+                v.epoch_in(line_e)                            # эпоха линии (журнал, st.jrn второй стороны) — на каждом такте
             for act in v.tick(now):
                 if act == "probe":
                     g = self._quorum_line_gen(str(rec["l"]))

@@ -65,13 +65,26 @@ class ReserveQuorumFenceMixin:
         if act == "unfence":
             why_u = "кворум: да %d из %d" % (y, v)
             meta_now = self.db.jrn_meta()
-            if meta_now["holder"] == "peer" and self.__dict__.pop("_quo_adopted", False):
-                # эпоху принял по пробе (кандидат забирал), а большинство снова со мной — эпоха здесь, +1
+            adopted = dict(qlog.get("adopted") or {})
+            if meta_now["holder"] == "peer" and adopted:
+                # эпоху принял по пробе (кандидат забирал). «Да» большинства — не доказательство, что
+                # пользователей не взяли (это обычное Q2): к записи — только по факту живой второй
+                # стороны, сказавшей после принятия, что моих пользователей у неё нет (§3.4.2)
+                if not self._quorum_peer_idle_fact(str(adopted.get("at") or "")):
+                    if not self.__dict__.get("_quo_adopt_wait_told"):
+                        self.__dict__["_quo_adopt_wait_told"] = True
+                        log.warning("кворум: большинство «да» снова здесь, но эпоху %s держит «%s» — жду её слова",
+                                    meta_now["epoch"], self.reserve_peer_name())
+                    ld.fence_now(now)                         # правило спросит снова через окно U
+                    return []
                 meta = self.db.jrn_pass(holder="self", role="holder", why=why_u, fork_i=int(meta_now["applied"]))
                 self.db.jrn_tail_drop_held()
+                self.rsv_update("rsv_qlog", adopted=None)
+                self.__dict__.pop("_quo_adopt_wait_told", None)
                 if meta is not None and hasattr(self, "reserve_follow_clear"):
                     self.reserve_follow_clear()
-                log.warning("кворум: большинство «да» снова здесь — эпоха %s здесь", (meta or meta_now)["epoch"])
+                log.warning("кворум: «%s» на связи без моих пользователей, большинство «да» здесь — эпоха %s здесь",
+                            self.reserve_peer_name(), (meta or meta_now)["epoch"])
             else:
                 meta = self.db.jrn_unfence(why=why_u)
             self.__dict__["_quo_fenced"] = False
@@ -88,6 +101,11 @@ class ReserveQuorumFenceMixin:
         снять: лидер без голосующих решений не лишается."""
         if not self.__dict__.get("_quo_fenced") and not (self.rsv_get("rsv_qlog").get("fenced") or {}).get("on"):
             return
+        if hasattr(self, "reserve_out") and self.reserve_out() in ("leaving", "away", "returning"):
+            return                                            # в ходе переезда (по просьбе лидера) ограждение держится
+        why = self.reserve_quorum_off_reasons() if hasattr(self, "reserve_quorum_off_reasons") else []
+        if why and all(c in ("keys", "not_acked") or c.startswith("timing:") for c in why):
+            return                                            # выключено только у меня (ключи, состав, цифры): вторая сторона может ещё решать
         if self._quorum_jrn_fenced():
             self.db.jrn_unfence(why="кворум выключен")
             log.info("кворум: ограждение снято — кворум выключен или лидер не здесь")
@@ -99,18 +117,38 @@ class ReserveQuorumFenceMixin:
     def reserve_quorum_adopt(self, e: int, who: str) -> None:
         """Проба или слово несут эпоху больше моей: эпоху держит другая сторона —
         следование без приращения (`jrn_adopt`); ограждение кворума при этом не
-        нужно (держатель — не я)."""
+        нужно (держатель — не я). Отметка принятия — на диске (`rsv_qlog.adopted`) и
+        раньше записи в журнал: страховка такта в другом потоке и после перезапуска
+        эпоху не вернёт — вернёт правило лидера по факту второй стороны."""
         if not self.reserve_quorum_act():
             return
+        self.rsv_update("rsv_qlog", adopted={"e": int(e), "at": timeutil.now_iso(), "who": str(who)[:64]})
         try:
             meta = self.db.jrn_adopt(int(e), why=f"кворум: эпоха {int(e)} у {who}")
         except Exception as err:                              # noqa: BLE001
+            self.rsv_update("rsv_qlog", adopted=None)
             log.warning("кворум: эпоха %s от %s не принята: %s", e, who, err)
             return
-        if meta is not None:
-            self.__dict__["_quo_fenced"] = False
-            self.__dict__["_quo_adopted"] = True              # страховка такта эпоху не вернёт — вернёт правило лидера
-            log.warning("кворум: эпоха %s у %s — здесь следование", e, who)
+        if meta is None:
+            if self.db.jrn_meta()["holder"] != "peer":
+                self.rsv_update("rsv_qlog", adopted=None)
+            return
+        self.__dict__["_quo_fenced"] = False
+        log.warning("кворум: эпоха %s у %s — здесь следование", e, who)
+
+    def reserve_quorum_adopted(self) -> bool:
+        """Эпоха принята по кворуму и ещё не возвращена (отметка на диске)."""
+        return bool(self.rsv_get("rsv_qlog").get("adopted"))
+
+    def _quorum_peer_idle_fact(self, since_iso: str) -> bool:
+        """Вторая сторона жива, её `st` получен после принятия эпохи и говорит, что моих
+        пользователей у неё нет: только такой факт возвращает запись сюда."""
+        peer = self.reserve_peer_state()
+        if not (self.reserve_online() and self.reserve_peer_seen() != "down" and not peer.get("st_stale")):
+            return False
+        if str(peer.get("inn") or "idle") in ("taking", "serving", "releasing"):
+            return False
+        return str(peer.get("at") or "") > str(since_iso or "")
 
     # ── плановая пауза ──────────────────────────────────────────────────────
     def reserve_quorum_pause_actions(self, seconds: int = 300) -> list[tuple]:

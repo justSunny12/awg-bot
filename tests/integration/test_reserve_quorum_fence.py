@@ -57,6 +57,8 @@ class _Q:
         monkeypatch.setattr(fence_mod, "time", ns)
         self.active = True
         monkeypatch.setattr(svc, "reserve_quorum_active", lambda: self.active)
+        # выключенный кворум — структурно (шлюз снят): «только ключи/состав» ограждение не снимает
+        monkeypatch.setattr(svc, "reserve_quorum_off_reasons", lambda: [] if self.active else ["no_gateways"])
         monkeypatch.setattr(svc, "_quorum_info", lambda: Info(hs=3, flow=True, at=""))
         svc.rsv_update("rsv_quorum", active={"l": "a", "g": 1, "members": list(MEMBERS)},
                        mine={"l": "a", "g": 1, "members": list(MEMBERS)})

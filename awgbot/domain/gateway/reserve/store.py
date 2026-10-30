@@ -65,7 +65,7 @@ def _write(data: dict, path: Path = STORE_PATH) -> None:
 # своё о ходе дел в reserve.json — переживает каждый новый документ
 _KEEP_KEYS = ("open_at", "share_given_at", "view_told", "reserve_view", "reserve_state_at", "moved_told",
               "pending_notes", "link_pending", "link_retry_mono", "reserve_down_last",
-              "tg_via", "tg_since", "reresolve_pending", "reresolved_move")
+              "tg_via", "tg_since", "reresolve_pending", "reresolved")
 NOTE_TTL_S = 24 * 3600            # уведомление без доставки дольше — устарело
 NOTE_RETRY_S = 60
 
@@ -180,10 +180,11 @@ class ReserveStoreMixin:
         changed = any(cur.get(k) != new[k] for k in ("conf", "share", "state", "move", "self", "chan", "tg"))
         # слово возврата: основа вернула пользователей (idle, номер не меньше номера резерва) — аплинк
         # на адрес основы по записи сразу, не через 180 с рукопожатия (концепт «кворум» §4.12, решение 17)
+        done = dict(new.get("reresolved") or {})
         if new["state"] == "idle" and cur.get("state") == "away" and new["move"] >= int(new["reserve_move"] or 0) \
-                and new.get("self") and int(new.get("reresolved_move") or 0) < new["move"]:
+                and new.get("self") and int(done.get("back") or 0) < new["move"]:
             new["reresolve_pending"] = {"name": new["record"], "expect": new["self"], "why": "возврат", "move": new["move"]}
-            new["reresolved_move"] = new["move"]
+            new["reresolved"] = {**done, "back": new["move"]}
         # адреса админов сменились — тоже повод переподнять: набор rsv_admin4 заполняет только --up
         link_changed = cur.get("conf") != new["conf"] or not rsvlink.present() or cur.get("admins") != new["admins"]
         note = ""
@@ -263,7 +264,7 @@ class ReserveStoreMixin:
         return [a.strip() for a in str(raw or "").replace(",", " ").split() if a.strip()]
 
     # ── состояние резерва и пересылка ───────────────────────────────────────
-    def reserve_state_in(self, state: str, move: int, reason: str = "") -> list[tuple]:
+    def reserve_state_in(self, state: str, move: int, reason: str = "", e: int = 0) -> list[tuple]:
         """`state{state, move[, reason]}` от резерва по гостевому каналу. `idle` с
         причиной после отданной этим шлюзом доли — переезд не состоялся: Т-РА5."""
         cur = self.reserve_section()
@@ -272,16 +273,20 @@ class ReserveStoreMixin:
         if state not in ("serving", "idle"):
             return []
         actions: list[tuple] = []
+        if int(e or 0) and hasattr(self, "_quorum_epoch_in"):
+            self._quorum_epoch_in(int(e))                     # эпоха линии от резерва (кворум) — голосующим
         if state == "idle" and reason and cur.get("share_given_at"):
             from awgbot.domain.notices import reserve as rn
             _primary, since = self.reserve_primary_seen() if hasattr(self, "reserve_primary_seen") else ("", "")
             actions.append(("notify", [self.reserve_note(cur, rn.gateway_move_failed(
                 str(cur.get("name") or ""), since or str(cur.get("share_given_at") or ""), reason), sound=True)]))
             cur["share_given_at"] = ""
-        if state == "serving" and int(move) > int(cur.get("reresolved_move") or 0) and cur.get("peer_host") and cur.get("record"):
-            # переезд: аплинк — на адрес второго сервера по записи сразу (§4.12), один раз на номер переезда
+        done = dict(cur.get("reresolved") or {})
+        if state == "serving" and int(move) > int(done.get("away") or 0) and cur.get("peer_host") and cur.get("record"):
+            # переезд: аплинк — на адрес второго сервера по записи сразу (§4.12); серия попыток на номер переезда —
+            # слово приходит на taking, запись меняется позже, повтор ведёт tgvia
             cur["reresolve_pending"] = {"name": str(cur["record"]), "expect": str(cur["peer_host"]), "why": "переезд", "move": int(move)}
-            cur["reresolved_move"] = int(move)
+            cur["reresolved"] = {**done, "away": int(move)}
         cur["reserve_state"], cur["reserve_move"] = state, int(move)
         cur["reserve_state_at"] = timeutil.now_iso()
         _write(cur, self._RSV_STORE)

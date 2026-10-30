@@ -148,7 +148,7 @@ class GatewayQuorumMixin:
                 log.warning("quorum: зонд %s не снят: %s", name, e)
         for name, rec in want.items():
             try:
-                out = quoprobe.up(name, rec["conf"])
+                out = quoprobe.up(name, rec["conf"], int(rec.get("port") or 0))
                 if "same" not in out:
                     log.info("quorum: зонд %s поднят", name)
             except quoprobe.QuoError as e:
@@ -215,6 +215,14 @@ class GatewayQuorumMixin:
             if due is not None and now >= due:
                 self.__dict__["_quo_ask_due"].pop(name, None)
                 actions += self._quorum_qview_now(name, rec, v)      # ответ на qask после свежих проб
+        online = bool(self.__dict__.get("_quo_reserve_online"))
+        if online and not self.__dict__.get("_quo_online_prev"):
+            # новая сессия гостевого канала: текущий взгляд о сервере — первым словом (у резерва взгляды в памяти)
+            for name, rec in want.items():
+                v = self._gw_qvoters.get(name)
+                if v is not None and rec.get("target") == "h" and v.view != "new":
+                    actions += self._quorum_qview_now(name, rec, v)
+        self.__dict__["_quo_online_prev"] = online
         return actions
 
     def quorum_reply_in(self, name: str, data: bytes) -> list[tuple]:
@@ -247,8 +255,8 @@ class GatewayQuorumMixin:
         info = v.info()
         if info is not None and w == "see":
             body["i"] = info.to_dict()
-        if w == "uns" and rec.get("target") == "h":
-            v.said_no(time.monotonic())                       # «нет» кандидату — обязательство под этой эпохой
+        if w == "uns":
+            v.said_no(time.monotonic())                       # «нет» кандидату (о сервере или о клоне) — обязательство под этой эпохой
             self._pledge_store(name, {"e": int(v.epoch), "at": timeutil.now_iso()})
         # взгляд о клоне — только своему серверу: резерв цель не различает, «не вижу клон» лёг бы взглядом на основу
         return ([("guest", "qview", body)] if rec.get("target") != "r" else []) + [("link", "qview", body), ("push",)]

@@ -100,7 +100,7 @@ class ProbeHost:
         monkeypatch.setattr(quoprobe, "down", self._down)
         monkeypatch.setattr(quoprobe, "wipe", self._wipe)
 
-    def _up(self, name, conf):
+    def _up(self, name, conf, port=0):
         same = self.standing.get(name) == conf
         self.standing[name] = conf
         self.ups.append((name, conf))

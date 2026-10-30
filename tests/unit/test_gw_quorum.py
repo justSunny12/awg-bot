@@ -56,7 +56,7 @@ class _Host:
         monkeypatch.setattr(quoprobe, "down", self._down)
         monkeypatch.setattr(quoprobe, "wipe", self._wipe)
 
-    def _up(self, name, conf):
+    def _up(self, name, conf, port=0):
         if self.fail_up:
             raise quoprobe.QuoError(self.fail_up)
         same = self.standing.get(name) == conf

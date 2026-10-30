@@ -178,7 +178,7 @@ class ReserveQuorumMembersMixin:
         quo = self.reserve_peer_state().get("quo")
         out = dict(quo) if isinstance(quo, dict) else {}
         peer = self.rsv_get("rsv_quorum").get("peer") or {}
-        if peer.get("members"):
+        if peer.get("members") and not out.get("members"):   # её st.quo — действующий состав; qmem — пока st нет
             out.update(l=peer.get("l"), g=int(peer.get("g") or 0), members=list(peer.get("members") or []))
         return out
 
