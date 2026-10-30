@@ -36,8 +36,9 @@ for s in "$HERE"/scenarios/*.sh; do
     name="$(basename "$s" .sh)"
     [ -z "$ONLY" ] || [ "$name" = "$ONLY" ] || continue
     bash "$HERE/net.sh" heal >/dev/null 2>&1
-    # итог пройденного — последняя строка вывода сценария (замеры времени, «ok (…)»)
-    if out="$(bash "$s" 2>&1)"; then printf 'PASS %s: %s\n' "$name" "$(printf '%s\n' "$out" | tail -n1)"; passed=$((passed + 1))
+    # итог пройденного — последняя строка вывода сценария (замеры времени, «ok (…)»), без строк bash о снятых
+    # фоновых процессах (trap снимает узлы kill -9)
+    if out="$(bash "$s" 2>&1)"; then printf 'PASS %s: %s\n' "$name" "$(printf '%s\n' "$out" | grep -v ' Killed  ' | tail -n1)"; passed=$((passed + 1))
     else printf 'FAIL %s\n%s\n' "$name" "$out"; fail=$((fail + 1)); fi
 done
 bash "$HERE/net.sh" heal >/dev/null 2>&1

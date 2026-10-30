@@ -13,7 +13,7 @@
 - DNS: системный резолвер и авторитетный сервер записи — файл `dns.json`
   общего каталога стенда (`LAB_SHARED`), провайдер записи пишет в тот же файл;
 - шлюз с агентом новой линии (`reserve_has_gateway`) — есть: агентов шлюзов
-  стенд не поднимает, долю Шлюза 1 сценарий берёт у основы командой `share`;
+  стенд не поднимает (голосующие шлюзы кворума — заглушки gwnode, LAB_GW_SLOTS);
 - достижимость Telegram (`_tg_reachable`) — TCP до макета Bot API;
 - процесс открытия: venv стенда — в /home пользователя, а песочница скрывает
   его (ProtectHome); как в s04_open_sandbox — tmpfs с привязкой venv, и юнит
@@ -28,8 +28,14 @@ data/ (bot.db, reserve/), awg/ (конфиги awg0 и awgpair), cmd/ (кома�
         AWG_BOT_ENV=W/env python -m tests.lab.pairnode run --work W
 
 Команды (файл cmd/<имя>, содержимое — аргументы JSON): load {n, prefix, pause, base},
-set {name, field, value}, share {slot, out}, code {out}, open_share {share}, move {},
-return {}, backup {out}, qpause {seconds} (кворум: плановая пауза лидера перед остановкой).
+set {name, field, value}, code {out}, move {},
+return {}, backup {out}, qpause {seconds} (кворум: плановая пауза лидера перед остановкой),
+fw {enabled} (форма файервола хоста и перерисовка).
+
+РФ-доступ (LAB_RT=1, s08_rf_transit): `rtseed` — слот 1 с линком `awglink` и пользователь на awg0;
+в работе — файервол хоста, наборы и цепочка маркировки (адрес «РФ-сайта» LAB_RF_SET — в набор
+пользователя вместо dnsmasq), такт живости слотов с тактом rfpeer, опрос трафика (таблица учёта);
+в status.json — блок `rt`.
 Итог команды — cmd/<имя>.done (JSON) или cmd/<имя>.err.
 
 Шлюзы основы с кворумом (`LAB_GW_SLOTS=1,2`, сценарии кворума): их агентов заменяет
@@ -49,6 +55,7 @@ import shutil
 import sqlite3
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -96,6 +103,27 @@ def seed(a: argparse.Namespace) -> None:
                         pair_cidr="10.99.98.0/30", listener=a.role == "inviter", bot_username=f"{a.peer_name.lower()}_bot",
                         peer_admin_id=int(a.peer_admin))
     svc.reserve_keys_init()
+    db.close()
+
+
+def rtseed(a: argparse.Namespace) -> None:
+    """РФ-доступ узла (s08_rf_transit): слот 1 с линком `awglink` до шлюза стенда (устройство
+    шлюза — запись без ключа в awg0, как у подключённого шлюза) и, если задан ключ, пользователь
+    с устройством на awg0 узла — РФ-доступ разрешён и включён."""
+    from awgbot.core import config, settings
+    settings.init(config.CONF_DIR)
+    from awgbot.infra.db import Database
+    db = Database(config.DB_PATH)
+    db.init_schema()
+    admin = db.get_client_by_tg(int(config.ADMIN_ID))
+    gw_dev = db.create_device(int(admin.id), "Шлюз стенда", pubkey(), "LAB-DUMMY-psk", f"{config.SUBNET_PREFIX}.250")
+    db.gateway_add(gw_dev, a.link_if, int(a.link_port), a.link_cidr, preferred=True, slot_id=1)
+    if a.user_pub:
+        cid = db.create_client(a.user_name, 3, _START, _FUTURE, "LAB-INV-rt")
+        db.activate_client(cid, int(a.user_tg))
+        did = db.create_device(cid, "Телефон", a.user_pub, a.user_psk or "LAB-DUMMY-psk", a.user_addr)
+        db.update_client_fields(cid, routing_allowed=1)
+        db.update_device_fields(did, routing_on=1)
     db.close()
 
 
@@ -178,6 +206,10 @@ def lab_world(svc, shared: Path) -> None:
         except OSError:
             return False
     svc._tg_reachable = tg_reachable
+    # скрипт линка пары берёт каталог конфигов AWG из окружения (на хосте — умолчание /etc/amnezia/amneziawg,
+    # совпадающее с awg.conf_dir бота): у узла стенда он свой, иначе --rollback снял бы чужой файл
+    real_pair_env = svc._pair_env
+    svc._pair_env = lambda: {**real_pair_env(), "CONF_DIR": str(config.AWG_DIR)}
     from awgbot.core import config
     config.BASE_DIR = Path(os.environ["AWG_BOT_CONF_DIR"]).parent / "base"   # venv и код — ссылками (setup)
     real_props = openproc.rsvopen_sandbox_props
@@ -192,38 +224,75 @@ def lab_world(svc, shared: Path) -> None:
     openproc.rsvopen_sandbox_props = props
 
 
-# ── обход дефекта на время прогона (только по LAB_QKEYS_SHIM=1) ──────────────
+# ── РФ-доступ узла (LAB_RT=1, s08_rf_transit) ────────────────────────────────
 
-def lab_qkeys_shim(svc) -> None:
-    """Порог `t` в `qkeys` затирается полем вида конверта (`gwlink.pack` кладёт вид
-    сообщения в тот же ключ `t`): приёмник отвергает слово, ключи кворума не
-    подтверждаются, кворум не включается. Обход стенда — только чтобы прогнать
-    сценарии дальше включения: порог берётся из состава линии второй стороны
-    (`st.quo`), как его посчитала бы основа. По умолчанию выключен: без него
-    сценарий падает на включении — это и есть находка."""
-    from awgbot.util import pairproto
-    from awgbot.util.quorum import members as qm
-    real = pairproto.check
-
-    def check(proto, kind, body, sender):
-        if kind == "qkeys" and isinstance(body.get("t"), str):
-            members = svc.reserve_quorum_peer_line().get("members") or []
-            body = {**body, "t": qm.threshold(max(1, len(members) - 1))}
-        return real(proto, kind, body, sender)
-    pairproto.check = check
-
-
-def lab_guard_shim() -> None:
-    """Пакет nftguard не выставляет `TG_OUT4` и `SET_TG_OUT` (а `collect.zone_tg` и `render`
-    берут их через пакет): при оболочке зоны с awggx сборка таблицы awg_bot_guard падает
-    AttributeError, файервол хоста не ставится — у зоны нет маскарада наружу, бот основы на
-    резерве не достаёт Telegram. Обход стенда — только по LAB_GUARD_SHIM=1: имена из
-    common — в пакет. По умолчанию выключен: без него сценарии кворума падают на переезде."""
+def lab_rt_world(svc, w: Path) -> None:
+    """Мир РФ-доступа на одной ВМ: файл таблицы файервола и dnsmasq у каждого узла свои (на
+    хосте — /etc/nftables.d и /etc/dnsmasq.d, общие для обоих пространств стенда), постоянство
+    правил (`/etc/nftables.conf`, юнит nftables) — не трогается. Списка доменов нет: адрес
+    «РФ-сайта» (LAB_RF_SET) кладётся в набор назначений пользователя, как его положил бы dnsmasq
+    по ответу на домен списка."""
     from awgbot.infra import nftguard
-    from awgbot.infra.nftguard import common
-    for name in ("TG_OUT4", "SET_TG_OUT"):
-        if not hasattr(nftguard, name):
-            setattr(nftguard, name, getattr(common, name))
+    from awgbot.infra.routing import feeds
+    nftguard.RULES_FILE = str(w / "guard.nft")
+    nftguard.ensure_persistence = lambda: []
+
+    def write_dnsmasq_conf(text: str, path: str = None) -> bool:
+        (w / "dnsmasq.conf").write_text(text, encoding="utf-8")
+        return False
+    feeds.write_dnsmasq_conf = write_dnsmasq_conf
+
+
+def lab_rt_reconcile(svc) -> None:
+    """Реконсиляция РФ-доступа (наборы, цепочка маркировки) и адрес «РФ-сайта» в наборах."""
+    import subprocess
+    from awgbot.core import config
+    from awgbot.infra import routing
+    svc.reconcile_routing()
+    for cid in svc.db.routing_allowed_client_ids(config.ADMIN_ID):
+        for addr in (os.environ.get("LAB_RF_SET") or "").split(","):
+            if addr.strip():
+                subprocess.run(["ipset", "add", routing.user_set(cid), addr.strip(), "-exist"], capture_output=True)
+
+
+async def lab_rt_job(svc, bot) -> None:
+    """Такт живости слотов и РФ-доступа через второй сервер — как job_routing_liveness основы
+    (runtime/scheduler/client.py): вердикты слотов, затем такт rfpeer; уведомления — в макет."""
+    import logging
+    from awgbot.bot.notifier import send_notifications
+    try:
+        await send_notifications(bot, await asyncio.to_thread(svc.routing_liveness_tick))
+    except Exception as e:                                     # noqa: BLE001
+        logging.warning("routing_liveness: %s", e)
+    try:
+        await send_notifications(bot, await asyncio.to_thread(svc.reserve_rfpeer_tick))
+    except Exception as e:                                     # noqa: BLE001
+        logging.warning("rfpeer: %s", e)
+
+
+def _rt_status(svc) -> dict:
+    """РФ-доступ узла для сценария: слоты, активный, вердикт, согласие и слот транзита, `st`
+    второй стороны, счётчики транзита, AllowedIPs линка пары, правило 151."""
+    from awgbot.infra.routing import rfpeer as rfp
+    out: dict = {}
+    for key, fn in (("paired", lambda: svc.reserve_paired()), ("slots", lambda: [g.id for g in svc.rt_slots()]),
+                    ("active", lambda: (svc.active_gateway().id if svc.active_gateway() else None)),
+                    ("raw_active", lambda: svc.db.get_state(svc._RT_ACTIVE_KEY)),
+                    ("link_ok", lambda: svc.routing_link_ok()), ("engaged", lambda: svc.routing_engaged()),
+                    ("offer", lambda: list(svc.reserve_rf_offer())),
+                    ("rfpeer", lambda: svc.rsv_get("rsv_rfpeer")),
+                    ("peer_rfp", lambda: svc.reserve_peer_state().get("rfp")),
+                    ("file", lambda: rfp.read() if rfp.rfpeer_path().exists() else None),
+                    ("counters", lambda: svc.reserve_rf_peer_counters()),
+                    ("allowed", lambda: rfp.allowed_ips(str(rfp.pair_conf().get("pub") or ""))),
+                    ("rule151", lambda: rfp.rule_present(str(rfp.pair_conf().get("peer4") or "-"))),
+                    ("windows", lambda: {str(k): v for k, v in (svc.__dict__.get("_rt_windows") or {}).items()}),
+                    ("ups", lambda: {str(g.id): svc.db.get_state(f"routing_gw_{g.id}_up_streak") for g in svc.rt_slots()})):
+        try:
+            out[key] = fn()
+        except Exception as e:                                 # noqa: BLE001
+            out[key] = f"{type(e).__name__}: {e}"
+    return out
 
 
 # ── шлюзы основы с кворумом (gwnode) ─────────────────────────────────────────
@@ -350,6 +419,8 @@ def _status(svc, w: Path) -> dict:
           "peer": {k: v for k, v in svc.reserve_peer_state().items() if k in ("ready", "caps", "version", "inn", "out")},
           "jrn_on": svc.reserve_jrn_on(), "code_window": svc.reserve_code_window(),
           "tail_meta": svc.rsv_get("rsv_tail"), "quo": _quo_status(svc)}
+    if os.environ.get("LAB_RT") == "1":
+        st["rt"] = _rt_status(svc)
     try:
         keep = svc.reserve_keep_store()
         st["keep_last"] = list(keep.last()) if keep is not None else None
@@ -409,24 +480,9 @@ async def _command(svc, w: Path, name: str, args: dict) -> dict:
             return {"id": cid, "last_i": svc.db.jrn_last_i()}
         except Exception as e:                                 # noqa: BLE001
             return {"error": f"{type(e).__name__}: {e}"}
-    if name == "share":
-        from awgbot.util import rsvkeys
-        slot = int(args.get("slot", 1))
-        m_gen, y = svc.reserve_share_gateway(slot)              # доля, которую основа отдаёт шлюзу слота
-        Path(args["out"]).write_text(json.dumps([rsvkeys.gateway_x(slot), y, m_gen]), encoding="utf-8")
-        return {"x": rsvkeys.gateway_x(slot), "m_gen": m_gen}
     if name == "code":
         Path(args["out"]).write_text(svc.reserve_code(), encoding="utf-8")   # аварийный код — у админа основы
         return {"ok": True}
-    if name == "open_share":
-        # как такт голосования, получивший долю шлюза (vote._share_in): точка резерва + точка шлюза
-        from awgbot.util import rsvkeys
-        x, y, _m_gen = json.loads(Path(args["share"]).read_text(encoding="utf-8"))
-        pkg_in = svc.rsv_get("rsv_pkg_in")
-        points = [[rsvkeys.RESERVE_X, str(pkg_in.get("share") or "")], [int(x), str(y)]]
-        acts = await asyncio.to_thread(svc.reserve_open_by_points, {"shares": points}, "dead", "1")
-        await rsvactions.run(acts)
-        return {"acts": [a[0] for a in acts]}
     if name == "move":
         out = await asyncio.to_thread(svc.reserve_move_start)        # «🔀 Перевести» в карточке резерва
         return {"state": out.get("state") if isinstance(out, dict) else str(out)}
@@ -438,6 +494,12 @@ async def _command(svc, w: Path, name: str, args: dict) -> dict:
         acts = await asyncio.to_thread(svc.reserve_quorum_pause_actions, int(args.get("seconds", 300)))
         await rsvactions.run(acts)
         return {"acts": [a[0] + ":" + str(a[1]) for a in acts]}
+    if name == "fw":
+        # форма файервола хоста (firewall.enabled) и перерисовка — как кнопка раздела файервола
+        from awgbot.core import settings
+        await asyncio.to_thread(settings.set_value, "app.firewall.enabled", bool(args.get("enabled")))
+        await asyncio.to_thread(svc._gw_firewall_refresh, True)
+        return {"enabled": bool(args.get("enabled"))}
     if name == "backup":
         dst = sqlite3.connect(str(args["out"]))
         try:
@@ -473,12 +535,17 @@ async def run(a: argparse.Namespace) -> None:
     db.init_schema()
     svc = Services(db)
     lab_world(svc, Path(os.environ["LAB_SHARED"]))
-    if os.environ.get("LAB_QKEYS_SHIM") == "1":
-        lab_qkeys_shim(svc)
-    if os.environ.get("LAB_GUARD_SHIM") == "1":
-        lab_guard_shim()
+    rt = os.environ.get("LAB_RT") == "1"
+    if rt:
+        lab_rt_world(svc, w)
     gw_slots = [int(x) for x in os.environ.get("LAB_GW_SLOTS", "").split(",") if x.strip()]
     gw_st = lab_gateways(svc, Path(os.environ["LAB_SHARED"]).parent, gw_slots) if gw_slots else None
+    try:
+        # как старт основы (runtime/main/client.py): лидер линии — без права записи до первого
+        # большинства «да», до поллинга; после шлюзов-заглушек — от них состав голосующих
+        svc.reserve_quorum_leader_start()
+    except Exception as e:                                     # noqa: BLE001
+        logging.warning("кворум: ограждение на старте: %s", e)
     bot = Bot(config.BOT_TOKEN, session=AiohttpSession(api=TelegramAPIServer.from_base(os.environ["LAB_BOTAPI"])),
               default=DefaultBotProperties(parse_mode=ParseMode.HTML, link_preview_is_disabled=True))
     try:
@@ -499,6 +566,31 @@ async def run(a: argparse.Namespace) -> None:
     await pairlink.ensure(svc)
     scheduler = AsyncIOScheduler(timezone=config.TZ)
     setup_reserve_jobs(scheduler, svc, bot)
+    if rt:
+        # РФ-доступ: файервол хоста (NAT пользователей и правила транзита), наборы и цепочка — как
+        # на старте основы; такт живости — с цифрами app.yaml узла; опрос трафика (таблица учёта
+        # с rfp_up/rfp_dn) — чаще, чем у основы, чтобы счётчики транзита были видны сценарию
+        from apscheduler.triggers.interval import IntervalTrigger
+        try:
+            await asyncio.to_thread(svc._gw_firewall_refresh)
+            await asyncio.to_thread(lab_rt_reconcile, svc)
+        except Exception as e:                                 # noqa: BLE001
+            logging.warning("РФ-доступ стенда на старте: %s", e)
+        secs = settings.get_int("app.routing.probe_seconds", 30)
+        scheduler.add_job(lab_rt_job, IntervalTrigger(seconds=secs, jitter=max(1, int(secs * 0.3))), args=(svc, bot),
+                          id="routing_liveness", max_instances=1, coalesce=True, next_run_time=datetime.now(config.TZ))
+
+        async def rt_reconcile() -> None:
+            await asyncio.to_thread(lab_rt_reconcile, svc)
+
+        async def rt_poll() -> None:
+            try:
+                await asyncio.to_thread(svc.poll_traffic)
+            except Exception as e:                             # noqa: BLE001
+                logging.warning("опрос трафика: %s", e)
+        scheduler.add_job(rt_reconcile, IntervalTrigger(seconds=60), id="lab_rt_reconcile", max_instances=1, coalesce=True)
+        scheduler.add_job(rt_poll, IntervalTrigger(seconds=10), id="poll", max_instances=1, coalesce=True,
+                          next_run_time=datetime.now(config.TZ))
     scheduler.start()
     poll_task = asyncio.create_task(pc.run()) if a.poll else None
     cmd = w / "cmd"
@@ -555,6 +647,15 @@ def main() -> None:
     s2.add_argument("--peer-name", dest="peer_name", required=True)
     s2.add_argument("--peer-host", dest="peer_host", required=True)
     s2.add_argument("--peer-admin", dest="peer_admin", required=True)
+    s3 = sub.add_parser("rtseed")
+    s3.add_argument("--link-if", dest="link_if", default="awglink")
+    s3.add_argument("--link-port", dest="link_port", default="443")
+    s3.add_argument("--link-cidr", dest="link_cidr", default="10.99.99.0/30")
+    s3.add_argument("--user-pub", dest="user_pub", default="")
+    s3.add_argument("--user-addr", dest="user_addr", default="")
+    s3.add_argument("--user-psk", dest="user_psk", default="")
+    s3.add_argument("--user-name", dest="user_name", default="Пользователь стенда")
+    s3.add_argument("--user-tg", dest="user_tg", default="880301")
     r = sub.add_parser("run")
     r.add_argument("--work", required=True)
     r.add_argument("--poll", action="store_true")
@@ -563,6 +664,8 @@ def main() -> None:
         setup(a)
     elif a.cmd == "seed":
         seed(a)
+    elif a.cmd == "rtseed":
+        rtseed(a)
     else:
         asyncio.run(run(a))
 

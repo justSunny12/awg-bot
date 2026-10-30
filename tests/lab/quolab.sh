@@ -15,13 +15,6 @@
 #
 #   q_move_button                 переезд кнопкой A → B до отъезда (гость запущен, запись — сценарием)
 #   dns_set <адрес>               запись для пользователей стенда
-#   quo_defects                   известные дефекты кода — провал сразу, если не включён обход
-#
-# Дефекты, которые стенд обходит только по явному флагу (pairnode): порог t в слове qkeys
-# затирается видом сообщения конверта (gwlink.pack: вид — в ключе t) — B отвергает qkeys, кворум не
-# включается (LAB_QKEYS_SHIM=1: порог подставляется на приёме); пакет nftguard без TG_OUT4 и
-# SET_TG_OUT — awg_bot_guard с awggx не собирается, у зоны резерва нет выхода наружу
-# (LAB_GUARD_SHIM=1: имена из common — в пакет).
 GUEST_DB=/run/awg-bot-guest/data/bot.db
 API_A="http://${PL_GW[A]}:8081"
 SUMMARY=""
@@ -62,7 +55,7 @@ q_up() {
     pl_wait A 's.get("jrn_on") and s["jrn"]["capture"] == 1' 120 "журнал A включён" || exit 1
     if ! pl_wait A 's["quo"]["active"]' 180 "кворум линии A включён (ключи подтверждены B и шлюзами)" >"$PL/up.err"; then
         local q; q="$(grep -m1 "сообщение 'qkeys' не обработано" "$PL/B/node.log")"
-        [ -n "$q" ] && pl_fail "кворум не включился: B отвергает qkeys — «${q#*канал пары: }» (порог t затёрт видом конверта); причины у A: $(pl_q A 's["quo"]["why"]')"
+        [ -n "$q" ] && pl_fail "кворум не включился: B отвергает qkeys — «${q#*канал пары: }»; причины у A: $(pl_q A 's["quo"]["why"]')"
         cat "$PL/up.err"; exit 1
     fi
     pl_wait A "s['quo']['count'].get('role') == 'lead' and s['quo']['count'].get('y') == $v and s['jrn']['role'] == 'holder'" 180 \
@@ -118,36 +111,4 @@ q_move_button() {   # переезд кнопкой A → B до отъезда:
 dns_set() {         # запись для пользователей — на адрес (у стенда нет провайдера: меняет сценарий)
     "$PY" -c 'import json,sys; p=sys.argv[1]; d=json.load(open(p)); d[sys.argv[2]]=sys.argv[3]; json.dump(d, open(p, "w"))' \
         "$PL/shared/dns.json" "$RECORD" "$1"
-}
-
-quo_defects() {     # известные стенду дефекты кода: без обхода (LAB_*_SHIM=1) — провал сразу, с причиной
-    local out
-    out="$(cd "$PL_ROOT" && "$PY" - "${LAB_QKEYS_SHIM:-}" "${LAB_GUARD_SHIM:-}" <<'PYEOF'
-import sys
-from awgbot.util import gwlink, pairproto
-bad = []
-if sys.argv[1] != "1":
-    # слово qkeys через настоящий конверт канала пары: порог t не должен затираться видом сообщения
-    key, nonce = b"k" * 32, b"n" * 16
-    body = {"l": "a", "m_gen": 2, "q_gen": 1, "t": 2, "x": 1, "y": "00" * 16, "qbox": "00" * 72,
-            "c_gen": 1, "cy": "00" * 16, "cbox": "00" * 72}
-    msg = gwlink.unpack(key, gwlink.pack(key, "qkeys", body, seq=1, nonce=nonce), nonce=nonce)
-    try:
-        pairproto.check(pairproto.PAIR_PROTO, "qkeys", msg, pairproto.INVITER)
-    except pairproto.ProtocolError as e:
-        bad.append(f"qkeys не проходит конверт канала пары ({e}: gwlink.pack кладёт вид в ключ t) — кворум не включится")
-if sys.argv[2] != "1":
-    # таблица awg_bot_guard при оболочке зоны с awggx (выход агентов шлюзов в Telegram)
-    from awgbot.infra import nftguard
-    from awgbot.infra.nftguard.render import render
-    spec = nftguard.GuardSpec(ssh_port=22, ssh_open=True, tunnel_nets4=["10.8.2.0/24"], wan_ifs=["v-B"],
-                              zone_tg_if="awggx-h", zone_tg_net4="169.254.77.8/30")
-    try:
-        render(spec)
-    except AttributeError as e:
-        bad.append(f"awg_bot_guard с awggx не собирается ({e}) — файервол хоста резерва не ставится, у зоны нет выхода наружу")
-print("; ".join(bad))
-PYEOF
-)" || pl_fail "проверка дефектов не прошла: $out"
-    [ -z "$out" ] || pl_fail "ДЕФЕКТ: $out (обход стенда: LAB_QKEYS_SHIM=1 LAB_GUARD_SHIM=1)"
 }

@@ -63,6 +63,7 @@ def make_gateway(work: Path, slot: int):
 
     class LabGateway(GatewayQuorumMixin):
         _QUO_STORE = work / "quorum.json"
+        _RSV_STORE = work / "reserve.json"                   # раздел reserve агента (отметка отданной точки — Т-РА5)
 
         def __init__(self) -> None:
             self.slot = slot

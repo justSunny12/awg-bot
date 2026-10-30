@@ -24,6 +24,7 @@
 #   pl_gw_start <слот> / pl_gw_stop <слот>   шлюз основы с кворумом (gwnode) в lab-G1, lab-G2, lab-GR (слот 3);
 #                                 основе и резерву слоты — LAB_GW_SLOTS (до pl_start)
 #   pl_gq <слот> <выражение>      значение из status.json шлюза (выражение python над s)
+#   (РФ-доступ узлов для s08_rf_transit — rtlab.sh: LAB_RT и LAB_RF_SET идут узлам окружением)
 #   pl_cleanup                    всё снять (trap EXIT сценария)
 set -u
 PL_HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; PL_ROOT="$(cd "$PL_HERE/../.." && pwd)"
@@ -48,7 +49,8 @@ pl_env() {   # окружение узла; у A свои каталоги со�
     printf '%s\n' "AWG_BOT_CONF_DIR=$w/conf" "AWG_BOT_DATA_DIR=$w/data" "AWG_BOT_ENV=$w/env" \
         "LAB_SHARED=$PL/shared" "LAB_BOTAPI=http://${PL_GW[$n]}:8081" "LAB_VENV=$PL_VENV" \
         "LAB_NETNS=${PL_NS[$n]}" "LAB_RECORD=$RECORD" "PYTHONPATH=$PL_ROOT" "HOME=/root" \
-        "QUO_NS=awg-quo-$n" "QUO_CONF_DIR=$w/quo" "LAB_GW_SLOTS=${LAB_GW_SLOTS:-}" "LAB_QKEYS_SHIM=${LAB_QKEYS_SHIM:-}" "LAB_GUARD_SHIM=${LAB_GUARD_SHIM:-}"
+        "QUO_NS=awg-quo-$n" "QUO_CONF_DIR=$w/quo" "LAB_GW_SLOTS=${LAB_GW_SLOTS:-}" \
+        "LAB_RT=${LAB_RT:-}" "LAB_RF_SET=${LAB_RF_SET:-}"
 }
 
 # Узлы входят только в сетевое пространство (nsenter --net), а не через `ip netns exec`:
@@ -140,6 +142,7 @@ pl_init() {
     printf '{"%s": "203.0.113.5"}' "$RECORD" > "$PL/shared/dns.json"
     ip netns exec lab-inet env PYTHONPATH="$PL_ROOT" "$PY" -m tests.lab.botapi --listen 0.0.0.0:8081 \
         --journal "$PL/botapi.jsonl" >"$PL/botapi.log" 2>&1 & PL_BOTAPI_PID=$!
+    disown "$PL_BOTAPI_PID"                       # снятие в pl_cleanup — без строки «Killed» в итоге сценария
     local n
     (cd "$PL_ROOT" && "$PY" -m tests.lab.pairnode setup --work "$PL/A" --name Alpha --host "$RECORD" --self-ip 203.0.113.5 \
         --port 45871 --subnet 10.8.1 --token "$TOKEN_A" --admin "$ADMIN_A" --venv "$PL_VENV") || pl_fail "узел A не настроен"
@@ -310,6 +313,7 @@ pl_cleanup_quiet() {
     bash "$PL_Z" --teardown >/dev/null 2>&1; bash "$PL_Z" --wipe >/dev/null 2>&1
     ip netns del awg-guest 2>/dev/null
     for n in A B; do ip -n "lab-$n" link del awgpair 2>/dev/null; ip -n "lab-$n" link del awg0 2>/dev/null; done
+    declare -F rt_cleanup >/dev/null && rt_cleanup           # РФ-доступ узлов (rtlab.sh)
     for n in A B; do                                       # «гибель» узла (link down) снимает и маршрут по умолчанию
         ip -n "lab-$n" link set "v-$n" up 2>/dev/null
         ip -n "lab-$n" route replace default via "${PL_GW[$n]}" 2>/dev/null
