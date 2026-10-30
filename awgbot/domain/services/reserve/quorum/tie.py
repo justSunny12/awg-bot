@@ -33,7 +33,7 @@ class ReserveQuorumTieMixin:
         self.rsv_update("rsv_qlog", tie={"episode": since, "told": True, "side": "cand", "l": c.l})
         opened = bool(self.rsv_get("rsv_peer_admin").get("opened"))
         pid = self.reserve_peer_admin_id() if hasattr(self, "reserve_peer_admin_id") else 0
-        notes = [Notification(tg_id=int(config.ADMIN_ID), force_sound=True,
+        notes = [Notification(tg_id=int(config.ADMIN_ID), force_sound=True, keyboard="quorum_tie_cand",
                               text=rn.quorum_tie_candidate(name, since, see, no, info, said, bool(pid and opened)))]
         if pid and opened:
             notes.append(Notification(tg_id=pid, force_sound=True, keyboard="peer_code",
@@ -107,7 +107,7 @@ class ReserveQuorumTieMixin:
                 no_n = [self._quorum_node_name(n, ld.l) for n in sorted(no)]
                 info = self._quorum_info().to_dict()
                 log.warning("кворум: ничья о «%s» — видят %s, не видят %s", name, see_n, no_n)
-                return [("notify", [Notification(tg_id=int(config.ADMIN_ID), force_sound=True,
+                return [("notify", [Notification(tg_id=int(config.ADMIN_ID), force_sound=True, keyboard="quorum_tie",
                                                  text=rn.quorum_tie_leader(name, self.reserve_peer_name(), since, see_n, no_n, info))])]
             return []
         if st["told"]:

@@ -145,9 +145,14 @@ def confirm_ready_off() -> InlineKeyboardMarkup:
 
 
 def quorum_tie() -> InlineKeyboardMarkup:
-    """Т-К5: переезд кнопкой и раздел."""
-    return ui.rows("🔀 Переезд на резерв", RsvCB(action="move")) if False else ui.rows(
-        ("🔀 Переезд", RsvCB(action="move")), ("🛟 Резерв", SetCB(sec="rsv")))
+    """Т-К5 (лидеру): переезд кнопкой и раздел; имени второго сервера у готовой
+    клавиатуры нет — его называет текст уведомления."""
+    return ui.rows(("🔀 Переезд на резерв", RsvCB(action="move")), ("🛟 Резерв", SetCB(sec="rsv")))
+
+
+def quorum_tie_cand() -> InlineKeyboardMarkup:
+    """Т-К5б (кандидату): только раздел."""
+    return ui.rows(("🛟 Резерв", SetCB(sec="rsv")))
 
 
 def peer_code_offer() -> InlineKeyboardMarkup:

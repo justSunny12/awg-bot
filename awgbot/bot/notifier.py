@@ -167,7 +167,13 @@ def _quorum_tie():
     return rkb.quorum_tie()
 
 
-KEYBOARDS = {"update_done": kb.update_done_menu, "peer_code": _peer_code_offer, "quorum_tie": _quorum_tie}
+def _quorum_tie_cand():
+    from awgbot.bot.keyboards import reserve as rkb
+    return rkb.quorum_tie_cand()
+
+
+KEYBOARDS = {"update_done": kb.update_done_menu, "peer_code": _peer_code_offer, "quorum_tie": _quorum_tie,
+             "quorum_tie_cand": _quorum_tie_cand}
 
 
 def note_markup(n):

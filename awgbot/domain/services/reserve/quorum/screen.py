@@ -61,12 +61,12 @@ class ReserveQuorumScreenMixin:
                 tie = self.reserve_quorum_tie_view() if hasattr(self, "reserve_quorum_tie_view") else {}
                 if tie:
                     mine["tie_since"] = str(tie.get("since") or "")
-            if hasattr(self, "reserve_quorum_correlation"):
-                mine["correlation"] = self._quorum_correlation_cached()
             else:
                 guest = self.__dict__.get("_guest_qcount") or {}
                 if guest:
                     mine.update(y=int(guest.get("y") or 0), role=str(guest.get("r") or ""), from_guest=True)
+            if hasattr(self, "reserve_quorum_correlation"):
+                mine["correlation"] = self._quorum_correlation_cached()
             out["mine"] = mine
         if m is not None and self.reserve_out() == "away" and hasattr(self, "reserve_quorum_back_view"):
             back = self.reserve_quorum_back_view()
