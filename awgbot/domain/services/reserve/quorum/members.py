@@ -217,6 +217,12 @@ class ReserveQuorumMembersMixin:
     def reserve_quorum_active(self) -> bool:
         return not self.reserve_quorum_off_reasons()
 
+    def reserve_quorum_decisions(self) -> bool:
+        """Голосов хватает для решений (v ≥ 2: есть шлюз в составе); при v = 1 линия живёт
+        только зондом, счётом и окном кода (Р4)."""
+        m = self.reserve_quorum_mine()
+        return bool(self.reserve_quorum_active() and m is not None and m.enabled)
+
     def reserve_quorum_wanted(self) -> bool:
         """Условия включения без ключей: пара с `quo1`, подтверждённый состав с шлюзом,
         цифры и блок в порядке — ключи переводятся под кворум только после `qmem_ok`."""

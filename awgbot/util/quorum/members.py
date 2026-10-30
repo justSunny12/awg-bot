@@ -115,7 +115,9 @@ class Members:
 
     @property
     def enabled(self) -> bool:
-        """Кворум линии возможен: хотя бы один шлюз `quo1` (v ≥ 2)."""
+        """Решения по голосам возможны: хотя бы один шлюз `quo1` (v ≥ 2). Без шлюзов
+        линия живёт с одним голосующим — вторым сервером: зонд, счёт и окно кода есть,
+        автоматического взятия, ограждения и многочлена нет (решение Р4)."""
         return bool(self.gateways)
 
     def with_gateway(self, node: str) -> "Members":
@@ -188,7 +190,7 @@ def off_reasons(m: Members | None, *, acked: bool, timing_problem: str = "",
                 keys_ok: bool = True) -> list[str]:
     """Почему кворум линии не включён — кодами (тексты — у бота): пусто — включён."""
     out: list[str] = []
-    if m is None or not m.enabled:
+    if m is None:
         out.append("no_gateways")
     if not acked:
         out.append("not_acked")

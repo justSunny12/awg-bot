@@ -296,6 +296,10 @@ def quorum_mine_lines(q: dict) -> list[str]:
     out = []
     if q.get("pending"):
         out.append(f"└ 🟡 Состав голосующих меняется: жду подтверждения {peer}")
+    if v < 2:                                                 # Т-К1а: голосующий один — второй сервер
+        out.append(f"└ 🗳 Голосует только {peer}: шлюзов с агентом v4.2.0 нет — переезд кнопкой и по аварийному коду, "
+                   "автоматического нет")
+        return out
     if mine.get("leader_here") and "y" in mine:
         y = int(mine.get("y") or 0)
         if mine.get("role") == "fenced":

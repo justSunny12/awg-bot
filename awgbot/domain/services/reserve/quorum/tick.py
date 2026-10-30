@@ -73,7 +73,7 @@ class ReserveQuorumTickMixin:
                     self.__dict__.get("_quo_peers_sync_g") != int(m.g):
                 self.__dict__["_quo_peers_sync_at"], self.__dict__["_quo_peers_sync_g"] = now, int(m.g)
                 try:
-                    self.reserve_probe_peers_sync(m if m.gateways else None)
+                    self.reserve_probe_peers_sync(m)          # и без шлюзов: зонд второго сервера стоит при v = 1
                 except Exception as e:                        # noqa: BLE001
                     log.warning("кворум: пиры-зонды: %s", e)
             body = self.reserve_qprobe_body()
@@ -98,4 +98,6 @@ class ReserveQuorumTickMixin:
         actions += self.reserve_quorum_voter_tick(now)
         actions += self.reserve_quorum_candidate_tick(now)
         actions += self.reserve_quorum_back_tick(now)
+        if hasattr(self, "reserve_code_link_watch"):
+            actions += self.reserve_code_link_watch()          # линия второй стороны без кворума — окно кода по линку пары
         return actions

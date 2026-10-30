@@ -33,7 +33,7 @@ class ReserveCodeWindowMixin:
         return {"open": bool(cw.get("open")), "since": str(cw.get("since") or "")}
 
     def reserve_code_window_set(self, open_: bool, *, since: str = "", n: int = 0, v: int = 0, t: int = 0,
-                                by: str = "quorum") -> list[tuple]:
+                                by: str = "quorum", off_why: str = "") -> list[tuple]:
         """Окно кода кандидата: открыть — Т-К21 админу резерва и (если он открывал бота)
         админу основы с кнопкой кода; тот же эпизод снова — админу основы без звука;
         закрыть — взгляды вернулись (Т-РН3 админу основы, если его звали)."""
@@ -51,13 +51,13 @@ class ReserveCodeWindowMixin:
                 self.rsv_update("rsv_view", code=cw)
                 if cw.get("told") and pid:
                     return [("notify", [Notification(tg_id=pid, silent=True, keyboard="peer_code",
-                                                     text=rn.quorum_code_needed_primary(primary, str(config.SERVER_NAME or ""), since, n, v, t))])]
+                                                     text=rn.quorum_code_needed_primary(primary, str(config.SERVER_NAME or ""), since, n, v, t, off_why))])]
                 return []
             opened = bool(self.rsv_get("rsv_peer_admin").get("opened"))
-            notes = [Notification(tg_id=int(config.ADMIN_ID), text=rn.quorum_code_needed_reserve(primary, since, n, v, t, opened))]
+            notes = [Notification(tg_id=int(config.ADMIN_ID), text=rn.quorum_code_needed_reserve(primary, since, n, v, t, opened, off_why))]
             if pid and opened:
                 notes.append(Notification(tg_id=pid, force_sound=True, keyboard="peer_code",
-                                          text=rn.quorum_code_needed_primary(primary, str(config.SERVER_NAME or ""), since, n, v, t)))
+                                          text=rn.quorum_code_needed_primary(primary, str(config.SERVER_NAME or ""), since, n, v, t, off_why)))
             self.rsv_update("rsv_view", code={"open": True, "since": since, "told": bool(pid and opened), "tries": [],
                                               "episode": since, "by": by})
             log.warning("кворум: «%s» не вижу, голосов для переезда не хватает (не видят %d из %d, нужно %d) — приём кода открыт",
@@ -67,10 +67,37 @@ class ReserveCodeWindowMixin:
             return []
         self.rsv_update("rsv_view", code={"open": False, "closed_why": by, "closed_at": timeutil.now_iso(),
                                           "episode": str(cw.get("episode") or ""), "told": bool(cw.get("told"))})
-        log.info("кворум: приём аварийного кода закрыт — взгляды вернулись")
+        log.info("кворум: приём аварийного кода закрыт (%s)", by)
         pid = self.reserve_peer_admin_id()
         if cw.get("told") and pid:
-            return [("notify", [Notification(tg_id=pid, text=rn.code_window_closed(primary, "primary_seen"))])]
+            return [("notify", [Notification(tg_id=pid, text=rn.code_window_closed(primary, by, str(config.SERVER_NAME or "")))])]
+        return []
+
+    def reserve_code_link_watch(self) -> list[tuple]:
+        """Запасной сигнал окна кода (решение Р4, В): линия второго сервера без кворума
+        (цифры, блок зондов, состав не подтверждён, ключи не у всех — кандидата нет), а сам он
+        не на связи по линку пары дольше T_up — окно кода с причиной; связь вернулась — закрыть."""
+        if not self.reserve_paired() or not hasattr(self, "reserve_quorum_peer_line"):
+            return []
+        line = self.reserve_quorum_peer_line()
+        cw = dict(self.rsv_get("rsv_view").get("code") or {})
+        if line.get("active"):
+            if cw.get("open") and cw.get("by") == "link":
+                return self.reserve_code_window_set(False, by="link")   # кворум второй стороны снова ведёт сам
+            return []
+        down = self.reserve_peer_seen() == "down"
+        if down and not cw.get("open"):
+            since = str(self.reserve_down_since() or "")
+            up_s = int(self.reserve_quorum_timing().up_s) if hasattr(self, "reserve_quorum_timing") else 100
+            try:
+                if not since or timeutil.elapsed(timeutil.parse_iso(since)) < up_s:
+                    return []
+            except ValueError:
+                return []
+            why = [str(c) for c in (line.get("why") or [])]
+            return self.reserve_code_window_set(True, since=since, by="link", off_why=rn_off_why(why))
+        if not down and cw.get("open") and cw.get("by") == "link":
+            return self.reserve_code_window_set(False, by="link")
         return []
 
     def reserve_code_window_quiet(self, open_: bool) -> list[tuple]:
@@ -185,3 +212,21 @@ class ReserveCodeWindowMixin:
     def _rn(self):
         from awgbot.domain.notices import reserve as rn
         return rn
+
+
+def rn_off_why(codes: list) -> str:
+    """Причина «голосование не включено» для уведомления — словами, по первому коду."""
+    for c in codes or []:
+        if c == "no_gateways":
+            return "нет шлюзов с агентом v4.2.0"
+        if c == "not_acked":
+            return "состав голосующих не подтверждён"
+        if c == "keys":
+            return "ключи голосования ещё не у всех"
+        if str(c).startswith("timing:"):
+            return "цифры времени не сходятся"
+        if str(c).startswith("overlap:"):
+            return "блок зондов пересекается с сетью"
+        if str(c).startswith("big:"):
+            return "номер слота шлюза больше допустимого"
+    return "голосование не включено"

@@ -239,25 +239,34 @@ def gateway_reserve_up(gw: str, reserve: str) -> str:
     return f"🟢 Шлюз {_n(gw)} снова на связи с резервом {_n(reserve)}"
 
 
-def quorum_code_needed_reserve(primary: str, since: str, n: int, v: int, t: int, admin_opened: bool) -> str:
-    """Т-К21 (Т-РУ7 под кворумом, админу резерва): голосов для переезда не хватает."""
-    tail = (" — сам принять её пользователей этот сервер не может: нужен аварийный код админа " + _n(primary)
-            + (", бот написал ему" if admin_opened else "; его админ этот бот ещё не открывал — написать ему некуда"))
-    return (f"⚠️ {_n(primary)} не отвечает с {_when(since)}, а голосов для переезда не хватает: не видят {int(n)} из {int(v)}, "
+def quorum_code_needed_reserve(primary: str, since: str, n: int, v: int, t: int, admin_opened: bool, off_why: str = "") -> str:
+    """Т-К21 (Т-РУ7 под кворумом, админу резерва): голосов для переезда не хватает — приём кода
+    открыт; Т-К21д — голосование о сервере не включено (причина), сигнал по линку пары."""
+    tail = "" if admin_opened else f"; админ {_n(primary)} этот бот ещё не открывал — код прислать некуда"
+    if off_why or not v:
+        return (f"🆘 {_n(primary)} не на связи с {_when(since)}, а голосование о нём не включено ({_e(off_why or 'голосов нет')}) — "
+                f"переезд только по аварийному коду его админа{tail}")
+    return (f"🆘 {_n(primary)} не вижу с {_when(since)}, а голосов для переезда не хватает: не видят {int(n)} из {int(v)}, "
             f"нужно {int(t)}{tail}. Увидят большинство, что сервера нет, — пользователи переедут сами")
 
 
-def quorum_code_needed_primary(primary: str, reserve: str, since: str, n: int, v: int, t: int) -> str:
-    """Т-К21 (Т-РУ7б под кворумом, админу основы в чат его роли в боте резерва)."""
+def quorum_code_needed_primary(primary: str, reserve: str, since: str, n: int, v: int, t: int, off_why: str = "") -> str:
+    """Т-К21 (Т-РУ7б под кворумом, админу основы в чат его роли в боте резерва); Т-К21д — без кворума."""
+    if off_why or not v:
+        return (f"🆘 {_n(reserve)} не видит {_n(primary)} с {_when(since)}, а голосование о сервере не включено "
+                f"({_e(off_why or 'голосов нет')}). Если сервер упал — пришли аварийный код резерва")
     return (f"🆘 {_n(reserve)} не видит {_n(primary)} с {_when(since)}, а голосов для переезда не хватает: не видят {int(n)} из {int(v)}, "
             f"нужно {int(t)}. Если сервер упал — пришли аварийный код резерва; увидят большинство, что сервера нет, — "
             "пользователи переедут сами")
 
 
-def code_window_closed(primary: str, why: str) -> str:
-    """Т-РН3 (админу основы): приём кода закрыт — большинство снова видит сервер или голосов хватило."""
+def code_window_closed(primary: str, why: str, reserve: str = "") -> str:
+    """Т-РН3 (админу основы): приём кода закрыт — большинство снова видит сервер, голосов хватило
+    или второй сервер снова на связи по линку пары (why = link)."""
     if why == "taken":
         return "ℹ️ Голосов хватило — переезд идёт сам, код не нужен"
+    if why == "link":
+        return f"ℹ️ {_n(reserve) if reserve else 'Резерв'} снова на связи с {_n(primary)} — переезд не нужен"
     return f"ℹ️ Большинство снова видит {_n(primary)} — переезд не нужен"
 
 

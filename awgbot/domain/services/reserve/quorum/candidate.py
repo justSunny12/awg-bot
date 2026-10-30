@@ -24,7 +24,7 @@ from awgbot.util.quorum.candidate import Candidate
 from awgbot.util.quorum.probe import Info
 
 from ...gateway_link.common import log
-from ..vote import NEED_RETRY_S
+from ..opening import NEED_RETRY_S
 
 
 class ReserveQuorumCandidateMixin:
@@ -92,6 +92,12 @@ class ReserveQuorumCandidateMixin:
             self.__dict__.pop("_quo_exec", None)
             return []
         self._quorum_candidate_feed(c, now)
+        if c.v < 2:
+            # голосующий один (я): автоматического взятия, опроса и ничьей нет — только окно кода
+            # по своему «не вижу» (Р4); исполнение прежнего состава снимается
+            c.tick(now)
+            self.__dict__.pop("_quo_exec", None)
+            return self._quorum_code_watch(c)
         actions: list[tuple] = []
         for act in c.tick(now):
             if act.startswith("ask:"):
@@ -119,7 +125,8 @@ class ReserveQuorumCandidateMixin:
         if self.__dict__.get("_quo_exec") or c.tie_told:
             return []
         cw = dict(self.rsv_get("rsv_view").get("code") or {})
-        want = c.own == "uns" and not c.see_nodes() and not qm.majority(len(c.no_nodes()), c.v) and self.reserve_in() == "idle"
+        maj = qm.majority(len(c.no_nodes()), c.v) if c.v >= 2 else False   # при v = 1 большинства как решения нет
+        want = c.own == "uns" and not c.see_nodes() and not maj and self.reserve_in() == "idle"
         if want and not cw.get("open"):
             return self.reserve_code_window_set(True, since=self._quorum_no_since(c), n=len(c.no_nodes()), v=c.v, t=qm.threshold(c.v))
         if not want and cw.get("open") and cw.get("by") == "quorum":

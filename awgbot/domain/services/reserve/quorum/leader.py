@@ -71,7 +71,7 @@ class ReserveQuorumLeaderMixin:
             self.__dict__["_rsv_qleader"] = ld
             log.info("кворум: ответчик линии %s%s — голосующих %d, поколение %s", l, " (отъезд, счёт для возврата)" if q2 else "",
                      len(voters), g)
-            self.__dict__["_quo_start_pending"] = not q2      # старт лидера — без права записи до первого большинства
+            self.__dict__["_quo_start_pending"] = not q2 and len(voters) >= 2   # старт — без права записи до первого большинства; при v = 1 решений нет
             self.__dict__["_quo_ld_at"] = now
         else:
             if tuple(ld.voters) != tuple(voters) or ld.gen.g != g:
@@ -156,6 +156,16 @@ class ReserveQuorumLeaderMixin:
         now = time.monotonic() if now is None else now
         if ld.q2:
             self.__dict__.pop("_quo_start_pending", None)     # отъезд: счёт для Q2, решений нет
+            return []
+        if ld.v < 2:
+            # один голосующий (второй сервер): счёт для карточки, ограждения нет — судьбу сервера не
+            # решает один голос (Р4); ограждение прежнего состава снимается
+            self.__dict__.pop("_quo_start_pending", None)
+            ld.tick(now)
+            if ld.fenced:
+                ld.fenced, ld.starting, ld.high_since = False, False, None
+            if self.__dict__.get("_quo_fenced") and hasattr(self, "reserve_quorum_unfence_if_off"):
+                self.reserve_quorum_unfence_if_off()
             return []
         actions: list[tuple] = []
         if self.__dict__.pop("_quo_start_pending", False) and hasattr(self, "reserve_quorum_fence_apply"):

@@ -18,9 +18,9 @@ import types
 import pytest
 
 from awgbot.core import config, settings
-from awgbot.domain.services.reserve import rfblock as rfblock_mod
 from awgbot.domain.services.reserve import codewin as codewin_mod
-from awgbot.domain.services.reserve import vote as vote_mod
+from awgbot.domain.services.reserve import gwguest as gwguest_mod
+from awgbot.domain.services.reserve import opening as opening_mod
 from awgbot.util import livestep, rsvkeys
 from tests.integration import _reserve_common as rc
 
@@ -54,9 +54,9 @@ class _Box:
         self.launched: list[dict] = []
         self.launch_fail = ""
         ns = types.SimpleNamespace(monotonic=self.clock.monotonic, time=self.clock.time)
-        monkeypatch.setattr(vote_mod, "time", ns)
+        monkeypatch.setattr(gwguest_mod, "time", ns)
+        monkeypatch.setattr(opening_mod, "time", ns)
         monkeypatch.setattr(codewin_mod, "time", ns)              # окно кода и счёт попыток — те же часы
-        monkeypatch.setattr(rfblock_mod, "time", ns)
         monkeypatch.setattr(services, "reserve_zone_link_rx", lambda slot: self.rx.get(int(slot)))
         monkeypatch.setattr(services, "_open_payload", lambda kind: {"kind": kind})
         monkeypatch.setattr(services, "_rsvopen_launch", self._launch)

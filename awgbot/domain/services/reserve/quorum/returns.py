@@ -87,6 +87,9 @@ class ReserveQuorumReturnsMixin:
                     c.view_in(node, w, now, since=str(gv.get("since") or ""), e=int(gv.get("e") or 0),
                               info=Info.from_dict(gv.get("i")) if gv.get("i") else None)
             c.channel(node, alive)
+        if c.v < 2:
+            c.tick(now)                                       # один голосующий (я): счёт для карточки, возврата по Q1 нет
+            return []
         actions: list[tuple] = []
         for act in c.tick(now):
             if act.startswith("ask:"):
