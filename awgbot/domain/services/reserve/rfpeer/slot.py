@@ -37,6 +37,10 @@ class ReserveRfSlotMixin:
                               link_cidr=str(settings.get("app.reserve.pair_cidr", "10.99.98.0/30") or ""),
                               label=f"шлюзы «{self.reserve_peer_name()}»")
 
+    @staticmethod
+    def rt_is_peer_slot(gw) -> bool:
+        return gw is not None and int(getattr(gw, "id", 0) or 0) == RF_PEER_ID
+
     def _rf_pair_alive(self) -> bool:
         cache = self.__dict__.setdefault("_rf_pair_alive", {})
         import time

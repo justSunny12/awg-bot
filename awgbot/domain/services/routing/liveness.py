@@ -268,10 +268,10 @@ class RoutingLivenessMixin:
                          and self.db.get_state(self._rt_keys(g.id)[1]) == "1"), None)
             # переехали на резерв — люди с РФ-адресом, это не авария: без звука;
             # критичны только отказы, оставившие людей без РФ-доступа.
-            # Виртуальный слот (шлюзы второго сервера, запасной зоны) объявляет сам (reserve/rfpeer):
-            # «останусь на нём» для не липкого слота неверно
-            virtual = hasattr(self, "rt_is_spare") and (self.rt_is_spare(switched_to) or (prev is not None and self.rt_is_spare(prev)))
-            if not virtual:
+            # слот «шлюзы второго сервера» объявляет сам (reserve/rfpeer): «останусь на нём» для не
+            # липкого слота неверно
+            peer_slot = hasattr(self, "rt_is_peer_slot") and (self.rt_is_peer_slot(switched_to) or (prev is not None and self.rt_is_peer_slot(prev)))
+            if not peer_slot:
                 notes.append(Notification(config.ADMIN_ID,
                                           self._txt_rt_switched(prev, switched_to, results.get(prev.id) if prev else verdict)))
         elif ok:
@@ -291,8 +291,8 @@ class RoutingLivenessMixin:
             notes.append(Notification(config.ADMIN_ID, text, critical=True))
         # резерв: молчит всё окно — письмо без звука; ожил — «остаётся в резерве»
         for g in others:
-            if hasattr(self, "rt_is_spare") and self.rt_is_spare(g):
-                continue                                      # виртуальный слот не отвечает — строка карточки, не письмо
+            if hasattr(self, "rt_is_peer_slot") and self.rt_is_peer_slot(g):
+                continue                                      # «шлюзы второго сервера» не отвечают — строка карточки, не письмо
             _u, ann_k = self._rt_keys(g.id)
             g_ann = self.db.get_state(ann_k) == "1"
             if g_ann and ups[g.id] >= self._RT_UP_STREAK:
