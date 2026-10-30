@@ -55,7 +55,7 @@ __all__ = ["box", "lab", "live", "opener", "paired", "pool"]
                          ids=["newline", "space", "tab", "too-long"])
 def test_a_token_that_is_not_one_short_line_fails_before_the_store_is_written(opener, token):
     opener.write_package(env={"BOT_TOKEN": token, "ADMIN_ID": 77})
-    assert opener.open(shares=opener.shares(1)) == 1
+    assert opener.open(**opener.points(1)) == 1
     assert "токен бота в пакете не того вида" in opener.out, opener.out
     assert not (rsvzone.RUN_DIR / "env").exists(), "env гостя записан с подложенной строкой"
     assert "take" not in opener.kinds()
@@ -63,7 +63,7 @@ def test_a_token_that_is_not_one_short_line_fails_before_the_store_is_written(op
 
 def test_a_normal_token_still_opens(opener):
     opener.write_package(env={"BOT_TOKEN": TOKEN, "ADMIN_ID": 77})
-    assert opener.open(shares=opener.shares(1)) == 0, opener.out
+    assert opener.open(**opener.points(1)) == 0, opener.out
     assert (rsvzone.RUN_DIR / "env").read_text(encoding="utf-8") == f"BOT_TOKEN={TOKEN}\nADMIN_ID=77\n"
 
 
@@ -114,8 +114,8 @@ def _row(con, key: str):
     return con.execute("SELECT value FROM server_state WHERE key = ?", (key,)).fetchone()
 
 
-@pytest.mark.parametrize("pkg_in", [json.dumps({"gen": 4, "share": "DUMMY-share"}), json.dumps({"gen": 4}), "", None],
-                         ids=["with-share", "without-share", "dropped", "never"])
+@pytest.mark.parametrize("pkg_in", [json.dumps({"gen": 4, "m_gen": 2}), json.dumps({"gen": 4}), "", None],
+                         ids=["with-key-generation", "gen-only", "dropped", "never"])
 def test_the_keys_of_the_zone_sides_do_not_go_into_the_backup(pkg_in):
     """Стороны линков шлюзов второй стороны в зоне (ключи, PSK) в копию не идут
     целиком — что бы ни было с пакетом: после восстановления новая сессия
@@ -175,7 +175,7 @@ async def test_a_message_that_does_not_parse_breaks_the_guest_session():
 async def test_a_package_of_a_new_generation_drops_the_unfinished_one():
     obj = types.SimpleNamespace(services=None)
     sess = types.SimpleNamespace(parts={("rep", 7): ["aa", None]})
-    body = lambda gen, i: {"gen": gen, "fp": "x", "i": i, "n": 2, "blob": "ab", "share": "", "m_gen": 1}  # noqa: E731
+    body = lambda gen, i: {"gen": gen, "fp": "x", "i": i, "n": 2, "blob": "ab"}  # noqa: E731
     await InboundMixin._in_pkg(obj, sess, body(5, 0))
     await InboundMixin._in_pkg(obj, sess, body(6, 0))
     assert 5 not in sess.parts and 6 in sess.parts, f"недособранный пакет прежнего поколения в памяти: {sess.parts}"

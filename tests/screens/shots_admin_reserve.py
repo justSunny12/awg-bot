@@ -28,8 +28,11 @@ _K = lambda b: base64.b64encode(bytes([b]) * 32).decode()            # noqa: E73
 STAGE = {"PAIR_VPS_PRIV": _K(1), "PAIR_VPS_PUB": _K(2), "PAIR_PEER_PRIV": _K(3), "PAIR_PEER_PUB": _K(4),
          "JC": "5", "JMIN": "10", "JMAX": "50", "S1": "20", "S2": "30", "S3": "40", "S4": "50",
          "H1": "100-200", "H2": "600000000-600100000", "H3": "1100000000-1100100000", "H4": "1600000000-1600100000"}
-KEYS = {"m": "11" * 16, "a": "22" * 16, "m_gen": 1, "k": "33" * 32, "k_gen": 1, "compromised": False,
+KEYS = {"m": "11" * 16, "m_gen": 1, "k": "33" * 32, "k_gen": 1, "compromised": False,
         "created_at": "2026-09-14T12:00:00+03:00"}
+# ящик кода с сопряжения: прямая аварийного ключа Mc (код — её точка x = 255), многочлена нет
+QKEYS = {"on": True, "c_gen": 1, "mc": "11" * 16, "ma": "22" * 16, "q_gen": 0, "t": 0, "poly": [], "acked": {},
+         "enabled_at": "2026-09-14T12:00:00+03:00", "code_at": "2026-09-14T12:00:00+03:00"}
 
 
 def _host(services, mp):
@@ -108,6 +111,7 @@ def _pair(services):
                                         "session": True, "at": _iso(NOW)})
     services.rsv_put("rsv_peer_admin", {"admin_id": PEER_ADMIN, "opened": False, "bound_at": _iso(NOW)})
     services.rsv_put("rsv_keys", dict(KEYS))
+    services.rsv_put("rsv_qkeys", dict(QKEYS))
     services.reserve_set_out("home")
     services.reserve_set_in("idle")
 
@@ -128,16 +132,14 @@ def _connected(*addrs: str):
 
 
 def _fixed_generation(services, mp):
-    """Новое поколение — с постоянными ключами (иначе новый код менялся бы от прогона к прогону)."""
+    """Новое поколение — с постоянными ключами (иначе новый код менялся бы от прогона к прогону):
+    `M`, `K` и прямая аварийного ключа `Mc` (код — её точка x = 255)."""
     from awgbot.util import rsvkeys, shamir
     from awgbot.util.rsvpkg import seal
 
-    class _Gen:
-        @staticmethod
-        def new(n):
-            return type("G", (), {"m": bytes([0x44]) * 16, "gen": n,
-                                  "line": shamir.Line(bytes([0x44]) * 16, bytes([0x55]) * 16)})()
-    mp.setattr(rsvkeys, "Generation", _Gen)
+    mp.setattr(rsvkeys, "new_master", lambda: bytes([0x44]) * 16)
+    mp.setattr(rsvkeys.CodeGen, "new", classmethod(
+        lambda cls, n: cls(int(n), shamir.Line(bytes([0x44]) * 16, bytes([0x55]) * 16))))
     mp.setattr(seal, "new_k", lambda: bytes([0x66]) * 32)
 
 

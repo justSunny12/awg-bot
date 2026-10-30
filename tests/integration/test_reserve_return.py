@@ -408,7 +408,6 @@ def test_wiped_ends_the_return_with_a_new_k_and_the_old_package_is_unreadable_fo
     old_pkg = _package_under(svc)
     _at_step(away, "relay", merge_report={"clients": 1, "devices": 2})
     svc.rsv_update("rsv_out", kind=kind, record_fact_at=timeutil.now_iso())
-    svc.rsv_put("rsv_shares", {"x": "DUMMY"})
     acts = svc.reserve_wiped_in()
     assert svc.reserve_out() == "home"
     new_k = svc.reserve_k()
@@ -423,7 +422,6 @@ def test_wiped_ends_the_return_with_a_new_k_and_the_old_package_is_unreadable_fo
     assert seal.open_parts(blob, new_k)
     with pytest.raises(seal.PackageError):
         seal.open_parts(blob, old_k)
-    assert svc.rsv_get("rsv_shares") == {}, "доли прежнего пакета не сброшены"
     texts = [n.text for n in notices(acts)]
     assert any("снова здесь" in t and "1 новый профиль" in t for t in texts)
     token_notice = [t for t in texts if "Токен API DNS" in t]
@@ -470,7 +468,7 @@ def test_lost_devices_of_the_report_are_listed_in_the_notice(away):
     assert "Не встало устройство" in text and "Планшет" in text and "Выдай" in text
 
 
-# ── новое поколение ключа — только после возврата по долям или коду ─────────
+# ── новое поколение ключа — только после возврата по точкам или коду ────────
 
 @pytest.mark.parametrize("kind, go_sent, regen", [
     ("button", True, False), ("rf", True, False), ("nogw", True, False),   # K отдан мной (`go`) — прямая цела
@@ -478,16 +476,17 @@ def test_lost_devices_of_the_report_are_listed_in_the_notice(away):
     ("button", None, False), ("rf", None, False), ("nogw", None, False),    # отметки нет (прежнее состояние):
     ("dead", None, True), ("code", None, True),                             # по виду переезда
 ])
-def test_the_generation_changes_after_a_return_only_when_the_package_was_opened_by_shares_or_code(away, kind, go_sent,
+def test_the_generation_changes_after_a_return_only_when_the_package_was_opened_by_points_or_code(away, kind, go_sent,
                                                                                                    regen):
-    """Доли и код раскрывают вторую точку прямой (и конверт DNS): после
-    такого возврата — новое поколение M, код админу и просьба сменить токен
-    DNS; после переезда ключом основы — ничего из этого (лишний код админу и
-    лишний перевыпуск долей шлюзов). Чем открыт пакет, основа решает по своей
-    отметке отправки K (go_sent), а без неё — по виду переезда."""
+    """Точки кворума и код раскрывают `M` (и конверт DNS): после такого возврата —
+    новое поколение M и просьба сменить токен DNS; новый код админу — только после
+    переезда по коду (резерв узнал `Mc`), по точкам прямая кода цела и код прежний.
+    После переезда ключом основы — ничего из этого. Чем открыт пакет, основа решает
+    по своей отметке отправки K (go_sent), а без неё — по виду переезда."""
     svc = away.svc
     svc.rsv_update("rsv_dns", provider="cloudflare", token="DUMMY")   # токен был — конверт DNS в пакете
     m_gen = int(svc.reserve_keys()["m_gen"])
+    code = svc.reserve_code()
     _at_step(away, "relay")
     fields = dict(kind=kind, by="", record_fact_at=timeutil.now_iso())
     if go_sent is not None:
@@ -495,14 +494,16 @@ def test_the_generation_changes_after_a_return_only_when_the_package_was_opened_
     svc.rsv_update("rsv_out", **fields)
     texts = [n.text for n in notices(svc.reserve_wiped_in())]
     tag = f"{kind}/go_sent={go_sent}"
+    coded = regen and kind == "code"
     assert (int(svc.reserve_keys()["m_gen"]) == m_gen + 1) is regen, f"{tag}: поколение M"
-    assert bool(svc.rsv_get("rsv_keys").get("code_notify_why")) is regen, f"{tag}: код админу"
+    assert bool(svc.rsv_get("rsv_keys").get("code_notify_why")) is coded, f"{tag}: код админу"
+    assert (svc.reserve_code() != code) is coded, f"{tag}: аварийный код"
     assert bool([t for t in texts if "Токен API DNS" in t]) is regen, f"{tag}: просьба сменить токен"
 
 
 def test_a_manual_record_gets_a_new_generation_but_no_token_request_after_a_crash_return(away):
-    """Запись вручную — токена в пакете не было: после возврата по долям новое
-    поколение и код админу, а просьбы сменить токен DNS нет."""
+    """Запись вручную — токена в пакете не было: после возврата по точкам новое
+    поколение, код прежний, а просьбы сменить токен DNS нет."""
     svc = away.svc
     svc.rsv_update("rsv_dns", provider="manual", token="")
     m_gen = int(svc.reserve_keys()["m_gen"])
@@ -510,7 +511,7 @@ def test_a_manual_record_gets_a_new_generation_but_no_token_request_after_a_cras
     svc.rsv_update("rsv_out", kind="dead", by="", go_sent=False, record_fact_at=timeutil.now_iso())
     texts = [n.text for n in notices(svc.reserve_wiped_in())]
     assert int(svc.reserve_keys()["m_gen"]) == m_gen + 1
-    assert svc.rsv_get("rsv_keys").get("code_notify_why")
+    assert not svc.rsv_get("rsv_keys").get("code_notify_why"), "код админу после переезда по точкам"
     assert not [t for t in texts if "Токен API DNS" in t], texts
 
 

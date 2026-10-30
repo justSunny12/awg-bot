@@ -1,13 +1,13 @@
-"""Ключи резерва серверов: Шамир «2 из n» над GF(2⁸) (util/shamir.py) и
-главный ключ переезда `M` с поколениями, точками держателей и аварийным
+"""Ключи резерва серверов: Шамир над GF(2⁸) (util/shamir.py) и главный ключ
+переезда `M`, прямая аварийного ключа `Mc` с точками держателей и аварийным
 кодом (util/rsvkeys.py).
 
 Цена ошибки: арифметика поля, которая расходится с эталоном, даёт доли,
 из которых `M` не собирается, — в аварию пакет резерва не откроется никем;
 одна точка, говорящая что-то о секрете, — резерв в одиночку подбирает `M`;
 аварийный код, который принимает опечатку, — «код не подошёл» без
-подсказки, что именно не так; код прежнего поколения, который снимает
-заголовок нового пакета, — утечка старого кода открывает новые данные.
+подсказки, что именно не так; код прежней прямой, который открывает ящик
+новой, — утечка старого кода открывает новые данные.
 Вывода ключа из пароля в этих модулях нет по построению (секрет случайный,
 128 бит) — сторож по импортам держит это свойство.
 """
@@ -111,54 +111,52 @@ def test_m_is_16_random_bytes_and_the_box_key_is_32_bytes_and_not_m():
             rsvkeys.box_key(bad)
 
 
-def test_points_of_a_generation_sit_where_the_holders_expect_them():
-    g = rsvkeys.Generation.new(1)
-    assert g.reserve_point()[0] == 1, "резерв — x = 1"
-    assert [g.gateway_point(s)[0] for s in (1, 2, 3)] == [2, 3, 4], "шлюз слота N — x = N + 1"
-    assert rsvkeys.code_point(g.code())[0] == 255, "аварийный код — x = 255"
+def test_points_of_the_key_lines_sit_where_the_holders_expect_them():
+    """Второй сервер — x = 1 и на многочлене кворума, и на прямой кода; шлюз слота N —
+    x = N + 1; код — x = 255. Сдвиг точки — держатель отдаёт не свою точку, и `M` не
+    собирается в аварию."""
+    q, c = rsvkeys.QuorumGen.new(1, 2), rsvkeys.CodeGen.new(1)
+    assert q.reserve_point()[0] == 1 and c.reserve_point()[0] == 1, "второй сервер — x = 1"
+    assert [q.gateway_point(s)[0] for s in (1, 2, 3)] == [2, 3, 4], "шлюз слота N — x = N + 1"
+    assert rsvkeys.code_point(c.code())[0] == 255, "аварийный код — x = 255"
     for bad in (0, 254):
         with pytest.raises(ValueError):
-            g.gateway_point(bad)
+            q.gateway_point(bad)
 
 
-def test_the_code_with_either_share_gives_m_and_alone_it_does_not():
-    g = rsvkeys.Generation.new(3)
-    code = rsvkeys.code_point(g.code())
-    assert rsvkeys.recover_m(g.reserve_point(), g.gateway_point(1)) == g.m, "резерв + шлюз"
-    assert rsvkeys.recover_m(g.reserve_point(), code) == g.m, "резерв + код (авария Н4)"
-    assert rsvkeys.recover_m(g.gateway_point(2), code) == g.m, "шлюз + код"
-    assert code[1] != g.m, "сам код — не M"
+def test_the_code_with_the_reserve_point_opens_the_code_box_and_neither_alone_says_anything_about_m():
+    m = rsvkeys.new_master()
+    c = rsvkeys.CodeGen.new(3)
+    box = c.cbox(m)
+    assert rsvkeys.recover_m_code(c.code(), c.reserve_point(), box) == m, "код + точка второго сервера + ящик"
+    assert rsvkeys.code_point(c.code())[1] != m and c.reserve_point()[1] != m, "одна точка — не M"
+    assert m not in box, "ящик кода несёт M открытым"
 
 
-def test_a_new_generation_changes_m_the_slope_every_point_and_the_code():
-    a, b = rsvkeys.Generation.new(1), rsvkeys.Generation.new(2)
-    assert a.m != b.m and a.line.slope != b.line.slope
-    assert a.reserve_point() != b.reserve_point() and a.gateway_point(1) != b.gateway_point(1)
-    assert a.code() != b.code()
+def test_a_new_code_generation_changes_the_line_the_reserve_point_and_the_code():
+    a, b = rsvkeys.CodeGen.new(1), rsvkeys.CodeGen.new(2)
+    assert a.mc != b.mc and a.line.slope != b.line.slope
+    assert a.reserve_point() != b.reserve_point() and a.code() != b.code()
 
 
-def test_the_old_code_with_the_new_reserve_share_does_not_open_the_new_header():
-    """Код прежнего поколения + доля резерва нового — не тот M: заголовок
-    пакета нового поколения не снимается (а не «снимается мусором»)."""
-    old, new = rsvkeys.Generation.new(1), rsvkeys.Generation.new(2)
+def test_the_old_code_with_the_new_reserve_point_does_not_open_the_new_code_box():
+    """Код прежней прямой + точка новой — не тот `Mc`: ящик кода не открывается (а не
+    «открывается мусором»), заголовок пакета не снимается."""
+    m = rsvkeys.new_master()
+    old, new = rsvkeys.CodeGen.new(1), rsvkeys.CodeGen.new(2)
+    with pytest.raises(ValueError):
+        rsvkeys.recover_m_code(old.code(), new.reserve_point(), new.cbox(m))
     k = seal.new_k()
-    blob = seal.seal({"vpn": {"x": 1}}, k=k, m=new.m, pkg_gen=1, m_gen=2)
-    wrong = rsvkeys.recover_m(new.reserve_point(), rsvkeys.code_point(old.code()))
-    assert wrong != new.m
-    with pytest.raises(seal.PackageError):
-        seal.open_k(blob, wrong)
-    assert seal.open_k(blob, rsvkeys.recover_m(new.reserve_point(), rsvkeys.code_point(new.code()))) == k
+    blob = seal.seal({"vpn": {"x": 1}}, k=k, m=m, pkg_gen=1, m_gen=2)
+    assert seal.open_k(blob, rsvkeys.recover_m_code(new.code(), new.reserve_point(), new.cbox(m))) == k
 
 
-def test_shares_of_two_generations_do_not_open_either_package():
-    """Доли разных поколений не складываются: доля шлюза прежнего поколения с
-    долей резерва нового — ни один из двух заголовков не снимается."""
-    old, new = rsvkeys.Generation.new(1), rsvkeys.Generation.new(2)
-    mixed = rsvkeys.recover_m(new.reserve_point(), old.gateway_point(1))
-    for g in (old, new):
-        blob = seal.seal({"vpn": {}}, k=seal.new_k(), m=g.m, pkg_gen=1, m_gen=g.gen)
-        with pytest.raises(seal.PackageError):
-            seal.open_k(blob, mixed)
+def test_there_is_no_line_of_m_itself_any_more():
+    """Прямой «2 из n» самого `M` нет: ни поколения с наклоном, ни сборки `M` по двум
+    точкам. Вернись такой путь — две точки держателей (второй сервер и шлюз) открывали
+    бы `M` мимо большинства и мимо ящика кода."""
+    assert not hasattr(rsvkeys, "Generation"), "поколение прямой M вернулось"
+    assert not hasattr(rsvkeys, "recover_m"), "сборка M по двум точкам вернулась"
 
 
 # ── аварийный код строкой ────────────────────────────────────────────────────

@@ -165,11 +165,3 @@ def test_keys_are_fresh_per_generation_and_not_m():
     assert q1.mq != q2.mq and c1.mc != c2.mc
     assert c1.code() != c2.code()
     assert rsvkeys.code_point(c1.code()) == c1.line.point(rsvkeys.CODE_X)
-
-
-def test_the_old_generation_path_is_unchanged():
-    """Прежняя прямая `M` (до кворума): точки и код по-прежнему дают `M` —
-    пакеты, запечатанные до включения кворума, открываются как раньше."""
-    gen = rsvkeys.Generation.new(4)
-    assert rsvkeys.recover_m(gen.reserve_point(), gen.gateway_point(1)) == gen.m
-    assert rsvkeys.recover_m(gen.reserve_point(), rsvkeys.code_point(gen.code())) == gen.m

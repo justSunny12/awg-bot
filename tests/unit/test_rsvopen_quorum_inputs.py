@@ -1,14 +1,16 @@
-"""Вход процесса открытия под кворумом (tools/rsvopen.recover_keys; концепт
-«кворум» §2.7, §4.9): `qpoints` + `qbox` — t точек многочлена ключа кворума и
-ящик кворума; `code` + `cpoint` + `cbox` — аварийный код, точка резерва прямой
-аварийного ключа и ящик кода; прежние `shares` и `share` + `code` — для линии на
-матрице. Пакет — настоящий (util/rsvpkg/seal), ключи — util/rsvkeys.
+"""Вход процесса открытия (tools/rsvopen.recover_keys): `qpoints` + `qbox` — t
+точек многочлена ключа кворума и ящик кворума; `code` + `cpoint` + `cbox` —
+аварийный код, точка резерва прямой аварийного ключа и ящик кода. Прямой «2 из
+n» самого `M` нет: прежние входы `shares` и `share` + `code` не открывают ничего.
+Пакет — настоящий (util/rsvpkg/seal), ключи — util/rsvkeys.
 
 Цена ошибки: вход, открывающий пакет меньшим числом точек, чем порог, — одна
-сторона (резерв и один шлюз) увозит пользователей мимо большинства; код прямой
-`M`, принятый ящиком кода, — прежний код после включения голосования всё ещё
-действует; падение с трассой вместо OpenError — бот резерва показывает
-человеку обрыв процесса вместо причины, а попытка кода не засчитана.
+сторона (резерв и один шлюз) увозит пользователей мимо большинства; код другой
+прямой, принятый ящиком кода, — прежний код после смены всё ещё действует;
+прежний вход долей, принятый процессом, — путь, которого у основы больше нет,
+и ошибка в нём не ловится ничем; падение с трассой вместо OpenError — бот
+резерва показывает человеку обрыв процесса вместо причины, а попытка кода не
+засчитана.
 """
 from __future__ import annotations
 
@@ -25,8 +27,7 @@ class _World:
     """Основа одного поколения: M, K, пакет, многочлен порога t и прямая кода."""
 
     def __init__(self, t: int = 2) -> None:
-        self.gen = rsvkeys.Generation.new(1)
-        self.m = self.gen.m
+        self.m = rsvkeys.new_master()
         self.k = seal.new_k()
         self.blob = seal.seal({"vpn": {"peers": []}}, k=self.k, m=self.m, pkg_gen=4, m_gen=1)
         self.q = rsvkeys.QuorumGen.new(1, t)
@@ -93,11 +94,30 @@ def test_the_code_with_the_reserve_code_point_and_the_code_box_give_m_and_k():
         assert rsvopen.recover_keys({"code": typed, "cpoint": w.cpoint(), "cbox": w.cbox}, w.blob) == (w.m, w.k)
 
 
-def test_the_code_of_the_line_of_m_does_not_open_the_code_box():
-    """Прежний код (точка x = 255 прямой самого M) после включения — отказ."""
+def test_a_code_of_another_generation_does_not_open_the_code_box():
+    """Код прежней прямой `Mc` (до «🔄 Сменить код» или переезда по коду) с точкой и
+    ящиком нового поколения — отказ: старый код после смены не действует."""
     w = _World()
+    old = rsvkeys.CodeGen.new(1)
     with pytest.raises(rsvopen.OpenError, match="аварийный код"):
-        rsvopen.recover_keys({"code": w.gen.code(), "cpoint": w.cpoint(), "cbox": w.cbox}, w.blob)
+        rsvopen.recover_keys({"code": old.code(), "cpoint": w.cpoint(), "cbox": w.cbox}, w.blob)
+
+
+def test_a_code_box_of_another_line_is_refused_even_with_the_right_code_and_point():
+    """Ящик кода чужой прямой (другая основа или прежнее поколение `Mc`) — отказ, а не
+    мусорный `M`: ящик не открывается ключом из этой прямой."""
+    w, other = _World(), _World()
+    with pytest.raises(rsvopen.OpenError, match="аварийный код"):
+        rsvopen.recover_keys({"code": w.c.code(), "cpoint": w.cpoint(), "cbox": other.cbox}, w.blob)
+
+
+def test_a_code_box_of_another_m_opens_the_box_but_not_the_package():
+    """Ящик кода прежнего поколения `M` (резерв не получил новые qkeys): `M` собирается,
+    но пакет нового поколения им не открыть."""
+    w, old = _World(), _World()
+    stale = w.c.cbox(old.m).hex()
+    with pytest.raises(rsvopen.OpenError, match="ключ пакета"):
+        rsvopen.recover_keys({"code": w.c.code(), "cpoint": w.cpoint(), "cbox": stale}, w.blob)
 
 
 def test_a_mistyped_code_under_the_quorum_is_refused_with_the_code_reason():
@@ -108,20 +128,25 @@ def test_a_mistyped_code_under_the_quorum_is_refused_with_the_code_reason():
         rsvopen.recover_keys({"code": bad, "cpoint": w.cpoint(), "cbox": w.cbox}, w.blob)
 
 
-def test_the_matrix_inputs_still_open_as_before():
-    """Линия на матрице: две доли прямой M или доля резерва + код прямой M."""
+@pytest.mark.parametrize("data", [
+    {"shares": [[1, "ab" * 16], [2, "cd" * 16]]},
+    {"share": [1, "ab" * 16], "code": "AAAA-AAAA-AAAA-AAAA-AAAA-AAAA-AAAA"},
+    {"share": [1, "ab" * 16]},
+], ids=["shares", "share_and_code", "share_alone"])
+def test_the_inputs_of_the_line_of_m_are_gone(data):
+    """Прямой самого `M` нет: две доли или доля + код — не вход; причина — одна строка
+    о том, чего нет, а не разбор долей."""
     w = _World()
-    r = [1, w.gen.reserve_point()[1].hex()]
-    g = [2, w.gen.gateway_point(1)[1].hex()]
-    assert rsvopen.recover_keys({"shares": [r, g]}, w.blob) == (w.m, w.k)
-    assert rsvopen.recover_keys({"share": r, "code": w.gen.code()}, w.blob) == (w.m, w.k)
+    with pytest.raises(rsvopen.OpenError, match="нет ни точек ключа кворума, ни кода с ящиком, ни ключа пакета"):
+        rsvopen.recover_keys(data, w.blob)
 
 
-def test_a_quorum_code_with_the_old_share_input_does_not_open():
-    """Код прямой Mc в прежнем входе (share + code) — не точка прямой M: отказ."""
+def test_a_real_code_in_the_old_share_input_does_not_open():
+    """Верный код прямой `Mc` и верная точка резерва в прежнем входе (share + code) без
+    ящика — отказ: без ящика кода `M` не собрать."""
     w = _World()
-    with pytest.raises(rsvopen.OpenError):
-        rsvopen.recover_keys({"share": [1, w.gen.reserve_point()[1].hex()], "code": w.c.code()}, w.blob)
+    with pytest.raises(rsvopen.OpenError, match="нет ни точек"):
+        rsvopen.recover_keys({"share": w.cpoint(), "code": w.c.code()}, w.blob)
 
 
 def test_a_partial_quorum_input_is_not_taken_for_a_full_one():

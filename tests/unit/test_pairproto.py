@@ -181,3 +181,30 @@ def test_the_dead_tail_kind_of_the_pair_channel_is_unknown_now():
     принимается в никуда."""
     with pytest.raises(ProtocolError, match="неизвестный вид"):
         pp.check(pp.PAIR_PROTO, "tail", {"i": 0, "n": 1, "blob": ""}, pp.INVITER)
+
+
+# ── ключи и пакет без прямой самого M ───────────────────────────────────────
+
+_QK = {"l": "a", "m_gen": 2, "x": 1, "c_gen": 1, "cy": "ab" * 16, "cbox": "cd" * 56}
+
+
+def test_qkeys_without_the_polynomial_passes_and_the_code_box_is_required():
+    """С сопряжения `qkeys` несёт только прямую кода и ящик кода: без части многочлена —
+    проходит; без ящика или точки кода — рвёт сессию (второй сервер иначе молча остался
+    бы без пути кода)."""
+    assert pp.check(pp.PAIR_PROTO, "qkeys", dict(_QK), pp.INVITER) == _QK
+    full = {**_QK, "q_gen": 3, "t": 2, "y": "ef" * 16, "qbox": "01" * 56}
+    assert pp.check(pp.PAIR_PROTO, "qkeys", dict(full), pp.INVITER) == full, "часть многочлена потеряна схемой"
+    for name in ("cbox", "cy", "m_gen", "c_gen", "x", "l"):
+        body = {k: v for k, v in _QK.items() if k != name}
+        with pytest.raises(ProtocolError):
+            pp.check(pp.PAIR_PROTO, "qkeys", body, pp.INVITER)
+
+
+def test_a_package_part_carries_no_share_and_an_old_share_field_is_dropped():
+    """Часть пакета — без доли и поколения доли: схема их не требует, а пришедшие от
+    сервера прежнего выпуска — не пропускает дальше (в разбор пакета доля не попадает)."""
+    part = {"gen": 4, "fp": "ab" * 32, "i": 0, "n": 1, "blob": "00"}
+    assert pp.check(pp.PAIR_PROTO, "pkg", dict(part), pp.INVITER) == part
+    old = pp.check(pp.PAIR_PROTO, "pkg", {**part, "share": "cd" * 16, "m_gen": 1}, pp.INVITER)
+    assert "share" not in old and "m_gen" not in old, f"доля прошла схему: {sorted(old)}"

@@ -45,7 +45,7 @@ def _package(box: Box, ifaces) -> None:
     bot_part = {"db": box.replica.hex(), "conf": {"app": {"client_config": {"server_name": "Альфа"}}},
                 "app_guest": {"network": {"server_host": "203.0.113.7", "server_port": 51820}},
                 "env": {"BOT_TOKEN": TOKEN, "ADMIN_ID": 77}}
-    blob = seal.seal({"vpn": vpn, "bot": bot_part}, k=box.k, m=box.m, pkg_gen=5, m_gen=box.gen.gen, dns=None)
+    blob = seal.seal({"vpn": vpn, "bot": bot_part}, k=box.k, m=box.m, pkg_gen=5, m_gen=box.m_gen, dns=None)
     path = config.DATA_DIR / "reserve" / "guest.pkg"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(blob)

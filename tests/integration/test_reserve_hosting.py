@@ -146,7 +146,7 @@ def host(mv, tmp_path, monkeypatch):
     monkeypatch.setattr(openproc.shutil, "which", lambda name: "/usr/bin/systemd-run" if name == "systemd-run" else None)
     z.webhook.parent.mkdir(parents=True, exist_ok=True)
     z.webhook.write_text(json.dumps({"port": 8443}))
-    svc.rsv_put("rsv_pkg_in", {"gen": 7, "fp": "DUMMY-fp", "share": "DUMMY-share"})   # пакет и доля — направление «ко мне» открыто
+    svc.rsv_put("rsv_pkg_in", {"gen": 7, "fp": "DUMMY-fp", "m_gen": 1})   # пакет — направление «ко мне» открыто
     guard = tmp_path / "reserve"
     guard.mkdir(exist_ok=True)
     (guard / "guest.pkg").write_bytes(b"DUMMY-package")
@@ -695,16 +695,18 @@ def test_a_failed_forward_does_not_leave_the_primarys_data_on_the_reserve(host):
     assert "wipe" in host.zone.names() and sent(acts)[-1] == "wiped"
 
 
-def test_back_after_an_emergency_hosting_drops_the_share_but_after_a_button_keeps_it(host):
+@pytest.mark.parametrize("kind", ["button", "dead"])
+def test_back_drops_the_package_and_there_is_no_share_of_m_to_keep_or_drop(host, kind):
+    """Доли прямой самого `M` у резерва нет: ключа `rsv_shares` в хранилище резерва
+    больше нет (запись в него — ошибка, а не тихий след), возврат после кнопки и после
+    аварии одинаково снимает пакет основы."""
     svc = host.svc
-    svc.rsv_put("rsv_shares", {"x": "DUMMY"})
-    _releasing(host, "button")
+    with pytest.raises(KeyError):
+        svc.rsv_put("rsv_shares", {"x": "DUMMY"})
+    _releasing(host, kind)
     svc.reserve_back_in()
-    assert svc.rsv_get("rsv_shares") == {"x": "DUMMY"}, "после переезда кнопкой доля резерва прежняя"
-    svc.reserve_set_in("idle")
-    _releasing(host, "dead")
-    svc.reserve_back_in()
-    assert svc.rsv_get("rsv_shares") == {}, "после аварийного переезда прямая скомпрометирована — доля прочь"
+    assert not svc.rsv_get("rsv_pkg_in"), f"{kind}: запись о пакете основы пережила возврат"
+    assert svc.reserve_in() == "relay"
 
 
 def test_a_repeated_back_repeats_relay_and_wiped_but_wipes_nothing_again(host):
