@@ -108,7 +108,51 @@ class ReserveQuorumCandidateMixin:
             elif act == "tie_over":
                 actions += self.reserve_quorum_tie_over(c)
         actions += self._quorum_exec_tick(c, now)
+        actions += self._quorum_code_watch(c)
         return actions
+
+    def _quorum_code_watch(self, c: Candidate) -> list[tuple]:
+        """Окно кода вне решения: свой взгляд «не вижу», никто из голосующих не видит
+        (молчат или не видят), большинства «нет» нет — голосов не хватает (§3.6, Т-К21);
+        свой «вижу» или чей-то «вижу» — окно закрывается. Окно решения (`_quo_exec`)
+        и ничьей ведут свои правила."""
+        if self.__dict__.get("_quo_exec") or c.tie_told:
+            return []
+        cw = dict(self.rsv_get("rsv_view").get("code") or {})
+        want = c.own == "uns" and not c.see_nodes() and not qm.majority(len(c.no_nodes()), c.v) and self.reserve_in() == "idle"
+        if want and not cw.get("open"):
+            return self._code_window_quorum(True, c)
+        if not want and cw.get("open") and cw.get("by") == "quorum":
+            return self._code_window_quorum(False, c)
+        return []
+
+    def _code_window_quorum(self, open_: bool, c: Candidate) -> list[tuple]:
+        from awgbot.core import config
+        from ...types import Notification
+        rn = self._rn()
+        primary = self.reserve_peer_name()
+        cw = dict(self.rsv_get("rsv_view").get("code") or {})
+        if open_:
+            since = self._quorum_no_since(c)
+            opened = bool(self.rsv_get("rsv_peer_admin").get("opened"))
+            pid = self.reserve_peer_admin_id()
+            n, v, t = len(c.no_nodes()), c.v, qm.threshold(c.v)
+            notes = [Notification(tg_id=int(config.ADMIN_ID), text=rn.quorum_code_needed_reserve(primary, since, n, v, t, opened))]
+            if pid and opened:
+                notes.append(Notification(tg_id=pid, force_sound=True, keyboard="peer_code",
+                                          text=rn.quorum_code_needed_primary(primary, str(config.SERVER_NAME or ""), since, n, v, t)))
+            self.rsv_update("rsv_view", code={"open": True, "since": since, "told": bool(pid and opened), "tries": [],
+                                              "episode": since, "by": "quorum"})
+            log.warning("кворум: «%s» не вижу, голосов для переезда не хватает (не видят %d из %d, нужно %d) — приём кода открыт",
+                        primary, n, v, t)
+            return [("notify", notes)]
+        self.rsv_update("rsv_view", code={"open": False, "closed_why": "quorum", "closed_at": timeutil.now_iso(),
+                                          "episode": str(cw.get("episode") or ""), "told": bool(cw.get("told"))})
+        log.info("кворум: приём аварийного кода закрыт — взгляды вернулись")
+        pid = self.reserve_peer_admin_id()
+        if cw.get("told") and pid:
+            return [("notify", [Notification(tg_id=pid, text=rn.code_window_closed(primary, "primary_seen"))])]
+        return []
 
     def _quorum_known_e(self, c: Candidate) -> int:
         v = self._qvoters.get(f"awgq{c.l}h")

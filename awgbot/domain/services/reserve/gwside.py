@@ -129,8 +129,8 @@ class ReserveGwSideMixin:
                   f"AllowedIPs = {', '.join(allowed)}", f"Endpoint = {zone['host']}:{int(zone['port'])}",
                   f"PersistentKeepalive = {ka}"]
         share = {}
-        quorum = bool(self.reserve_quorum_keys_on()) if hasattr(self, "reserve_quorum_keys_on") else False
-        if not quorum:                                        # доля прямой «2 из n» — только у линии на матрице
+        quorum = bool(self.reserve_quorum_keys_on() and self.reserve_quorum_act()) if hasattr(self, "reserve_quorum_keys_on") else False
+        if not quorum:                                        # доля прямой «2 из n» — у линии на матрице (и при act = false)
             try:
                 gen, y = self.reserve_share_gateway(int(gw.id))
                 share = {"x": rsvkeys.gateway_x(int(gw.id)), "y": y, "gen": int(gen)}

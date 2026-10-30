@@ -178,8 +178,9 @@ def reserve_panel_line(rsv: dict) -> str:
 
 
 def reserve_tg_lines(rsv: dict) -> list[str]:
-    """Под Т-РА1: Т-К23 «📨 Telegram — через «Beta»: аплинк молчит с 14:05» (пока обход
-    включён) и Т-К27 — Endpoint аплинка адрес, а не имя (пока пара есть)."""
+    """Под Т-РА1: Т-К23 «📨 Telegram — через резерв: аплинк до «Alpha» молчит с 14:05» (пока
+    обход включён; имя раздела — свой сервер AWG, имени резерва у агента нет) и Т-К27 —
+    Endpoint аплинка адрес, а не имя (пока пара есть)."""
     if not rsv:
         return []
     from awgbot.util import timeutil
@@ -190,10 +191,10 @@ def reserve_tg_lines(rsv: dict) -> list[str]:
             since = timeutil.fmt_clock_ui(timeutil.parse_iso(str(rsv.get("tg_since") or "")))
         except (ValueError, TypeError):
             since = ""
-        out.append(f"📨 Telegram — через {name}: аплинк молчит" + (f" с {since}" if since else ""))
+        out.append(f"📨 Telegram — через резерв: аплинк до {name} молчит" + (f" с {since}" if since else ""))
     if rsv.get("uplink_ip"):
         out.append(f"⚠️ Аплинк смотрит на адрес <code>{_e(rsv['uplink_ip'])}</code>, а не на имя — после переезда "
-                   f"пользователей на {name} он не переключится")
+                   "пользователей на резерв он не переключится")
     return out
 
 

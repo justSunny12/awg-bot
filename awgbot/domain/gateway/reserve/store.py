@@ -366,9 +366,14 @@ class ReserveStoreMixin:
         return {"name": str(cur.get("name") or ""), "seen": seen or "absent", "since": since,
                 "open": rsvlink.is_open(), "state": str(cur.get("reserve_state") or "idle"),
                 "since_open": str(cur.get("open_at") or ""), "rx": int(c[0]), "tx": int(c[1]),
-                "share": bool((cur.get("share") or {}).get("y")),
+                "share": bool((cur.get("share") or {}).get("y")) or self._quorum_point_present(),
                 "tg_via": bool(cur.get("tg_via")), "tg_since": str(cur.get("tg_since") or ""),   # Т-К23
                 "uplink_ip": self._uplink_conf_ip(), "primary": str(cur.get("self") or "")}    # Т-К27
+
+    def _quorum_point_present(self) -> bool:
+        """Под кворумом доля прямой в раздел reserve не едет — точка ключа кворума лежит в разделе quorum."""
+        sec = self.quorum_section() if hasattr(self, "quorum_section") else {}
+        return bool((sec.get("point") or {}).get("y"))
 
     @staticmethod
     def _uplink_conf_ip() -> str:

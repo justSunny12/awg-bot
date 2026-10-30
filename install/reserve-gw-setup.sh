@@ -88,10 +88,6 @@ TG_MARK="${TG_MARK:-0x53}"
 TG_CGROUP="${TG_CGROUP:-system.slice/awg-bot.service}"
 # набор Telegram — тот же, что TG_NETS обвязки (routing-gw-setup.sh) и TG_RANGES агента
 TG_NETS="91.108.4.0/22 91.108.8.0/22 91.108.12.0/22 91.108.16.0/22 91.108.20.0/22 91.108.56.0/22 149.154.160.0/20 185.76.151.0/24"
-TG_MARK="${TG_MARK:-0x53}"
-TG_CGROUP="${TG_CGROUP:-system.slice/awg-bot.service}"
-# набор Telegram — тот же, что TG_NETS обвязки (routing-gw-setup.sh) и TG_RANGES агента
-TG_NETS="91.108.4.0/22 91.108.8.0/22 91.108.12.0/22 91.108.16.0/22 91.108.20.0/22 91.108.56.0/22 149.154.160.0/20 185.76.151.0/24"
 UNIT="${UNIT:-/etc/systemd/system/awg-rsv-gw.service}"
 SELF_PATH="${SELF_PATH:-/usr/local/sbin/reserve-gw-setup.sh}"
 GW_STATUS="${GW_STATUS:-/etc/awg-gw/gateway.status}"
@@ -316,15 +312,6 @@ cmd_close() {
     state_write open=0 src= admins="$(state_get admins)"
     nft flush set $GUARD_TABLE rsv_open4 2>/dev/null || true
     say "close: ok"
-}
-
-cmd_tg() {   # --tg on|off: метка сокетов Bot API агента и правило маршрута; таблица — заново
-    need_root
-    case "${1:-}" in on) _v=1 ;; off) _v=0 ;; *) die "tg: on|off" ;; esac
-    state_write open="$(state_get open)" src="$(state_get src)" admins="$(state_get admins)" tg="$_v"
-    if [ -f "$CONF" ] && ip link show "$RSV_IF" >/dev/null 2>&1; then guard_write; fi
-    if [ "$_v" = 1 ]; then tg_routes_up; else tg_routes_down; fi
-    say "tg: $1"
 }
 
 cmd_tg() {   # --tg on|off: метка сокетов Bot API агента и правило маршрута; таблица — заново

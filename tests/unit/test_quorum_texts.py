@@ -99,7 +99,7 @@ def test_without_a_count_the_line_says_voters_and_threshold():
 
 @pytest.mark.parametrize("code, want", [
     ("peer_old", "у «Beta» нет v4.2.0 — переезды по прежним правилам"),
-    ("no_gateways", "у этого сервера нет шлюзов с агентом v4.2.0 — переезд только кнопкой и по аварийному коду"),
+    ("no_gateways", "у этого сервера нет шлюзов с агентом v4.2.0 — переезд по прежним правилам: по взглядам шлюзов, кнопкой и по аварийному коду"),
     ("timing:up_seconds 50 < …", "цифры времени не сходятся (reserve.quorum в app.yaml)"),
     ("overlap:169.254.0.0/16", "блок зондов <code>169.254.88.0/24</code> пересекается с <code>169.254.0.0/16</code>"),
     ("slot:61", "«Шлюз 61»: номер слота больше 58 — в голосовании не участвует"),
@@ -129,7 +129,7 @@ def _peer(**over) -> dict:
 
 
 def test_i_see_the_peer_and_so_do_its_gateways():
-    assert quorum_peer_lines(_peer()) == ["└ 🗳 «Beta» вижу я и «шлюз 1 «Beta»» — 2 из 2"]
+    assert quorum_peer_lines(_peer()) == ["└ 🗳 «Beta» вижу я и шлюз 1 «Beta» — 2 из 2"]
 
 
 def test_only_i_do_not_see_the_peer_points_at_my_own_network():

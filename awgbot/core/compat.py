@@ -19,7 +19,7 @@ COMPAT_FLOOR, и отказывают до остановки сервиса.
 from __future__ import annotations
 
 COMPAT_FLOOR = "4.0.0"
-UPDATE_FROM = "4.0.0"
+UPDATE_FROM = "4.1.0"
 
 
 def version_key(raw: str) -> tuple | None:

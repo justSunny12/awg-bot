@@ -44,8 +44,9 @@ class ReserveQuorumMembersMixin:
         return Timing.from_settings(self.reserve_quorum_settings(), settings.get_int("app.reserve.rf_block_minutes", 15))
 
     def reserve_quorum_act(self) -> bool:
-        """Скрытый ключ `app.reserve.quorum.act`: решения по кворуму (лишение кворума,
-        переезд) — только при true; наблюдение и счёт идут всегда."""
+        """Ключ `app.reserve.quorum.act` (conf/app.yaml): решения по кворуму (лишение кворума,
+        переезд) — только при true; при false — наблюдение и счёт, а переезд решает
+        матрица по долям прямой, как без кворума."""
         return bool(self.reserve_quorum_settings().get("act", True))
 
     def reserve_quorum_peer_quo1(self) -> bool:

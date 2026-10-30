@@ -15,6 +15,11 @@ def _n(name: str) -> str:
     return f"«{_e(name)}»"
 
 
+def _qn(name: str) -> str:
+    """Имя узла кворума: чужой шлюз приходит уже с кавычками («шлюз 3 «Beta»») — не удваивать."""
+    return _e(name) if "«" in str(name) else _n(name)
+
+
 def _when(iso: str) -> str:
     try:
         return timeutil.fmt_clock_ui(timeutil.parse_iso(iso))
@@ -270,7 +275,7 @@ def _quorum_off_why(codes: list, peer: str) -> str:
         if c == "peer_old":
             return f"у {peer} нет v4.2.0 — переезды по прежним правилам"
         if c == "no_gateways":
-            return "у этого сервера нет шлюзов с агентом v4.2.0 — переезд только кнопкой и по аварийному коду"
+            return "у этого сервера нет шлюзов с агентом v4.2.0 — переезд по прежним правилам: по взглядам шлюзов, кнопкой и по аварийному коду"
         if c.startswith("timing:"):
             return "цифры времени не сходятся (reserve.quorum в app.yaml)"
         if c.startswith("overlap:"):
@@ -319,7 +324,7 @@ def quorum_mine_lines(q: dict) -> list[str]:
     for vt in (mine.get("voters") or [])[:10]:
         w = "silent" if vt.get("silent") and vt.get("w") not in ("uns", "sus") else (vt.get("w") or "silent")
         since = _when(vt.get("since") or "")
-        rows.append(f"{_n(vt.get('name') or vt.get('node') or '?')} — {_W.get(w, w)}" + (f" с {_e(since)}" if since and w in ("uns", "silent") else ""))
+        rows.append(f"{_qn(vt.get('name') or vt.get('node') or '?')} — {_W.get(w, w)}" + (f" с {_e(since)}" if since and w in ("uns", "silent") else ""))
     if rows:
         out.append("└ " + " · ".join(rows))
     for names, net in mine.get("correlation") or []:          # Т-К15
@@ -351,7 +356,7 @@ def quorum_peer_lines(q: dict) -> list[str]:
         y, v = int(p.get("y") or 0), int(p.get("yv") or p.get("v") or 0)
         others = [g for g in p.get("gw_views") or [] if g.get("w") in ("see", "held")]
         tail = f" — {y} из {v}" if v else ""
-        return [f"└ 🗳 {peer} вижу я" + (f" и {', '.join(_n(g['name']) for g in others)}" if others else "") + tail]
+        return [f"└ 🗳 {peer} вижу я" + (f" и {', '.join(_qn(g['name']) for g in others)}" if others else "") + tail]
     if w in ("uns", "sus"):
         since = _when(p.get("my_since") or "")
         unseen = [g for g in p.get("gw_views") or [] if g.get("w") == "uns"]
