@@ -67,13 +67,19 @@ class ReserveQuorumLeaderMixin:
         ld = self._qleader
         now = time.monotonic()
         if ld is None or ld.l != l or ld.q2 != q2:
+            returned = ld is not None and ld.q2 and not q2         # возврат домой: эпоху отдал гость явно — не старт
             ld = Leader(l, len(voters), self.reserve_quorum_epoch(), candidate=probenet.other_side(leader_host),
                         timing=self.reserve_quorum_timing(), voters=voters, q2=q2)
             ld.gen.bump(g, now, ld.timing.grace_s)
             self.__dict__["_rsv_qleader"] = ld
             log.info("кворум: ответчик линии %s%s — голосующих %d, поколение %s", l, " (отъезд, счёт для возврата)" if q2 else "",
                      len(voters), g)
-            self.__dict__["_quo_start_pending"] = not q2 and len(voters) >= 2   # старт — без права записи до первого большинства; при v = 1 решений нет
+            # старт (процесс, включение линии) — без права записи до первого большинства «да»; при v = 1 решений
+            # нет; после возврата домой ограждения нет: кандидат забрать не мог, журнал передан гостем, а
+            # ограждение отвергло бы правки админа и слово wiped второй стороны до первого большинства
+            self.__dict__["_quo_start_pending"] = not q2 and len(voters) >= 2 and not returned
+            if returned:
+                ld.fenced, ld.starting = False, False       # машина — как у лидера с правом записи
             self.__dict__["_quo_ld_at"] = now
         else:
             if tuple(ld.voters) != tuple(voters) or ld.gen.g != g:

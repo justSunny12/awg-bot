@@ -220,6 +220,8 @@ class ReserveSessionMixin:
         """`st` другой стороны: запомнить, пересчитать готовность, заметить смену
         `admin_id` и адреса."""
         notes: list[Notification] = []
+        if not self.reserve_paired():
+            return notes                                      # позднее st между снятием пары и закрытием канала — не о ком
         with _LOCK:
             prev = self.reserve_peer_state()
             peer = compat.side(name=str(body.get("name") or ""), version=str(body.get("version") or ""),
