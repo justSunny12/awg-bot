@@ -239,3 +239,23 @@ def test_garbage_in_the_snapshot_quo_never_becomes_a_view(raw, want):
 def test_a_cleared_snapshot_quo_stays_cleared():
     assert gwsnapshot.sanitize({"quo": None})["quo"] is None
     assert "quo" not in gwsnapshot.sanitize({})
+
+
+# ── цифры лидера в разделе quorum ───────────────────────────────────────────
+
+def test_the_timing_of_the_leader_passes_through_the_check_by_known_keys():
+    """Решение 31.10.2026 (вариант 1): цифры кворума едут шлюзу в разделе quorum теми же
+    ключами, что `app.reserve.quorum`; чужие ключи отбрасываются, мусор — отказ."""
+    out = gwcheck.check_quorum(_sec(timing={"probe_seconds": 10, "yes_window_seconds": 30, "junk": 5}))
+    assert out["timing"] == {"probe_seconds": 10, "yes_window_seconds": 30}
+    assert gwcheck.check_quorum(_sec())["timing"] == {}
+    with pytest.raises(gwcheck.CfgError):
+        gwcheck.check_quorum(_sec(timing={"probe_seconds": "ten"}))
+    with pytest.raises(gwcheck.CfgError):
+        gwcheck.check_quorum(_sec(timing={"no_seconds": -1}))
+
+
+def test_timing_to_settings_round_trips():
+    from awgbot.util.quorum.timing import Timing
+    t = Timing(probe_s=10, no_s=30, yes_window_s=30, down_s=15, up_s=80, pledge_s=300, tie_s=120, rf_block_s=600)
+    assert Timing.from_settings(t.to_settings(), t.to_settings()["rf_block_minutes"]) == t

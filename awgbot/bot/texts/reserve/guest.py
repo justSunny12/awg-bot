@@ -78,6 +78,8 @@ def card_text(d: dict) -> str:
     q = d.get("quorum") or {}
     if q and "y" in q:                                        # Т-К1: голоса о боте здесь (бот основы на резерве — лидер)
         rows.append(f"🗳 Бот здесь видят {int(q['y'])} из {int(q['v'])} — пользователи вернутся сами, если не увидят {int(q.get('t') or 0)}")
+    elif d.get("quorum_phase") == "waiting":                  # Т-К1б: состав ещё не пришёл — решений нет
+        rows.append("🗳 Жду состав голосующих от бота резерва — бот не принимает решений")
     lines.append(details("\n".join(rows)))
     return "\n".join(lines)
 

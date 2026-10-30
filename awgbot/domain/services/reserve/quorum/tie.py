@@ -112,6 +112,7 @@ class ReserveQuorumTieMixin:
                 info = self._quorum_info().to_dict()
                 log.warning("кворум: ничья о «%s» — видят %s, не видят %s", name, see_n, no_n)
                 return [("notify", [Notification(tg_id=int(config.ADMIN_ID), force_sound=True, keyboard="quorum_tie",
+                                                 keyboard_arg=self.reserve_peer_name(),
                                                  text=rn.quorum_tie_leader(name, self.reserve_peer_name(), since, see_n, no_n, info))])]
             return []
         if st["told"]:

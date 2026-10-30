@@ -144,10 +144,10 @@ def confirm_ready_off() -> InlineKeyboardMarkup:
     return kc.confirm(SetCB(sec="rsv"), "☑️ Выключить", RsvCB(action="ready_off_yes"))
 
 
-def quorum_tie() -> InlineKeyboardMarkup:
-    """Т-К5 (лидеру): переезд кнопкой и раздел; имени второго сервера у готовой
-    клавиатуры нет — его называет текст уведомления."""
-    return kc.append_hide_row(ui.rows(("🔀 Переезд на резерв", RsvCB(action="move")), ("🛟 Резерв", SetCB(sec="rsv"))))
+def quorum_tie(reserve: str = "") -> InlineKeyboardMarkup:
+    """Т-К5 (лидеру): переезд кнопкой (с именем второго сервера, как на карточке) и раздел."""
+    label = f"🔀 Переезд на «{reserve}»" if reserve else "🔀 Переезд на резерв"
+    return kc.append_hide_row(ui.rows((label, RsvCB(action="move")), ("🛟 Резерв", SetCB(sec="rsv"))))
 
 
 def quorum_tie_cand() -> InlineKeyboardMarkup:

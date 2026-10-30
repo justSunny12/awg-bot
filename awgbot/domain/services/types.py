@@ -62,6 +62,7 @@ class Notification:
     # «update_done» — «⬅️ В меню» итога обновления. reply_markup главнее;
     # имена разбирает notifier (KEYBOARDS, note_markup).
     keyboard: str = ""
+    keyboard_arg: str = ""             # довесок готовой клавиатуре (имя второго сервера в «🔀 Переезд на «…»»)
     silent: bool = False               # без звука всегда, не только в тихие часы (разовые сводки)
 
 

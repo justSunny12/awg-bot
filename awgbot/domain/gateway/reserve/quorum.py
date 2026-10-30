@@ -78,7 +78,7 @@ class GatewayQuorumMixin:
                "members": list(checked.get("members") or []), "t": int(checked.get("t") or 0),
                "port": int(checked.get("port") or 0), "probes": dict(checked.get("probes") or {}),
                "point": dict(checked.get("point") or {}), "e": int(checked.get("e") or 0),
-               "applied_at": timeutil.now_iso()}
+               "timing": dict(checked.get("timing") or {}), "applied_at": timeutil.now_iso()}
         for k in _KEEP_KEYS:
             if k in cur:
                 new[k] = cur[k]
@@ -161,9 +161,15 @@ class GatewayQuorumMixin:
         return self.__dict__.setdefault("_gw_qvoters", {})
 
     def quorum_timing(self) -> Timing:
+        """Цифры лидера из раздела `quorum` документа (те же ключи, что `app.reserve.quorum`);
+        раздел без цифр — умолчания агента (`app.gateway.quorum`)."""
         from awgbot.core import settings
-        q = settings.get("app.gateway.quorum", {}) or {}
-        return Timing.from_settings(q if isinstance(q, dict) else {}, settings.get_int("app.gateway.rf_block_minutes", 15))
+        q = self.quorum_section().get("timing")
+        if not isinstance(q, dict) or not q:
+            q = settings.get("app.gateway.quorum", {}) or {}
+        q = q if isinstance(q, dict) else {}
+        rf = q.get("rf_block_minutes", settings.get_int("app.gateway.rf_block_minutes", 15))
+        return Timing.from_settings(q, rf)
 
     def quorum_my_node(self) -> str:
         sec = self.quorum_section()
@@ -201,6 +207,8 @@ class GatewayQuorumMixin:
                 v.epoch_in(int(sec.get("e") or 0))
                 self._gw_qvoters[name] = v
                 self._pledge_restore(name, v, now)
+            elif v.timing != timing:
+                v.timing = timing                             # лидер сменил цифры — голосующий считает ими же
             for act in v.tick(now):
                 if act == "probe":
                     p = Probe(str(rec["l"]), int(sec.get("g") or 1), me, int(v.epoch), v.w_for_probe(),

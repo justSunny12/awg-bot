@@ -117,7 +117,7 @@ def parse(msg: dict) -> dict:
                                       "move": _int(reserve.get("move")), "name": _s(reserve.get("name"), 64),
                                       "slot": _int(reserve.get("slot")), "record": norm(reserve.get("record")),
                                       "peer_host": norm(reserve.get("peer_host")), "chan": _int(reserve.get("chan")),
-                                      "tg": bool(reserve.get("tg")),
+                                      "tg": bool(reserve.get("tg")), "peer_name": _s(reserve.get("peer_name"), 64),
                                       "share": {"x": _int(share.get("x")), "y": _hex(share.get("y")),
                                                 "gen": _int(share.get("gen"))},
                                       "link": {"conf": _s(link.get("conf"), _MAX_CONF)}}
@@ -130,7 +130,9 @@ def parse(msg: dict) -> dict:
                                      "t": _int(quorum.get("t")), "port": _int(quorum.get("port")), "e": _int(quorum.get("e")),
                                      "probes": {k: _s(probes.get(k), _MAX_CONF) for k in ("h", "r") if probes.get(k)},
                                      "point": {"x": _int(point.get("x")), "y": _hex(point.get("y")),
-                                               "q_gen": _int(point.get("q_gen"))}}
+                                               "q_gen": _int(point.get("q_gen"))},
+                                     "timing": {norm(k)[:24]: _int(v) for k, v in (quorum.get("timing") or {}).items()
+                                                if isinstance(k, str)} if isinstance(quorum.get("timing"), dict) else {}}
     return out
 
 

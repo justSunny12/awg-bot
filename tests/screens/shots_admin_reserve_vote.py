@@ -95,7 +95,8 @@ def _tie_leader(services, bot):
         from awgbot.domain.services import Notification
         text = rn.quorum_tie_leader("Alpha", "Beta", SINCE, ["Beta", "Шлюз 3"], ["Шлюз 1", "Шлюз 2"],
                                     {"hs": 37, "flow": True, "at": SINCE})
-        await send_notifications(bot, [Notification(tg_id=int(config.ADMIN_ID), text=text, force_sound=True, keyboard="quorum_tie")])
+        await send_notifications(bot, [Notification(tg_id=int(config.ADMIN_ID), text=text, force_sound=True, keyboard="quorum_tie",
+                                                    keyboard_arg="Beta")])
     return run()
 
 

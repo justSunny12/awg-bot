@@ -357,8 +357,9 @@ def test_the_leader_tie_alarm_has_the_move_and_reserve_buttons(ld):
     ld.tie()
     n = _tie_notes(ld.run(T_TIE + 5))[config.ADMIN_ID][0]
     assert n.keyboard == "quorum_tie", f"Т-К5 без своей клавиатуры: keyboard={n.keyboard!r}"
-    labels = [b.text for row in notifier.KEYBOARDS["quorum_tie"]().inline_keyboard for b in row]
-    assert any(t.startswith("🔀 Переезд") for t in labels) and "🛟 Резерв" in labels, labels
+    assert n.keyboard_arg == ld.s.reserve_peer_name(), "клавиатура Т-К5 не знает имени второго сервера"
+    labels = [b.text for row in notifier.note_markup(n).inline_keyboard for b in row]
+    assert f"🔀 Переезд на «{ld.s.reserve_peer_name()}»" in labels and "🛟 Резерв" in labels, labels
 
 
 def test_the_leader_all_clear_after_tie_clear_s_once(ld):

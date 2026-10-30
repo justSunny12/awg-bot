@@ -101,6 +101,8 @@ class ReserveQuorumFenceMixin:
         снять: лидер без голосующих решений не лишается."""
         if not self.__dict__.get("_quo_fenced") and not (self.rsv_get("rsv_qlog").get("fenced") or {}).get("on"):
             return
+        if hasattr(self, "reserve_quorum_guest_phase") and self.reserve_quorum_guest_phase() == "waiting":
+            return                                            # гость ждёт состав: это не «кворум выключен»
         if hasattr(self, "reserve_out") and self.reserve_out() in ("leaving", "away", "returning"):
             return                                            # в ходе переезда (по просьбе лидера) ограждение держится
         why = self.reserve_quorum_off_reasons() if hasattr(self, "reserve_quorum_off_reasons") else []

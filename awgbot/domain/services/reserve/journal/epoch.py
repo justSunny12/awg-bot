@@ -89,17 +89,25 @@ class ReserveEpochMixin:
         # сказанное уже дома (прежнее «away» — до возврата)
         peer = self.reserve_peer_state()
         serving = self._peer_serving_after_home(out, peer)
-        if self._quorum_rules_home():
-            # кворум (4.2.0): роль дома — только по факту: эпоха больше моей (проба, qstate) и
-            # лишение кворума (jrn_fence); слово Telegram — только остановка поллинга
-            return (True, "резерв несёт моих пользователей") if serving else (False, "кворум: решает большинство")
-        poll = self.rsv_get("rsv_poll")
-        if self.reserve_poll() != "away" or _earlier(poll, out):
-            return (True, "резерв несёт моих пользователей") if serving else (False, "пользователи и Telegram здесь")
-        fresh = str(peer.get("at") or "") >= str(out.get("since") or "")
-        if self._peer_alive(peer) and fresh and str(peer.get("inn") or "idle") not in HOSTING:
+        # слово Telegram, сказанное уже дома, «вебхук у резерва» (409 поллинга): вебхук ставит только
+        # гость после открытия — и под кворумом тоже (эпоха могла не дойти: взятие по коду, шлюз без
+        # связи с резервом); остаток вебхука у живого резерва без гостя — не держатель
+        if not self._webhook_says_away(out):
+            if serving:
+                return True, "резерв несёт моих пользователей"
+            return False, ("кворум: решает большинство" if self._quorum_rules_home() else "пользователи и Telegram здесь")
+        if self._webhook_remainder(out, peer):
             return False, "вебхук у резерва без гостя"
         return True, "Telegram: вебхук у резерва"
+
+    def _webhook_says_away(self, out: dict) -> bool:
+        """Слово Telegram «вебхук у резерва» сказано после перехода в это состояние направления."""
+        return self.reserve_poll() == "away" and not _earlier(self.rsv_get("rsv_poll"), out)
+
+    def _webhook_remainder(self, out: dict, peer: dict) -> bool:
+        """Вебхук у резерва — остаток: живой резерв после моего перехода говорит, что моих не несёт."""
+        fresh = str(peer.get("at") or "") >= str(out.get("since") or "")
+        return self._peer_alive(peer) and fresh and str(peer.get("inn") or "idle") not in HOSTING
 
     def _quorum_rules_home(self) -> bool:
         """Линия с включённым кворумом и решениями по нему (quorum/members, решение 9)."""

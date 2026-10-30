@@ -97,7 +97,7 @@ class ReserveTgViaMixin:
         st.update(probe_at=now + PROBE_EVERY_S * random.uniform(0.6, 1.4), streak=0)
         primary, _since = self.reserve_primary_seen() if hasattr(self, "reserve_primary_seen") else ("", "")
         log.warning("обход: аплинк молчит с %s, Telegram — через awgrsv", since)
-        note = self.reserve_note(cur, rn.gateway_tg_via(str(cur.get("name") or ""), since), silent=True)
+        note = self.reserve_note(cur, rn.gateway_tg_via(str(cur.get("name") or ""), str(cur.get("peer_name") or ""), since), silent=True)
         return [("tg", "on"), ("notify", [note]), ("push",)]
 
     def _tgvia_off(self, cur: dict, why: str) -> list[tuple]:

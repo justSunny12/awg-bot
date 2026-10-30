@@ -11385,7 +11385,8 @@ NASPi — 🟢 Активен
 > press set:rsv:open::
 = edit #1
 🛟 <b>Резерв «Beta»</b> 🟢 несёт нагрузку с 03:12 (UTC+5)
-<blockquote expandable>сервер AWG «Alpha»: 🔴 не отвечает с 03:10 (UTC+5)</blockquote>
+<blockquote expandable>сервер AWG «Alpha»: 🔴 не отвечает с 03:10 (UTC+5)
+🗳 Жду состав голосующих от бота резерва — бот не принимает решений</blockquote>
   [🔄 Обновить | rsv:refresh:]
   [⬅️ Назад | set:root:open::]
 ~ (пустой ответ)
@@ -11394,7 +11395,8 @@ NASPi — 🟢 Активен
 > press set:rsv:open::
 = edit #1
 🛟 <b>Резерв «Beta»</b> 🟢 несёт нагрузку с 03:12 (UTC+5)
-<blockquote expandable>сервер AWG «Alpha»: 🟢 на связи</blockquote>
+<blockquote expandable>сервер AWG «Alpha»: 🟢 на связи
+🗳 Жду состав голосующих от бота резерва — бот не принимает решений</blockquote>
   [↩️ Вернуть пользователей | rsv:back:]
   [🔄 Обновить | rsv:refresh:]
   [⬅️ Назад | set:root:open::]
@@ -12331,7 +12333,7 @@ TTL: 60 с
 Не видят: «Шлюз 1», «Шлюз 2»
 На «Alpha»: на связи 37 устройств, трафик идёт
 Сам бот пользователей не переведёт: проверь, доходит ли VPN до пользователей, и, если нет, — «🔀 Переезд на «Beta»»
-  [🔀 Переезд на резерв | rsv:move:]
+  [🔀 Переезд на «Beta» | rsv:move:]
   [🛟 Резерв | set:rsv:open::]
   [Скрыть | hd]
 

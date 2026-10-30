@@ -322,3 +322,20 @@ async def test_quorum_words_of_my_server_go_to_the_same_handler(kind, monkeypatc
     await c._dispatch({"t": kind, "l": "a"})
     assert seen == [(kind, "a")], f"{kind} своего сервера не дошёл до разбора кворума"
     assert ran == [[("guest", "qview", {"w": "uns"})]], "действия разбора не исполнены"
+
+
+# ── цифры лидера из раздела quorum ──────────────────────────────────────────
+
+def test_the_agent_counts_with_the_leaders_timing_from_the_section(ag):
+    """Решение 31.10.2026 (вариант 1): цифры кворума едут шлюзу в разделе quorum; без них —
+    умолчания агента; смена цифр у лидера перенастраивает голосующего без пересоздания."""
+    ag.run(3, answer=True)
+    v = ag.v
+    assert ag.svc.quorum_timing().probe_s == 15 and v.timing.probe_s == 15, "без цифр в разделе — не умолчания"
+    sec = ag.section()
+    sec["timing"] = {"probe_seconds": 10, "yes_window_seconds": 30, "no_seconds": 30, "rf_block_minutes": 12}
+    ag.store.write_text(json.dumps(sec), encoding="utf-8")
+    t = ag.svc.quorum_timing()
+    assert (t.probe_s, t.yes_window_s, t.no_s, t.rf_block_s) == (10, 30, 30, 720), t
+    ag.run(2, answer=True)
+    assert ag.v is v and v.timing.probe_s == 10, "смена цифр лидера не дошла до голосующего или пересоздала его"

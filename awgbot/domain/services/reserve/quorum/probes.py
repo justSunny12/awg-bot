@@ -216,7 +216,8 @@ class ReserveQuorumProbesMixin:
             return None
         point = self.reserve_quorum_gw_point(int(gw.id)) if hasattr(self, "reserve_quorum_gw_point") else {}
         return {"l": m.l, "g": int(m.g), "members": list(m.members), "t": m.t(m.l), "port": int(self.reserve_probes().get(m.l, {}).get("port") or 0),
-                "probes": {k: v for k, v in probes.items() if v}, "point": point, "e": self.reserve_quorum_epoch()}
+                "probes": {k: v for k, v in probes.items() if v}, "point": point, "e": self.reserve_quorum_epoch(),
+                "timing": self.reserve_quorum_timing().to_settings()}
 
     # ── свои интерфейсы зондов ──────────────────────────────────────────────
     def reserve_quorum_probe_ifaces(self) -> dict:

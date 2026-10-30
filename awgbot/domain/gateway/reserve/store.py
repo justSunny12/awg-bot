@@ -168,6 +168,7 @@ class ReserveStoreMixin:
         new = {"conf": str(checked.get("conf_text") or ""), "share": dict(checked.get("share") or {}),
                "state": str(checked.get("state") or "idle"), "move": int(checked.get("move") or 0),
                "self": str(checked.get("self") or ""), "name": str(checked.get("name") or ""),
+               "peer_name": str(checked.get("peer_name") or ""),
                "slot": int(checked.get("slot") or cur.get("slot") or 0),
                "record": str(checked.get("record") or ""), "peer_host": str(checked.get("peer_host") or ""),
                "chan": int(checked.get("chan") or 0), "tg": bool(checked.get("tg")), "admins": list(self._reserve_admin_ips()),
@@ -368,7 +369,7 @@ class ReserveStoreMixin:
             return {}
         seen, since = self.reserve_seen() if hasattr(self, "reserve_seen") else ("", "")
         c = self.reserve_counters_cached() or (0, 0)
-        return {"name": str(cur.get("name") or ""), "seen": seen or "absent", "since": since,
+        return {"name": str(cur.get("name") or ""), "peer_name": str(cur.get("peer_name") or ""), "seen": seen or "absent", "since": since,
                 "open": rsvlink.is_open(), "state": str(cur.get("reserve_state") or "idle"),
                 "since_open": str(cur.get("open_at") or ""), "rx": int(c[0]), "tx": int(c[1]),
                 "share": bool((cur.get("share") or {}).get("y")) or self._quorum_point_present(),

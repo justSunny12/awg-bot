@@ -59,6 +59,10 @@ async def run_guest() -> None:
     services.guest_snapshot_hook_install()
     services.ensure_admin_client()
     services.gwlink_sessions_reset()
+    try:
+        services.reserve_quorum_guest_start()            # без права записи, пока бот резерва не прислал состав
+    except Exception as e:                               # noqa: BLE001
+        log.warning("гость: кворум на старте: %s", e)
     from awgbot.runtime import tgsession
     bot = pkg.Bot(config.BOT_TOKEN, session=tgsession.make(),
                   default=DefaultBotProperties(parse_mode=ParseMode.HTML, link_preview_is_disabled=True))

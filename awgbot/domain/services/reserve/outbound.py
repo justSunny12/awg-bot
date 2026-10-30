@@ -216,10 +216,11 @@ class ReserveOutboundMixin:
             return self._tick_await_merge(out)
         if self.reserve_poll() == "away" and self._webhook_stuck(out, time.monotonic()):
             return [("take_home",)]                           # дома: вебхук не здесь, запись на мне, резерв молчит
-        if self._peer_serving_after_home(out, peer) or self._quorum_adopted_past_me(out):
-            # переезд прошёл мимо меня (то же правило, что у роли, journal/epoch; под кворумом — и по
-            # принятой эпохе) — пакет открыт не моим K (своего `go` не было): по долям или по коду;
-            # слово резерва (in_by) здесь не слушаем — поколение после возврата сменится
+        if self._peer_serving_after_home(out, peer) or self._quorum_adopted_past_me(out) or self._webhook_away_past_me(out, peer):
+            # переезд прошёл мимо меня (то же правило, что у роли, journal/epoch; и по принятой эпохе
+            # кворума, и по слову Telegram «вебхук у резерва») — пакет открыт не моим K (своего `go` не
+            # было): по долям или по коду; слово резерва (in_by) здесь не слушаем — поколение после
+            # возврата сменится
             self.reserve_set_out("away", kind=str(peer.get("in_kind") or "dead"), step="", taken_at=timeutil.now_iso(),
                                  by="share", go_sent=False, gen=int((peer.get("pkg") or {}).get("gen") or 0),
                                  guest_stopped=False, await_merge=False,
@@ -249,6 +250,15 @@ class ReserveOutboundMixin:
         except Exception:                                     # noqa: BLE001
             return False
         return not self._quorum_peer_idle_fact(at)
+
+    def _webhook_away_past_me(self, out: dict, peer: dict) -> bool:
+        """Поллинг дома получил 409 — вебхук у резерва: его ставит только гость после открытия, значит
+        мои пользователи у него (взятие по коду или по кворуму, чьё слово до меня не дошло). Остаток
+        вебхука у живого резерва без гостя — нет (его снимет зависший вебхук, outbound_stuck). Из away
+        работают возвраты: «сразу» по Q2, аварийный по Q1, рычаг «⚠️ Вернуть без …»."""
+        if out.get("await_merge") or str(out.get("return_why") or "") == "force":
+            return False
+        return self._webhook_says_away(out) and not self._webhook_remainder(out, peer)
 
     def _tick_leaving(self, out: dict) -> list[tuple]:
         step = str(out.get("step") or "pkg")

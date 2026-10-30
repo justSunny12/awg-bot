@@ -171,6 +171,7 @@ class ReserveGuestMixin:
         d["online"] = self.guest_devices_online()
         d["snapshot_at"] = self.guest_snapshot_at()
         d["quorum"] = self.reserve_quorum_count() if hasattr(self, "reserve_quorum_count") else {}   # Т-К1 о боте здесь
+        d["quorum_phase"] = self.reserve_quorum_guest_phase() if hasattr(self, "reserve_quorum_guest_phase") else ""
         # запись и адрес основы — из её же настроек (гость — бот основы): Т-Р11 называет, куда вернётся запись
         try:
             d["record"] = self.reserve_dns_name()

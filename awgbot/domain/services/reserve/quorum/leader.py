@@ -209,12 +209,44 @@ class ReserveQuorumLeaderMixin:
                 "voters": voters}
 
     # ── бот основы на резерве ───────────────────────────────────────────────
+    def reserve_quorum_guest_phase(self) -> str:
+        """Состояние кворума у бота основы на резерве: `waiting` — стартовал, состава от бота
+        резерва ещё нет (решений и записи нет); `ready` — состав есть, решает правило лидера;
+        пусто — не гость."""
+        if not getattr(self, "guest", False):
+            return ""
+        return "ready" if self.__dict__.get("_guest_quorum") else "waiting"
+
+    def reserve_quorum_guest_start(self) -> None:
+        """Старт бота основы на резерве: состав приходит от бота резерва по локальному каналу
+        первым словом сессии, а до него гость не знает, не возвращает ли основа пользователей
+        прямо сейчас (аварийный возврат по Q1) — без права записи, пока состав не пришёл и правило
+        лидера не набрало большинство «да». Состояние `waiting` снимает только состав."""
+        if self.reserve_quorum_guest_phase() != "waiting" or not self.reserve_quorum_act():
+            return
+        meta = self.db.jrn_fence(why="кворум: старт гостя — жду состав")
+        if meta is None and not self._quorum_jrn_fenced():
+            return
+        self.__dict__["_quo_fenced"] = True
+        fenced = dict(self.rsv_get("rsv_qlog").get("fenced") or {})
+        if not fenced.get("on"):
+            fenced = {"on": True, "since": timeutil.now_iso(), "told": False, "start": True}
+        self.rsv_update("rsv_qlog", fenced={**fenced, "on": True, "hold": True})
+        log.info("кворум: гость стартовал без состава — жду его от бота резерва, без права записи")
+
     def reserve_quorum_guest_in(self, body: dict) -> None:
         """`quorum{l, g, members, port}` от бота резерва по локальному каналу — состав
-        для счёта «да» на клоне."""
+        для счёта «да» на клоне; состояние `waiting` кончается, дальше — правило лидера
+        (старт без права записи до первого большинства «да»)."""
+        first = self.reserve_quorum_guest_phase() == "waiting"
         self.__dict__["_guest_quorum"] = {"l": str(body.get("l") or ""), "g": int(body.get("g") or 0),
                                           "members": [str(m) for m in (body.get("members") or [])][:64],
                                           "port": int(body.get("port") or 0)}
+        fenced = dict(self.rsv_get("rsv_qlog").get("fenced") or {})
+        if fenced.get("hold"):
+            self.rsv_update("rsv_qlog", fenced={k: v for k, v in fenced.items() if k != "hold"})
+        if first:
+            log.info("кворум: состав от бота резерва пришёл — правило лидера")
 
     def reserve_quorum_qcount_body(self) -> dict | None:
         """`qcount{y, v, r}` гость → бот резерва; None — счёта нет."""

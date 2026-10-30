@@ -137,7 +137,7 @@ class ReserveGwSideMixin:
             except Exception:                                 # noqa: BLE001 — ключей ещё нет
                 share = {}
         from ..selfhost import own_host
-        return {"self": own_host(), "name": str(config.SERVER_NAME or ""), "slot": int(gw.id),
+        return {"self": own_host(), "name": str(config.SERVER_NAME or ""), "peer_name": self.reserve_peer_name(), "slot": int(gw.id),
                 "state": self.reserve_gw_state(), "move": self.reserve_move_gen(),
                 "record": self.reserve_dns_name(), "peer_host": self.reserve_peer_ip(), "chan": int(zone.get("chan") or 0),
                 "share": share, "tg": tg, "link": {"conf": "\n".join(lines) + "\n"}}

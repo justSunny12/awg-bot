@@ -347,15 +347,35 @@ def test_the_guest_leader_fences_its_own_base_the_same_way(services, monkeypatch
 
 # ── роль в `home` у линии с кворумом ────────────────────────────────────────
 
-def test_with_the_quorum_a_foreign_webhook_at_home_does_not_make_a_follower(q):
-    """Концепт «кворум» §5.2 п. 1 (4.2.0): 409 и чужой вебхук — только остановка
-    поллинга; роль — по фактам (эпоха, лишение кворума)."""
+def test_with_the_quorum_a_foreign_webhook_at_home_makes_a_follower_and_moves_me_to_away(q):
+    """Решение 31.10.2026 (вариант Б): 409 дома — вебхук у резерва, а его ставит только гость
+    после открытия, то есть мои пользователи у него, даже если эпоха до меня не дошла
+    (взятие по коду, шлюз без связи с резервом). Роль — следование, автомат — away:
+    оттуда работают возвраты по голосам и рычаг."""
     _lead(q)
     q.s.rsv_update("rsv_peer_state", st_stale=True)        # резерв не подтвердил, что моих не несёт
     q.s.reserve_set_poll("away", why="webhook")
     q.s.reserve_epoch_sync()
-    assert not q.s.db.jrn_following(), "слово Telegram у линии с кворумом отдало право записи"
-    assert q.s._follow_wanted()[1].startswith("кворум"), q.s._follow_wanted()
+    assert q.s.db.jrn_following(), "слово Telegram у линии с кворумом не отдало право записи"
+    assert q.s._follow_wanted()[1].startswith("Telegram"), q.s._follow_wanted()
+    q.s.reserve_out_tick()
+    assert q.s.reserve_out() == "away", "вебхук у резерва без слова резерва оставил автомат дома"
+
+
+def test_with_the_quorum_a_leftover_webhook_at_a_live_idle_reserve_keeps_me_home(q, monkeypatch):
+    """Остаток вебхука: живой резерв после моего перехода домой говорит, что моих не несёт —
+    не держатель; его снимет зависший вебхук (outbound_stuck), автомат дома."""
+    from awgbot.util import timeutil
+    _lead(q)
+    monkeypatch.setattr(q.s, "reserve_peer_seen", lambda: "ok")
+    q.s.rsv_update("rsv_peer_state", session=True, inn="idle", st_stale=False,
+                   at=timeutil.to_iso(timeutil.shift(timeutil.now(), 3600)))
+    q.s.reserve_set_poll("away", why="webhook")
+    q.s.reserve_epoch_sync()
+    assert not q.s.db.jrn_following(), "остаток вебхука у живого резерва без гостя отдал право записи"
+    assert q.s._follow_wanted()[1] == "вебхук у резерва без гостя", q.s._follow_wanted()
+    q.s.reserve_out_tick()
+    assert q.s.reserve_out() == "home", "остаток вебхука повёл автомат в away"
 
 
 def test_without_the_quorum_a_foreign_webhook_at_home_still_makes_a_follower(q):
@@ -372,3 +392,40 @@ def test_with_the_quorum_a_reserve_serving_my_clients_after_home_makes_a_followe
     rm.st_in(q.s, **{"in": "serving"})
     q.s.reserve_epoch_sync()
     assert q.s.db.jrn_following(), "резерв несёт моих пользователей, а основа с кворумом пишет решения"
+
+
+# ── гость: состояние «жду состав» ───────────────────────────────────────────
+
+def test_the_guest_starts_without_write_until_the_composition_arrives(services, monkeypatch):
+    """Решение 31.10.2026 (вариант 2): бот основы на резерве стартует в состоянии `waiting` —
+    без права записи, пока бот резерва не пришлёт состав; «кворум выключен» это не снимает.
+    Состав пришёл — старт лидера, первое большинство «да» возвращает запись."""
+    settings.set_value("app.reserve.quorum.act", True)
+    monkeypatch.setattr(config, "GUEST", True)
+    q = _Q(services, monkeypatch)
+    assert services.reserve_quorum_guest_phase() == "waiting"
+    services.reserve_quorum_guest_start()
+    assert q.meta()[:2] == ("self", "follower"), "гость на старте без состава пишет"
+    assert services.reserve_quorum_fenced(), "загородка бота не знает, что гость ждёт состав"
+    assert (services.rsv_get("rsv_qlog").get("fenced") or {}).get("hold"), "отметка «жду состав» не на диске"
+    for _ in range(3):
+        q.tick()                                              # машины лидера нет — но это не «кворум выключен»
+        q.advance(T_DOWN)
+    assert q.meta()[:2] == ("self", "follower"), "такт без состава снял ограждение гостя"
+    services.reserve_quorum_guest_in({"l": "a", "g": 1, "members": MEMBERS, "port": 8789})
+    assert services.reserve_quorum_guest_phase() == "ready"
+    assert not (services.rsv_get("rsv_qlog").get("fenced") or {}).get("hold"), "отметка «жду состав» не снята составом"
+    q.tick()
+    assert q.meta()[:2] == ("self", "follower"), "старт лидера дал запись до первого большинства"
+    q.probe("a1")
+    q.probe("a")
+    q.tick()
+    assert q.meta()[:2] == ("self", "holder"), "гость с большинством «да» не вернулся к записи"
+
+
+def test_a_guest_start_with_act_off_does_not_fence(services, monkeypatch):
+    settings.set_value("app.reserve.quorum.act", False)
+    monkeypatch.setattr(config, "GUEST", True)
+    q = _Q(services, monkeypatch)
+    services.reserve_quorum_guest_start()
+    assert q.meta()[:2] == ("self", "holder"), "act=false: старт гостя тронул журнал"

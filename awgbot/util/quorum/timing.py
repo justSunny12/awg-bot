@@ -90,6 +90,14 @@ class Timing:
                    tie_s=num("tie_minutes", d.tie_s // 60) * 60, port=num("port", d.port))
 
 
+    def to_settings(self) -> dict:
+        """Те же ключи, что в `app.reserve.quorum` (и `rf_block_minutes`): так цифры едут шлюзу
+        в разделе `quorum` документа слота — голосующие считают теми же цифрами, что лидер."""
+        return {"probe_seconds": self.probe_s, "no_seconds": self.no_s, "yes_window_seconds": self.yes_window_s,
+                "down_seconds": self.down_s, "up_seconds": self.up_s, "pledge_minutes": self.pledge_s // 60,
+                "tie_minutes": self.tie_s // 60, "rf_block_minutes": self.rf_block_s // 60}
+
+
 def jitter(base: float, frac: float = 0.4, rnd=random.random) -> float:
     """base ± frac (равномерно): интервал пробы, повтор опроса — не по расписанию."""
     return float(base) * (1.0 - frac + 2.0 * frac * rnd())

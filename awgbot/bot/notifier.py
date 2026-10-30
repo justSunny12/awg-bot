@@ -162,9 +162,9 @@ def _peer_code_offer():
     return rkb.peer_code_offer()
 
 
-def _quorum_tie():
+def _quorum_tie(arg: str = ""):
     from awgbot.bot.keyboards import reserve as rkb
-    return rkb.quorum_tie()
+    return rkb.quorum_tie(arg)
 
 
 def _quorum_tie_cand():
@@ -184,7 +184,10 @@ def note_markup(n):
     if markup is not None:
         return markup
     build = KEYBOARDS.get(getattr(n, "keyboard", "") or "")
-    return build() if build is not None else None
+    if build is None:
+        return None
+    arg = str(getattr(n, "keyboard_arg", "") or "")
+    return build(arg) if arg else build()
 
 
 # подписи кнопок действия по подсказке Notification.action

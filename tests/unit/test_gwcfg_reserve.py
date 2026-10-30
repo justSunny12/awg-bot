@@ -157,3 +157,20 @@ def test_the_channel_port_of_the_reserve_rides_the_section_and_its_print():
 @pytest.mark.parametrize("chan", [70000, -1, "много"])
 def test_a_channel_port_out_of_range_is_zero_not_an_error(chan):
     assert gwcfg.check_reserve(_sec(chan=chan))["chan"] == 0
+
+
+# ── имя второго сервера у шлюза ─────────────────────────────────────────────
+
+def test_the_peer_name_passes_through_the_check_and_names_the_texts():
+    """Решение 31.10.2026: имя второго сервера едет шлюзу в разделе reserve — панель Т-К23/Т-К27
+    и уведомление Т-К24 называют его, а не «резерв»."""
+    assert gwcfg.check_reserve(_sec(peer_name="Gamma"))["peer_name"] == "Gamma"
+    assert gwcfg.check_reserve(_sec())["peer_name"] == ""
+    lines = panel.reserve_tg_lines({"name": "Alpha", "peer_name": "Gamma", "tg_via": True,
+                                    "tg_since": "2026-10-31T14:05:00+03:00", "uplink_ip": "203.0.113.10"})
+    assert lines[0].startswith("📨 Telegram — через «Gamma»: аплинк до «Alpha» молчит с "), lines
+    assert "на «Gamma» он не переключится" in lines[1], lines
+    without = panel.reserve_tg_lines({"name": "Alpha", "tg_via": True, "tg_since": ""})
+    assert without[0].startswith("📨 Telegram — через резерв:"), without
+    note = rn.gateway_tg_via("Alpha", "Gamma", "2026-10-31T14:05:00+03:00")
+    assert note.endswith("бот шлюза на связи через «Gamma»") and not note.endswith("."), note
