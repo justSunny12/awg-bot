@@ -75,10 +75,10 @@ def test_while_the_users_are_away_the_home_responder_keeps_counting_for_the_retu
     assert r is not None and r.r == "follow", f"в отъезде ответчик дома — не в роли счёта для возврата: {r}"
 
 
-def test_no_responder_while_the_vote_is_off(lead):
-    """Голосование выключено (второй сервер 4.1.x) — ответчика нет: иначе пробы
-    считаются без кворума и карточка рисует голоса, которых нет."""
-    qc.peer_old(lead)
+def test_no_responder_while_the_vote_is_off(lead, monkeypatch):
+    """Голосование выключено (ключи голосования ещё не у всех) — ответчика нет:
+    иначе пробы считаются без кворума и карточка рисует голоса, которых нет."""
+    monkeypatch.setattr(lead, "reserve_quorum_off_reasons", lambda: ["keys"])
     assert lead.reserve_quorum_responder_addr() is None, "ответчик при выключенном голосовании"
 
 
@@ -154,23 +154,12 @@ def test_the_starting_leader_is_fenced_until_the_first_majority_of_yes(lead):
     assert lead.reserve_quorum_count()["role"] == "lead"
 
 
-def test_with_act_off_the_leader_counts_but_takes_no_decisions(lead):
-    """`app.reserve.quorum.act = false` — только наблюдение: счёт идёт, журнал не
-    трогается, действий нет. Иначе выключатель решений не выключает ничего, и
-    сбой голосования оставляет пользователей без бота."""
+def test_a_leftover_act_off_in_the_settings_is_not_read(lead):
+    """Ключа `quorum.act` больше нет: `false`, оставшийся в чьём-то app.yaml,
+    не включает «только наблюдение» — правило лидера ведёт журнал как обычно."""
     settings.set_value("app.reserve.quorum", {**lead.reserve_quorum_settings(), "act": False})
-    before = dict(lead.db.jrn_meta())
-    e = lead.reserve_quorum_epoch()
-    for n in ("b", "a1"):
-        _ask(lead, n, e=e)
     acts = lead.reserve_quorum_leader_tick()
-    assert lead.reserve_quorum_count()["y"] == 2, "счёт «да» не идёт при выключенных решениях"
-    lead.clock.t += 300
-    for _ in range(20):
-        acts += lead.reserve_quorum_leader_tick()
-        lead.clock.t += 5
-    assert acts == [], f"такт лидера дал действия при act = false: {acts}"
-    assert dict(lead.db.jrn_meta()) == before, "журнал тронут при act = false"
+    assert lead.db.jrn_meta()["role"] == "follower", f"прежний act=false: старт лидера не снял право записи: {acts}"
 
 
 # ── справка ──────────────────────────────────────────────────────────────────
@@ -340,18 +329,6 @@ def test_two_replies_make_see_and_a_qview_goes_to_the_second_server_once(voter):
     assert _answer(voter, _next_probe(voter)) == [], "qview без смены взгляда"
 
 
-def test_no_probe_to_a_peer_without_quo1(voter):
-    """Второй сервер 4.1.x: его порт AWG пробы не ждёт — зонд к нему не стоит, пробы не идут
-    (бесполезный трафик и вечное «не вижу»); вернулся quo1 — зонд снова в плане."""
-    qc.peer_old(voter)
-    assert "awgqbh" not in voter.reserve_quorum_probe_ifaces(), "зонд к серверу AWG без quo1"
-    acts = []
-    for _ in range(10):
-        acts += voter.reserve_quorum_voter_tick()
-        voter.clock.t += 5
-    assert not [a for a in acts if a[0] == "probe"], f"пробы второму серверу 4.1.x: {acts}"
-
-
 def test_no_qview_while_the_pair_link_is_down(voter):
     voter.rsv_update("rsv_peer_state", session=False)
     _answer(voter, _next_probe(voter))
@@ -482,7 +459,8 @@ def test_the_card_text_carries_the_vote_block(lead):
 def test_the_card_says_why_the_vote_is_off(quo):
     from awgbot.bot.texts.reserve.section import card_text
     quo.reserve_quorum_refresh()
-    qc.peer_old(quo)
+    assert quo.reserve_quorum_off_reasons()[:1] == ["not_acked"], quo.reserve_quorum_off_reasons()
     text = card_text({**quo.reserve_card_data(), "dir_out": (True, "")})
-    assert "🗳 Голосование не включено: у «Beta» нет v4.2.0" in text, text
+    assert "🗳 Голосование не включено: состав голосующих ждёт подтверждения" in text, text
+    assert "по прежним правилам" not in text, "причина «второй сервер 4.1.x» в карточке"
 

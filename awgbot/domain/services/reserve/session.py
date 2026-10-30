@@ -277,8 +277,10 @@ class ReserveSessionMixin:
         self.rsv_update("rsv_view", compat=now)
         name = peer.get("name") or "резерв"
         notes = []
+        said: set[str] = set()
         for key in ("out", "in"):
-            if now[key] and not marks.get(key):
+            if now[key] and not marks.get(key) and now[key] not in said:
+                said.add(now[key])                            # одна причина на оба направления — одно слово
                 notes.append(Notification(tg_id=int(config.ADMIN_ID), text=rn.direction_off(name, now[key])))
         if "out" in marks and (marks.get("out") or marks.get("in")) and not (now["out"] or now["in"]):
             notes.append(Notification(tg_id=int(config.ADMIN_ID), text=rn.direction_on(name)))

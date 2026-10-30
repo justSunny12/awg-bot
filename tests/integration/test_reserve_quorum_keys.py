@@ -33,7 +33,7 @@ from awgbot.util.rsvpkg import seal
 from tests.integration import _reserve_common as rc
 from tests.integration import _reserve_move as rm
 from tests.integration._reserve_quorum import PEER_ADMIN, line, notes, setup_line
-from tests.integration._reserve_vote_common import box
+from tests.integration._reserve_vote_common import Cand, box, code_window_outside
 from tools import rsvopen
 
 pytestmark = pytest.mark.integration
@@ -180,6 +180,21 @@ def test_a_gateway_without_quo1_makes_no_polynomial_and_the_keys_stay(line):
     assert line.s.reserve_code() == code, "код сменился без многочлена"
     body = _qkeys(line.s)
     assert "qbox" not in body and body["cbox"], f"qkeys без ящика кода или с многочленом: {sorted(body)}"
+def test_with_only_the_second_server_voting_one_point_cannot_open(line):
+    """Шлюзов с quo1 нет — голосует только второй сервер (v = 1): у «Beta»
+    единственная точка многочлена ключа кворума, а порог не ниже 2 — открыть
+    пакет одной своей точкой она не может, только по аварийному коду."""
+    line.add_gw(1, quo=False)
+    line.propose()
+    line.ack_members()
+    assert line.s.reserve_quorum_proposed().members == ("a", "b")
+    line.sync_keys()
+    q = line.s.reserve_qkeys()
+    if q.get("on") and q.get("poly"):
+        assert int(q.get("t") or 0) >= 2, f"v = 1: порог многочлена {q.get('t')} — «Beta» откроет пакет одна"
+    body = line.s.reserve_qkeys_body()
+    assert body is not None and body.get("cbox"), "v = 1: ящика кода у второго сервера нет — аварийный код не откроет"
+    assert not line.s.reserve_quorum_decisions(), "v = 1: решения по голосам разрешены"
 
 
 # ── смена состава ───────────────────────────────────────────────────────────
@@ -269,9 +284,10 @@ def test_after_a_new_m_the_second_server_gets_qkeys_again(on):
 
 @pytest.mark.parametrize("why", ["not_wanted", "last_gateway_rolled_back"])
 def test_switching_off_drops_the_polynomial_and_the_quorum_box_and_keeps_m_and_the_code(on, why):
-    """Шлюзов `quo1` в составе не осталось (или условия кворума пропали): многочлен
-    прочь, `qkeys` второму серверу — без части многочлена (его ящик кворума уходит);
-    `M`, `K`, прямая кода и код прежние, нового кода админу и уведомлений нет."""
+    """Условия кворума пропали или шлюзов `quo1` в составе не осталось: многочлен прочь,
+    `qkeys` второму серверу — без части многочлена (его ящик кворума уходит); прямая кода и
+    код прежние, нового кода админу и уведомлений нет; `M` и `K` — прежние, пока держатели
+    точек в составе, и новые, когда последний шлюз ушёл (его точка могла остаться у чужого)."""
     k0, q0, code0 = _keys(on.s), dict(on.s.reserve_qkeys()), on.s.reserve_code()
     if why == "not_wanted":
         acts = on.s.reserve_quorum_keys_sync(on.s.reserve_quorum_proposed(), False)
@@ -284,7 +300,10 @@ def test_switching_off_drops_the_polynomial_and_the_quorum_box_and_keeps_m_and_t
     assert not on.s.reserve_quorum_poly_on() and q1["poly"] == [] and q1["t"] == 0, f"{why}: многочлен остался"
     assert on.s.reserve_quorum_keys_on(), f"{why}: вместе с многочленом снят ящик кода"
     k1 = _keys(on.s)
-    assert (k1["m"], k1["m_gen"], k1["k"]) == (k0["m"], k0["m_gen"], k0["k"]), f"{why}: выключение сменило M или K"
+    if why == "not_wanted":                                   # шлюзы в составе остались — ключ прежний
+        assert (k1["m"], k1["m_gen"], k1["k"]) == (k0["m"], k0["m_gen"], k0["k"]), f"{why}: выключение сменило M или K"
+    else:                                                     # держатель точки ушёл — M и K новые
+        assert k1["m"] != k0["m"] and int(k1["m_gen"]) == int(k0["m_gen"]) + 1, f"{why}: держатель точки ушёл, а M прежний"
     assert (q1["c_gen"], q1["mc"], q1["ma"]) == (q0["c_gen"], q0["mc"], q0["ma"]) and on.s.reserve_code() == code0, \
         f"{why}: выключение сменило код"
     assert on.s.reserve_code_notify_pending() == "" and not notes(acts), f"{why}: уведомление при выключении"
@@ -315,6 +334,21 @@ def test_the_second_server_drops_the_quorum_box_when_qkeys_comes_without_a_polyn
     peer = line.s.reserve_quorum_peer_keys()
     assert (peer["q_gen"], peer["t"], peer["y"], peer["qbox"]) == (0, 0, "", ""), f"ящик кворума у второго сервера остался: {peer}"
     assert peer["cbox"] == bare["cbox"] and peer["cy"] == bare["cy"], "вместе с ящиком кворума ушёл ящик кода"
+def test_the_last_gateway_rolled_back_takes_its_old_point_out_of_the_game(on):
+    """Переход v 2 → 1 (шлюз откатился, `quo1` нет): у шлюза осталась точка
+    прежнего многочлена, у «Beta» — своя; при прежнем пороге 2 их двух хватает
+    на M. Поэтому многочлен прежнего состава и ящик кворума у второго сервера
+    уходят, M и K — новые, а код (прямая кода со шлюзом не связана) — прежний."""
+    k0, q0, code0 = _keys(on.s), dict(on.s.reserve_qkeys()), on.s.reserve_code()
+    on.gw_quo(1, False)
+    on.propose()
+    on.ack_members()
+    on.sync_keys()
+    k1, q1 = _keys(on.s), on.s.reserve_qkeys()
+    assert k1["m"] != k0["m"] and int(k1["m_gen"]) == int(k0["m_gen"]) + 1, \
+        "v 2 → 1: M прежний — точка откатившегося шлюза и точка резерва открывают пакет"
+    assert not q1.get("poly") or q1.get("poly") != q0.get("poly"), "v 2 → 1: многочлен прежнего состава остался"
+    assert on.s.reserve_code() == code0, "v 2 → 1: код сменился, хотя прямая кода со шлюзом не связана"
 
 
 # ── возврат после переезда ──────────────────────────────────────────────────
@@ -664,8 +698,7 @@ def h4(box, monkeypatch):
     monkeypatch.setattr(rsvzone, "wipe", lambda: "")
     box.peer_admin_opened()
     box.primary(False)
-    box.tick()
-    assert box.case == "H4" and box.s.reserve_code_window()["open"]
+    code_window_outside(Cand(box))                        # окно кода открыл кандидат: свой «не вижу», шлюзы молчат
     return box
 
 

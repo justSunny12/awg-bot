@@ -1,10 +1,13 @@
-"""Аварийный код админа основы на резерве (vote.reserve_code_in /
-reserve_code_failed): только от аккаунта роли, только в Н4, три попытки в
-час, код транзитом в процесс открытия — у резерва его нет ни в базе, ни в
-файлах; отказ процесса «ключ не снялся» — попытка в счёт и окно снова
-открыто.
+"""Аварийный код админа основы на резерве (codewin.reserve_code_in /
+reserve_code_failed): только от аккаунта роли, только при открытом окне кода
+(его открывает кандидат кворума: свой «не вижу», голосов не хватает), три
+попытки в час, код транзитом в процесс открытия вместе с точкой и ящиком кода
+линии — у резерва его нет ни в базе, ни в файлах; отказ процесса «ключ не
+снялся» — попытка в счёт и окно снова открыто.
 
-Цена ошибки: код, принятый не от админа основы (или вне Н4), — переезд по
+Мир — `Cand` из _reserve_vote_common: линия «Beta» с шлюзами b1, b2 (v = 3).
+
+Цена ошибки: код, принятый не от админа основы (или при закрытом окне), — переезд по
 слову постороннего или при живой основе; без счёта попыток — перебор кода;
 код в базе резерва — у админа резерва вместе с долей резерва ключ целиком;
 окно, не открывшееся после «не подошёл», — админ основы не может ввести
@@ -21,7 +24,8 @@ from awgbot.core import config
 from awgbot.infra import rsvzone
 from awgbot.util import rsvkeys
 from tests.integration import _reserve_common as rc
-from tests.integration._reserve_vote_common import ADMIN, PEER_ADMIN, RSV_SHARE, box, notes
+from tests.integration._reserve_vote_common import (ADMIN, PEER_ADMIN, QBOX, RSV_Y, Cand, box, code_window_outside,
+                                                    notes)
 
 pytestmark = pytest.mark.integration
 rsv = rc.rsv
@@ -33,19 +37,21 @@ ROOT = Path(__file__).resolve().parents[2]
 
 @pytest.fixture()
 def h4(box, monkeypatch):
+    """Окно кода вне решения: свой «не вижу», шлюзы «Beta» молчат — голосов нет."""
     monkeypatch.setattr(rsvzone, "teardown", lambda: "")
     monkeypatch.setattr(rsvzone, "wipe", lambda: "")
     box.peer_admin_opened()
     box.primary(False)
-    box.tick()
-    assert box.case == "H4" and box.s.reserve_code_window()["open"]
+    box.cand = Cand(box)
+    code_window_outside(box.cand)
     return box
 
 
 def test_the_code_from_the_peer_admin_in_h4_goes_to_the_opening_process_in_transit(h4):
     res = h4.s.reserve_code_in(PEER_ADMIN, CODE.lower().replace("-", " "))
     assert res["ok"] and res["pending"], res
-    assert h4.launched == [{"kind": "code", "share": [1, RSV_SHARE], "code": CODE.replace("-", "")}], h4.launched
+    assert h4.launched == [{"kind": "code", "code": CODE.replace("-", ""), "cpoint": [rsvkeys.RESERVE_X, RSV_Y],
+                            "cbox": QBOX}], f"в процесс открытия не код с точкой и ящиком кода линии: {h4.launched}"
     assert h4.s.reserve_in() == "taking" and h4.s.rsv_get("rsv_in")["kind"] == "code"
     assert not h4.s.reserve_code_window()["open"], "окно кода открыто, пока процесс открытия идёт"
 
@@ -72,9 +78,15 @@ def test_a_code_not_from_the_peer_admin_is_refused(h4, uid):
     assert h4.s.reserve_code_window()["open"], "чужая попытка закрыла окно"
 
 
-def test_a_code_outside_h4_is_refused(box):
+def test_a_code_without_the_window_is_refused(box):
+    """Свой «не вижу», но шлюз видит основу — окна нет, код не принимается."""
+    box.peer_admin_opened()
     box.primary(False)
-    box.hello(1, sees=True)                             # случай 2
+    c = Cand(box)
+    c.own("uns")
+    c.view(1, "see")
+    c.tick()
+    assert not box.s.reserve_code_window()["open"], "окно кода открыто, хотя шлюз видит основу"
     res = box.s.reserve_code_in(PEER_ADMIN, CODE)
     assert not res["ok"] and res["why"] == "closed" and not box.launched
 
@@ -164,21 +176,37 @@ def test_the_admin_of_both_servers_enters_the_code_as_himself(h4):
     assert res["ok"] and len(h4.launched) == 1, res
 
 
-@pytest.mark.parametrize("sees, why_text", [(True, "видит сервер — переезд не нужен"),
-                                           (False, "не видит сервер — переезд идёт сам")])
-def test_the_closing_notice_names_the_gateway_that_came_back(h4, sees, why_text):
-    """Т-РН3: окно закрыл вернувшийся шлюз — в тексте он по номеру слота
-    («Шлюз 1 снова на связи»), а не имя сервера основы. Имён шлюзов основы у
-    резерва нет: они второй стороне не раскрываются."""
-    acts = h4.hello(1, sees=sees)
-    acts += h4.tick()
+def test_a_gateway_seeing_the_primary_again_closes_the_window_with_the_majority_notice(h4):
+    """Т-РН3: вернувшийся шлюз видит основу — окно закрыто, админу основы
+    «Большинство снова видит «Beta» — переезд не нужен» один раз; имён шлюзов
+    основы в тексте нет (второй стороне они не раскрываются)."""
+    h4.hello(1)
+    acts = h4.cand.view(1, "see") + h4.cand.tick()
+    assert not h4.s.reserve_code_window()["open"], "шлюз видит основу — окно кода осталось открытым"
     told = [n for n in notes(acts) if n.tg_id == PEER_ADMIN]
     assert len(told) == 1, [n.text for n in notes(acts)]
-    assert told[0].text.startswith("ℹ️ Шлюз 1 снова на связи") and why_text in told[0].text, told[0].text
-    assert "«Beta»" not in told[0].text and "NASPi" not in told[0].text, told[0].text
+    assert told[0].text == "ℹ️ Большинство снова видит «Beta» — переезд не нужен", told[0].text
+    assert not notes(h4.cand.run(30)), "отбой окна повторился"
 
 
-def test_the_closing_notice_names_the_primary_when_it_came_back_itself(h4):
-    h4.primary(True)
-    told = [n for n in notes(h4.tick()) if n.tg_id == PEER_ADMIN]
-    assert len(told) == 1 and "«Beta» снова на связи" in told[0].text, [n.text for n in told]
+def test_own_see_back_closes_the_window(h4):
+    h4.cand.own("see")
+    told = [n for n in notes(h4.cand.tick()) if n.tg_id == PEER_ADMIN]
+    assert not h4.s.reserve_code_window()["open"], "свой «вижу» — окно кода осталось открытым"
+    assert len(told) == 1 and "переезд не нужен" in told[0].text, [n.text for n in told]
+
+
+def test_gateways_back_with_no_close_the_window_as_votes_enough_not_as_seen_again(h4):
+    """Окно вне решения открыто, шлюзы вернулись и тоже не видят основу —
+    большинство «нет», переезд пойдёт сам: окно закрывается, и админу основы
+    нужно сказать «Голосов хватило — переезд идёт сам, код не нужен», а не
+    «Большинство снова видит» (сервер-то не видит никто — он поверит, что всё
+    в порядке, и не будет готов к переезду)."""
+    h4.hello(1)
+    h4.hello(2)
+    acts = h4.cand.view(1, "uns") + h4.cand.view(2, "uns") + h4.cand.tick()
+    assert not h4.s.reserve_code_window()["open"], "большинство «нет» — окно кода осталось открытым"
+    told = [n for n in notes(acts) if n.tg_id == PEER_ADMIN]
+    assert len(told) == 1, [n.text for n in notes(acts)]
+    assert "снова видит" not in told[0].text and "код не нужен" in told[0].text, \
+        f"окно закрыто большинством «нет», а админу основы сказано другое: {told[0].text}"

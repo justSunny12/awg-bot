@@ -1,33 +1,33 @@
 """Резерв на стороне агента шлюза (domain/gateway/reserve): раздел reserve
-документа → reserve.json и линк awgrsv, решение о пересылке, взгляды на
-основу и на резерв, гостевой канал (need → share, ping → pong), Т-РА3/Т-РА4,
+документа → reserve.json и линк awgrsv, решение о пересылке, взгляд на
+резерв, гостевой канал (`hello{slot, caps}`, ping → pong; слов матрицы
+`need`/`view` агент не понимает), Т-РА3 по своему взгляду зонда кворума,
 молчание в простое; аплинк по умолчанию — не awgrsv.
 
 Хост — `_Host`: скрипт линка к резерву (обёртка infra/gwguard/rsv) моделью
 состояния — поднят ли линк, открыт ли набор rsv_open4 и для кого, счётчики;
 счётчики линка слота; факт записи DNS у авторитетного сервера; строки юнита
-обвязки. Модельные часы — аргумент `now` такта и подмена time в watch.
+обвязки; взгляд зонда на сервер AWG — файл quorum.json во временном каталоге.
+Модельные часы — аргумент `now` такта.
 
 Цена ошибки: пересылка, открытая по одному слову резерва без факта записи,
 — резерв пользуется шлюзами основы без переезда; закрытая по `idle` живой,
 но не знающей о переезде основы — пользователи у резерва без РФ-доступа; доля
-без `need` или при живой основе — у резерва ключ без аварии; проба шлюза,
-ломающая гостевой канал, — шлюз выпадает из набора голосующих по одной
-потерянной keepalive.
+по слову `need` прежнего резерва — у резерва ключ без решения большинства;
+проба шлюза, ломающая гостевой канал, — шлюз выпадает из голосующих по одной
+потерянной keepalive; Т-РА3 «сервер не отвечает» со звуком шлюзу, которому
+сервер отвечает, — ложная тревога ночью.
 """
 from __future__ import annotations
 
 import os
 import stat
-import types
 
 import pytest
 
 from awgbot.core import config
 from awgbot.domain.gateway import GatewayServices
 from awgbot.domain.gateway.reserve import record as recordmod
-from awgbot.domain.gateway.reserve import uplink as upmod
-from awgbot.domain.gateway.reserve import watch as watchmod
 from awgbot.infra import gwguard
 from awgbot.infra.db import Database
 from awgbot.infra.gwguard import rsv as rsvlink
@@ -111,7 +111,7 @@ def gw(tmp_path, host, monkeypatch):
     svc = GatewayServices(d)
     svc._RSV_STORE = tmp_path / "reserve.json"
     monkeypatch.setattr(svc, "link_status", lambda: (True, 10, host.slot_rx, 0))
-    monkeypatch.setattr(svc, "_uplink_probe", lambda: False)
+    svc._QUO_STORE = tmp_path / "quorum.json"
     svc.conf = _conf()
     svc.reserve_apply(_checked(svc.conf))
     return svc
@@ -156,7 +156,7 @@ def test_serving_without_the_record_fact_keeps_forwarding_closed(gw, host):
 
 
 def test_serving_with_the_record_fact_opens_even_for_a_gateway_that_sees_the_primary(gw, host):
-    assert gw.reserve_primary_seen()[0] != "down"
+    _own_view(gw, "see")
     host.fact = True
     host.run(gw.reserve_state_in("serving", 3))
     assert host.open == OPEN, "видящий шлюз с serving и фактом записи пересылку не открыл"
@@ -211,7 +211,13 @@ def test_unknown_state_words_are_ignored(gw, host):
     assert host.open == [] and gw.reserve_section()["reserve_state"] == "idle"
 
 
-# ── взгляд на основу ────────────────────────────────────────────────────────
+# ── взгляд зонда на сервер AWG ─────────────────────────────────────────────
+
+def _own_view(gw, w: str, since: str = "2026-10-30T10:05:00+03:00") -> None:
+    """Взгляд своего зонда кворума на сервер AWG линии — как его хранит quorum.json."""
+    from awgbot.domain.gateway.reserve.store import _write
+    _write({"l": "a", "views": {"awgqah": {"w": w, "since": since}}}, gw._QUO_STORE)
+
 
 def _watch(gw, t0: float, seconds: int, step: int = 5) -> list[tuple]:
     acts = []
@@ -220,98 +226,27 @@ def _watch(gw, t0: float, seconds: int, step: int = 5) -> list[tuple]:
     return acts
 
 
-def test_silence_of_the_slot_link_probes_the_server_by_the_channel_at_40_seconds(gw, host):
-    acts = _watch(gw, 1000.0, 35)
-    assert not [a for a in acts if a[0] == "gw_ping"], "проба основы без подозрения"
-    acts = gw.reserve_watch_tick(now=1040.0)
-    assert [a for a in acts if a[0] == "gw_ping"], "40 с тишины линка слота — пробы нет"
-
-
-def test_a_pong_on_the_channel_keeps_the_primary_seen_even_if_counters_are_unknown(gw, host, monkeypatch):
-    """`awg show` не прочитался — это не «мёртв»: проба по каналу отвечает."""
-    monkeypatch.setattr(gw, "link_status", lambda: (_ for _ in ()).throw(RuntimeError("awg show: unknown")))
-    clock = types.SimpleNamespace(monotonic=lambda: clock.t)
-    clock.t = 1000.0
-    monkeypatch.setattr(watchmod, "time", clock)
-    pings = []
-    for t in range(1000, 1061, 5):
-        clock.t = float(t)
-        acts = gw.reserve_watch_tick(now=float(t))
-        for a in acts:
-            if a[0] == "gw_ping":
-                pings.append(a[1])
-                gw.reserve_gw_pong_in(a[1])
-    assert pings, "при неизвестных счётчиках не было пробы"
-    assert gw.reserve_primary_seen()[0] != "down", "неизвестные счётчики при ответе на пробу дали «не вижу»"
-
-
-def test_no_answer_on_either_path_makes_unseen_and_tells_the_reserve(gw, host):
-    acts = _watch(gw, 1000.0, 60)
-    seen = [a for a in acts if a[0] == "guest" and a[1] == "seen"]
-    assert seen and seen[-1][2]["seen"], f"«не вижу» не ушёл резерву: {acts}"
-    assert gw.reserve_primary_seen()[0] == "down"
-
-
-def test_an_answering_uplink_keeps_the_primary_seen(gw, host, monkeypatch):
-    monkeypatch.setattr(gw, "_uplink_probe", lambda: True)
+def test_the_watch_tick_does_not_probe_the_primary_any_more(gw, host):
+    """Наблюдателя основы нет: ни пробы основы по каналу конфигурации, ни слова
+    `seen` резерву — тишина линка слота ничего не шлёт."""
+    host.slot_rx = None
     acts = _watch(gw, 1000.0, 120)
-    assert gw.reserve_primary_seen()[0] != "down", "аплинк ответил, а шлюз «не видит» основу"
-    assert not [a for a in acts if a[0] == "guest" and a[1] == "seen"]
-
-
-@pytest.fixture()
-def uplink(gw, monkeypatch, tmp_path):
-    """Аплинк awg0 с Endpoint по имени записи в конфиге; живой Endpoint и
-    резолв — подменой; DNS-проба — журнал."""
-    st = {"live": PRIMARY_IP, "dns": {RECORD: PRIMARY_IP}, "probes": []}
-    monkeypatch.setattr(config, "GW_UPLINK_IF", "awg0")
-    monkeypatch.setattr(upmod, "conf_endpoint", lambda iface: (RECORD, 443))
-    monkeypatch.setattr(upmod, "resolve", lambda h: h if h[0].isdigit() else st["dns"].get(h, ""))
-    monkeypatch.setattr(gwguard, "_endpoint_host", lambda iface: st["live"])
-
-    def probe(resolver, iface, timeout=2.0):
-        st["probes"].append((resolver, iface))
-        return True
-    monkeypatch.setattr(watchmod, "_dns_probe", probe)
-    monkeypatch.delattr(gw, "_uplink_probe")
-    return st
-
-
-def test_the_uplink_probe_asks_the_servers_resolver_through_the_uplink(gw, uplink):
-    assert gw._uplink_probe() is True
-    assert uplink["probes"] == [("10.9.1.1", "awg0")], "проба не к резолверу сервера через аплинк"
-
-
-def test_the_uplink_probe_does_not_count_when_the_uplink_points_at_the_reserve(gw, uplink):
-    """После перерезолва на клон живой Endpoint аплинка — резерв: клон
-    ответит на <подсеть>.1:53, и «вижу основу» было бы ложью."""
-    gw.reserve_apply(_checked(gw.conf, **{"self": RECORD}))      # self_host не задан — адрес для пользователей
-    uplink["dns"][RECORD] = RESERVE_IP                           # запись уже на резерве
-    uplink["live"] = RESERVE_IP                                  # аплинк перерезолвлен на клон
-    assert gw._uplink_probe() is False, "проба через аплинк, смотрящий на резерв, засчитана как жизнь основы"
-    assert not uplink["probes"]
+    assert not [a for a in acts if a[0] == "gw_ping"], f"проба основы по каналу конфигурации: {acts}"
+    assert not [a for a in acts if a[0] == "guest" and a[1] in ("seen", "share", "need", "view")], acts
 
 
 # ── резерв по гостевому каналу ──────────────────────────────────────────────
 
-def test_need_gives_the_share_only_while_the_primary_is_unseen(gw, host):
-    assert gw.reserve_guest_in("need", {"case": "1", "since": "x"}) == [], "доля при живой для шлюза основе"
-    _watch(gw, 1000.0, 60)
-    assert gw.reserve_primary_seen()[0] == "down"
-    acts = gw.reserve_guest_in("need", {"case": "1", "since": "x"})
-    assert acts == [("guest", "share", {"share": "cd" * 16, "m_gen": 1})], acts
-    pairproto.check(pairproto.GUEST_PROTO, "share", acts[0][2], pairproto.GATEWAY)
-
-
-def test_without_a_share_need_gives_nothing(gw, host):
-    gw.reserve_apply(_checked(gw.conf, share={}))
-    _watch(gw, 1000.0, 60)
-    assert gw.reserve_guest_in("need", {"case": "1", "since": "x"}) == []
-
-
-def test_without_need_the_gateway_never_offers_its_share(gw, host):
-    acts = _watch(gw, 1000.0, 3600)
-    assert not [a for a in acts if a[0] == "guest" and a[1] == "share"], "доля ушла без need"
+@pytest.mark.parametrize("kind, body", [("need", {"case": "1", "since": "x", "m_gen": 1}),
+                                        ("view", {"seen": "", "voters": [{"slot": 1, "see": False}], "in": "idle",
+                                                  "pkg_gen": 3})])
+def test_matrix_words_of_an_older_reserve_get_nothing(gw, host, kind, body):
+    """Слово матрицы — ни доли, ни уведомления: долю (точку кворума) шлюз отдаёт
+    только на `qneed` решения большинства."""
+    _own_view(gw, "uns")
+    acts = gw.reserve_guest_in(kind, body)
+    assert not [a for a in acts if a[0] in ("guest", "notify")], f"на {kind} шлюз ответил: {acts}"
+    assert "share_given_at" not in gw.reserve_section() or not gw.reserve_section()["share_given_at"]
 
 
 def test_ping_from_the_reserve_gets_pong_with_the_same_nonce(gw):
@@ -321,7 +256,8 @@ def test_ping_from_the_reserve_gets_pong_with_the_same_nonce(gw):
 def test_every_word_the_gateway_puts_on_the_guest_channel_is_allowed_from_the_gateway(gw, host):
     """Проба резерва по подозрению (awgrsv молчит) — тоже слово гостевого
     канала: слушатель резерва проверяет каждое сообщение шлюза по словарю, и
-    вид «не с той стороны» рвёт сессию — шлюз выпадает из набора голосующих."""
+    вид «не с той стороны» рвёт сессию — шлюз выпадает из голосующих."""
+    host.rsv_rx = 100
     acts = _watch(gw, 1000.0, 60) + [("guest", "hello", gw.reserve_guest_hello_body() | {"nonce": "x"})]
     words = [a for a in acts if a[0] == "guest"]
     assert any(w[1] == "ping" for w in words), "проба резерва не ушла (тест не проверил бы ничего)"
@@ -342,43 +278,72 @@ def test_the_guest_channel_is_silent_for_an_hour_of_idle(gw, host):
     assert not acts, f"в простое такт агента что-то делал: {acts[:5]}"
 
 
-def test_no_hello_before_the_first_look_at_the_primary(gw, host):
-    """Взгляда ещё нет (такт не прочитал счётчик и не сделал пробу): hello с
-    пустым «вижу/не вижу» резерв принял бы за голос «не вижу»."""
-    assert gw.reserve_view_ready() is False
+def test_hello_is_ready_at_once_and_carries_only_the_slot_and_caps(gw, host):
+    """Ждать «первого взгляда на основу» больше не нужно: взгляд — `qview` зонда
+    первым словом сессии, hello — только слот и возможности."""
+    body = gw.reserve_guest_hello_body()
+    assert body == {"slot": 1, "caps": ["rsv1", "quo1", "rsvtg1"]}, body   # quo1 — кворум, rsvtg1 — Telegram через awgrsv
+    pairproto.check(pairproto.GUEST_PROTO, "hello", body | {"nonce": ""}, pairproto.GATEWAY)
+
+
+def test_hello_without_the_section_is_none(gw):
+    gw.reserve_apply(None)
     assert gw.reserve_guest_hello_body() is None
 
 
-def test_hello_carries_the_share_generation_and_the_view(gw, host):
-    gw.reserve_watch_tick(now=1000.0)                       # первое чтение — взгляд есть
-    assert gw.reserve_view_ready() is True
-    body = gw.reserve_guest_hello_body()
-    assert {k: body[k] for k in ("slot", "caps", "m_gen")} == {"slot": 1, "caps": ["rsv1", "quo1", "rsvtg1"], "m_gen": 1}, body   # quo1 — кворум (4.2.0)
-    _watch(gw, 1000.0, 60)
-    assert gw.reserve_guest_hello_body()["seen"], "hello после «не вижу» несёт «вижу»"
+# ── Т-РА3 по взгляду зонда ──────────────────────────────────────────────────
 
-
-# ── Т-РА3 / Т-РА4 ───────────────────────────────────────────────────────────
-
-def test_case_3_view_tells_the_gateway_admin_once(gw, host):
-    _watch(gw, 1000.0, 60)
-    view = {"seen": "", "voters": [{"slot": 1, "see": False}], "in": "idle", "pkg_gen": 3}
-    first = gw.reserve_guest_in("view", view)
-    told = [n for a in first if a[0] == "notify" for n in a[1]]
-    assert len(told) == 1 and "недоступен из РФ" in told[0].text and told[0].silent
-    assert not [a for a in gw.reserve_guest_in("view", view) if a[0] == "notify"], "Т-РА4 повторилось"
-
-
-def test_opening_by_serving_tells_the_gateway_admin_that_clients_moved(gw, host):
-    _watch(gw, 1000.0, 60)
+def _move(gw, host) -> list:
     host.fact = True
-    gw.reserve_guest_in("view", {"seen": "2026-10-21T03:10:00+03:00", "voters": [], "in": "taking", "pkg_gen": 3})
     acts = gw.reserve_guest_in("state", {"state": "serving", "move": 3})
     host.run(acts)
-    told = [n for a in acts if a[0] == "notify" for n in a[1]]
-    assert host.open == OPEN and len(told) == 1 and "переехали на резерв" in told[0].text
-    assert told[0].force_sound, "Т-РА3 «сервер не отвечает» без звука"
-    assert ("push",) in acts, "серверу не ушёл снимок с новым состоянием"
+    return [n for a in acts if a[0] == "notify" for n in a[1]]
+
+
+def test_opening_while_the_probe_does_not_see_the_server_is_loud_and_mailed(gw, host):
+    """Т-РА3: зонд шлюза сервер не видит — 🔴 «не отвечает» со звуком и почтой
+    (Telegram агента идёт по аплинку, который сейчас может быть мёртв), момент — из взгляда."""
+    _own_view(gw, "uns", since="2026-10-30T10:05:00+03:00")
+    told = _move(gw, host)
+    assert host.open == OPEN and len(told) == 1, told
+    n = told[0]
+    assert n.text.startswith("🔴 Сервер AWG не отвечает с ") and "переехали на резерв «Beta»" in n.text, n.text
+    assert n.force_sound and n.critical, "Т-РА3 «сервер не отвечает» без звука или без почты"
+    assert RECORD in n.text and RESERVE_IP in n.text, "в Т-РА3 нет записи и адреса резерва"
+
+
+@pytest.mark.parametrize("w", ["see", "held"])
+def test_opening_while_the_probe_sees_the_server_is_quiet(gw, host, w):
+    """Т-РА3б: этому шлюзу сервер отвечает — переезд решило большинство; без
+    звука и без почты, 🟡."""
+    _own_view(gw, w)
+    told = _move(gw, host)
+    assert host.open == OPEN and len(told) == 1, told
+    n = told[0]
+    assert n.text.startswith("🟡 Пользователи переехали на резерв «Beta»") and "отвечает" in n.text, n.text
+    assert not n.force_sound and n.silent and not n.critical, f"Т-РА3б со звуком или почтой: {n}"
+    assert not n.text.endswith("."), n.text
+
+
+def test_the_move_is_told_once_per_move_number(gw, host):
+    _own_view(gw, "uns")
+    first = _move(gw, host)
+    assert len(first) == 1
+    if first[0].on_sent:
+        first[0].on_sent()                                  # доставлено — повтор отложенного не нужен
+    again = [n for a in gw.reserve_guest_in("state", {"state": "serving", "move": 3}) if a[0] == "notify" for n in a[1]]
+    again += [n for a in _watch(gw, 1000.0, 30) if a[0] == "notify" for n in a[1]]
+    assert not [n for n in again if "переехали" in n.text], "Т-РА3 повторился на тот же переезд"
+
+
+@pytest.mark.parametrize("w", ["", "new", "sus"])
+def test_without_a_clear_unseen_the_notice_is_still_the_loud_one(gw, host, w):
+    """Взгляда нет или он не ясен — шлюз не может сказать «мне сервер отвечает»:
+    тревога громкая (лучше лишний звонок, чем тихий переезд при мёртвом сервере)."""
+    if w:
+        _own_view(gw, w)
+    told = _move(gw, host)
+    assert len(told) == 1 and told[0].text.startswith("🔴") and told[0].force_sound, told
 
 
 # ── аплинк по умолчанию ─────────────────────────────────────────────────────
@@ -394,27 +359,6 @@ def test_the_default_uplink_is_never_the_reserve_link(monkeypatch):
     assert gwguard.uplink_interface() == "awg0"
     ifaces["v"] = "awglink awgrsv"
     assert gwguard.uplink_interface() == "", "аплинком выбран линк к резерву"
-
-
-# ── поколение доли в need ───────────────────────────────────────────────────
-
-def test_need_of_the_generation_of_my_share_gets_it_and_another_generation_gets_nothing(gw, host):
-    """Резерв просит долю поколения своего пакета (`m_gen`): у шлюза доля
-    другого поколения — отказ, иначе резерв собрал бы ключ из долей разных
-    поколений и процесс открытия отказал бы уже после записи DNS."""
-    _watch(gw, 1000.0, 60)
-    assert gw.reserve_primary_seen()[0] == "down"
-    assert gw.reserve_guest_in("need", {"case": "1", "since": "x", "m_gen": 2}) == [], "доля чужого поколения ушла"
-    assert "share_given_at" not in gw.reserve_section()
-    acts = gw.reserve_guest_in("need", {"case": "1", "since": "x", "m_gen": 1})
-    assert acts == [("guest", "share", {"share": "cd" * 16, "m_gen": 1})], acts
-
-
-def test_need_without_a_generation_from_an_older_reserve_still_gets_the_share(gw, host):
-    _watch(gw, 1000.0, 60)
-    assert gw.reserve_guest_in("need", {"case": "1", "since": "x"})[0][1] == "share"
-    pairproto.check(pairproto.GUEST_PROTO, "need", {"case": "1", "since": "x"}, pairproto.RESERVE)
-    pairproto.check(pairproto.GUEST_PROTO, "need", {"case": "1", "since": "x", "m_gen": 3}, pairproto.RESERVE)
 
 
 # ── порт гостевого канала из раздела ────────────────────────────────────────
@@ -501,3 +445,10 @@ def test_without_allowed_ips_and_without_the_client_subnet_nothing_is_let_in(gw,
     monkeypatch.setattr(gwguard, "unit_env", lambda k: "")
     gw.reserve_apply(_checked(gw.conf.replace(f"AllowedIPs = 10.99.97.1/32, {SUBNET}\n", "")))
     assert gw._reserve_sources() == []
+
+
+def test_the_snapshot_carries_no_matrix_view_of_the_primary(gw, host):
+    """Поле `rsv` снимка — связь с резервом и пересылка; поколения доли и
+    взгляда на основу (матрица) агент в нём не шлёт."""
+    snap = gw.reserve_snapshot()
+    assert set(snap) == {"seen", "since", "open", "state"}, f"поля rsv снимка: {sorted(snap)}"

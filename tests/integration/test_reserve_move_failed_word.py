@@ -5,14 +5,16 @@
   канала, без него — тоже (резерв прежней линии);
 - резерв: `_take_fail` (срыв процесса открытия) шлёт всем шлюзам на связи
   `state{idle, reason}` — даже если `idle` уже уходил;
-- шлюз: `idle` с причиной после отданной этим шлюзом доли — одно
-  уведомление админу шлюза «переезд не состоялся» и снятая отметка доли;
-  без отданной доли и без причины — молчит;
+- шлюз: `idle` с причиной после отданной этим шлюзом точки ключа кворума
+  (`qneed` → `qshare`) — одно уведомление админу шлюза «переезд не
+  состоялся» с моментом из взгляда зонда и снятая отметка; без отданной
+  точки и без причины — молчит;
 - С11: зона снята мимо бота (перезагрузка резерва) — idle без паузы между
-  автоматическими переездами, пакет и доля остаются: матрица открывает снова.
+  автоматическими переездами, пакет и доля остаются: кворум открывает снова.
 
-Резерв — `box` голосования (часы, шлюзы, процесс открытия подменены); шлюз —
-`gw` из test_gw_reserve_agent (скрипт линка и факт записи — моделью).
+Резерв — `box` и кандидат кворума `Cand` (часы, шлюзы, процесс открытия подменены); шлюз —
+`ag` из test_gw_quorum_decision (зонд, точка и файлы quorum.json/reserve.json — во
+временном каталоге).
 
 Цена ошибки: шлюз, отдавший долю, молчит о срыве — его админ считает, что
 пользователи на резерве, а они без VPN; уведомление на каждый повтор `state` —
@@ -27,12 +29,12 @@ import pytest
 from awgbot.infra import rsvzone
 from awgbot.util import pairproto
 from tests.integration import _reserve_common as rc
-from tests.integration._reserve_vote_common import box, gw_sent, notes
-from tests.unit.test_gw_reserve_agent import _watch, gw, host
+from tests.integration._reserve_vote_common import T_UP, Cand, box, gw_sent, notes
+from tests.unit.test_gw_quorum_decision import Q_GEN, ag, clock
 
 pytestmark = pytest.mark.integration
 rsv = rc.rsv
-__all__ = ["box", "gw", "host"]
+__all__ = ["box", "ag", "clock"]
 
 REASON = "зона: veth не поднялся"
 
@@ -54,16 +56,22 @@ def test_a_reason_longer_than_the_limit_is_refused_by_the_dictionary():
 
 @pytest.fixture()
 def opening(box, monkeypatch):
-    """Основа мертва, шлюз 1 не видит её, шлюз 2 видит (случай 5); доля шлюза 1
-    пришла — процесс открытия идёт."""
+    """Основа мертва: свой «не вижу» и «нет» обоих шлюзов T_up, канала пары нет —
+    точки; точка шлюза 1 пришла — процесс открытия идёт."""
     monkeypatch.setattr(rsvzone, "teardown", lambda: "")
     monkeypatch.setattr(rsvzone, "wipe", lambda: "")
     monkeypatch.setattr(box.s, "_rsvopen_stop", lambda: None)
     box.primary(False)
-    box.hello(1, sees=False)
-    box.hello(2, sees=True)
-    box.share(1)
+    box.online = False
+    c = Cand(box)
+    c.own("uns")
+    c.view(1, "uns")
+    c.view(2, "uns")
+    c.tick()
+    c.run(T_UP + 5)
+    c.share(1)
     assert box.s.reserve_in() == "taking", "предпосылка: открытие не началось"
+    box.cand = c
     return box
 
 
@@ -104,6 +112,7 @@ def serving(opening, monkeypatch):
     zone = {"phase": "serving"}
     monkeypatch.setattr(rsvzone, "state", lambda *a: dict(zone))
     opening.s.reserve_set_in("serving", kind="dead", gen=3, ended_auto=True, tg_taken=True, served=True)
+    assert opening.cand.tick() == [], "кандидат о линии, чьих пользователей я несу"
     opening.zone = zone
     return opening
 
@@ -120,15 +129,14 @@ def test_a_zone_removed_behind_the_bot_ends_without_the_pause_and_keeps_the_pack
     assert serving.s.reserve_auto_block() == "", f"матрица не вправе открыть снова: {serving.s.reserve_auto_block()}"
 
 
-def test_after_the_zone_is_removed_the_matrix_asks_for_a_share_at_once(serving):
-    """Основа всё ещё мертва, шлюз 1 не видит её: следующий такт голосования —
-    снова `need` (без 30-минутной паузы автоматических переездов)."""
+def test_after_the_zone_is_removed_the_candidate_takes_again_without_the_pause(serving):
+    """Основа всё ещё мертва, большинство «нет» держится: после снятой зоны
+    кандидат снова забирает (без 30-минутной паузы автоматических переездов)."""
     serving.zone["phase"] = "idle"
     serving.s.reserve_in_tick()
-    serving.advance(31)                                  # повтор need не раньше NEED_RETRY_S
-    serving.keepalive()
-    acts = serving.tick() + serving.eval()
-    assert [s for s, _ in gw_sent(acts, "need")] == [1], f"после снятой зоны переезд не начат снова: {acts}"
+    acts = serving.cand.run(T_UP + 10)
+    assert gw_sent(acts, "qtake") or gw_sent(acts, "qneed"), f"после снятой зоны переезд не начат снова: {acts}"
+    assert serving.s.rsv_get("rsv_view").get("auto_block", "") == ""
 
 
 def test_a_zone_that_is_still_up_changes_nothing(serving):
@@ -141,50 +149,52 @@ def _moved_failed(acts) -> list:
     return [n for a in acts if a[0] == "notify" for n in a[1] if "не состоялся" in n.text]
 
 
-def _gave_share(gw):
-    _watch(gw, 1000.0, 60)                              # основа не видна этому шлюзу
-    acts = gw.reserve_guest_in("need", {"case": "1", "since": "x"})
-    assert acts and acts[0][1] == "share", "предпосылка: доля не отдана"
-    assert gw.reserve_section().get("share_given_at")
+SINCE = "2026-10-30T10:05:00+03:00"
 
 
-def test_idle_with_a_reason_after_the_share_tells_the_gateway_admin_once(gw, host):
-    _gave_share(gw)
-    acts = gw.reserve_guest_in("state", {"state": "idle", "move": 3, "reason": REASON})
+def _gave_point(ag):
+    """Зонд шлюза не видит сервер, кандидат попросил точку — отдана."""
+    ag.uns()
+    acts = ag.word("qneed", q_gen=Q_GEN, since=SINCE)
+    assert acts and acts[0][1] == "qshare", "предпосылка: точка не отдана"
+
+
+def _state(svc, **body) -> list:
+    return svc.reserve_guest_in("state", {"state": "idle", "move": 3, **body})
+
+
+def test_idle_with_a_reason_after_the_point_tells_the_gateway_admin_once(ag):
+    """Шлюз отдал точку, процесс открытия у резерва сорвался: его админ должен
+    знать, что пользователи не на резерве, — Т-РА5 один раз."""
+    _gave_point(ag)
+    acts = _state(ag.svc, reason=REASON)
     told = _moved_failed(acts)
     assert len(told) == 1, [n.text for a in acts if a[0] == "notify" for n in a[1]]
-    assert "Сервер AWG не отвечает с" in told[0].text and "«Beta»" in told[0].text and REASON in told[0].text, told[0].text
+    assert "Сервер AWG не отвечает с" in told[0].text and "«Alpha»" in told[0].text and REASON in told[0].text, told[0].text
     assert not told[0].text.rstrip().endswith("."), "уведомление с точкой в конце"
-    assert not gw.reserve_section().get("share_given_at"), "отметка доли не снята — повтор скажет снова"
-    again = gw.reserve_guest_in("state", {"state": "idle", "move": 3, "reason": REASON})
+    again = _state(ag.svc, reason=REASON)
     assert not _moved_failed(again), "Т-РА5 повторилось на тот же срыв"
 
 
-def test_idle_with_a_reason_without_a_given_share_is_silent(gw, host):
-    _watch(gw, 1000.0, 60)
-    acts = gw.reserve_guest_in("state", {"state": "idle", "move": 3, "reason": REASON})
-    assert not _moved_failed(acts), "шлюз, не дававший доли, говорит о срыве чужого переезда"
+def test_idle_with_a_reason_without_a_given_point_is_silent(ag):
+    ag.uns()
+    assert not _moved_failed(_state(ag.svc, reason=REASON)), "шлюз, не дававший точки, говорит о срыве чужого переезда"
 
 
-def test_idle_without_a_reason_after_the_share_is_silent_and_keeps_the_mark(gw, host):
-    _gave_share(gw)
-    acts = gw.reserve_guest_in("state", {"state": "idle", "move": 3})
-    assert not _moved_failed(acts)
-    assert gw.reserve_section().get("share_given_at"), "обычный idle снял отметку доли"
+def test_idle_without_a_reason_after_the_point_is_silent(ag):
+    _gave_point(ag)
+    assert not _moved_failed(_state(ag.svc))
+    assert len(_moved_failed(_state(ag.svc, reason=REASON))) == 1, "обычный idle снял отметку отданной точки"
 
 
-def test_serving_after_the_share_does_not_say_failed(gw, host):
-    _gave_share(gw)
-    assert not _moved_failed(gw.reserve_guest_in("state", {"state": "serving", "move": 3, "reason": REASON}))
+def test_serving_after_the_point_does_not_say_failed(ag):
+    _gave_point(ag)
+    assert not _moved_failed(ag.svc.reserve_guest_in("state", {"state": "serving", "move": 3, "reason": REASON}))
 
 
-def test_the_failure_notice_survives_a_reboot_of_the_agent(gw, host, tmp_path):
-    """Отметка доли — в reserve.json: агент, перезапущенный между долей и
-    срывом, всё равно говорит админу."""
-    from awgbot.domain.gateway import GatewayServices
-    _gave_share(gw)
-    fresh = GatewayServices(gw.db)
-    fresh._RSV_STORE = gw._RSV_STORE
-    fresh.link_status = gw.link_status
-    fresh._uplink_probe = gw._uplink_probe
-    assert len(_moved_failed(fresh.reserve_guest_in("state", {"state": "idle", "move": 3, "reason": REASON}))) == 1
+def test_the_failure_notice_survives_a_reboot_of_the_agent(ag):
+    """Отметка точки — на диске: агент, перезапущенный между точкой и срывом,
+    всё равно говорит админу."""
+    _gave_point(ag)
+    fresh = ag.new()
+    assert len(_moved_failed(_state(fresh, reason=REASON))) == 1

@@ -105,6 +105,9 @@ class ReservePairingMixin:
         mine = self.reserve_invite()
         if mine.get("id") == tok.pair_id:
             raise ServiceError("Это приглашение от этого же сервера")
+        from awgbot.core.compat import version_key
+        if version_key(tok.version) and version_key(tok.version)[:3] < (4, 2, 0):
+            raise ServiceError(f"Второй сервер на v{tok.version} — для резерва нужен 4.2.0 или новее у обоих серверов")
         if not settings.get_bool("app.reserve.ready", False):
             raise ServiceError("Сначала включи «Готов быть резервом»")
         my_gen = self._awg_generation()
@@ -115,9 +118,6 @@ class ReservePairingMixin:
         if not self.reserve_has_gateway():
             warn.append("У этого сервера шлюзов нет — твои пользователи к нему не переедут, пока не подключишь шлюз; "
                         "его пользователей этот сервер принять сможет")
-        from awgbot.core.compat import version_key
-        if version_key(tok.version) and version_key(tok.version)[:3] < (4, 2, 0):
-            raise ServiceError(f"Второй сервер на v{tok.version} — для резерва нужен 4.2.0 или новее у обоих серверов")
         ask_version = bool(version_key(tok.version) and version_key(config.INSTALLED_VERSION)
                            and version_key(tok.version)[:3] > version_key(config.INSTALLED_VERSION)[:3])
         return {"token": raw, "tok": tok, "warn": warn, "ask_version": ask_version}
@@ -262,7 +262,11 @@ class ReservePairingMixin:
                 return {"ok": False, "why": "nogw"}
             if "quo1" not in (msg.get("caps") or []):
                 # второй сервер ниже 4.2.0: переезд решает кворум, прежних правил нет — пара не создаётся;
-                # приглашение живо — код можно ввести после обновления
+                # приглашение живо — код можно ввести после обновления; версия — в приглашение для карточки
+                st["old_peer_version"] = str(msg.get("version") or "")[:24]
+                self.rsv_put("rsv_invite", st)
+                log.warning("резерв: сопряжение — второй сервер на v%s без кворума, нужен 4.2.0: приглашение ждёт",
+                            msg.get("version") or "?")
                 return {"ok": False, "why": "old"}
             if st.get("state") == "accepted" and st.get("eph") != hashlib.sha256(a_eph).hexdigest():
                 return {"ok": False, "why": "gone"}

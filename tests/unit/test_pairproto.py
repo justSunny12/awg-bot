@@ -50,8 +50,8 @@ def test_an_unknown_kind_breaks_the_session():
     (pp.PAIR_PROTO, "hello", _hello(), pp.INVITER),               # hello шлёт только принимающий
     (pp.PAIR_PROTO, "pair_ok", {"sealed": "x"}, pp.ACCEPTOR),      # pair_ok — только пригласивший
     (pp.PAIR_PROTO, "ping", {"n": "1"}, pp.RESERVE),               # стороны другого канала
-    (pp.GUEST_PROTO, "view", {"seen": "", "voters": [], "in": "", "pkg_gen": 1}, pp.GATEWAY),
-    (pp.GUEST_PROTO, "share", {"share": "x", "m_gen": 1}, pp.RESERVE),   # долю шлёт только шлюз
+    (pp.GUEST_PROTO, "state", {"state": "idle", "move": 0}, pp.GATEWAY),   # state шлёт только резерв
+    (pp.GUEST_PROTO, "qshare", {"l": "a", "q_gen": 1, "x": 2, "y": "ab"}, pp.RESERVE),   # точку шлёт только шлюз
     (pp.GUEST_PROTO, "ping", {"n": "1"}, pp.BOTH),
 ])
 def test_a_kind_from_the_wrong_side_breaks_the_session(proto, kind, body, sender):
@@ -124,8 +124,8 @@ def test_a_field_exactly_at_the_ceiling_passes():
 
 
 def test_the_guest_channel_checks_its_own_dictionary():
-    out = pp.check(pp.GUEST_PROTO, "share", {"share": "ab" * 16, "m_gen": 3}, pp.GATEWAY)
-    assert out == {"share": "ab" * 16, "m_gen": 3}
+    out = pp.check(pp.GUEST_PROTO, "hello", {"slot": 2, "caps": ["rsv1", "quo1"], "nonce": "ab"}, pp.GATEWAY)
+    assert out == {"slot": 2, "caps": ["rsv1", "quo1"], "nonce": "ab"}
     with pytest.raises(ProtocolError):
         pp.check(pp.GUEST_PROTO, "pkg", {}, pp.GATEWAY)          # вид канала пары в гостевом — неизвестен
     with pytest.raises(ValueError):

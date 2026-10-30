@@ -199,11 +199,21 @@ def test_a_composition_restored_with_an_ack_keeps_acting_while_the_next_is_pendi
 
 def test_off_reasons_is_empty_when_everything_holds():
     m = Members.make("a", 1, ["a", "b", "a1"])
-    assert mm.off_reasons(m, peer_quo1=True, acked=True) == []
+    assert mm.off_reasons(m, acked=True) == []
+
+
+def test_two_servers_without_gateways_are_a_line_with_v_1_not_an_off_reason():
+    """Без шлюзов линия всё равно включается — голосует только второй сервер:
+    «нет шлюзов» — признак v < 2 (решений нет), а не причина «не включено»."""
+    m = Members.make("a", 1, ["a", "b"])
+    assert mm.off_reasons(m, acked=True) == [], mm.off_reasons(m, acked=True)
+    assert not m.enabled and m.v("a") == 1, "состав из двух серверов — не v = 1 без решений"
 
 
 def test_off_reasons_names_every_problem():
-    got = mm.off_reasons(Members.make("a", 1, ["a", "b"]), peer_quo1=False, acked=False, timing_problem="up",
+    got = mm.off_reasons(Members.make("a", 1, ["a", "b"]), acked=False, timing_problem="up",
                          overlaps=["10.0.0.0/8"], big_slots=[60], keys_ok=False)
-    assert got == ["peer_old", "no_gateways", "not_acked", "keys", "timing:up", "overlap:10.0.0.0/8", "slot:60"]
-    assert mm.off_reasons(None, peer_quo1=True, acked=True) == ["no_gateways"]
+    assert got == ["not_acked", "keys", "timing:up", "overlap:10.0.0.0/8", "slot:60"], got
+    assert "peer_old" not in got, "причина «второй сервер 4.1.x» осталась"
+    assert mm.off_reasons(None, acked=True) == ["no_gateways"], "без состава — причина «голосующих нет»"
+

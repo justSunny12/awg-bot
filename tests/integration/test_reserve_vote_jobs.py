@@ -1,13 +1,17 @@
-"""Голосование в планировщике резерва (runtime/scheduler/reserve.py): такт
-живости линка пары и такт голосования — одно задание в 5 с, поэтому строка
-Н4 решается в том же такте, что и «основа недоступна» (t0).
+"""Гостевой канал и запасной сигнал окна кода в планировщике резерва
+(runtime/scheduler/reserve.py): такт живости линка пары, такт гостевого
+канала и такт кворума — одно задание в 5 с, поэтому окно кода по линку пары
+(линия второй стороны без кворума) открывается в том же задании, где связь
+пропала дольше T_up.
 
 Планировщик — журнал add_job, задание вызывается напрямую; канал пары —
-журнал pairlink.send; бот — FakeBot, исполнитель действий — с ним же.
+журнал pairlink.send; бот — FakeBot, исполнитель действий — с ним же; такт
+кворума — домен без сокетов (runtime/quorum подменён прямым вызовом,
+интерфейсы зондов не трогаются).
 
-Цена ошибки: голосование отдельным, более редким заданием — Т-РУ7б и приём
-кода позже t0 на его период, админ основы ночью ждёт без причины; такт,
-шлющий что-либо в простое, — маячок.
+Цена ошибки: окно кода отдельным, более редким заданием — Т-К21д и приём кода
+позже на его период, админ основы ночью ждёт без причины; такт, шлющий
+что-либо в простое, — маячок.
 """
 from __future__ import annotations
 
@@ -17,7 +21,7 @@ from awgbot.runtime import pairlink, rsvactions
 from awgbot.runtime.scheduler import reserve as jobs
 from tests.conftest import FakeBot
 from tests.integration import _reserve_common as rc
-from tests.integration._reserve_vote_common import ADMIN, PEER_ADMIN, box
+from tests.integration._reserve_vote_common import ADMIN, PEER_ADMIN, T_UP, box
 
 pytestmark = pytest.mark.integration
 rsv = rc.rsv
@@ -44,6 +48,12 @@ def wired(box, monkeypatch):
     monkeypatch.setattr(rsvactions, "_ctx", {"bot": bot, "services": None})
     sched = _Sched()
     jobs.setup_reserve_jobs(sched, box.s, bot)
+    from awgbot.runtime import quorum as quorum_rt
+
+    async def qtick(services, act):
+        await act(services.quorum_tick())
+    monkeypatch.setattr(quorum_rt, "tick", qtick)
+    monkeypatch.setattr(box.s, "reserve_probes_apply", lambda: None)   # интерфейсы зондов хоста не трогаем
     real = box.s.reserve_liveness_tick
     monkeypatch.setattr(box.s, "reserve_liveness_tick", lambda now=None: real(now=box.clock.t))
     monkeypatch.setattr(box.s, "_pair_rx", lambda: 500)
@@ -51,8 +61,11 @@ def wired(box, monkeypatch):
     return sched
 
 
-async def test_h4_is_told_in_the_same_job_run_as_the_primary_going_down(box, wired):
+async def test_the_link_window_is_told_in_the_job_run_when_t_up_passes(box, wired):
+    """Голосование о «Beta» не включено (ключи не у всех), линк пары молчит:
+    окно кода по линку пары — в том задании, где «нет связи» длится T_up."""
     box.peer_admin_opened()
+    box.peer_line(active=False, why=["keys"])
     fn = wired.jobs["rsv_liveness"][0]
     await fn()                                          # первый замер — жизнь
     for _ in range(11):                                 # 55 с без keepalive линка пары
@@ -61,22 +74,31 @@ async def test_h4_is_told_in_the_same_job_run_as_the_primary_going_down(box, wir
         if box.s.reserve_peer_seen() == "down":
             break
     assert box.s.reserve_peer_seen() == "down"
-    msgs = [r for r in wired.bot.records if r[0] == "send_message"]
+    down_at = box.clock.t
+    while box.clock.t - down_at < T_UP - 5:
+        box.advance(5)
+        await fn()
+    def code_msgs():
+        return [r for r in wired.bot.records if r[0] == "send_message" and ("аварийн" in r[2] or "голосование" in r[2])]
+    assert not code_msgs(), "окно кода раньше T_up"
+    box.advance(5)
+    await fn()
+    msgs = code_msgs()
     to_peer = [r for r in msgs if r[1] == PEER_ADMIN]
     to_admin = [r for r in msgs if r[1] == ADMIN]
-    assert len(to_peer) == 1 and "аварийный код" in to_peer[0][2], f"Т-РУ7б не в такте t0: {msgs}"
-    assert any("аварийный код" in r[2] for r in to_admin), "Т-РУ7 не в такте t0"
+    assert len(to_peer) == 1 and "аварийный код" in to_peer[0][2], f"Т-К21д админу основы не в задании T_up: {msgs}"
+    assert len(to_admin) == 1 and "голосование о нём не включено" in to_admin[0][2], f"Т-К21д админу резерва: {to_admin}"
     before = len(wired.bot.records)
     for _ in range(6):
         box.advance(5)
         await fn()
-    assert len(wired.bot.records) == before, "Н4 повторила уведомления"
+    assert len(wired.bot.records) == before, "окно по линку пары повторило уведомления"
 
 
 async def test_the_job_is_silent_while_everything_is_fine(box, wired, monkeypatch):
     rx = {"v": 500}
     monkeypatch.setattr(box.s, "_pair_rx", lambda: rx["v"])
-    box.hello(1, sees=True)
+    box.hello(1)
     fn = wired.jobs["rsv_liveness"][0]
     wired.sent.clear()
     for i in range(240):                                # 20 минут

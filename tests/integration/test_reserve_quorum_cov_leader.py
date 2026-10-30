@@ -25,7 +25,7 @@ import types
 
 import pytest
 
-from awgbot.core import config, settings
+from awgbot.core import config
 from awgbot.domain.services.reserve.quorum import fence as fence_mod
 from awgbot.domain.services.reserve.quorum import leader as leader_mod
 from awgbot.util import probenet, timeutil
@@ -96,7 +96,6 @@ def _notes(actions, word: str = "") -> list:
 
 @pytest.fixture()
 def q(mv, monkeypatch):
-    settings.set_value("app.reserve.quorum.act", True)
     return _Q(mv.svc, monkeypatch)
 
 
@@ -213,7 +212,7 @@ def test_the_fence_holds_when_the_quorum_is_off_only_on_my_side(q, why):
     assert q.s.reserve_quorum_fenced()
 
 
-@pytest.mark.parametrize("why", [["peer_old"], ["no_gateways"], ["no_pair"], ["keys", "peer_old"], ["overlap:10.0.0.0/8"]])
+@pytest.mark.parametrize("why", [["no_gateways"], ["no_pair"], ["keys", "no_gateways"], ["overlap:10.0.0.0/8"]])
 def test_a_structural_switch_off_lifts_the_fence(q, why):
     _fence(q)
     q.active, q.why = False, why
@@ -346,7 +345,6 @@ def test_a_broken_loop_does_not_break_the_update_step(q, monkeypatch):
 def test_a_composition_without_a_line_does_not_end_the_waiting(services, monkeypatch, body):
     """Состояние «жду состав» снимает только состав: слово `quorum` без линии или
     без узлов — не состав, гость остаётся без права записи."""
-    settings.set_value("app.reserve.quorum.act", True)
     monkeypatch.setattr(config, "GUEST", True)
     q = _Q(services, monkeypatch)
     services.reserve_quorum_guest_start()

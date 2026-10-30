@@ -2,11 +2,13 @@
 handlers/peercode.py — кнопка «🔑 Ввести аварийный код», приглашение с
 «⬅️ Отмена», код текстом, итог; место роутера и фильтр роли.
 
-Сценарий резерва — `box` из integration/_reserve_vote_common (Н4: основа и
-её шлюзы не отвечают, админ основы открывал бот).
+Сценарий резерва — `box` и `Cand` из integration/_reserve_vote_common: окно
+кода открывает кандидат кворума — вне решения (свой «не вижу», шлюзы молчат)
+или в ходе решения (большинство «нет», лидер молчит, точек нет); админ
+основы открывал бот.
 
 Цена ошибки: сообщение с кодом, оставшееся в чате, — код у любого, кто
-увидит экран телефона админа; кнопка, открывающая ввод вне Н4, — обещание
+увидит экран телефона админа; кнопка, открывающая ввод при закрытом окне, — обещание
 переезда, которого не будет; роутер кода после общего роутера роли — текст
 с кодом уходит в «тот же экран» и пропадает без ответа.
 """
@@ -19,7 +21,7 @@ from awgbot.runtime import rsvactions
 from awgbot.util import rsvkeys
 from tests.conftest import FakeCallback, FakeMessage, FakeState
 from tests.integration import _reserve_common as rc
-from tests.integration._reserve_vote_common import PEER_ADMIN, box
+from tests.integration._reserve_vote_common import PEER_ADMIN, Cand, box, code_window_by_decision, code_window_outside
 
 pytestmark = pytest.mark.e2e
 rsv = rc.rsv
@@ -34,8 +36,8 @@ def h4(box, monkeypatch):
     monkeypatch.setattr(box.s, "server_ok", lambda: True)
     box.peer_admin_opened()
     box.primary(False)
-    box.tick()
-    assert box.s.reserve_code_window()["open"]
+    box.cand = Cand(box)
+    code_window_outside(box.cand)
     return box
 
 
@@ -60,21 +62,26 @@ def test_the_code_router_stands_before_the_role_router_and_is_behind_the_role_fi
 
 # ── кнопка ──────────────────────────────────────────────────────────────────
 
-async def test_the_role_screen_offers_the_code_only_in_h4(box, fake_bot, monkeypatch):
+@pytest.mark.parametrize("opener", [code_window_outside, code_window_by_decision], ids=["outside", "decision"])
+async def test_the_role_screen_offers_the_code_only_while_the_candidate_holds_the_window(box, fake_bot, monkeypatch,
+                                                                                          opener):
+    """Пока окна нет (свой «вижу») — кнопки кода и строки 🆘 на экране роли
+    нет; кандидат открыл окно (вне решения или в ходе решения без точек) —
+    есть обе."""
     from awgbot.bot.handlers import peeradmin
     monkeypatch.setattr(box.s, "server_ok", lambda: True)
-    box.primary(False)
-    box.hello(1, sees=True)                             # случай 2 — кода не нужно
+    box.peer_admin_opened()
+    c = Cand(box)
+    c.tick()
     msg = FakeMessage(text="/start", chat_id=PEER_ADMIN, user_id=PEER_ADMIN, bot=fake_bot)
     await peeradmin.start(msg, box.s)
-    assert "🔑 Ввести аварийный код" not in _labels(msg.sent[-1][2])
-    box.gone(1)
-    box.advance(60)                                     # обрыв сессии — подозрение на окно живости шлюза
-    box.tick()                                          # Н4
+    assert "🔑 Ввести аварийный код" not in _labels(msg.sent[-1][2]), "кнопка кода без окна кода"
+    assert "пришли аварийный код" not in msg.sent[-1][1]
+    opener(c)
     msg = FakeMessage(text="/start", chat_id=PEER_ADMIN, user_id=PEER_ADMIN, bot=fake_bot)
     await peeradmin.start(msg, box.s)
-    assert "🔑 Ввести аварийный код" in _labels(msg.sent[-1][2]), "в Н4 на экране роли нет кнопки кода"
-    assert "пришли аварийный код" in msg.sent[-1][1]
+    assert "🔑 Ввести аварийный код" in _labels(msg.sent[-1][2]), "окно кода открыто, а на экране роли нет кнопки кода"
+    assert "а голосов для переезда не хватает — пришли аварийный код резерва" in msg.sent[-1][1], msg.sent[-1][1]
 
 
 async def test_the_button_with_the_window_closed_is_an_alert_and_no_input(box, fake_bot):
@@ -163,7 +170,9 @@ async def test_after_the_result_the_role_screen_comes_back_in_place_of_the_promp
 
 async def test_after_the_window_closes_the_text_is_answered_as_not_needed(h4, fake_bot):
     from awgbot.bot.handlers import peercode
-    h4.hello(1, sees=True)                              # шлюз вернулся «вижу» — переезд не нужен
+    h4.hello(1)
+    h4.cand.view(1, "see")                              # шлюз вернулся «вижу» — переезд не нужен
+    h4.cand.tick()
     msg = FakeMessage(text=CODE, chat_id=PEER_ADMIN, user_id=PEER_ADMIN, bot=fake_bot)
     st = FakeState()
     await st.set_state(PeerCode.value)

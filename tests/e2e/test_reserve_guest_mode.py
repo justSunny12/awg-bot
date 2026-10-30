@@ -196,8 +196,9 @@ def test_the_main_line_tells_where_the_return_lever_is_only_when_the_primary_is_
     assert "Вернуть пользователей" not in gt.main_line({**base, "primary": {"status": "dead"}, "return": "button"})
     assert "Вернуть пользователей" not in gt.main_line({**base, "primary": {"status": "alive"}, "return": "immediate"})
     assert "Вернуть пользователей" in gt.main_line({**base, "primary": {"status": "alive"}, "return": "button"})
-    assert "Вернуть пользователей" not in gt.main_line({**base, "reason": "nogw", "primary": {"status": "alive"}, "return": "button"}), \
-        "шлюзы не на связи — возвращать рано, РФ-доступ идёт через резерв"
+    nogw = gt.main_line({**base, "reason": "nogw", "primary": {"status": "alive"}, "return": "button"})
+    assert "шлюзы" not in nogw and "Вернуть пользователей" in nogw, \
+        f"причины переезда «шлюзы не на связи» больше нет — строка как у обычного переезда: {nogw}"
 
 
 def test_the_return_button_is_on_the_card_only_when_the_primary_said_it_is_waiting_for_the_button(services, guest_mode):

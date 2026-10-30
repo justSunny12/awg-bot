@@ -26,6 +26,8 @@ class ReserveQuorumTickMixin:
     # ── план сокетов ────────────────────────────────────────────────────────
     def quorum_runtime_plan(self) -> dict:
         if getattr(self, "guest", False) or config.GUEST:
+            if not self.__dict__.get("_guest_quorum"):
+                return {"responder": None, "probes": {}}       # состава нет (жду состав) — ответчика нет
             return {"responder": self.reserve_quorum_responder_addr(), "probes": {}}
         if not self.reserve_paired():
             return {"responder": None, "probes": {}}
@@ -53,6 +55,8 @@ class ReserveQuorumTickMixin:
             self._qvoters.clear()
             return []
         actions: list[tuple] = []
+        if hasattr(self, "reserve_quorum_act_leftover"):
+            self.reserve_quorum_act_leftover()
         if hasattr(self, "reserve_keys_ensure"):
             self.reserve_keys_ensure()                        # защитная ветка: ключи прежних выпусков → ящик кода
         m = self.reserve_quorum_refresh()                      # предложенный состав — по нему ключи и зонды

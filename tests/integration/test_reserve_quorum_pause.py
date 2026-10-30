@@ -77,14 +77,13 @@ def test_without_a_line_there_is_no_pause(lead):
     assert lead.s.reserve_quorum_pause_actions() == []
 
 
-def test_the_second_server_offline_or_without_quo1_gets_nothing_but_gateways_do(lead):
+def test_the_second_server_offline_gets_nothing_but_gateways_do(lead):
     lead.online = False
     acts = lead.s.reserve_quorum_pause_actions()
     assert not [a for a in acts if a[0] == "send"] and len([a for a in acts if a[0] == "gwlink"]) == 2, acts
     lead.online = True
-    lead.s.rsv_update("rsv_peer_state", caps=["rsv1"])
     acts = lead.s.reserve_quorum_pause_actions()
-    assert not [a for a in acts if a[0] == "send"], "qpause второму серверу без quo1"
+    assert len([a for a in acts if a[0] == "send" and a[1] == "qpause"]) == 1, f"при живом канале qpause второму серверу не ушёл: {acts}"
 
 
 # ── исполнитель ─────────────────────────────────────────────────────────────

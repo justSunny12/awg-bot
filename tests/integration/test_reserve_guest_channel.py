@@ -27,7 +27,7 @@ PSK = wgkeys.psk()
 
 
 class _Reserve:
-    """Сервисы резерва: журнал слов шлюзов и ответ на hello — view и state."""
+    """Сервисы резерва: журнал слов шлюзов и ответ на hello — state и qstate (эпоха линии)."""
 
     def __init__(self):
         self.opened: list[tuple] = []
@@ -36,8 +36,8 @@ class _Reserve:
 
     def reserve_guest_opened(self, slot, body):
         self.opened.append((slot, dict(body)))
-        return [("gw", slot, "view", {"seen": "", "voters": [], "in": "idle", "pkg_gen": 3}),
-                ("gw", slot, "state", {"state": "idle", "move": 0})]
+        return [("gw", slot, "state", {"state": "idle", "move": 0, "e": 7}),
+                ("gw", slot, "qstate", {"l": "b", "e": 7, "holder": "b", "r": "cand"})]
 
     def reserve_guest_in(self, slot, kind, body):
         self.words.append((slot, kind, dict(body)))
@@ -60,7 +60,7 @@ class _Gateway:
         return pairproto.guest_key(PSK)
 
     def reserve_guest_hello_body(self):
-        return {"slot": self.slot, "caps": ["rsv1"], "m_gen": 1, "seen": ""}
+        return {"slot": self.slot, "caps": ["rsv1", "quo1", "rsvtg1"]}
 
     def reserve_guest_in(self, kind, body):
         self.got.append((kind, dict(body)))
@@ -99,8 +99,9 @@ async def loop_pair(monkeypatch):
 
 async def test_hello_opens_the_session_and_the_reserve_speaks_first_with_its_nonce(loop_pair):
     res, srv, gw, cl = loop_pair
-    assert res.opened and res.opened[0][0] == 1 and res.opened[0][1]["m_gen"] == 1
-    assert await _until(lambda: [k for k, _ in gw.got] == ["view", "state"]), f"шлюз не получил view и state: {gw.got}"
+    assert res.opened and res.opened[0][0] == 1 and res.opened[0][1]["caps"] == ["rsv1", "quo1", "rsvtg1"]
+    assert "seen" not in res.opened[0][1] and "m_gen" not in res.opened[0][1], res.opened[0][1]
+    assert await _until(lambda: [k for k, _ in gw.got] == ["state", "qstate"]), f"шлюз не получил state и qstate: {gw.got}"
 
 
 async def test_a_ping_of_the_reserve_is_answered_with_a_pong_of_the_same_nonce(loop_pair):
@@ -111,8 +112,8 @@ async def test_a_ping_of_the_reserve_is_answered_with_a_pong_of_the_same_nonce(l
 
 async def test_words_of_the_gateway_reach_the_reserve(loop_pair):
     res, srv, gw, cl = loop_pair
-    assert await cl.send("seen", {"seen": "2026-10-21T03:11:00+03:00"})
-    assert await _until(lambda: any(k == "seen" for _, k, _ in res.words))
+    assert await cl.send("qview", {"l": "b", "g": 1, "w": "uns", "since": "2026-10-21T03:11:00+03:00", "e": 7})
+    assert await _until(lambda: any(k == "qview" for _, k, _ in res.words))
     assert srv.online_slots() == [1] and not res.closed
 
 

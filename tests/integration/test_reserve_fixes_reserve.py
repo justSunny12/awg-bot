@@ -1,10 +1,10 @@
 """Правки стороны резерва после двух ревью: процесс открытия
 (domain/services/reserve/inbound.py — open.status до запуска, песочница
 юнита, остановка юнита при срыве и возврате, повтор реплики и `relay`),
-голосование шлюзов (vote.py — обрыв сессии как подозрение, Н4 один раз на
-эпизод, `state` шлюзам в releasing, отказ кода при чужих пользователях здесь),
-случаи 3/Н3 при занятой зоне (rfblock.py) и `st` по смене тела (session.py,
-такт живости runtime/scheduler/reserve.py).
+гостевой канал и кандидат кворума (gwguest.py, quorum/candidate.py — обрыв
+сессии как подозрение, `state` шлюзам в releasing, отказ кода при чужих
+пользователях здесь, «забираю» при занятой зоне) и `st` по смене тела
+(session.py, такт живости runtime/scheduler/reserve.py).
 
 Зона, systemd-run/systemctl, часы и канал — подмены (как в test_reserve_hosting
 и tests/integration/_reserve_vote_common).
@@ -13,10 +13,9 @@
 резерва шлёт `up` основе по чужому шагу; токен резерва в окружении процесса
 открытия — бот основы в зоне читает его; юнит открытия, не остановленный при
 `back`, — процесс дописывает хранилище гостя уже после стирания; обрыв
-сессии шлюза, принятый за «шлюза нет», — Н4 и аварийный код по каждому
-переподключению; Т-РУ7 на каждое повторное открытие окна — шум у двух
-админов; шлюзы, снявшие пересылку в releasing, — пользователи основы теряют
-связь до конца возврата; просьба основе при занятой зоне — переезд поверх
+сессии шлюза, принятый за «шлюза нет», — окно аварийного кода со звуком у
+двух админов по каждому переподключению; шлюзы, снявшие пересылку в releasing, — пользователи основы теряют
+связь до конца возврата; «забираю» при занятой зоне — переезд поверх
 чужих пользователей.
 """
 from __future__ import annotations
@@ -28,12 +27,13 @@ from awgbot.domain.services.reserve import openproc
 from awgbot.infra import rsvzone
 from awgbot.runtime import pairlink
 from awgbot.runtime.scheduler import reserve as jobs
-from awgbot.util import livestep, rsvkeys
+from awgbot.util import rsvkeys
 from tests.conftest import FakeBot
 
 from tests.integration import _reserve_common as rc
 from tests.integration import _reserve_move as rm
-from tests.integration._reserve_vote_common import ADMIN, PEER_ADMIN, box, gw_sent, notes, sent
+from tests.integration._reserve_vote_common import (PEER_ADMIN, T_UP, Cand, box, code_window_outside, gw_sent,
+                                                    notes, sent)
 from tests.integration.test_reserve_hosting import _serving, _taking, host
 from tests.integration.test_reserve_jobs import _Sched
 
@@ -146,7 +146,7 @@ def test_a_zone_taken_down_outside_the_bot_ends_the_hosting_with_one_notice(host
     """`awg-bot reserve teardown` или перезагрузка хоста: бот резерва не
     должен вечно считать себя «serving» — idle, файервол заново, админу итог,
     шлюзам `state{idle}`. Пакет и доля второй стороны остаются (С11): основа
-    может быть всё ещё мертва, матрица откроет снова."""
+    может быть всё ещё мертва, кворум откроет снова."""
     svc = host.svc
     seen = []
     svc.reserve_gw_state_actions = lambda force=False: seen.append(force) or [("gw", 1, "state", svc._state_body())]
@@ -183,7 +183,7 @@ def test_a_back_req_while_releasing_without_a_replica_yet_waits(host):
     assert host.svc.reserve_back_req_in() == [], "реплики ещё нет — отдавать нечего, гость уже останавливается"
 
 
-# ── голосование: обрыв сессии шлюза ─────────────────────────────────────────
+# ── гостевой канал: обрыв сессии шлюза ──────────────────────────────────────
 
 @pytest.fixture()
 def hermetic(box, tmp_path, monkeypatch):
@@ -195,93 +195,37 @@ def hermetic(box, tmp_path, monkeypatch):
     return box
 
 
-def test_a_closed_gateway_session_is_a_suspicion_not_an_absence(hermetic):
-    box = hermetic
-    box.primary(False)
-    box.hello(1, sees=True)
-    assert box.case == "2"
-    box.gone(1)
-    assert box.case == "2", "обрыв сессии сразу дал «шлюза нет»"
-    box.advance(30)
-    box.tick()
-    assert box.case == "2", "шлюз выбыл раньше окна живости (suspect + probe)"
-    box.advance(30)
-    box.tick()
-    assert box.case == "H4", "шлюз не вернулся за окно живости — а набор его держит"
-
-
-def test_a_gateway_that_reconnects_in_the_window_changes_nothing(hermetic):
-    box = hermetic
-    box.primary(False)
-    box.hello(1, sees=True)
-    box.gone(1)
-    box.advance(20)
-    box.hello(1, sees=True)
-    box.advance(60)
-    acts = box.tick()
-    assert box.case == "2" and not notes(acts), "переподключение шлюза дало Н4"
-
-
-# ── Н4: один раз на эпизод ──────────────────────────────────────────────────
-
-def _code_notes(acts) -> list:
-    return [n for n in notes(acts) if n.tg_id in (ADMIN, PEER_ADMIN) and "код" in n.text.lower()
-            and "закрыт" not in n.text.lower()]
-
-
-def test_h4_is_told_once_per_episode_even_when_the_window_closes_and_opens_again(hermetic):
-    """Основа лежит; шлюз на минуту вернулся (случай 2 — окно закрылось) и
-    снова пропал: это тот же эпизод — Т-РУ7/7б второй раз не приходят,
-    окно просто открывается снова."""
-    box = hermetic
+def _seen_by_one_gateway(box) -> Cand:
+    """Свой «не вижу», шлюз 1 «Beta» видит основу, шлюз 2 молчит — окна кода нет."""
     box.peer_admin_opened()
-    box.primary(False)
-    first = box.tick()
-    assert box.case == "H4" and len(_code_notes(first)) == 2, notes(first)
-    box.hello(1, sees=True)
-    assert box.case == "2" and not box.s.reserve_code_window()["open"]
-    box.gone(1)
-    box.advance(60)
-    again = box.tick()
-    assert box.case == "H4" and box.s.reserve_code_window()["open"], "окно кода не открылось снова"
-    # админ основы узнаёт, что окно снова открыто, — одной тихой строкой; админ резерва — ничего
-    got = _code_notes(again)
-    assert [n.tg_id for n in got] == [PEER_ADMIN] and got[0].silent, \
-        f"повторное открытие окна в том же эпизоде: {[(n.tg_id, n.silent, n.text) for n in got]}"
+    c = Cand(box)
+    c.b.gone(2)
+    c.own("uns")
+    c.view(1, "see")
+    c.tick()
+    assert not box.s.reserve_code_window()["open"], "подготовка: окно кода при видящем шлюзе"
+    return c
 
 
-def test_a_new_episode_is_told_again(hermetic):
-    box = hermetic
-    box.peer_admin_opened()
-    box.primary(False)
-    box.tick()
-    box.primary(True)
-    box.tick()                                              # основа вернулась — эпизод кончился
-    box.s.__dict__["_reserve_liveness"] = livestep.Liveness(state="down")
-    box.s.rsv_update("rsv_peer_state", down_since="2026-10-21T05:40:00+03:00")
-    acts = box.tick()
-    assert box.case == "H4" and len(_code_notes(acts)) == 2, "новый эпизод Н4 без уведомлений"
 
 
 def test_the_code_is_refused_while_my_own_clients_are_at_the_other_server(hermetic):
     box = hermetic
     box.peer_admin_opened()
-    box.primary(False)
-    box.tick()
+    code_window_outside(Cand(box))
     box.s.reserve_set_out("away")
     res = box.s.reserve_code_in(PEER_ADMIN, CODE)
     assert not res["ok"] and not box.launched, "код открыл пакет поверх отъезда моих пользователей"
     assert any("не на этом сервере" in n.text for n in notes(res.get("actions"))), res
 
 
-def test_the_opening_by_points_writes_launching_before_the_launch(hermetic):
+def test_the_opening_by_the_code_writes_launching_before_the_launch(hermetic):
     box = hermetic
     seen = []
     real = box._launch
     box.s._rsvopen_launch = lambda payload: (seen.append(rsvzone.open_status().get("step")), real(payload))
     box.peer_admin_opened()
-    box.primary(False)
-    box.tick()
+    code_window_outside(Cand(box))
     assert box.s.reserve_code_in(PEER_ADMIN, CODE)["ok"]
     assert seen == ["launching"], f"open.status на момент запуска: {seen}"
 
@@ -294,110 +238,36 @@ def test_gateways_keep_serving_until_the_return_is_over(hermetic, inn, want):
     """В releasing пользователи основы ещё здесь: шлюзы, снявшие пересылку, оставили
     бы их без РФ-части до конца возврата."""
     box = hermetic
-    box.hello(1, sees=True)
+    box.hello(1)
     box.s.reserve_set_in(inn, gen=3)
     got = gw_sent(box.s.reserve_gw_state_actions(force=True), "state")
     assert got and got[0][1]["state"] == want, f"{inn}: {got}"
 
 
-# ── случаи 3/Н3 при занятой зоне ────────────────────────────────────────────
+# ── «забираю» при занятой зоне ──────────────────────────────────────────────
 
-DAMPER = 15 * 60
-
-
-def _run(box, seconds: float, step: float = 5) -> list[tuple]:
-    acts, t = [], 0.0
-    while t < seconds:
-        box.advance(step)
-        t += step
-        if int(t) % 30 == 0:
-            box.keepalive()
-        acts += box.tick()
-    return acts
+def _majority(c) -> list[tuple]:
+    c.own("uns")
+    c.view(1, "uns")
+    c.view(2, "uns")
+    return c.tick() + c.run(T_UP + 5)
 
 
-@pytest.mark.parametrize("busy, code, why", [
-    (lambda s: s.reserve_set_in("serving"), "zone_busy", "зона занята"),
-    (lambda s: s.reserve_set_out("away"), "mine_away", "мои пользователи не на этом сервере")])
-def test_case_3_neither_asks_nor_needs_while_the_zone_is_busy(hermetic, busy, code, why):
-    box = hermetic
-    box.primary(True)
-    box.hello(1, sees=False)
-    box.hello(2, sees=False)
-    busy(box.s)
-    acts = _run(box, DAMPER + 180)
-    assert not sent(acts, "ask") and not gw_sent(acts, "need"), f"просьбы при «{why}»: {acts}"
-    # в состоянии — код (его сравнивают при снятии), на экране — слова
-    assert box.s.rsv_get("rsv_view")["rf"].get("blocked") == code, "в состоянии метка не кодом"
-    line = box.s.reserve_rf_line()
-    assert line.startswith("⚠️") and line.endswith(why) and code not in line, line
+def test_the_take_is_refused_while_my_own_users_are_away_and_the_card_says_why(hermetic):
+    c = Cand(hermetic)
+    hermetic.s.reserve_set_out("away")
+    acts = _majority(c)
+    assert not gw_sent(acts, "qtake") and not sent(acts, "ask"), f"«забираю» при моих пользователях не здесь: {acts}"
+    assert hermetic.s.rsv_get("rsv_view").get("auto_block") == "мои пользователи не на этом сервере"
 
 
-@pytest.mark.parametrize("legacy", ["зона занята", "мои клиенты не на этом сервере"])
-def test_a_block_written_as_text_by_the_previous_release_is_lifted_when_free(hermetic, legacy):
-    """Состояние, записанное выпуском до кодов, лежит в БД текстом. Если
-    снятие узнаёт только коды, после обновления метка висит вечно: карточка
-    пишет «переезд не идёт», а демпфер, дойдя до просьбы, снова и снова
-    упирается в чужую метку — пользователи основы без РФ-доступа."""
-    box = hermetic
-    box.primary(True)
-    box.hello(1, sees=False)
-    box.hello(2, sees=False)
-    _run(box, 30)
-    assert box.case == "3", f"случай не 3: {box.case}"
-    rf = dict(box.s.rsv_get("rsv_view").get("rf") or {})
-    assert rf.get("since"), f"случай 3 не начат: {rf}"
-    rf["blocked"] = legacy
-    box.s.rsv_update("rsv_view", rf=rf)
-    box.tick()
-    got = box.s.rsv_get("rsv_view")["rf"].get("blocked")
-    assert got == "", f"метка прежнего выпуска «{legacy}» не снята при свободной зоне: {got!r}"
-    assert legacy not in box.s.reserve_rf_line()
-
-
-def test_a_foreign_auto_block_reason_shows_on_the_card_as_is(hermetic):
-    """Причины reserve_auto_block (готовность, пауза, интервал) лежат текстом и
-    показываются как есть; подстановка слов по коду не должна их терять или
-    подменять — иначе админ не узнает, почему переезд не идёт."""
-    box = hermetic
-    box.primary(True)
-    box.hello(1, sees=False)
-    box.hello(2, sees=False)
-    _run(box, 30)
-    reason = "между автоматическими переездами не меньше 30 мин"
-    rf = dict(box.s.rsv_get("rsv_view").get("rf") or {})
-    rf["blocked"] = reason
-    box.s.rsv_update("rsv_view", rf=rf)
-    line = box.s.reserve_rf_line()
-    assert line.startswith("⚠️") and line.endswith(f"переезд не идёт: {reason}"), line
-
-
-def test_after_the_zone_frees_the_damper_still_counts_the_case(hermetic):
-    """Случай 3 начался, когда зона была занята, и через минуту зона
-    освободилась: просьба основе — не раньше полного демпфера, а не сразу."""
-    box = hermetic
-    box.primary(True)
-    box.s.reserve_set_in("serving")
-    box.hello(1, sees=False)
-    box.hello(2, sees=False)
-    _run(box, 60)
-    box.s.reserve_set_in("idle")
-    early = _run(box, 5 * 60)
-    assert not sent(early, "ask"), "просьба основе сразу после освобождения зоны — демпфер пропущен"
-    assert "зона занята" not in box.s.reserve_rf_line(), "зона свободна, а карточка всё пишет «зона занята»"
-
-
-def test_the_tail_relay_does_not_hold_the_zone_busy_for_case_3(hermetic):
+def test_the_tail_relay_does_not_hold_the_zone_busy_for_the_take(hermetic):
     """Пересылка хвоста (relay) уступает новому переезду: зона свободна,
-    случай 3 после демпфера просит основу, как при idle."""
-    box = hermetic
-    box.primary(True)
-    box.hello(1, sees=False)
-    box.hello(2, sees=False)
-    box.s.reserve_set_in("relay")
-    acts = _run(box, DAMPER + 180)
-    assert sent(acts, "ask"), "relay держит зону занятой — пользователи основы без РФ-доступа до конца хвоста"
-    assert "зона занята" not in box.s.reserve_rf_line()
+    большинство «нет» забирает, как при idle."""
+    c = Cand(hermetic)
+    hermetic.s.reserve_set_in("relay")
+    acts = _majority(c)
+    assert gw_sent(acts, "qtake") and sent(acts, "ask"), "relay держит зону занятой — пользователи основы без VPN-бота"
 
 
 # ── st по смене ─────────────────────────────────────────────────────────────
@@ -441,7 +311,7 @@ async def test_the_liveness_job_sends_st_on_a_change_and_again_after_a_failed_se
     monkeypatch.setattr(pairlink, "send", send)
     monkeypatch.setattr(pairlink, "online", lambda: True)
     monkeypatch.setattr(svc, "reserve_liveness_tick", lambda now=None: (None, []))
-    monkeypatch.setattr(svc, "reserve_vote_tick", lambda: [])
+    monkeypatch.setattr(svc, "reserve_gwguest_tick", lambda: [])
     monkeypatch.setattr(svc, "quorum_tick", lambda: [])          # кворум — своим тактом, здесь только st
     monkeypatch.setattr(svc, "quorum_runtime_plan", lambda: {"responder": None, "probes": {}})
     sched = _Sched()
@@ -467,7 +337,7 @@ async def test_the_liveness_job_sends_no_st_without_the_pair_channel(mv, monkeyp
     monkeypatch.setattr(pairlink, "send", send)
     monkeypatch.setattr(pairlink, "online", lambda: False)
     monkeypatch.setattr(mv.svc, "reserve_liveness_tick", lambda now=None: (None, []))
-    monkeypatch.setattr(mv.svc, "reserve_vote_tick", lambda: [])
+    monkeypatch.setattr(mv.svc, "reserve_gwguest_tick", lambda: [])
     monkeypatch.setattr(mv.svc, "quorum_tick", lambda: [])
     monkeypatch.setattr(mv.svc, "quorum_runtime_plan", lambda: {"responder": None, "probes": {}})
     sched = _Sched()
