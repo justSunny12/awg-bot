@@ -127,13 +127,15 @@ def test_a_dead_channel_drops_the_no_like_silence():
     assert _first(ev, "take") == T0 + 301 + T.up_s
 
 
-def test_a_drop_without_a_prior_ask_sends_no_release():
+def test_a_drop_without_a_prior_ask_still_releases():
+    """«Нет» упало ниже половины без опроса — `rel` всё равно: у шлюзов могут
+    висеть обязательства «нет» по qview, у вызывающего — окно кода и исполнение."""
     c = _cand(2)
     c.set_own("uns", T0)
     c.view_in("a1", "uns", T0)
     c.tick(T0)
     c.view_in("a1", "see", T0 + 10)
-    assert c.tick(T0 + 10) == [], "qrel без опроса"
+    assert c.tick(T0 + 10) == ["rel"], "«нет» ниже половины без rel"
 
 
 def test_take_is_given_once():

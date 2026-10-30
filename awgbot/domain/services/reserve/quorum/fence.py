@@ -63,7 +63,17 @@ class ReserveQuorumFenceMixin:
                                                  text=rn.quorum_fenced(name, y, v, fenced["since"]))])]
             return []
         if act == "unfence":
-            meta = self.db.jrn_unfence(why="кворум: да %d из %d" % (y, v))
+            why_u = "кворум: да %d из %d" % (y, v)
+            meta_now = self.db.jrn_meta()
+            if meta_now["holder"] == "peer" and self.__dict__.pop("_quo_adopted", False):
+                # эпоху принял по пробе (кандидат забирал), а большинство снова со мной — эпоха здесь, +1
+                meta = self.db.jrn_pass(holder="self", role="holder", why=why_u, fork_i=int(meta_now["applied"]))
+                self.db.jrn_tail_drop_held()
+                if meta is not None and hasattr(self, "reserve_follow_clear"):
+                    self.reserve_follow_clear()
+                log.warning("кворум: большинство «да» снова здесь — эпоха %s здесь", (meta or meta_now)["epoch"])
+            else:
+                meta = self.db.jrn_unfence(why=why_u)
             self.__dict__["_quo_fenced"] = False
             told = bool(fenced.get("told"))
             if fenced:
@@ -99,9 +109,8 @@ class ReserveQuorumFenceMixin:
             return
         if meta is not None:
             self.__dict__["_quo_fenced"] = False
+            self.__dict__["_quo_adopted"] = True              # страховка такта эпоху не вернёт — вернёт правило лидера
             log.warning("кворум: эпоха %s у %s — здесь следование", e, who)
-            if hasattr(self, "reserve_follow_clear"):
-                pass
 
     # ── плановая пауза ──────────────────────────────────────────────────────
     def reserve_quorum_pause_actions(self, seconds: int = 300) -> list[tuple]:

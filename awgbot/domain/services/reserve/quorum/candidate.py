@@ -122,12 +122,13 @@ class ReserveQuorumCandidateMixin:
         return [("gw", slot, kind, body)]
 
     def _quorum_rel(self, c: Candidate) -> list[tuple]:
-        """«Нет» ушло ниже половины или открытие не пускают: `qrel` всем, кто говорил «нет»."""
+        """«Нет» ушло ниже половины или открытие не пускают: `qrel` всем голосующим с
+        живым каналом — обязательство «нет» держит и тот, кто снова видит лидера."""
         e = self._quorum_known_e(c)
         out: list[tuple] = []
         for node in c.voters:
             vt = c.votes.get(node)
-            if vt is not None and vt.w == "uns":
+            if vt is not None and vt.alive:
                 out += self._quorum_to_gw(node, "qrel", {"l": c.l, "e": e})
         self.__dict__.pop("_quo_exec", None)
         if self.reserve_code_window()["open"] and hasattr(self, "_code_window"):

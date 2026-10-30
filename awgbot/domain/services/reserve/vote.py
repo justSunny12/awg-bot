@@ -237,7 +237,8 @@ class ReserveVoteMixin:
                 self.rsv_update("rsv_view", voters={str(s): v for s, v in views.items()}, absent=self._absent_slots())
         actions += self._view_to_gateways()
         actions += self._view_to_primary(case)
-        actions += self._code_window(case)
+        if not quorum:
+            actions += self._code_window(case)                # под кворумом окно кода ведёт кандидат
         if case in MOVE_CASES:
             actions += self._auto_move(case, views)
         elif case != "3" and self.rsv_get("rsv_view").get("need"):

@@ -177,6 +177,10 @@ class ReserveEpochMixin:
             meta_now = self.db.jrn_meta()
             if meta_now["holder"] == "self" and meta_now["role"] == "follower":
                 return                                        # ограждение кворума (4.2.0, jrn_fence): снимает только jrn_unfence
+            if self.reserve_out() != "home":
+                self.__dict__.pop("_quo_adopted", None)
+            elif meta_now["holder"] == "peer" and self.__dict__.get("_quo_adopted") and self._quorum_rules_home():
+                return                                        # эпоха принята по кворуму (jrn_adopt): вернёт правило лидера
             applied = int(meta_now["applied"])
             prev_e = int(meta_now["epoch"]) if meta_now["holder"] == "peer" else 0
             meta = self.db.jrn_pass(holder="self", role="holder", why=why, fork_i=applied)   # его события — по applied

@@ -9,8 +9,8 @@ candidate.py — часть пакета quorum: правило кандидат
 быстрый — счёт для карточки и ничьей). Свой взгляд `see` при «нет»
 шлюзов > v/2 — случай 3: ждём T_up_rf; свой взгляд стал `uns` в tb —
 забираем не раньше min(начало + T_up_rf, tb + T_up). Любое «вижу» или
-молчание, роняющее «нет» до ≤ v/2, — таймер сначала и `qrel` тем, кого
-опрашивали. Решение `take` — когда «нет» > v/2 держится T_up; предусловия
+молчание, роняющее «нет» до ≤ v/2, — таймер сначала и `rel` (вызывающий шлёт
+`qrel` голосующим). Решение `take` — когда «нет» > v/2 держится T_up; предусловия
 открытия проверяет вызывающий (`blocked`). Ничья: v чётно, «да» = «нет» =
 v/2 без молчащих дольше T_tie — эпизод; ничьей нет ≥ `tie_clear_s` — отбой.
 
@@ -145,10 +145,9 @@ class Candidate:
         elif self.no_since is not None or self.rf_since is not None:
             self.no_since = self.rf_since = None
             self.decided = False
-            if self.asked_at is not None:
-                out.append("rel")
-                self.asked_at = None
-                self.asked.clear()
+            out.append("rel")                                # и без опроса: обязательства «нет», окно кода, исполнение
+            self.asked_at = None
+            self.asked.clear()
         # опрос: свой «не вижу» и хотя бы одно «нет» шлюза — спросить остальных (и при
         # большинстве тоже: лишний, но быстрый — счёт для карточки и ничьей)
         if self.own == "uns" and self.gateway_no() >= 1 and not self.decided:
