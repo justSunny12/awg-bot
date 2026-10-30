@@ -103,10 +103,6 @@ class InboundMixin:
                 # Просим полный снимок и начинаем счёт заново.
                 await self.send(gw.id, "ask", {"what": "snap"})
             return
-        if kind == "ping":
-            # проба живости сервера по подозрению шлюза (резерв): ответ тем же нонсом
-            await self.send(gw.id, "pong", {"n": str(msg.get("n") or "")[:32]})
-            return
         if kind == "qview":
             # кворум: взгляд своего шлюза на мою линию, точка ключа кворума
             if hasattr(self.services, "reserve_quorum_link_in"):

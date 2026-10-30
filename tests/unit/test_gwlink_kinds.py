@@ -165,8 +165,6 @@ _SERVER_REFS: dict[str, tuple[dict | None, int, str]] = {
     "join_ok": ({"box": "ab" * 72}, gwlink.PAD_DELTA, "950f8e85c412be152246d4727dd0379fa490cff09302415cc137131833069db4"),
     "join_done_ok": ({"id": "0123456789abcdef"}, gwlink.PAD_DELTA,
                      "ae20782dcb00c8f35465397e169b7e4158f1e6a4b6bfe18edea118170a12e9ff"),
-    "pong": ({"n": "0123456789abcdef"}, gwlink.PAD_DELTA,
-             "2b8cb703253c7597c34e1003c038422492a82560be43169a290dbbaa68c35fdd"),
 }
 
 _CLIENT_REFS: dict[str, tuple[dict | None, int, str]] = {

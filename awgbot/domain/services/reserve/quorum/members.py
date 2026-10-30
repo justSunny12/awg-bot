@@ -217,6 +217,14 @@ class ReserveQuorumMembersMixin:
     def reserve_quorum_active(self) -> bool:
         return not self.reserve_quorum_off_reasons()
 
+    def reserve_quorum_act_leftover(self) -> None:
+        """Ключ `app.reserve.quorum.act` снят: оставшийся в app.yaml не читается — строка журнала один раз."""
+        if self.__dict__.get("_quo_act_told"):
+            return
+        self.__dict__["_quo_act_told"] = True
+        if settings.get("app.reserve.quorum.act", None) is not None:
+            log.warning("кворум: reserve.quorum.act в app.yaml больше не читается — решения по кворуму всегда")
+
     def reserve_quorum_decisions(self) -> bool:
         """Голосов хватает для решений (v ≥ 2: есть шлюз в составе); при v = 1 линия живёт
         только зондом, счётом и окном кода (Р4)."""

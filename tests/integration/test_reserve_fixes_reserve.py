@@ -207,26 +207,6 @@ def _seen_by_one_gateway(box) -> Cand:
     return c
 
 
-def test_a_closed_gateway_session_is_a_suspicion_not_an_absence(hermetic):
-    """Обрыв сессии видящего шлюза — подозрение на окно живости (suspect + probe),
-    а не «шлюза нет»: агент переподключается с отступом, и окно кода со звуком
-    у двух админов на каждое переподключение — шум, после которого настоящей
-    аварии уже не верят."""
-    c = _seen_by_one_gateway(hermetic)
-    c.b.gone(1)
-    acts = c.tick() + c.run(30)
-    assert not hermetic.s.reserve_code_window()["open"] and not notes(acts), \
-        f"обрыв сессии видящего шлюза сразу открыл окно кода: {[n.text for n in notes(acts)]}"
-    acts = c.run(40)
-    assert hermetic.s.reserve_code_window()["open"], "шлюз не вернулся за окно живости — окно кода не открылось"
-
-
-def test_a_gateway_that_reconnects_in_the_window_changes_nothing(hermetic):
-    c = _seen_by_one_gateway(hermetic)
-    c.b.gone(1)
-    acts = c.tick() + c.run(20)
-    acts += c.b.hello(1) + c.view(1, "see") + c.run(60)
-    assert not notes(acts), f"переподключение шлюза дало уведомления: {[n.text for n in notes(acts)]}"
 
 
 def test_the_code_is_refused_while_my_own_clients_are_at_the_other_server(hermetic):

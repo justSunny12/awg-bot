@@ -33,7 +33,7 @@ class ReserveCodeWindowMixin:
         return {"open": bool(cw.get("open")), "since": str(cw.get("since") or "")}
 
     def reserve_code_window_set(self, open_: bool, *, since: str = "", n: int = 0, v: int = 0, t: int = 0,
-                                by: str = "quorum", off_why: str = "") -> list[tuple]:
+                                by: str = "quorum", off_why: str = "", quiet: bool = False) -> list[tuple]:
         """Окно кода кандидата: открыть — Т-К21 админу резерва и (если он открывал бота)
         админу основы с кнопкой кода; тот же эпизод снова — админу основы без звука;
         закрыть — взгляды вернулись (Т-РН3 админу основы, если его звали)."""
@@ -69,7 +69,7 @@ class ReserveCodeWindowMixin:
                                           "episode": str(cw.get("episode") or ""), "told": bool(cw.get("told"))})
         log.info("кворум: приём аварийного кода закрыт (%s)", by)
         pid = self.reserve_peer_admin_id()
-        if cw.get("told") and pid:
+        if cw.get("told") and pid and not quiet:
             return [("notify", [Notification(tg_id=pid, text=rn.code_window_closed(primary, by, str(config.SERVER_NAME or "")))])]
         return []
 
@@ -83,10 +83,12 @@ class ReserveCodeWindowMixin:
         cw = dict(self.rsv_get("rsv_view").get("code") or {})
         if line.get("active"):
             if cw.get("open") and cw.get("by") == "link":
-                return self.reserve_code_window_set(False, by="link")   # кворум второй стороны снова ведёт сам
+                return self.reserve_code_window_set(False, by="link", quiet=True)   # дальше ведёт кандидат (Т-К21 — своим словом)
             return []
         down = self.reserve_peer_seen() == "down"
         if down and not cw.get("open"):
+            if self.reserve_open_block():
+                return []                                     # код ничего не откроет: готовность, зона, мои пользователи не здесь
             since = str(self.reserve_down_since() or "")
             up_s = int(self.reserve_quorum_timing().up_s) if hasattr(self, "reserve_quorum_timing") else 100
             try:
@@ -227,6 +229,6 @@ def rn_off_why(codes: list) -> str:
             return "цифры времени не сходятся"
         if str(c).startswith("overlap:"):
             return "блок зондов пересекается с сетью"
-        if str(c).startswith("big:"):
+        if str(c).startswith("slot:"):
             return "номер слота шлюза больше допустимого"
     return "голосование не включено"

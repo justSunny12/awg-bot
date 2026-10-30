@@ -246,13 +246,13 @@ def test_qneed_while_not_seeing_and_the_same_generation_gives_the_point(ag):
     ag.uns()
     acts = ag.word("qneed", q_gen=Q_GEN, since="2026-10-30T10:05:00+03:00")
     assert acts == [("guest", "qshare", {"l": "a", "q_gen": Q_GEN, "x": 2, "y": POINT_Y})], acts
-    assert ag.section().get("share_given_at"), "отметка отданной точки не записана"
+    assert json.loads((ag.tmp / "reserve.json").read_text(encoding="utf-8")).get("share_given_at"), "отметка отданной точки не записана"
 
 
 def test_qneed_while_seeing_is_refused(ag):
     ag.see()
     assert ag.word("qneed", q_gen=Q_GEN) == [], "точка отдана при видимой основе"
-    assert not ag.section().get("share_given_at")
+    assert not json.loads((ag.tmp / "reserve.json").read_text(encoding="utf-8")).get("share_given_at")
 
 
 def test_qneed_of_another_generation_is_refused(ag):
@@ -263,10 +263,10 @@ def test_qneed_of_another_generation_is_refused(ag):
 def test_the_share_mark_survives_a_new_document(ag):
     ag.uns()
     ag.word("qneed", q_gen=Q_GEN)
-    mark = ag.section()["share_given_at"]
+    mark = json.loads((ag.tmp / "reserve.json").read_text(encoding="utf-8"))["share_given_at"]
     sec = ag.section()
     ag.svc.quorum_apply({k: sec[k] for k in ("l", "g", "members", "t", "port", "probes", "point", "e")})
-    assert ag.section().get("share_given_at") == mark, "новый раздел документа стёр отметку отданной точки"
+    assert json.loads((ag.tmp / "reserve.json").read_text(encoding="utf-8")).get("share_given_at") == mark, "новый раздел документа стёр отметку отданной точки"
 
 
 # ── пауза и эпоха ───────────────────────────────────────────────────────────

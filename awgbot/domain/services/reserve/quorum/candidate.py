@@ -130,7 +130,8 @@ class ReserveQuorumCandidateMixin:
         if want and not cw.get("open"):
             return self.reserve_code_window_set(True, since=self._quorum_no_since(c), n=len(c.no_nodes()), v=c.v, t=qm.threshold(c.v))
         if not want and cw.get("open") and cw.get("by") == "quorum":
-            return self.reserve_code_window_set(False)
+            # голосов хватило — переезд идёт сам; при v = 1 — второй сервер снова видит; иначе — большинство
+            return self.reserve_code_window_set(False, by="taken" if maj else ("seen" if c.v < 2 else "quorum"))
         return []
 
     def _quorum_known_e(self, c: Candidate) -> int:
@@ -154,8 +155,9 @@ class ReserveQuorumCandidateMixin:
             out += self._quorum_to_gw(node, "qrel", {"l": c.l, "e": e})
         c.unpledge(pledged)
         self.__dict__.pop("_quo_exec", None)
-        if self.reserve_code_window()["open"] and hasattr(self, "_code_window"):
-            out += self._code_window("6")                     # окно кода — закрыть
+        cw = dict(self.rsv_get("rsv_view").get("code") or {})
+        if cw.get("open") and cw.get("by") == "quorum":
+            out += self.reserve_code_window_set(False, by="quorum")   # окно кода решения — закрыть
         return out
 
     # ── исполнение ──────────────────────────────────────────────────────────

@@ -19,8 +19,6 @@ class DispatchMixin:
             log.warning("канал линка: сообщение «%s» не обработано: %s", msg.get("t"), e)
 
     async def _dispatch(self, msg: dict) -> None:
-        if msg.get("t") == "pong":
-            return                                        # ответ на пробу канала; взгляд на сервер — зонд кворума
         if msg.get("t") == "lists_part":
             whole = self._collect_part(msg)
             if whole is not None:
