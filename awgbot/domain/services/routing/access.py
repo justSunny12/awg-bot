@@ -54,10 +54,14 @@ class RoutingAccessMixin:
         первой фразой, до объяснения эффекта. Подсказки про файл конфигурации нет
         (решение пользователя 17.10.2026): параметры линка меняются только по
         каналу, разъехаться они могут лишь нештатно — аварийный путь в README."""
-        who = f" {self._gw_link(active)}" if active is not None else ""
         tail = (" " + self._txt_rt_standby_also_down(also)) if also else ""
-        return (f"🔴 Шлюз{who} не отвечает.{tail}\n"
-                + self._rt_effect_line() + self._rt_rfpeer_tail())
+        if active is not None and hasattr(self, "_gw_virtual") and self._gw_virtual(active):
+            name = self._gw_display_h(active)
+            head = f"🔴 {name[:1].upper() + name[1:]} не отвечают.{tail}\n"   # «Шлюзы «Beta» не отвечают»
+        else:
+            who = f" {self._gw_link(active)}" if active is not None else ""
+            head = f"🔴 Шлюз{who} не отвечает.{tail}\n"
+        return head + self._rt_effect_line() + self._rt_rfpeer_tail()
 
     def _rt_rfpeer_tail(self) -> str:
         """Т-РТ9: почему запасного РФ-доступа через второй сервер нет (пара есть, согласия нет)."""
