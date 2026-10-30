@@ -492,3 +492,52 @@ def test_a_holder_peer_not_adopted_by_the_quorum_is_not_taken_back(q3):
         q3.probe_e("a1", e + 1)
         q3.s.reserve_quorum_leader_tick(q3.t)
     assert q3.meta() == ("peer", "follower", e + 1), f"«да» вернули к записи держателя peer без кворума: {q3.meta()}"
+
+
+# ── принятая эпоха дома — переезд мимо меня ─────────────────────────────────
+
+def _adopt_at_home(q3) -> int:
+    e = q3.s.reserve_quorum_epoch()
+    q3.t += W + 1
+    q3.s.reserve_quorum_leader_tick(q3.t)
+    q3.t += 20
+    q3.s.reserve_quorum_leader_tick(q3.t)
+    q3.probe_e("a1", e + 1)
+    assert q3.meta() == ("peer", "follower", e + 1), "предпосылка: эпоха по пробе не принята"
+    assert q3.s.reserve_out() == "home", "предпосылка: основа не дома"
+    return e
+
+
+def test_an_adopted_epoch_at_home_without_the_peers_word_moves_me_to_away(q3, monkeypatch):
+    """Кандидат забрал (голосующие под e + 1), основа приняла эпоху, а второй сервер
+    молчит: умер сразу после взятия или основа лежала (отметка принятия на диске).
+    Дома с держателем `peer` основа следовала бы бессрочно — Q1 о своём боте на
+    резерве и «⚠️ Вернуть без …» есть только в away: такт переводит в away тем же
+    правилом, что `in = serving`."""
+    _adopt_at_home(q3)
+    monkeypatch.setattr(q3.s, "reserve_peer_seen", lambda: "down")
+    q3.s.reserve_out_tick()
+    assert q3.s.reserve_out() == "away", "принятая эпоха без слова второй стороны оставила основу дома"
+    assert q3.meta()[0] == "peer", "переход в away тронул держателя"
+    assert q3.s.reserve_quorum_adopted(), "отметка принятия снята переходом"
+    assert q3.s.reserve_quorum_leader_host() != "a", "в away лидер линии — бот основы на резерве (Q1 о нём)"
+
+
+def test_an_adopted_epoch_with_the_live_peer_idle_after_it_stays_home(q3, monkeypatch):
+    """Вторая сторона жива и после принятия говорит, что моих у неё нет (открытие
+    не состоялось): эпоху вернёт правило лидера за окно U — переезда нет."""
+    from awgbot.util import timeutil
+    _adopt_at_home(q3)
+    monkeypatch.setattr(q3.s, "reserve_peer_seen", lambda: "ok")
+    q3.s.rsv_update("rsv_peer_state", session=True, inn="idle", st_stale=False,
+                    at=timeutil.to_iso(timeutil.shift(timeutil.now(), 3600)))
+    q3.s.reserve_out_tick()
+    assert q3.s.reserve_out() == "home", "живая вторая сторона без моих пользователей — а основа ушла в away"
+
+
+def test_an_adopted_epoch_is_a_fact_for_the_automaton_only_under_the_quorum(q3, monkeypatch):
+    _adopt_at_home(q3)
+    monkeypatch.setattr(q3.s, "reserve_peer_seen", lambda: "down")
+    monkeypatch.setattr(q3.s, "_quorum_rules_home", lambda: False)
+    q3.s.reserve_out_tick()
+    assert q3.s.reserve_out() == "home", "без решений по кворуму принятая эпоха повела автомат"

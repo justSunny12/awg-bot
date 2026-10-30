@@ -49,7 +49,7 @@ T_UP = 100
 
 
 class _Away:
-    def __init__(self, mv, monkeypatch):
+    def __init__(self, mv, monkeypatch, *, away: bool = True):
         self.w = mv
         self.s = mv.svc
         self.seq = 0
@@ -67,8 +67,9 @@ class _Away:
         self.s.rsv_update("rsv_quorum", active={"l": "a", "g": 1, "members": list(MEMBERS)},
                           mine={"l": "a", "g": 1, "members": list(MEMBERS)})
         mv.rsv.gw = False
-        rm.go_away(self.s)
-        rm.st_in(self.s, **{"in": "serving"})
+        if away:
+            rm.go_away(self.s)
+            rm.st_in(self.s, **{"in": "serving"})
         self.clone = Voter("a", "a")                       # свой зонд к клону у резерва
         self.clone.view = "see"
         self.clone.epoch = 9
@@ -352,3 +353,31 @@ def test_without_my_line_there_is_no_correlation(corr):
     ips[2] = "203.0.113.77:51820"
     svc.rsv_update("rsv_quorum", active=None)
     assert svc.reserve_quorum_correlation() == []
+
+
+# ── принятая дома эпоха → away → аварийный возврат ──────────────────────────
+
+def test_an_epoch_adopted_at_home_with_a_dead_reserve_ends_in_a_forced_return(mv, monkeypatch):
+    """Кандидат забрал пользователей (голосующие под e + 1) и умер, не сказав `st`;
+    основа дома приняла эпоху по пробе шлюза. Такт переводит её в away, Q1 о своём
+    боте на резерве (клон не видит никто) — аварийный возврат: запись на себя,
+    Telegram, эпоха здесь. Без перехода в away основа следовала бы мёртвому
+    резерву бессрочно."""
+    aw = _Away(mv, monkeypatch, away=False)
+    s = aw.s
+    e = s.reserve_quorum_epoch()
+    monkeypatch.setattr(s, "reserve_peer_seen", lambda: "down")
+    aw.probe("a1", e=e + 1)
+    assert s.db.jrn_meta()["holder"] == "peer", "предпосылка: эпоха по пробе не принята"
+    assert s.reserve_out() == "home"
+    s.reserve_out_tick()
+    assert s.reserve_out() == "away", "принятая дома эпоха без слова резерва не повела автомат в away"
+    aw.clone.view = "uns"
+    aw.gw_view(1, "uns")
+    aw.gw_view(2, "uns")
+    acts = aw.tick() + aw.run(T_UP + 10)
+    assert ("take_home",) in acts, f"мёртвый резерв держит пользователей основы: {acts}"
+    meta = s.db.jrn_meta()
+    assert (meta["holder"], meta["role"]) == ("self", "holder"), f"после аварийного возврата запись не здесь: {meta}"
+    assert not s.reserve_quorum_adopted(), "отметка принятия пережила возврат"
+    assert s.rsv_get("rsv_out").get("await_merge"), "возврат без резерва не отмечен — реплика при встрече не вольётся"

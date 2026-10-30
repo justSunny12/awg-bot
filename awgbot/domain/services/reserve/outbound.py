@@ -216,9 +216,10 @@ class ReserveOutboundMixin:
             return self._tick_await_merge(out)
         if self.reserve_poll() == "away" and self._webhook_stuck(out, time.monotonic()):
             return [("take_home",)]                           # дома: вебхук не здесь, запись на мне, резерв молчит
-        if self._peer_serving_after_home(out, peer):          # то же правило, что у роли (journal/epoch)
-            # переезд прошёл мимо меня — пакет открыт не моим K (своего `go` не было): по долям или
-            # по коду; слово резерва (in_by) здесь не слушаем — поколение после возврата сменится
+        if self._peer_serving_after_home(out, peer) or self._quorum_adopted_past_me(out):
+            # переезд прошёл мимо меня (то же правило, что у роли, journal/epoch; под кворумом — и по
+            # принятой эпохе) — пакет открыт не моим K (своего `go` не было): по долям или по коду;
+            # слово резерва (in_by) здесь не слушаем — поколение после возврата сменится
             self.reserve_set_out("away", kind=str(peer.get("in_kind") or "dead"), step="", taken_at=timeutil.now_iso(),
                                  by="share", go_sent=False, gen=int((peer.get("pkg") or {}).get("gen") or 0),
                                  guest_stopped=False, await_merge=False,
@@ -227,6 +228,27 @@ class ReserveOutboundMixin:
             log.warning("резерв: «%s» несёт моих пользователей — я в состоянии away", self.reserve_peer_name())
             return [("live",)]
         return []
+
+    def _quorum_adopted_past_me(self, out: dict) -> bool:
+        """Кворум (4.2.0): эпоху держит вторая сторона по принятой пробе или `qstate` —
+        кандидат сказал голосующим «забираю», мои пользователи уходят к нему. Это тот же
+        факт, что `in = serving`, только раньше его `st` (или вовсе без него — резерв мог
+        умереть сразу после взятия, в том числе пока я лежал: отметка на диске). Дома с ним
+        основа следовала бы бессрочно: Q1 о своём боте на резерве и рычаг «⚠️ Вернуть без
+        …» есть только в away. Исключение — живая вторая сторона уже сказала после принятия,
+        что моих у неё нет: эпоху вернёт правило лидера (quorum/fence)."""
+        if out.get("await_merge") or not hasattr(self, "_quorum_rules_home") or not self._quorum_rules_home():
+            return False
+        adopted = dict(self.rsv_get("rsv_qlog").get("adopted") or {})
+        at = str(adopted.get("at") or "")
+        if not at or at <= str(out.get("since") or ""):
+            return False                                      # принято до перехода домой — остаток
+        try:
+            if self.db.jrn_meta()["holder"] != "peer":
+                return False
+        except Exception:                                     # noqa: BLE001
+            return False
+        return not self._quorum_peer_idle_fact(at)
 
     def _tick_leaving(self, out: dict) -> list[tuple]:
         step = str(out.get("step") or "pkg")
