@@ -5,9 +5,9 @@ AWG, взгляды её шлюзов — `qview` по живому гостев
 снятие `qrel`, решение — `qtake` всем «не видящим», затем просьба `ask{q}`
 лидеру, без ответа — точки `qneed` → `qshare` и процесс открытия по ящику
 кворума, точек нет — окно аварийного кода; на просьбу кворума лидер отдаёт
-эпоху путём кнопки (rfblock.reserve_ask_in, case "q").
+эпоху путём кнопки (quorum/inbound.reserve_ask_in, case "q").
 
-Мир — резерв «Alpha» (сторона `a`) в паре с «Beta» (tests/integration/
+Мир — резерв «Alpha» (сторона `a`) в паре с «Beta» (`Cand` из tests/integration/
 _reserve_vote_common.py): линия `b` с составом b, a, b1, b2 (голосующие у
 лидера `b` — a, b1, b2; v = 3, t = 2), шлюзы «Beta» — слоты 1 и 2 на гостевом
 канале. Свой взгляд кандидата — машина голосующего зонда `awgqbh` с
@@ -28,73 +28,15 @@ from __future__ import annotations
 import pytest
 
 from awgbot.core import settings
-from awgbot.domain.services.reserve.quorum import candidate as cand_mod
 from awgbot.util import rsvkeys
-from awgbot.util.quorum.voter import Voter
 
 from tests.integration import _reserve_common as rc
-from tests.integration._reserve_vote_common import box, gw_sent, sent
+from tests.integration._reserve_vote_common import (ASK, GW1_Y, GW2_Y, LINE, MEMBERS, NEED2, Q_GEN, QBOX, RF, RSV_Y, T_UP,
+                                                    Cand as _Cand, box, gw_sent, sent)
 
 pytestmark = pytest.mark.integration
 rsv = rc.rsv
-__all__ = ["box"]
-
-LINE = "b"
-MEMBERS = ["b", "a", "b1", "b2"]
-Q_GEN = 4
-RSV_Y = "ab" * rsvkeys.M_LEN               # заглушки точек: процесс открытия подменён
-GW1_Y = "cd" * rsvkeys.M_LEN
-GW2_Y = "ef" * rsvkeys.M_LEN
-QBOX = "00" * rsvkeys.BOX_LEN
-T_UP = 100
-ASK = 60
-NEED2 = 60                                  # 2 × NEED_RETRY_S
-RF = 900
-
-
-class _Cand:
-    def __init__(self, b, monkeypatch):
-        import types
-        self.b = b
-        self.s = b.s
-        monkeypatch.setattr(cand_mod, "time", types.SimpleNamespace(monotonic=b.clock.monotonic, time=b.clock.time))
-        settings.set_value("app.reserve.quorum.act", True)
-        self.s.rsv_update("rsv_peer_state", quo={"l": LINE, "g": 1, "members": list(MEMBERS), "active": True, "why": []})
-        assert self.s.reserve_quorum_side() == "a", "подготовка: резерв в тестах — сторона a"
-        acts = self.s.reserve_qkeys_in({"l": LINE, "m_gen": 1, "q_gen": Q_GEN, "t": 2, "x": rsvkeys.RESERVE_X,
-                                        "y": RSV_Y, "qbox": QBOX, "c_gen": 1, "cy": RSV_Y, "cbox": QBOX})
-        assert acts, "подготовка: точки линии b не приняты"
-        self.v = Voter(LINE, "a")
-        self.v.view = "see"
-        self.v.epoch = 7
-        self.s._qvoters[f"awgq{LINE}h"] = self.v
-        b.hello(1)
-        b.hello(2)
-
-    def own(self, w: str) -> None:
-        self.v.view = w
-
-    def view(self, slot: int, w: str, since: str = "") -> list[tuple]:
-        return self.s.reserve_guest_in(slot, "qview", {"l": LINE, "g": 1, "w": w, "e": 7,
-                                                       "since": since or f"2026-10-30T10:0{slot}:{len(w)}0+03:00"})
-
-    def share(self, slot: int, *, q_gen: int = Q_GEN, y: str = "") -> list[tuple]:
-        return self.s.reserve_guest_in(slot, "qshare", {"l": LINE, "q_gen": q_gen, "x": rsvkeys.gateway_x(slot),
-                                                        "y": y or {1: GW1_Y, 2: GW2_Y}[slot]})
-
-    def tick(self) -> list[tuple]:
-        return self.s.reserve_quorum_candidate_tick(self.b.clock.t)
-
-    def run(self, seconds: float, step: float = 5) -> list[tuple]:
-        acts: list[tuple] = []
-        n = int(seconds // step)
-        for _ in range(n):
-            self.b.advance(step)
-            acts += self.tick()
-        return acts
-
-    def stage(self) -> str:
-        return str((self.s.__dict__.get("_quo_exec") or {}).get("stage") or "")
+__all__ = ["box", "_Cand", "ASK", "LINE", "MEMBERS", "NEED2", "RF", "T_UP"]
 
 
 @pytest.fixture()
@@ -151,7 +93,7 @@ def test_majority_of_no_for_t_up_takes_and_asks_the_leader(c):
     assert all(b == {"l": LINE, "e": 7} for _, b in gw_sent(acts, "qtake")), gw_sent(acts, "qtake")
     asks = sent(acts, "ask")
     assert len(asks) == 1 and asks[0]["case"] == "q", "просьба лидеру по кворуму не ушла"
-    assert {v["slot"] for v in asks[0]["voters"]} == {1, 2}
+    assert set(asks[0]) == {"case", "since"}, f"в ask{{q}} поля сверх case и since (словарь пары их не пустит): {asks[0]}"
     assert c.stage() == "ask"
     assert not c.b.launched, "процесс открытия до ответа лидера"
 
@@ -285,14 +227,6 @@ def test_the_no_of_a_dead_gateway_channel_does_not_count(c):
     assert c.s.reserve_quorum_candidate_view()["no"] == 1
 
 
-def test_with_act_off_the_candidate_only_counts(c):
-    settings.set_value("app.reserve.quorum.act", False)
-    acts = _majority(c) + c.run(T_UP + ASK + NEED2 + 10)
-    assert acts == [], f"act=false: кандидат действует: {acts}"
-    assert c.s.reserve_quorum_candidate_view()["no"] == 3, "наблюдение: счёт для карточки не идёт"
-    assert not c.b.launched and not c.s.reserve_code_window()["open"]
-
-
 def test_hosting_her_users_there_is_no_candidate(c):
     c.s.reserve_set_in("serving")
     acts = _majority(c) + c.run(T_UP + 10)
@@ -354,7 +288,7 @@ SINCE = "2026-10-30T10:05:00+03:00"
 
 def test_the_leader_asked_by_the_quorum_hands_over_by_the_button_path(leader):
     svc, moves, _ = leader
-    acts = svc.reserve_ask_in("q", SINCE, [{"slot": 1, "see": False}])
+    acts = svc.reserve_ask_in("q", SINCE)
     assert acts == [("live",)], acts
     assert moves == [{"kind": "dead", "dead_since": SINCE}], "по просьбе кворума переезд не начат путём кнопки"
 
@@ -362,29 +296,62 @@ def test_the_leader_asked_by_the_quorum_hands_over_by_the_button_path(leader):
 def test_the_busy_leader_answers_busy_to_the_quorum(leader):
     svc, moves, state = leader
     state["why"] = "идёт переезд пользователей этого сервера"
-    acts = svc.reserve_ask_in("q", SINCE, [])
+    acts = svc.reserve_ask_in("q", SINCE)
     assert acts == [("send", "ask_no", {"reason": "busy"})], acts
     assert moves == [], "занятый лидер всё равно начал переезд"
     assert not [a for a in acts if a[0] == "notify"], "busy по кворуму — без уведомления"
 
 
-# ── матрица у линии с кворумом ──────────────────────────────────────────────
-
-def test_with_her_quorum_on_the_matrix_does_not_ask_a_share(c):
-    """Концепт «кворум» §3.8: у линии с включённым кворумом `decide`,
-    `_auto_move` и `_need_send` не зовутся — иначе рядом с правилом
-    кандидата идёт второй путь переезда по двум долям, без большинства."""
-    c.b.primary(False)
-    acts = c.b.seen(1, False) + c.b.tick()
-    assert not gw_sent(acts, "need"), f"матрица просит долю у линии с кворумом: {gw_sent(acts, 'need')}"
 
 
-def test_the_quorum_code_window_survives_the_matrix_tick(c):
-    """Окно кода, открытое правилом кандидата (свой «не вижу», точек нет), не
-    закрывает такт матрицы по её прежним взглядам (§3.8: условие окна у линии
-    с кворумом — только правило кандидата)."""
-    _points_stage(c)
-    c.run(NEED2)
-    assert c.s.reserve_code_window()["open"]
-    c.b.tick()
-    assert c.s.reserve_code_window()["open"], "такт матрицы закрыл окно кода, открытое кворумом"
+def test_an_ask_of_another_case_is_neither_answered_nor_acted_on(leader):
+    """`ask` знает только случай кворума `q`: прежние `3`/`nogw` (просьбы матрицы)
+    — ни переезда, ни ответа."""
+    svc, moves, _ = leader
+    for case in ("3", "nogw", "H4", ""):
+        assert svc.reserve_ask_in(case, SINCE) == [], f"ask{{{case}}} дал действия"
+    assert moves == [], "по просьбе матрицы начат переезд"
+
+
+# ── busy лидера: повтор просьбы ─────────────────────────────────────────────
+
+def test_a_busy_leader_is_asked_again_after_ask_seconds_up_to_three_times_then_points(c):
+    """`ask_no{busy}` — у лидера плановая пауза: кандидат ждёт `ask_seconds` и
+    просит снова, до трёх раз; третий «занят» — по точкам. Сразу по точкам —
+    переезд мимо живого лидера, который через минуту отдал бы эпоху сам."""
+    _taken(c)
+    asks = 1
+    for n in range(1, 4):
+        assert c.s.reserve_ask_no_in("busy") == []
+        early = c.run(ASK - 5)
+        assert not sent(early, "ask") and not gw_sent(early, "qneed"), f"повтор {n} раньше ask_seconds"
+        more = c.run(5)
+        if n < 3:
+            assert len(sent(more, "ask")) == 1 and sent(more, "ask")[0] == {"case": "q", "since": sent(more, "ask")[0]["since"]}, \
+                f"после «занят» {n} просьба не повторена: {more}"
+            assert c.stage() == "ask"
+            asks += 1
+        else:
+            assert not sent(more, "ask"), "после третьего «занят» просьба повторена ещё раз"
+            assert sorted(s for s, _ in gw_sent(more, "qneed")) == [1, 2], "после третьего «занят» — не по точкам"
+            assert c.stage() == "points"
+    assert asks == 3, "просьб лидеру не три"
+
+
+def test_busy_outside_the_ask_stage_changes_nothing(c):
+    _majority(c)
+    assert c.s.reserve_ask_no_in("busy") == []
+    assert "busy" not in (c.s.__dict__.get("_quo_exec") or {}), "«занят» без просьбы засчитан"
+    _taken(c)
+    c.run(ASK)
+    assert c.stage() == "points"
+    c.s.reserve_ask_no_in("busy")
+    assert c.stage() == "points" and not sent(c.run(ASK + 5), "ask"), "«занят» на стадии точек вернул просьбу"
+
+
+def test_without_the_pair_link_a_busy_leader_is_not_asked_again(c):
+    _taken(c)
+    c.s.reserve_ask_no_in("busy")
+    c.b.online = False
+    acts = c.run(ASK + 5)
+    assert not sent(acts, "ask") and gw_sent(acts, "qneed"), "без линка пары повтор просьбы вместо точек"

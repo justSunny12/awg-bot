@@ -134,8 +134,15 @@ class ReserveQuorumKeysMixin:
         if poly_on and not decide:
             with _LOCK:
                 self.rsv_update("rsv_qkeys", poly=[], t=0, disabled_at=timeutil.now_iso())
-            log.warning("кворум: голосование о «%s» выключено — многочлен и ящик кворума прочь, код прежний",
-                        str(config.SERVER_NAME or ""))
+            if m is None or not m.enabled:
+                # держатели точек (шлюзы) из состава ушли — их точки могли остаться у чужого: `M` и `K`
+                # заново (ящик кода пересобирается вокруг нового `M`), код прежний
+                self.reserve_new_generation("выключение голосования о сервере: держатели точек сняты", code=False)
+                log.warning("кворум: голосование о «%s» выключено — многочлен и ящик кворума прочь, M и K новые, код прежний",
+                            str(config.SERVER_NAME or ""))
+            else:
+                log.warning("кворум: голосование о «%s» выключено — многочлен и ящик кворума прочь, ключ и код прежние",
+                            str(config.SERVER_NAME or ""))
             return actions
         if poly_on and m is not None and int(self.reserve_qkeys().get("t") or 0) != max(2, m.t(m.l)):
             self._quorum_new_poly(m.t(m.l), f"порог {m.t(m.l)} по составу {m.g}")

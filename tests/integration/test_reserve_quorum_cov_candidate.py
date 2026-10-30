@@ -107,7 +107,8 @@ def test_a_gateway_seeing_again_closes_the_quorum_code_window_and_tells_the_peer
     cw = _code(c)
     assert not cw.get("open") and cw.get("closed_why") == "quorum", cw
     ns = notes(acts)
-    assert [n.tg_id for n in ns] == [rc.PEER_ADMIN] and "снова на связи" in ns[0].text, ns
+    assert [n.tg_id for n in ns] == [rc.PEER_ADMIN], ns
+    assert ns[0].text == "ℹ️ Большинство снова видит «Beta» — переезд не нужен", ns[0].text
 
 
 def test_the_closed_window_without_a_told_admin_says_nothing(c):
@@ -126,16 +127,37 @@ def test_no_code_window_while_hosting_or_taking(c):
     assert not _code(c).get("open"), "окно кода, когда открытие уже идёт"
 
 
-def test_the_window_reopens_for_a_new_episode(c):
+def test_the_window_reopened_in_the_same_episode_tells_only_the_peer_admin_silently(c):
+    """Эпизод — момент своего «не вижу»: окно закрыл шлюз «вижу», его сессия
+    оборвалась — голосов снова нет, окно открыто снова, админу резерва повтора нет, админу основы — без
+    звука (код ему снова нужен)."""
     c.b.peer_admin_opened(True)
     c.own("uns")
     c.tick()
     c.view(1, "see")
     c.tick()
-    c.view(1, "uns", since="2026-10-30T11:00:00+03:00")
-    c.view(1, "new", since="2026-10-30T11:00:01+03:00")
+    assert not _code(c).get("open")
+    c.b.advance(5)
+    c.b.gone(1)
     acts = c.tick()
-    assert _code(c).get("open") and len([n for n in notes(acts) if n.tg_id == int(config.ADMIN_ID)]) == 1, acts
+    assert _code(c).get("open"), "окно не открылось снова"
+    ns = notes(acts)
+    assert [n.tg_id for n in ns] == [rc.PEER_ADMIN], f"повтор того же эпизода админу резерва: {ns}"
+    assert ns[0].silent and not ns[0].force_sound and ns[0].keyboard == "peer_code", ns[0]
+
+
+def test_a_new_own_unseen_is_a_new_episode_told_again(c):
+    c.b.peer_admin_opened(True)
+    c.own("uns")
+    c.tick()
+    c.own("see")
+    c.tick()
+    c.b.advance(30)
+    c.own("uns")
+    acts = c.tick()
+    by = {n.tg_id: n for n in notes(acts)}
+    assert set(by) == {int(config.ADMIN_ID), rc.PEER_ADMIN}, f"новый эпизод не сказан обоим админам: {by}"
+    assert by[rc.PEER_ADMIN].force_sound, "новый эпизод админу основы — без звука"
 
 
 # ── исполнение: снятие своим «вижу» ─────────────────────────────────────────

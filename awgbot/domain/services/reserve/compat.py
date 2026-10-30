@@ -144,8 +144,12 @@ def direction_ready(src: dict, dst: dict, *, pkg_fresh: bool = True) -> tuple[bo
     if not pkg_format(src.get("caps", []), dst.get("caps", [])):
         return False, f"«{dst.get('name') or 'резерв'}» не читает формат данных переезда — нужен выпуск новее"
     missing = [c for c in _NEEDED_TO_HOST if c not in dst.get("caps", [])]
+    if missing == ["quo1"]:
+        return False, f"«{dst.get('name') or 'резерв'}» без кворума (ниже v4.2.0) — нужен выпуск новее"
     if missing:
         return False, f"«{dst.get('name') or 'резерв'}» не умеет принимать пользователей — нужен выпуск новее"
+    if "quo1" not in src.get("caps", []):                    # переезд решает кворум: без quo1 у любой стороны направлений нет
+        return False, f"«{src.get('name') or 'резерв'}» без кворума (ниже v4.2.0) — нужен выпуск новее"
     if dst.get("zone"):
         return False, (f"здесь: {dst['zone']}" if dst.get("me") else f"у «{dst.get('name') or 'резерв'}»: {dst['zone']}")
     if not src.get("gw"):

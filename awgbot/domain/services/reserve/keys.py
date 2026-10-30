@@ -40,9 +40,9 @@ class ReserveKeysMixin:
         return data
 
     def reserve_keys_ensure(self) -> None:
-        """Защитная ветка: состояние прежних выпусков (прямая `M` без ящика кода) — один раз
-        новое поколение и ящик кода, код — заново (Т-РУ14 тактом). На установках с парой
-        ниже 4.2.0 недостижимо: таких пар нет."""
+        """Ключи без ящика кода — один раз новое поколение `M` и ящик кода, код заново (Т-РУ14
+        тактом): после восстановления из копии (`rsv_qkeys` в копию не идут) и как защитная
+        ветка для состояния прежних выпусков (пар ниже 4.2.0 нет)."""
         if not self.reserve_paired() or not hasattr(self, "reserve_quorum_keys_on"):
             return
         keys = self.reserve_keys()
@@ -50,7 +50,7 @@ class ReserveKeysMixin:
             return
         self.reserve_quorum_keys_init()
         self.reserve_new_generation("ключи резерва 4.2.0: аварийный код на своей прямой", code=True)
-        self.rsv_update("rsv_keys", code_notify_why="ключи резерва 4.2.0 — прежний код не действует")
+        self.rsv_update("rsv_keys", code_notify_why="ящик аварийного кода создан заново — прежний код не действует")
         log.warning("резерв: ключи переведены на ящик кода — новое поколение M и новый код")
 
     def reserve_new_generation(self, reason: str, *, code: bool = True, notify: bool = True) -> dict:

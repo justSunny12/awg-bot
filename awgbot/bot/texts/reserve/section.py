@@ -234,7 +234,9 @@ def card_text(d: dict) -> str:
         if d.get("await_merge"):
             lines.append(f"└ 🟡 изменения из бота на {_n(name)} придут, когда он выйдет на связь" if d.get("jrn_moved")
                          else f"└ ⏳ жду реплику {_n(name)} — изменения из неё применятся, когда он выйдет на связь")
-        if d.get("code_open"):
+        if d.get("code_open") and d.get("code_by") == "link":
+            lines.append(f"└ 🆘 {_n(name)} не на связи, а голосование о нём не включено — жду аварийный код его админа")
+        elif d.get("code_open"):
             lines.append(f"└ 🆘 {_n(name)} не отвечает, голосов для переезда не хватает — жду аварийный код его админа")
         elif d.get("auto_block"):
             lines.append("└ ⚠️ автоматический аварийный переезд невозможен: " + _e(d["auto_block"]))
@@ -301,8 +303,12 @@ def quorum_mine_lines(q: dict) -> list[str]:
     if q.get("pending"):
         out.append(f"└ 🟡 Состав голосующих меняется: жду подтверждения {peer}")
     if v < 2:                                                 # Т-К1а: голосующий один — второй сервер
-        out.append(f"└ 🗳 Голосует только {peer}: шлюзов с агентом v4.2.0 нет — переезд кнопкой и по аварийному коду, "
-                   "автоматического нет")
+        if mine.get("leader_here") and "y" in mine:
+            out.append(f"└ 🗳 Этот сервер видят {int(mine.get('y') or 0)} из {v} — голосует только {peer}: "
+                       "переезд кнопкой и по аварийному коду, автоматического нет")
+        else:
+            out.append(f"└ 🗳 Голосует только {peer}: шлюзов с агентом v4.2.0 нет — переезд кнопкой и по аварийному коду, "
+                       "автоматического нет")
         return out
     if mine.get("leader_here") and "y" in mine:
         y = int(mine.get("y") or 0)

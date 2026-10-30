@@ -373,9 +373,10 @@ class GatewayQuorumMixin:
             log.warning("quorum: кандидат просит точку поколения %s, у меня %s — отказ", q_gen, point.get("q_gen"))
             return []
         log.warning("quorum: отдаю точку ключа кворума кандидату (сервер AWG не отвечает с %s)", since)
-        cur = self.quorum_section()
-        cur["share_given_at"] = timeutil.now_iso()
-        _write(cur, self._QUO_STORE)
+        rs = self.reserve_section()                           # отметку читает слово state{idle, reason} — Т-РА5
+        rs["share_given_at"] = timeutil.now_iso()
+        from .store import _write as _write_rsv
+        _write_rsv(rs, self._RSV_STORE)
         return [("guest", "qshare", {"l": str(sec.get("l") or ""), "q_gen": int(q_gen), "x": int(point.get("x") or 0),
                                      "y": str(point.get("y"))})]
 

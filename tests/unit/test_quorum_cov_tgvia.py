@@ -29,7 +29,6 @@ from awgbot.core import config
 from awgbot.domain.gateway import GatewayServices
 from awgbot.domain.gateway.reserve import store as storemod
 from awgbot.domain.gateway.reserve import tgvia as tgmod
-from awgbot.domain.gateway.reserve import watch as watchmod
 from awgbot.infra import gwguard
 from awgbot.infra.db import Database
 from awgbot.infra.gwguard import rsv as rsvlink
@@ -54,7 +53,7 @@ class _Net:
         monkeypatch.setattr(gwguard, "handshake_state", lambda iface: self.hs.get(iface, ("absent", None)))
         monkeypatch.setattr(rsvlink, "present", lambda: self.link)
         monkeypatch.setattr(gwguard, "unit_env", lambda k: {"CLIENT_SUBNET": self.subnet}.get(k, ""))
-        monkeypatch.setattr(watchmod, "_dns_probe", self._probe)
+        monkeypatch.setattr(tgmod, "_dns_probe", self._probe)
         monkeypatch.setattr(tgmod, "random", types.SimpleNamespace(uniform=lambda a, b: 1.0))
 
     def _probe(self, resolver, iface, timeout=None):
@@ -220,7 +219,7 @@ def test_a_missed_answer_between_two_restarts_the_count(agent, net, monkeypatch)
     _on(agent)
     net.hs[UP] = FRESH
     answers = iter([True, False, True, True])
-    monkeypatch.setattr(watchmod, "_dns_probe", lambda resolver, iface, timeout=None: next(answers))
+    monkeypatch.setattr(tgmod, "_dns_probe", lambda resolver, iface, timeout=None: next(answers))
     ev = _run(agent, T0 + 15, 300)
     offs = [t for t, a in ev if a == ("tg", "off")]
     assert offs == [T0 + 60 * 4], f"пропуск ответа не сбросил счёт подряд: выключено в {offs}"

@@ -50,7 +50,12 @@ def screen(d: dict) -> str:
         tail = f" и {learned} выученн{'ая сеть' if learned == 1 else ('ые сети' if 2 <= learned <= 4 else 'ых сетей')}" if learned else ""
         lines.append(("⚠️" if tp.get("stale") else "🟢") + f" пул адресов Telegram для вебхука: ядро{tail}"
                      + (" · анонсы давно не обновлялись" if tp.get("stale") else ""))
-    gws = d.get("gw_views") or []
+    gws = list(d.get("gw_views") or [])
+    known = {int(g.get("slot") or 0) for g in gws}
+    for slot in d.get("zone_links") or []:                   # сторона в зоне есть, сессии нет — линк без связи
+        if int(slot) not in known:
+            gws.append({"slot": int(slot), "name": f"шлюз {int(slot)}", "voter": False, "down_since": "", "seen": ""})
+    gws.sort(key=lambda g: int(g.get("slot") or 0))
     if d.get("zone_links") and gws:
         down = [g for g in gws if not g.get("voter")]
         if not down:
@@ -84,7 +89,10 @@ def screen(d: dict) -> str:
         mine = "видит" if q.get("w") in ("see", "held") else ("не видит" + (f" с {_e(_when(q['since']))}" if q.get("since") else ""))
         lines.append(f"🗳 Твой {_n(peer)} видят {int(q.get('y') or 0)} из {int(q.get('v') or 0)} · этот сервер — {mine}")
     inn = d.get("inn") or "idle"
-    if d.get("code_needed"):
+    if d.get("code_needed") and d.get("code_by") == "link":
+        lines.append(f"🆘 {_n(me)} не на связи с твоим сервером с {_e(_when(d.get('code_since') or ''))}, а голосование о нём "
+                     "не включено — пришли аварийный код резерва, и пользователи переедут сюда")
+    elif d.get("code_needed"):
         lines.append(f"🆘 {_n(me)} не видит твой сервер с {_e(_when(d.get('code_since') or ''))}, а голосов для переезда "
                      "не хватает — пришли аварийный код резерва, и пользователи переедут сюда")
     if inn in ("taking", "serving"):

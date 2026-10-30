@@ -252,7 +252,8 @@ class ReserveQuorumLeaderMixin:
         l = str(body.get("l") or "")
         members = [str(m) for m in (body.get("members") or []) if isinstance(m, str)][:64]
         if l not in ("a", "b") or not members:
-            log.warning("кворум: слово quorum без линии или состава — не состав, жду дальше")
+            log.warning("кворум: слово quorum без линии или состава — состава нет, ответчик снят, жду состав")
+            self.__dict__.pop("_guest_quorum", None)
             return
         self.__dict__["_guest_quorum"] = {"l": l, "g": int(body.get("g") or 0), "members": members,
                                           "port": int(body.get("port") or 0)}

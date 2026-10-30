@@ -130,7 +130,7 @@ def test_why_the_vote_is_off_names_the_rest_of_the_reasons(why, want):
 
 
 def test_the_first_known_reason_wins_over_the_later_ones():
-    lines = quorum_mine_lines({"on": False, "why": ["keys", "peer_old"], "peer_name": "Beta"})
+    lines = quorum_mine_lines({"on": False, "why": ["keys", "not_acked"], "peer_name": "Beta"})
     assert lines == ["└ 🗳 Голосование не включено: ключи голосования ещё не у всех"], lines
 
 

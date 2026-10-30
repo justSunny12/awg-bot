@@ -210,6 +210,19 @@ async def test_a_refused_invitation_is_deleted_too_and_asked_again(services, ui,
     assert await state.get_state() == "ReserveAcceptToken:value", "после отказа ввод сброшен"
 
 
+async def test_an_invitation_of_a_server_below_4_2_0_is_refused_on_the_screen_before_any_dialog(services, ui, fake_bot):
+    """Приглашение сервера 4.1.1: админ видит отказ с версией и требованием
+    сразу, без диалога «Подключиться»; строка с закрытым ключом удалена."""
+    state = FakeState()
+    await acc_h.accept_ask(_cb(_nav(fake_bot), fake_bot), services, state)
+    msg = FakeMessage(text=Inviter(version="4.1.1").token, chat_id=ADMIN, user_id=ADMIN, bot=fake_bot)
+    await acc_h.token_received(msg, services, state)
+    assert msg.deleted, "отвергнутая строка с закрытым ключом осталась в чате"
+    text, markup = msg.sent[-1][1], msg.sent[-1][2]
+    assert "v4.1.1" in text and "4.2.0 или новее у обоих серверов" in text, text
+    assert "🛟 Подключиться" not in _labels(markup), "к серверу ниже 4.2.0 предложено подключиться"
+
+
 async def test_without_own_gateways_the_dialog_has_no_rf_toggle_and_warns(services, ui, fake_bot):
     ui.gw = False
     state = FakeState()

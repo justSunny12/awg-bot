@@ -39,8 +39,8 @@ def setup_reserve_jobs(scheduler, services, bot) -> None:
         except Exception as e:                           # noqa: BLE001
             log.warning("резерв: st по смене: %s", e)
         try:
-            # голосование: живость шлюзов основы по сторонам зоны, матрица случаев,
-            # демпфер случаев 3 и Н3, просьбы основе — действия исполняет rsvactions
+            # гостевой канал шлюзов основы: живость по сторонам зоны, слово state — действия
+            # исполняет rsvactions (решения о переезде — у кворума, его такт — в живости пары)
             from awgbot.runtime import rsvactions
             await rsvactions.run(await asyncio.to_thread(services.reserve_gwguest_tick))
         except Exception as e:                           # noqa: BLE001

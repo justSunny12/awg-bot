@@ -62,7 +62,6 @@ class _Away:
         self.sessions = {1: True, 2: True}
         monkeypatch.setattr(self.s, "gwlink_session", lambda gid: {"agent": "4.2.0"} if self.sessions.get(int(gid)) else {},
                             raising=False)
-        settings.set_value("app.reserve.quorum.act", True)
         settings.set_value("app.reserve.return", "immediate")
         self.s.rsv_update("rsv_quorum", active={"l": "a", "g": 1, "members": list(MEMBERS)},
                           mine={"l": "a", "g": 1, "members": list(MEMBERS)})
@@ -171,11 +170,11 @@ def test_q2_minority_never_starts_the_return(aw):
     assert ("send", "back_req", {}) not in acts and aw.s.reserve_out() == "away", "возврат по одному «да» из трёх"
 
 
-def test_at_home_and_without_act_the_old_health_path_stays(aw):
+def test_a_leftover_act_off_does_not_take_q2_away_and_home_has_no_q2(aw):
+    """Ключа `quorum.act` больше нет: прежний `false` не возвращает старый путь
+    здоровья — в отъезде здоровье решает Q2; кворум выключен или дома — Q2 нет."""
     settings.set_value("app.reserve.quorum.act", False)
-    assert aw.s.reserve_quorum_healthy() is None, "act=false: Q2 решает здоровье"
-    assert aw.s.reserve_healthy() is True, "act=false: прежний путь (свой AWG, линк) не работает"
-    settings.set_value("app.reserve.quorum.act", True)
+    assert aw.s.reserve_quorum_healthy() is False, "прежний act=false снял Q2 со здоровья в отъезде"
     aw.active = False
     assert aw.s.reserve_quorum_healthy() is None, "кворум выключен, а Q2 решает здоровье"
     aw.active = True
@@ -252,11 +251,33 @@ def test_a_gateway_that_said_no_and_now_sees_the_clone_still_gets_qrel(aw):
     assert (1, {"l": "a", "e": 9, "tgt": "r"}) in gwlink(acts, "qrel"), f"шлюзу 1 qrel не ушёл: {gwlink(acts, 'qrel')}"
 
 
-def test_with_act_off_the_clone_is_only_counted(aw):
+def _solo(aw) -> None:
+    """Состав из двух серверов: о клоне голосую только я (v = 1)."""
+    aw.s.rsv_update("rsv_quorum", active={"l": "a", "g": 1, "members": ["a", "b"]},
+                    mine={"l": "a", "g": 1, "members": ["a", "b"]})
+
+
+def test_with_v_1_there_is_no_emergency_return_by_q1(aw):
+    """Голосует только сама основа: аварийного возврата по Q1 нет ни при каком
+    времени — один голос судьбу бота на резерве не решает; счёт для карточки идёт."""
+    _solo(aw)
+    aw.clone.view = "uns"
+    acts = aw.tick() + aw.run(10 * T_UP)
+    assert ("take_home",) not in acts and not gwlink(acts, "qask") and not gwlink(acts, "qtake"), \
+        f"v = 1: аварийный возврат по Q1 действует: {acts}"
+    assert aw.s.reserve_quorum_back_view().get("v") == 1, aw.s.reserve_quorum_back_view()
+
+
+def test_with_v_1_q2_is_the_vote_of_the_second_server(aw):
+    _solo(aw)
+    aw.probe("b")
+    assert aw.s.reserve_quorum_q2() == {"y": 1, "v": 1, "majority": True}, aw.s.reserve_quorum_q2()
+
+
+def test_a_leftover_act_off_does_not_stop_the_emergency_return(aw):
     settings.set_value("app.reserve.quorum.act", False)
     acts = _majority(aw) + aw.run(T_UP + 30)
-    assert acts == [], f"act=false: аварийный возврат действует: {acts}"
-    assert aw.s.reserve_quorum_back_view()["no"] == 2
+    assert ("take_home",) in acts, "прежний act=false остановил аварийный возврат по Q1"
 
 
 def test_at_home_there_is_no_clone_candidate(aw):

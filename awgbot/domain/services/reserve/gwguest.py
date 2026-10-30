@@ -110,6 +110,28 @@ class ReserveGwGuestMixin:
         actions += self.reserve_gw_state_actions()
         return actions
 
+    # ── для экранов ─────────────────────────────────────────────────────────
+    def reserve_gw_links_view(self) -> list[dict]:
+        """Шлюзы основы на гостевом канале для экрана роли: {slot, name, voter (на связи),
+        down_since, seen (с какого момента не видит сервер — по qview)}."""
+        out = []
+        views: dict = {}
+        if hasattr(self, "reserve_quorum_peer_line") and hasattr(self, "reserve_quorum_gw_views"):
+            l = str(self.reserve_quorum_peer_line().get("l") or "")
+            views = self.reserve_quorum_gw_views(l) if l else {}
+            prefix = l
+        else:
+            prefix = ""
+        known = set(int(k) for k in (self.reserve_guest_links() if hasattr(self, "reserve_guest_links") else {}) if str(k).isdigit())
+        for slot in sorted(known | set(int(k) for k in self._gwv)):
+            rec = self._gwv.get(slot) or {}
+            online = bool(rec.get("online")) and (rec.get("lv") is None or rec["lv"].state != "down")
+            w = (views.get(f"{prefix}{int(slot)}") or {}) if prefix else {}
+            out.append({"slot": int(slot), "name": self.reserve_gw_name(slot), "voter": online,
+                        "down_since": str(rec.get("down_since") or ""),
+                        "seen": str(w.get("since") or "") if str(w.get("w") or "") == "uns" else ""})
+        return out
+
     # ── слово state ─────────────────────────────────────────────────────────
     def _state_body(self, reason: str = "") -> dict:
         inn = self.rsv_get("rsv_in")

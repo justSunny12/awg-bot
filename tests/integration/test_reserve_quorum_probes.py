@@ -90,17 +90,16 @@ def test_the_vote_is_on_with_a_quo1_peer_and_a_quo1_gateway(quo):
     assert quo.reserve_quorum_off_reasons() == [] and quo.reserve_quorum_active()
 
 
-def test_a_41x_peer_turns_the_vote_off(quo):
-    quo.reserve_quorum_refresh()
-    qc.peer_old(quo)
-    assert "peer_old" in quo.reserve_quorum_off_reasons()
-
-
-def test_no_quo1_gateway_turns_the_vote_off(quo):
+def test_without_a_quo1_gateway_the_line_is_the_two_servers_with_v_1(quo):
+    """Шлюзов с агентом 4.2.0 нет — линия всё равно есть: состав {a, b},
+    голосует только второй сервер; «нет шлюзов» — уже не причина выключения,
+    а признак v < 2: решений по голосам нет."""
     for slot in (1, 2):
         quo.db.set_state(f"gwlink_caps_{slot}", "cfg1,rsv1")
-    quo.reserve_quorum_refresh()
-    assert "no_gateways" in quo.reserve_quorum_off_reasons()
+    m = quo.reserve_quorum_refresh()
+    assert m is not None and m.members == ("a", "b"), m
+    assert "no_gateways" not in quo.reserve_quorum_off_reasons(), quo.reserve_quorum_off_reasons()
+    assert not quo.reserve_quorum_decisions(), "v = 1: решения по голосам разрешены"
 
 
 def test_timing_that_does_not_add_up_turns_the_vote_off(quo):
@@ -224,27 +223,19 @@ def test_after_the_sync_the_part_vpn_still_takes_the_users_subnet(quo):
 
 # ── смешанная пара ───────────────────────────────────────────────────────────
 
-def test_with_a_41x_peer_there_are_no_probes_and_no_quorum_section(quo):
-    """§3.7.11: второй сервер 4.1.x — линия на матрице, «зондов нет». Шлюз с
-    разделом стал бы слать `qview` по гостевому каналу резерву, который такого
-    вида не знает, — и рвал бы его сессию голосования."""
-    qc.peer_old(quo)
-    quo.quorum_tick()
-    probe_peers = [p for p, allowed in quo.awg_host.peers().items() if probenet.in_block(allowed)]
-    assert probe_peers == [], "пиры-зонды на awg0 при втором сервере 4.1.x"
-    assert "169.254.88.1/26" not in quo.awg_host.addresses()
-    assert quo.gwcfg_quorum(_gw(quo, 1)) is None, "раздел quorum шлюзу при втором сервере 4.1.x"
 
-
-def test_with_nobody_to_vote_the_responder_address_goes(quo):
+def test_with_only_the_second_server_voting_its_probe_peer_stays(quo):
+    """Шлюзы потеряли `quo1` — голосует только второй сервер: его зонд к моему
+    AWG стоит (v = 1 живёт зондом, счётом и окном кода), пиров-зондов шлюзов нет."""
     _ready(quo)
-    qc.peer_old(quo)
     for slot in (1, 2):
         quo.db.set_state(f"gwlink_caps_{slot}", "cfg1,rsv1")
     quo.clock.t += 120
     quo.quorum_tick()
-    assert [p for p, allowed in quo.awg_host.peers().items() if probenet.in_block(allowed)] == []
-    assert "169.254.88.1/26" not in quo.awg_host.addresses(), "ответчик остался на awg0 без голосующих"
+    probe = {a for _p, allowed in quo.awg_host.peers().items() if probenet.in_block(allowed) for a in allowed}
+    assert f"{probenet.node_addr('a', 'b')}/32" in probe, f"при v = 1 зонда второго сервера на awg0 нет: {probe}"
+    gws = {f"{probenet.node_addr('a', n)}/32" for n in ("a1", "a2")}
+    assert not probe & gws, f"пиры-зонды шлюзов без quo1 остались: {probe & gws}"
 
 
 # ── конфиги зондов ───────────────────────────────────────────────────────────
@@ -313,12 +304,6 @@ def test_qprobe_follows_a_new_generation(quo):
     quo.db.set_state("gwlink_caps_2", "cfg1,rsv1")
     _ready(quo)
     assert quo.reserve_qprobe_body()["g"] == 2
-
-
-def test_no_qprobe_to_a_41x_peer(quo):
-    _ready(quo)
-    qc.peer_old(quo)
-    assert quo.reserve_qprobe_body() is None
 
 
 def _other_side_conf(**over) -> str:
