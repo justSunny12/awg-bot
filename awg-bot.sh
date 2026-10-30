@@ -249,14 +249,19 @@
 #   reserve status|plan|selftest|open|zone --<режим>|teardown|tgpool show|refresh
 #                          сервер AWG, взаимный резерв: гостевая зона и процесс
 #                          открытия. status — линк пары и зона (reserve-pair-setup.sh
-#                          --status, reserve-zone-setup.sh --status); plan — что
+#                          --status, reserve-zone-setup.sh --status) и РФ-доступ
+#                          через второй сервер: rfpeer=offer|slot|off (файл
+#                          согласия $DATA_DIR/reserve/rfpeer.json: даю шлюзы /
+#                          хожу через шлюзы второго / нет) и allowed= (AllowedIPs
+#                          линка пары в ядре: у просящего — с 0.0.0.0/0); plan — что
 #                          умеет хост (хранилище в памяти, порт вебхука, dnsmasq,
 #                          conntrack, python);
 #                          selftest — механика зоны на модуле ядра (root);
 #                          open — tools/rsvopen.py (root; вход — JSON ТОЛЬКО в
-#                          stdin: доли, код или ключ пакета, секреты не в argv;
+#                          stdin: точки кворума с ящиком, код с точкой и ящиком
+#                          или ключ пакета, секреты не в argv;
 #                          ход — /run/awg-bot/rsv/open.status; при любом
-#                          переезде — кнопкой, по долям шлюзов, по аварийному
+#                          переезде — кнопкой, по точкам кворума, по аварийному
 #                          коду — его зовёт бот резерва временным юнитом
 #                          awg-bot-rsvopen, руками — для проверки и разбора);
 #                          zone --<режим> — скрипт зоны напрямую (root);

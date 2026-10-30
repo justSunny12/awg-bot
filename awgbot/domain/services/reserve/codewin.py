@@ -26,7 +26,7 @@ from .opening import CODE_TRIES, CODE_WINDOW_S
 
 
 class ReserveCodeWindowMixin:
-    # ── Н4: окно аварийного кода ────────────────────────────────────────────
+    # ── окно аварийного кода ────────────────────────────────────────────────
     def reserve_code_window(self) -> dict:
         """{"open": bool, "since": iso} — приём кода открыт только в Н4."""
         cw = self.rsv_get("rsv_view").get("code") or {}
