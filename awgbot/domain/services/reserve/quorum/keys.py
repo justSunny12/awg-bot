@@ -133,7 +133,7 @@ class ReserveQuorumKeysMixin:
             return actions
         if poly_on and not decisions_on:
             with _LOCK:
-                self.rsv_update("rsv_qkeys", poly=[], t=0, disabled_at=timeutil.now_iso())
+                self.rsv_update("rsv_qkeys", poly=[], t=0, disabled_at=timeutil.now_iso(), confirmed=False)
             if m is None or not m.enabled:
                 # держатели точек (шлюзы) из состава ушли — их точки могли остаться у чужого: `M` и `K`
                 # заново (ящик кода пересобирается вокруг нового `M`), код прежний
@@ -222,7 +222,11 @@ class ReserveQuorumKeysMixin:
                "q_gen": int(body.get("q_gen") or 0) if poly_part else 0, "t": int(body.get("t") or 0) if poly_part else 0,
                "y": str(body.get("y") or "") if poly_part else "", "qbox": str(body.get("qbox") or "") if poly_part else ""}
         with _LOCK:
-            self.rsv_update("rsv_qkeys", peer=rec)
+            old = dict(self.reserve_qkeys().get("peer") or {})
+            if old and int(old.get("m_gen") or 0) != rec["m_gen"]:
+                self.rsv_update("rsv_qkeys", peer=rec, peer_prev=old)   # прежнее поколение — пока пакет его
+            else:
+                self.rsv_update("rsv_qkeys", peer=rec)
         log.info("кворум: точки и ящики линии %s приняты (M %s, многочлен %s, прямая кода %s, порог %s)", l, rec["m_gen"],
                  rec["q_gen"], rec["c_gen"], rec["t"])
         return [("send", "qkeys_ok", {"l": l, "m_gen": rec["m_gen"], "q_gen": rec["q_gen"], "c_gen": rec["c_gen"]})]
@@ -237,9 +241,35 @@ class ReserveQuorumKeysMixin:
                  acked["m_gen"], acked["q_gen"], acked["c_gen"])
         return []
 
+    def reserve_qkeys_reset(self) -> None:
+        """Новая сессия пары: подтверждение второй стороны забыто — `qkeys` уйдут заново (резерв мог
+        быть восстановлен из копии без них; подтверждённые повторно — одно слово)."""
+        if self.reserve_qkeys().get("acked"):
+            with _LOCK:
+                self.rsv_update("rsv_qkeys", acked={})
+
     def reserve_quorum_peer_keys(self) -> dict:
-        """Точки и ящики второй линии у меня (сторона резерва): пусто — нет."""
-        return dict(self.reserve_qkeys().get("peer") or {})
+        """Точки и ящики второй линии у меня (сторона резерва): пусто — нет. Пакет у меня ещё
+        прежнего поколения `M`, а ключи уже нового — отдаю прежние (keys-2: окно между `qkeys` и
+        пакетом не оставляет резерв без ящиков)."""
+        q = self.reserve_qkeys()
+        peer, prev = dict(q.get("peer") or {}), dict(q.get("peer_prev") or {})
+        pkg_m = int(self.rsv_get("rsv_pkg_in").get("m_gen") or 0)
+        if peer and prev and int(peer.get("m_gen") or 0) != pkg_m and int(prev.get("m_gen") or 0) == pkg_m:
+            return prev
+        return peer
+
+    def reserve_quorum_keys_confirmed(self, keys_ok: bool) -> bool:
+        """Ключи считались подтверждёнными у всех хоть раз с включения: отметка `confirmed` ставится
+        по факту, снимается при выключении голосования (многочлен прочь). Пока она стоит, смена
+        поколения линию не выключает."""
+        q = self.reserve_qkeys()
+        if keys_ok:
+            if not q.get("confirmed"):
+                with _LOCK:
+                    self.rsv_update("rsv_qkeys", confirmed=True)
+            return True
+        return bool(q.get("confirmed"))
 
     def reserve_quorum_keys_ok(self, m: qm.Members | None) -> bool:
         """Ключи на месте у всех держателей: второй сервер подтвердил текущие поколения

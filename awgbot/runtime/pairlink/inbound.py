@@ -176,7 +176,8 @@ class InboundMixin:
         await asyncio.to_thread(self.services.reserve_slots_ok_in, list(body.get("slots") or []))
 
     async def _in_ask(self, sess: _Session, body: dict) -> None:
-        await self._actions(await asyncio.to_thread(self.services.reserve_ask_in, str(body["case"]), str(body["since"])))
+        await self._actions(await asyncio.to_thread(self.services.reserve_ask_in, str(body["case"]), str(body["since"]),
+                                                    str(body.get("kind") or "dead")))
 
     async def _in_ask_no(self, sess: _Session, body: dict) -> None:
         await self._actions(await asyncio.to_thread(self.services.reserve_ask_no_in, str(body["reason"])))

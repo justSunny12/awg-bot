@@ -30,7 +30,7 @@ class ReserveQuorumTieMixin:
         see = [self._quorum_node_name(n, c.l) for n in c.see_nodes()]
         no = [self._quorum_node_name(n, c.l) for n in c.no_nodes()]
         info, said = self._quorum_tie_info(c)
-        self.rsv_update("rsv_qlog", tie={"episode": since, "told": True, "side": "cand", "l": c.l})
+        self.rsv_update("rsv_qlog", tie_cand={"episode": since, "told": True, "side": "cand", "l": c.l})
         opened = bool(self.rsv_get("rsv_peer_admin").get("opened"))
         pid = self.reserve_peer_admin_id() if hasattr(self, "reserve_peer_admin_id") else 0
         notes = [Notification(tg_id=int(config.ADMIN_ID), force_sound=True, keyboard="quorum_tie_cand",
@@ -47,13 +47,13 @@ class ReserveQuorumTieMixin:
     def reserve_quorum_tie_over(self, c) -> list[tuple]:
         from awgbot.domain.notices import reserve as rn
         from ...types import Notification
-        tie = dict(self.rsv_get("rsv_qlog").get("tie") or {})
+        tie = dict(self.rsv_get("rsv_qlog").get("tie_cand") or {})
         if not tie.get("told"):
             return []
         name = self.reserve_peer_name()
         outcome = "moved" if self.reserve_hosting() else "stayed"
         y, v = len(c.see_nodes()), c.v
-        self.rsv_update("rsv_qlog", tie={**tie, "told": False, "over": timeutil.now_iso()})
+        self.rsv_update("rsv_qlog", tie_cand={**tie, "told": False, "over": timeutil.now_iso()})
         pid = self.reserve_peer_admin_id() if hasattr(self, "reserve_peer_admin_id") else 0
         notes = [Notification(tg_id=int(config.ADMIN_ID), force_sound=True, text=rn.quorum_tie_over(name, y, v, outcome))]
         if pid and bool(self.rsv_get("rsv_peer_admin").get("opened")):
@@ -93,8 +93,8 @@ class ReserveQuorumTieMixin:
             no.add(peer_node)
         tie_now = len(yes) == ld.v // 2 and len(no) == ld.v // 2
         if "_quo_ltie" not in self.__dict__:
-            tie0 = dict(self.rsv_get("rsv_qlog").get("tie") or {})
-            told0 = bool(tie0.get("told")) and tie0.get("side") == "lead"   # после перезапуска эпизод не повторяется
+            tie0 = dict(self.rsv_get("rsv_qlog").get("tie_lead") or {})
+            told0 = bool(tie0.get("told"))                    # после перезапуска эпизод не повторяется
             self.__dict__["_quo_ltie"] = {"since": None, "told": told0, "gone": None}
         st = self.__dict__["_quo_ltie"]
         t = self.reserve_quorum_timing()
@@ -106,7 +106,7 @@ class ReserveQuorumTieMixin:
             if not st["told"] and now - st["since"] >= t.tie_s:
                 st["told"] = True
                 since = _episode_iso(now, st["since"])
-                self.rsv_update("rsv_qlog", tie={"episode": since, "told": True, "side": "lead", "l": ld.l})
+                self.rsv_update("rsv_qlog", tie_lead={"episode": since, "told": True, "side": "lead", "l": ld.l})
                 see_n = [self._quorum_node_name(n, ld.l) for n in sorted(yes)]
                 no_n = [self._quorum_node_name(n, ld.l) for n in sorted(no)]
                 info = self._quorum_info().to_dict()
@@ -120,9 +120,9 @@ class ReserveQuorumTieMixin:
                 st["gone"] = now
             if now - st["gone"] >= t.tie_clear_s:
                 st.update(since=None, told=False, gone=None)
-                tie = dict(self.rsv_get("rsv_qlog").get("tie") or {})
-                if tie.get("side") == "lead":
-                    self.rsv_update("rsv_qlog", tie={**tie, "told": False, "over": timeutil.now_iso()})
+                tie = dict(self.rsv_get("rsv_qlog").get("tie_lead") or {})
+                if tie.get("told"):
+                    self.rsv_update("rsv_qlog", tie_lead={**tie, "told": False, "over": timeutil.now_iso()})
                 outcome = "fenced" if ld.fenced else "stayed"
                 return [("notify", [Notification(tg_id=int(config.ADMIN_ID), force_sound=True,
                                                  text=rn.quorum_tie_over(name, len(yes), ld.v, outcome, mine=True))])]
@@ -133,8 +133,8 @@ class ReserveQuorumTieMixin:
     def reserve_quorum_tie_view(self, side: str = "lead") -> dict:
         """Для карточки: {since} — ничья длится; пусто — нет. `side` — чья: `lead` —
         о моём сервере (блок «📤», Т-К18), `cand` — о втором (блок «📥»)."""
-        tie = dict(self.rsv_get("rsv_qlog").get("tie") or {})
-        return {"since": str(tie.get("episode") or "")} if tie.get("told") and str(tie.get("side") or "lead") == side else {}
+        tie = dict(self.rsv_get("rsv_qlog").get("tie_cand" if side == "cand" else "tie_lead") or {})
+        return {"since": str(tie.get("episode") or "")} if tie.get("told") else {}
 
 
 def _episode_iso(now: float, since_mono: float | None) -> str:

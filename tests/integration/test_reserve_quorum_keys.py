@@ -277,7 +277,9 @@ def test_after_a_new_m_the_second_server_gets_qkeys_again(on):
     on.s._reserve_after_gateway_change("после снятия шлюза")
     body = on.s.reserve_qkeys_body()
     assert body is not None and body["m_gen"] == int(_keys(on.s)["m_gen"]), "новое поколение M не ушло второму серверу"
-    assert "keys" in on.s.reserve_quorum_off_reasons(), "кворум включён, пока «Beta» не подтвердила новые ключи"
+    assert not on.s.reserve_quorum_keys_ok(on.s.reserve_quorum_mine()), "новые ключи сочтены подтверждёнными до qkeys_ok"
+    # смена поколения линию не выключает: до подтверждения действует прежнее (§3.7.10) — ответчик и счёт идут
+    assert "keys" not in on.s.reserve_quorum_off_reasons(), "смена M выключила голосование до подтверждения новых ключей"
 
 
 # ── выключение ──────────────────────────────────────────────────────────────
@@ -573,7 +575,8 @@ def test_an_ack_of_older_generations_does_not_confirm_the_keys(on):
     old = on.gens()
     on.s.reserve_qkeys_ok_in({"l": "a", **{**old, "m_gen": old["m_gen"] - 1}})
     on.gateways_applied()
-    assert "keys" in on.s.reserve_quorum_off_reasons(), "подтверждение прежнего M сочтено подтверждением нового"
+    assert not on.s.reserve_quorum_keys_ok(on.s.reserve_quorum_mine()), "подтверждение прежнего M сочтено подтверждением нового"
+    assert on.s.reserve_qkeys_body() is not None, "qkeys нового M не уходят после подтверждения прежнего"
 
 
 def test_the_card_says_the_keys_are_not_everywhere_yet(line):

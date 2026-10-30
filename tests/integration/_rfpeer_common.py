@@ -172,7 +172,7 @@ def peer_rfp(s, *, offer: bool = True, why: str = "", use: str = "") -> None:
 
 def fresh_handshake(s) -> None:
     """Сбросить кэш рукопожатия линка пары (живёт 10 с в памяти)."""
-    cache = s.__dict__.get("_rf_pair_alive")
+    cache = s.__dict__.get("_rf_pair_alive_cache")
     if isinstance(cache, dict):
         cache.clear()
 

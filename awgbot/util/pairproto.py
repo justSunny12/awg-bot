@@ -101,7 +101,8 @@ PAIR_KINDS: dict[str, tuple[str, dict]] = {
                             "blob": (_S, MAX_BLOB), "jrn": (_D, None)}),
     "pkg_ok":       (BOTH, {"gen": (_I, None), "fp": (_S, 64)}),
     "pkg_bad":      (BOTH, {"gen": (_I, None), "reason": (_S, MAX_REASON)}),
-    "ask":          (BOTH, {"case": (_S, 8), "since": (_S, 32)}),    # кандидат кворума: case = "q"
+    "ask":          (BOTH, {"case": (_S, 8), "since": (_S, 32), "kind": (_S, 8)}),   # кандидат кворума: case = "q",
+                                                                                    # kind = dead | rf (Р6)
     "ask_no":       (BOTH, {"reason": (_S, 16)}),
     # переезд кнопкой: `go_req` — запусти процесс открытия и дай разовый ключ; `open_eph` —
     # его публичная часть и идентификатор открытия; `go` — ключ пакета конвертом к нему
@@ -189,6 +190,7 @@ def kinds_for(proto: str) -> dict[str, tuple[str, dict]]:
 # поля, которых может не быть (добавлены внутри линии; отсутствие — ложь/пусто)
 OPTIONAL: dict[str, frozenset] = {"st": frozenset({"healthy", "can_return", "in_kind", "mem_free", "online", "in_by", "zone",
                                                      "jrn", "quo", "rfp"}),
+                                   "ask": frozenset({"kind"}),
                                   "state": frozenset({"reason", "e"}), "qview": frozenset({"i"}),
                                   "go": frozenset({"ttl", "k", "sealed", "oid"}), "go_req": frozenset({"ttl"}),
                                   "pkg": frozenset({"jrn"}), "released": frozenset({"epoch", "last"}),

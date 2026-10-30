@@ -122,6 +122,25 @@ def allowed_ips_wide(on: bool) -> bool:
     return True
 
 
+def ifindex() -> int:
+    """Индекс устройства линка пары; 0 — нет. Меняется при пересоздании интерфейса (--adopt,
+    рестарт юнита пары): маршруты таблиц, висевшие на устройстве, пропали вместе с ним."""
+    try:
+        return int(Path(f"/sys/class/net/{PAIR_IF}/ifindex").read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return 0
+
+
+def link_stamp() -> tuple[int, int]:
+    """(индекс устройства, mtime конфига линка): смена любого — линк пересоздан или переподнят
+    из конфига, рантайм-состояние (широкие AllowedIPs, маршруты таблиц) надо утвердить заново."""
+    try:
+        mtime = int(Path(f"{config.AWG_DIR}/{PAIR_IF}.conf").stat().st_mtime_ns)
+    except OSError:
+        mtime = 0
+    return ifindex(), mtime
+
+
 def handshake_age() -> float | None:
     """Секунд с последнего рукопожатия линка пары; None — линка нет или рукопожатия не было."""
     res = base._host(["awg", "show", PAIR_IF, "latest-handshakes"], check=False, timeout=base._PROBE_TIMEOUT)

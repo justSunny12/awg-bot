@@ -1263,6 +1263,7 @@ cmd_post_uninstall() {
         rm -f /etc/amnezia/amneziawg/awgpair.conf /etc/amnezia/amneziawg/awgpair.conf.next /etc/amnezia/amneziawg/awgpair.conf.prev
         if mountpoint -q /run/awg-bot-guest 2>/dev/null; then umount -l /run/awg-bot-guest 2>/dev/null || true; fi
         while ip rule del iif awggr-h 2>/dev/null; do :; done
+        while ip rule del pref 151 2>/dev/null; do :; done     # транзит РФ второй стороны (reserve/rfpeer)
         rm -rf /run/awg-bot-guest /var/lib/awg-bot-guest /run/awg-bot/rsv /run/log/journal/*.awg-guest
         ip netns del awg-guest 2>/dev/null || true
         systemctl daemon-reload 2>/dev/null || true
@@ -1335,7 +1336,10 @@ cmd_reserve() {  # reserve status | plan | selftest | open | zone | teardown | t
             # РФ-доступ через второй сервер: файл согласия бота и AllowedIPs линка пары (рантайм)
             if [[ -f "$DATA_DIR/reserve/rfpeer.json" ]]; then
                 local _rfp; _rfp="$(tr -d '\n ' < "$DATA_DIR/reserve/rfpeer.json")"
-                case "$_rfp" in *'"offer":true'*) echo "rfpeer=offer" ;; *'"slot":true'*) echo "rfpeer=slot" ;; *) echo "rfpeer=off" ;; esac
+                local _rfl=""
+                case "$_rfp" in *'"offer":true'*) _rfl="offer" ;; esac
+                case "$_rfp" in *'"slot":true'*) _rfl="${_rfl:+$_rfl,}slot" ;; esac
+                echo "rfpeer=${_rfl:-off}"
             else
                 echo "rfpeer=off"
             fi

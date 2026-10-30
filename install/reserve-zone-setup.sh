@@ -328,7 +328,8 @@ tg_path_up() {   # постоянный veth awggx и маршруты к наб
     local n
     for n in $TG_NETS; do nsx ip route replace "$n" via "$HOST_X" dev "$XN" table "$TG_TABLE"; done
     for n in $(link_nets); do
-        nsx ip rule list | grep -q "from $n lookup $TG_TABLE" || nsx ip rule add from "$n" lookup "$TG_TABLE"
+        # ip rule печатает /32 без маски — сравниваем без неё, иначе копия правила на каждый --shell
+        nsx ip rule list | grep -q "from ${n%/32} lookup $TG_TABLE" || nsx ip rule add from "$n" lookup "$TG_TABLE"
     done
     state_write tg=up zone_tg_cidr="$ZONE_TG_CIDR"
 }

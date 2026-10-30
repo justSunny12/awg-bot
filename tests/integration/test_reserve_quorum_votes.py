@@ -247,7 +247,7 @@ def test_without_members_the_guest_has_no_responder(guest):
 
 def test_the_reserve_bot_tells_its_guest_the_line_from_st(quo):
     quo.rsv_update("rsv_peer_state", quo={"l": "b", "g": 2, "members": ["b", "a", "b1"], "active": True, "why": []})
-    assert quo.reserve_quorum_for_guest() == {"l": "b", "g": 2, "members": ["b", "a", "b1"], "port": 8789}
+    assert quo.reserve_quorum_for_guest() == {"l": "b", "g": 2, "members": ["b", "a", "b1"], "port": 8789, "active": True}
     quo.rsv_update("rsv_peer_state", quo={})
     assert quo.reserve_quorum_for_guest() is None
 

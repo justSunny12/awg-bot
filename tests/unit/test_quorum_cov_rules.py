@@ -183,6 +183,7 @@ def test_a_gateway_removed_from_the_line_takes_its_no_away_and_releases():
     assert c.no_since == T0
     c.set_members(("b", "a2"), 2)
     assert "a1" not in c.votes, "голос снятого шлюза остался"
+    assert not c.decided, "смена состава не сняла «решено»"
     ev = _run(c, T0 + 5, T0 + T.up_s + 10)
     assert ev[0] == (T0 + 5, "rel"), f"снятие шлюза не отпустило большинство: {ev[:3]}"
     assert _first(ev, "take") is None

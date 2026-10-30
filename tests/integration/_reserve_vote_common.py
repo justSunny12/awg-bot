@@ -160,7 +160,7 @@ class Cand:
         assert acts, "подготовка: точки линии b не приняты"
         self.v = Voter(LINE, "a")
         self.v.view = "see"
-        self.v.epoch = 7
+        self.v.epoch_in(7)                                   # эпоха линии — факт (st.jrn, ответы ответчика)
         self.s._qvoters[f"awgq{LINE}h"] = self.v
         if hello:
             for node in self.members:

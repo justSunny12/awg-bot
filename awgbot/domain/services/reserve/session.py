@@ -330,6 +330,8 @@ class ReserveSessionMixin:
         if hasattr(self, "reserve_qmem_reset"):
             self.reserve_qmem_reset()                         # и состав, пока он не подтверждён
         self.__dict__.pop("_qkeys_sent", None)
+        if hasattr(self, "reserve_qkeys_reset"):
+            self.reserve_qkeys_reset()                       # и точки с ящиками: резерв мог быть восстановлен из копии
         return self.reserve_liveness_word()
 
     def reserve_pair_confirm_tick(self) -> list[Notification]:

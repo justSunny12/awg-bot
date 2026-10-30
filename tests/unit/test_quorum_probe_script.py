@@ -303,14 +303,14 @@ def test_the_table_lets_in_only_replies_and_out_only_udp_to_the_responders(host)
     assert out[0] == "type filter hook output priority filter; policy drop;", out
     accepts = [ln for ln in out if ln.endswith("accept")]
     assert accepts == ['oifname "lo" accept', "ct state established,related accept",
-                       "ip daddr @resp4 udp dport 8789 accept"], f"выход зонда шире ответчика: {out}"
+                       "ip daddr @resp4 udp dport { 8789 } accept"], f"выход зонда шире ответчика: {out}"
     fwd = _chain(table, "forward")
     assert fwd == ["type filter hook forward priority filter; policy drop;"], f"пересылка в пространстве зондов: {fwd}"
 
 
 def test_the_responder_port_follows_the_environment(host):
     assert _up(host, QUO_PORT="9911").returncode == 0
-    assert "ip daddr @resp4 udp dport 9911 accept" in _chain(host.tables()[-1], "output")
+    assert "ip daddr @resp4 udp dport { 9911 } accept" in _chain(host.tables()[-1], "output")
 
 
 def test_after_the_last_probe_goes_down_the_responder_set_is_empty(host):
@@ -319,7 +319,7 @@ def test_after_the_last_probe_goes_down_the_responder_set_is_empty(host):
     assert r.returncode == 0 and "down: ok" in r.stdout
     table = host.tables()[-1]
     assert "169.254.88.1" not in table, "ответчик снятого зонда остался в разрешённом выходе"
-    assert "ip daddr @resp4 udp dport 8789 accept" in table
+    assert "ip daddr @resp4 udp dport { 8789 } accept" in table
     assert host.links() == [] and not (host.conf_dir / "awgqah.conf").exists()
 
 

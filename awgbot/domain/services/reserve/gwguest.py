@@ -54,7 +54,7 @@ class ReserveGwGuestMixin:
         other = probenet.other_side(self.reserve_quorum_side())
         v = self._qvoters.get(f"awgq{other}h") if hasattr(self, "_qvoters") else None
         known = int(self._quorum_known_epoch(other)) if hasattr(self, "_quorum_known_epoch") else 0
-        return max(known, int(v.epoch) if v is not None else 0)
+        return max(known, int(v.fact) if v is not None else 0)   # по фактам: поднятую собой после «забираю» не несём
 
     def _quorum_qstate_body(self) -> dict | None:
         if not hasattr(self, "reserve_quorum_peer_line") or not self.reserve_quorum_peer_line().get("active"):

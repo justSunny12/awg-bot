@@ -137,9 +137,10 @@ class ReserveQuorumInboundMixin:
                                         "g": int(quo.get("g") or 0), "l": side, "at": timeutil.now_iso(), "via": "snap"}
 
     # ── просьба кандидата по каналу пары ────────────────────────────────────
-    def reserve_ask_in(self, case: str, since: str) -> list[tuple]:
+    def reserve_ask_in(self, case: str, since: str, kind: str = "dead") -> list[tuple]:
         """`ask{q}` кандидата: он набрал «нет» большинством — я лишён кворума (или вот-вот):
-        отдаю эпоху сам путём кнопки; занят — `ask_no{busy}`, кандидат переспросит."""
+        отдаю эпоху сам путём кнопки; занят — `ask_no{busy}`, кандидат переспросит. `kind` —
+        вид переезда для текстов (Р6): `dead` — не отвечаю никому, `rf` — резерв видит, шлюзы нет."""
         name = self.reserve_peer_name()
         if case != "q":
             log.warning("кворум: просьба «%s» неизвестного вида %r — не отвечаю", name, case)
@@ -148,8 +149,9 @@ class ReserveQuorumInboundMixin:
         if why:
             log.info("кворум: просьба «%s» по кворуму — занят: %s", name, why)
             return [("send", "ask_no", {"reason": "busy"})]
-        log.warning("кворум: по решению кворума перевожу пользователей на «%s» (с %s)", name, since)
-        self.reserve_move_start(kind="dead", dead_since=since)
+        kind = kind if kind in ("dead", "rf") else "dead"
+        log.warning("кворум: по решению кворума перевожу пользователей на «%s» (с %s, вид %s)", name, since, kind)
+        self.reserve_move_start(kind=kind, dead_since=since)
         return [("live",)]
 
     def reserve_ask_no_in(self, reason: str) -> list[tuple]:

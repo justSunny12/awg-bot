@@ -80,7 +80,7 @@ class _Cand:
                                  "y": RSV_Y, "qbox": QBOX, "c_gen": 1, "cy": RSV_Y, "cbox": QBOX})
         self.v = Voter(LINE, "a")
         self.v.view = "see"
-        self.v.epoch = 7
+        self.v.epoch_in(7)
         self.s._qvoters[f"awgq{LINE}h"] = self.v
         for slot in range(1, len(members) - 1):
             b.hello(slot)
@@ -206,8 +206,9 @@ def test_own_see_at_a_tie_does_not_open_the_code_window(c):
 def test_the_tie_mark_is_kept_for_the_card(c):
     c.tie()
     c.run(T_TIE + 5)
-    tie = c.s.rsv_get("rsv_qlog").get("tie") or {}
+    tie = c.s.rsv_get("rsv_qlog").get("tie_cand") or {}
     assert tie.get("told") is True and tie.get("episode") and tie.get("side") == "cand" and tie.get("l") == LINE, tie
+    assert not c.s.rsv_get("rsv_qlog").get("tie_lead"), "ничья кандидата легла в запись ничьей лидера"
     assert c.s.reserve_quorum_tie_view("cand").get("since") == tie["episode"]
 
 
@@ -223,7 +224,7 @@ def test_no_tie_for_tie_clear_s_tells_the_all_clear_to_the_same_admins_and_close
     assert all(len(v) == 1 and v[0].force_sound for v in got.values()), "отбой — не одно громкое сообщение каждому"
     assert "остались на «Beta»" in got[config.ADMIN_ID][0].text, got[config.ADMIN_ID][0].text
     assert not c.s.reserve_code_window()["open"], "ничьей нет — окно кода осталось открытым"
-    assert (c.s.rsv_get("rsv_qlog").get("tie") or {}).get("told") is False
+    assert (c.s.rsv_get("rsv_qlog").get("tie_cand") or {}).get("told") is False
     assert c.s.reserve_quorum_tie_view() == {}, "карточка показывает ничью после отбоя"
     assert not _tie_notes(c.run(300), "Ничьей"), "отбой повторяется"
 
@@ -241,14 +242,14 @@ def test_a_tie_back_within_the_minute_is_the_same_episode(c):
 def test_a_new_episode_after_the_all_clear_is_told_again(c):
     c.tie()
     c.run(T_TIE + 5)
-    first = c.s.rsv_get("rsv_qlog")["tie"]["episode"]
+    first = c.s.rsv_get("rsv_qlog")["tie_cand"]["episode"]
     c.untie()
     c.tick()
     c.run(CLEAR + 5)
     acts = c.tie() + c.run(T_TIE + 5)
     got = _tie_notes(acts)
     assert len(got.get(config.ADMIN_ID, [])) == 1 and len(got.get(rc.PEER_ADMIN, [])) == 1, "второй эпизод ничьей без тревоги"
-    assert c.s.rsv_get("rsv_qlog")["tie"]["episode"] >= first
+    assert c.s.rsv_get("rsv_qlog")["tie_cand"]["episode"] >= first
 
 
 def test_the_admins_get_only_the_alarm_and_the_all_clear_for_one_episode(c):

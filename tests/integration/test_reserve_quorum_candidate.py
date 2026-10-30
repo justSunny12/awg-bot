@@ -93,7 +93,8 @@ def test_majority_of_no_for_t_up_takes_and_asks_the_leader(c):
     assert all(b == {"l": LINE, "e": 7} for _, b in gw_sent(acts, "qtake")), gw_sent(acts, "qtake")
     asks = sent(acts, "ask")
     assert len(asks) == 1 and asks[0]["case"] == "q", "просьба лидеру по кворуму не ушла"
-    assert set(asks[0]) == {"case", "since"}, f"в ask{{q}} поля сверх case и since (словарь пары их не пустит): {asks[0]}"
+    assert set(asks[0]) == {"case", "since", "kind"}, f"в ask{{q}} поля сверх словаря пары: {asks[0]}"
+    assert asks[0]["kind"] == "dead", "свой «не вижу» — вид переезда dead (Р6)"
     assert c.stage() == "ask"
     assert not c.b.launched, "процесс открытия до ответа лидера"
 
@@ -327,7 +328,8 @@ def test_a_busy_leader_is_asked_again_after_ask_seconds_up_to_three_times_then_p
         assert not sent(early, "ask") and not gw_sent(early, "qneed"), f"повтор {n} раньше ask_seconds"
         more = c.run(5)
         if n < 3:
-            assert len(sent(more, "ask")) == 1 and sent(more, "ask")[0] == {"case": "q", "since": sent(more, "ask")[0]["since"]}, \
+            assert len(sent(more, "ask")) == 1 and sent(more, "ask")[0] == {"case": "q", "since": sent(more, "ask")[0]["since"],
+                                                                            "kind": "dead"}, \
                 f"после «занят» {n} просьба не повторена: {more}"
             assert c.stage() == "ask"
             asks += 1

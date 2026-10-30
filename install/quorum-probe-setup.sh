@@ -23,7 +23,8 @@
 #                   (0600), пространство, интерфейс, адрес, маршрут, таблица. Тот же конфиг при
 #                   стоящем интерфейсе — «up: same»; другой — awg syncconf (сессия не рвётся);
 #                   не вышло — пересоздание
-#   --down <имя>    интерфейс и конфиг прочь; пространство остаётся
+#   --down <имя>    интерфейс, конфиг и порт прочь; пространство остаётся (выход таблицы — порты
+#                   остальных стоящих конфигов: у линий серверов порты ответчиков могут различаться)
 #   --wipe          все интерфейсы, конфиги и пространство прочь
 #   --status        key=value: ns=present|absent, ifaces=<через пробел>, hs_<имя>=<секунд с
 #                   рукопожатия|never>, conf_<имя>=present|absent; без root видно только ns=
@@ -74,9 +75,14 @@ resp_set() {   # /32 ответчиков всех стоящих конфиго
     for f in "$CONF_DIR"/*.conf; do [ -f "$f" ] || continue; conf_val "$f" AllowedIPs; done | sed '/^$/d' | sort -u | tr '\n' ' '
 }
 
+port_set() {   # порты ответчиков стоящих конфигов (QUO_PORT каждого --up, файл <имя>.port) и текущий
+    { printf '%s\n' "$PORT"; for f in "$CONF_DIR"/*.port; do [ -f "$f" ] && cat "$f"; done; } | grep -E '^[0-9]+$' | sort -un | tr '\n' ' '
+}
+
 table_write() {
     _r="$(resp_set)"
     _el=""; for x in $_r; do _el="$_el${_el:+, }$x"; done
+    _pl=""; for x in $(port_set); do _pl="$_pl${_pl:+, }$x"; done
     nsx nft -f - <<NFT || die "nft отверг таблицу $NS"
 table inet awg_quo
 delete table inet awg_quo
@@ -92,7 +98,7 @@ table inet awg_quo {
         type filter hook output priority filter; policy drop;
         oifname "lo" accept
         ct state established,related accept
-        ip daddr @resp4 udp dport $PORT accept
+        ip daddr @resp4 udp dport { $_pl } accept
     }
     chain forward {
         type filter hook forward priority filter; policy drop;
@@ -143,6 +149,7 @@ cmd_up() {
     mkdir -p "$CONF_DIR"; chmod 0700 "$CONF_DIR"
     _dst="${CONF_DIR:?}/${_name:?}.conf"
     ns_ensure
+    printf '%s\n' "$PORT" > "${CONF_DIR:?}/${_name:?}.port"   # порт ответчика этой линии — таблица пускает все стоящие
     if [ -f "$_dst" ] && cmp -s "$1" "$_dst" && nsx ip link show "$_name" >/dev/null 2>&1; then
         table_write; say "up: same"; return 0
     fi
@@ -157,7 +164,7 @@ cmd_down() {
     _name="$(printf '%s' "${1:-}" | tr -cd 'A-Za-z0-9_' | cut -c1-15)"
     [ -n "$_name" ] || die "нет имени интерфейса"
     [ -e "$NSP" ] && nsx ip link del "$_name" 2>/dev/null
-    rm -f -- "${CONF_DIR:?}/${_name:?}.conf" "${CONF_DIR:?}/.${_name:?}.setconf"
+    rm -f -- "${CONF_DIR:?}/${_name:?}.conf" "${CONF_DIR:?}/.${_name:?}.setconf" "${CONF_DIR:?}/${_name:?}.port"
     [ -e "$NSP" ] && table_write
     say "down: ok"
 }
@@ -168,7 +175,7 @@ cmd_wipe() {
         for i in $(nsx ip -o link show 2>/dev/null | awk -F': ' '$2 ~ /^awgq/ {print $2}'); do nsx ip link del "$i" 2>/dev/null; done
         ip netns del "$NS" 2>/dev/null
     fi
-    for f in "${CONF_DIR:?}"/*.conf "${CONF_DIR:?}"/.*.setconf; do [ -f "$f" ] && rm -f -- "$f"; done
+    for f in "${CONF_DIR:?}"/*.conf "${CONF_DIR:?}"/*.port "${CONF_DIR:?}"/.*.setconf; do [ -f "$f" ] && rm -f -- "$f"; done
     rmdir "${CONF_DIR:?}" 2>/dev/null || true
     say "wipe: ok"
 }

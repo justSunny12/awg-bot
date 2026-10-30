@@ -54,8 +54,8 @@ class ReserveQuorumCandidateMixin:
         c = self._qcand
         if c is None or c.l != other:
             c = Candidate(other, len(voters), side, timing=self.reserve_quorum_timing(), voters=tuple(n for n in voters if n != side))
-            tie0 = dict(self.rsv_get("rsv_qlog").get("tie") or {})
-            c.tie_told = bool(tie0.get("told")) and tie0.get("side") == "cand"   # после перезапуска эпизод не повторяется
+            tie0 = dict(self.rsv_get("rsv_qlog").get("tie_cand") or {})
+            c.tie_told = bool(tie0.get("told"))               # после перезапуска эпизод не повторяется
             self.__dict__["_rsv_qcand"] = c
             log.info("кворум: кандидат о линии «%s» — голосующих %d", self.reserve_peer_name(), len(voters))
         elif tuple(c.voters) != tuple(n for n in voters if n != side) or c.v != len(voters):
@@ -74,8 +74,7 @@ class ReserveQuorumCandidateMixin:
                 _s, slot = qm.parse_node(node)
             except ValueError:
                 continue
-            rec = (self._gwv.get(slot) or {}) if hasattr(self, "_gwv") else {}
-            alive = bool(rec.get("online")) and (rec.get("lv") is None or rec["lv"].state != "down") if rec or hasattr(self, "_gwv") else True
+            alive = self._quorum_gw_channel_alive(slot)
             w = str(gv.get("w") or "")
             if w:
                 vt = c.votes.get(node)
@@ -83,6 +82,17 @@ class ReserveQuorumCandidateMixin:
                     info = Info.from_dict(gv.get("i")) if gv.get("i") else None
                     c.view_in(node, w, now, since=str(gv.get("since") or ""), e=int(gv.get("e") or 0), info=info)
             c.channel(node, alive)
+
+    def _quorum_gw_channel_alive(self, slot: int) -> bool:
+        """Канал шлюза второй линии жив: сессия гостевого канала открыта и живость не «down».
+        Без учёта гостевого канала (тесты правила) — считаем живым."""
+        if not hasattr(self, "_gwv"):
+            return True
+        rec = self._gwv.get(slot) or {}
+        if not rec.get("online"):
+            return False
+        lv = rec.get("lv")
+        return lv is None or lv.state != "down"
 
     # ── такт ────────────────────────────────────────────────────────────────
     def reserve_quorum_candidate_tick(self, now: float | None = None) -> list[tuple]:
@@ -96,6 +106,7 @@ class ReserveQuorumCandidateMixin:
             # голосующий один (я): автоматического взятия, опроса и ничьей нет — только окно кода
             # по своему «не вижу» (Р4); исполнение прежнего состава снимается
             c.tick(now)
+            c.decided = False                                 # «забираю» при одном голосующем не решение — флаг не держим
             self.__dict__.pop("_quo_exec", None)
             return self._quorum_code_watch(c)
         actions: list[tuple] = []
@@ -135,8 +146,12 @@ class ReserveQuorumCandidateMixin:
         return []
 
     def _quorum_known_e(self, c: Candidate) -> int:
+        """Эпоха её линии по фактам: `st.jrn.mine.e` второй стороны и ответы её ответчика — не
+        поднятая собой после «забираю» (повторный `qtake` после срыва идёт под той же эпохой,
+        гость стартует с эпохой пакета + 1 — шлюзы не уходят вперёд него)."""
         v = self._qvoters.get(f"awgq{c.l}h")
-        return int(v.epoch) if v is not None else 0
+        known = int(self._quorum_known_epoch(c.l)) if hasattr(self, "_quorum_known_epoch") else 0
+        return max(known, int(v.fact) if v is not None else 0)
 
     def _quorum_to_gw(self, node: str, kind: str, body: dict) -> list[tuple]:
         try:
@@ -166,6 +181,15 @@ class ReserveQuorumCandidateMixin:
         if why:
             log.warning("кворум: «нет» о «%s» большинством, но открытие не идёт: %s", self.reserve_peer_name(), why)
             self.rsv_update("rsv_view", auto_block=why)
+            if c.own == "uns" and not self.reserve_open_block():
+                # мешают только паузы автоматического переезда (демпфер после срыва, интервал между
+                # переездами) — код от них не зависит: окно кода (Т-К21) сразу, «забираю» — когда пауза кончится
+                since = self._quorum_no_since(c)
+                self.__dict__["_quo_exec"] = {"stage": "code", "at": now, "e": self._quorum_known_e(c), "since": since,
+                                              "points": {}, "need_at": 0.0, "own": c.own, "paused": True}
+                if not self.reserve_code_window()["open"]:
+                    return self.reserve_code_window_set(True, since=since, n=len(c.no_nodes()), v=c.v, t=qm.threshold(c.v))
+                return []
             c.blocked()
             return self._quorum_rel(c)
         if self.rsv_get("rsv_view").get("auto_block"):
@@ -181,17 +205,23 @@ class ReserveQuorumCandidateMixin:
         c.unpledge(sent)                                      # qtake снимает обязательство на шлюзе
         v = self._qvoters.get(f"awgq{c.l}h")
         if v is not None:
-            v.epoch_in(e + 1)                                 # исход знаю сам: прежнему лидеру под e больше не «да»
+            v.raise_to(e + 1)                                 # исход знаю сам: прежнему лидеру под e больше не «да»
         since = self._quorum_no_since(c)
         self.__dict__["_quo_exec"] = {"stage": "ask", "at": now, "e": e, "since": since, "points": {}, "need_at": 0.0, "own": c.own}
         log.warning("кворум: забираю «%s» под эпоху %s: «нет» %d из %d", self.reserve_peer_name(), e + 1, len(c.no_nodes()), c.v)
         if self.reserve_online():
-            actions.append(("send", "ask", {"case": "q", "since": since}))
+            actions.append(("send", "ask", {"case": "q", "since": since, "kind": self._quorum_kind(c)}))
             self.__dict__["_quo_exec"]["asked"] = True
         else:
             self.__dict__["_quo_exec"]["stage"] = "points"
             actions += self._quorum_need(c, since)
         return actions
+
+    @staticmethod
+    def _quorum_kind(c: Candidate) -> str:
+        """Вид переезда (Р6): свой взгляд «не вижу» — сервер мёртв (`dead`); «вижу», а шлюзы нет —
+        случай 3 (`rf`): тексты называют, кому он не отвечает."""
+        return "dead" if c.own == "uns" else "rf"
 
     def _quorum_no_since(self, c: Candidate) -> str:
         views = self.rsv_get("rsv_view").get("quo_views") or {}
@@ -245,7 +275,7 @@ class ReserveQuorumCandidateMixin:
         self.rsv_update("rsv_view", moved_by={"quorum": True, "points": sorted(points), "at": timeutil.now_iso()})
         log.warning("кворум: точек %d из %d — процесс открытия «%s» по ящику кворума", len(points), t, self.reserve_peer_name())
         return self.reserve_open_by_points({"qpoints": [[x, y] for x, y in sorted(points.items())], "qbox": str(peer["qbox"])},
-                                           "dead", "q")
+                                           self._quorum_kind(c), "q")
 
     def _quorum_exec_tick(self, c: Candidate, now: float) -> list[tuple]:
         """Ход исполнения: просьба без ответа → точки; точек не хватает → окно кода."""
@@ -265,13 +295,17 @@ class ReserveQuorumCandidateMixin:
             out = self._quorum_rel(c)
             log.info("кворум: «%s» снова вижу — исполнение решения снято", self.reserve_peer_name())
             return out
+        if stage == "code" and ex.get("paused") and not self.reserve_auto_block():
+            # пауза кончилась: исполнение того же решения — просьба, точки; окно кода остаётся открытым
+            log.info("кворум: пауза автоматического переезда кончилась — исполняю решение о «%s»", self.reserve_peer_name())
+            return self._quorum_take(c, now)
         ask_s = settings.get_int("app.reserve.ask_seconds", 60)
         if stage == "ask" and now - float(ex.get("at") or now) >= ask_s:
             if 0 < int(ex.get("busy") or 0) < 3 and self.reserve_online():
                 # лидер ответил «занят» (плановая пауза) — повторить просьбу (§3.6), не сразу по точкам
                 ex["at"] = now
                 log.info("кворум: «%s» был занят — прошу снова (%d)", self.reserve_peer_name(), int(ex["busy"]))
-                return [("send", "ask", {"case": "q", "since": str(ex.get("since") or "")})]
+                return [("send", "ask", {"case": "q", "since": str(ex.get("since") or ""), "kind": self._quorum_kind(c)})]
             ex["stage"] = "points"
             log.warning("кворум: «%s» не ответил на просьбу за %d с — по точкам", self.reserve_peer_name(), ask_s)
             return self._quorum_need(c, str(ex.get("since") or ""))

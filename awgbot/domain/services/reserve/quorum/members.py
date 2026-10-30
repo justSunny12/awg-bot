@@ -210,6 +210,11 @@ class ReserveQuorumMembersMixin:
         proposed = self.reserve_quorum_proposed()
         _nodes, big = self._quorum_gw_nodes(side)
         keys_ok = self.reserve_quorum_keys_ok(m) if hasattr(self, "reserve_quorum_keys_ok") else True
+        if hasattr(self, "reserve_quorum_keys_confirmed"):
+            # смена поколения (порог, новое M, возврат по точкам, «🔄 Сменить код») линию не выключает:
+            # до подтверждения новых ключей у всех действует прежнее — ответчик отвечает, счёт идёт (§3.7.10);
+            # первое включение ждёт подтверждения
+            keys_ok = self.reserve_quorum_keys_confirmed(keys_ok)
         return qm.off_reasons(m if m is not None else proposed, acked=m is not None,
                               timing_problem=self.reserve_quorum_timing().check(), overlaps=self._quorum_overlaps(),
                               big_slots=big, keys_ok=keys_ok)
@@ -252,7 +257,9 @@ class ReserveQuorumMembersMixin:
         if m is None:
             return {}
         why = self.reserve_quorum_off_reasons()
-        return {"l": m.l, "g": int(m.g), "members": list(m.members), "active": not why, "why": why[:8]}
+        from awgbot.infra import quoprobe
+        return {"l": m.l, "g": int(m.g), "members": list(m.members), "active": not why, "why": why[:8],
+                "port": int(quoprobe.port())}                 # порт моего ответчика — зонду второй стороны
 
     def reserve_quorum_epoch(self) -> int:
         """Эпоха своей линии (журнал); без журнала — 0."""

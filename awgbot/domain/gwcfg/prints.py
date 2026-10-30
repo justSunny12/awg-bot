@@ -109,9 +109,12 @@ def quorum_print(sec: dict | None) -> str:
         except wgconf.WgConfError:
             return ""
     point = sec.get("point") or {}
+    timing = sec.get("timing") if isinstance(sec.get("timing"), dict) else {}
     text = (f"l={norm(sec.get('l'))}\ng={int(sec.get('g') or 0)}\nmembers={','.join(str(m) for m in (sec.get('members') or []))}\n"
             f"t={int(sec.get('t') or 0)}\nport={int(sec.get('port') or 0)}\n" + "\n".join(canon)
-            + f"\npoint={int(point.get('x') or 0)}:{norm(point.get('y'))}:{int(point.get('q_gen') or 0)}\ne={int(sec.get('e') or 0)}\n")
+            + f"\npoint={int(point.get('x') or 0)}:{norm(point.get('y'))}:{int(point.get('q_gen') or 0)}\ne={int(sec.get('e') or 0)}\n"
+            # цифры лидера: их смена в app.yaml — новый документ голосующим
+            + ("timing=" + ",".join(f"{k}:{timing[k]}" for k in sorted(timing)) + "\n" if timing else ""))
     return section_print("quorum", text)
 
 
@@ -131,6 +134,7 @@ def reserve_print(sec: dict | None) -> str:
             # адрес основы и имя записи — опора факта записи и текстов: их смена тянет документ
             f"peer_host={norm(sec.get('peer_host'))}\nrecord={norm(sec.get('record'))}\n"
             f"name={norm(sec.get('name'))}\nslot={int(sec.get('slot') or 0)}\n"
-            + ("tg=1\n" if sec.get("tg") else ""))           # без флага отпечаток прежний: документ 4.1.x не тянется
+            + ("tg=1\n" if sec.get("tg") else "")            # без флага отпечаток прежний: документ 4.1.x не тянется
+            + (f"peer_name={norm(sec.get('peer_name'))}\n" if sec.get("peer_name") else ""))   # имя второго сервера — панель и тексты агента
     return section_print("reserve", text)
 

@@ -17,9 +17,12 @@ RF_PEER_IF = rfp.PAIR_IF
 
 
 def lost_why(code: str, peer: str) -> str:
-    """Причина Т-РТ8 словами (имя второго сервера — без кавычек, их ставит текст)."""
-    return {"off": "его админ выключил «Мои шлюзы для резерва»", "down": f"шлюз «{peer}» не отвечает",
-            "link": f"нет связи с «{peer}»", "unpaired": "резерв удалён"}.get(code, f"нет связи с «{peer}»")
+    """Причина Т-РТ8 словами: коды отказа второй стороны (`why_words`: тумблер, нет шлюзов,
+    РФ-доступ не задействован, сам ходит через мои) и свои — обрыв линка пары, удаление пары."""
+    from .offer import why_words
+    words = {**why_words(peer), "down": f"шлюз «{peer}» не отвечает",
+             "link": f"нет связи с «{peer}»", "unpaired": "резерв удалён"}
+    return words.get(code, f"нет связи с «{peer}»")
 
 
 class ReserveRfSlotMixin:
@@ -70,40 +73,56 @@ class ReserveRfSlotMixin:
         пользования — `st.rfp.use`; переходы на слот и обратно — Т-РТ6/Т-РТ7."""
         from awgbot.domain.notices import reserve as rn
         notes: list[Notification] = []
-        self.__dict__.pop("_rf_pair_alive_cache", None)         # рукопожатие — заново на каждом такте
-        slot = self.rt_peer_slot()
+        slot = self.rt_peer_slot()                              # рукопожатие — из кэша такта живости (10 с)
         cur = self.rsv_get("rsv_rfpeer")
         had = bool(cur.get("slot"))
         has = slot is not None
         name = self.reserve_peer_name()
+        tick = int(self.__dict__.get("_rf_slot_tick", 0))
+        self.__dict__["_rf_slot_tick"] = tick + 1
+        # линк пары пересоздан (--adopt, рестарт юнита: маршруты таблиц пропали с устройством) или переподнят
+        # из конфига (--reassert, смена ключей: AllowedIPs снова узкие) — штамп устройства и конфига
+        stamp = rfp.link_stamp()
+        recreated = has and had and self.__dict__.get("_rf_pair_stamp") not in (None, stamp)
+        self.__dict__["_rf_pair_stamp"] = stamp
         if has != had:
+            if not has:
+                self._rf_allowed_narrow()                       # сначала узкие AllowedIPs, потом файервол без входа «до established»
             self.rsv_update("rsv_rfpeer", slot=has, peer4=str(rfp.pair_conf().get("peer4") or cur.get("peer4") or ""))
             self._rf_file_sync()
             self._rf_firewall_refresh()
             if not has:
                 notes += self._rf_slot_gone(cur)
                 try:
-                    rfp.allowed_ips_wide(False)
-                    log.info("транзит: AllowedIPs awgpair — только /32 второй стороны")
-                except Exception as e:                        # noqa: BLE001
-                    log.warning("транзит: AllowedIPs линка пары: %s", e)
-                try:
                     slotpolicy.drop_slot_policy(RF_PEER_ID, RF_PEER_IF)
                 except Exception as e:                        # noqa: BLE001
                     log.info("транзит: политика слота %s: %s", RF_PEER_ID, e)
-        if has:
+            else:
+                self._rf_slot_policy()                          # правило по метке и таблица — до зонда слота
+        elif recreated:
+            log.info("транзит: линк пары пересоздан — политика слота «%s» и маршрут заново", name)
+            self._rf_slot_policy()
+            if (self.db.get_state(self._RT_ACTIVE_KEY) or "") == str(RF_PEER_ID):
+                try:
+                    routing.switch_active(RF_PEER_IF)           # маршрут таблицы РФ-доступа — снова в awgpair
+                except routing.RoutingError as e:
+                    log.warning("транзит: маршрут в линк пары не восстановлен: %s", e)
+        if has and (has != had or recreated or tick % 10 == 0):
+            # широкие AllowedIPs — по смене, после пересоздания линка и страховочно раз в 10 тактов
             try:
-                if rfp.allowed_ips_wide(True):                # и после переподнятия линка из конфига — за один такт
+                if rfp.allowed_ips_wide(True):
                     log.info("транзит: AllowedIPs awgpair — %s/32, 0.0.0.0/0", str(rfp.pair_conf().get("peer4") or ""))
             except Exception as e:                            # noqa: BLE001
                 log.warning("транзит: AllowedIPs линка пары: %s", e)
+        elif not has and tick % 10 == 0:
+            self._rf_allowed_narrow(quiet=True)                 # страховка: сужение могло не пройти при пропаже слота
         # факт пользования: активный слот — виртуальный
         active = self.active_gateway() if has else None
         using = active is not None and int(active.id) == RF_PEER_ID
         use = dict(self.rsv_get("rsv_rfpeer").get("use") or {})
         if using and not use:
             since = timeutil.now_iso()
-            self.rsv_update("rsv_rfpeer", use={"since": since})
+            self.rsv_update("rsv_rfpeer", use={"since": since}, lost=None)   # новый эпизод: Т-РТ8 прежнего не в счёт
             if hasattr(self, "reserve_st_sent_reset"):
                 self.reserve_st_sent_reset()
             log.warning("транзит: РФ-доступ через шлюзы «%s» — свои не отвечают", name)
@@ -119,6 +138,25 @@ class ReserveRfSlotMixin:
                 notes.append(Notification(tg_id=int(config.ADMIN_ID), silent=True,
                                           text=rn.rf_transit_back(name, self._gw_display(own) if hasattr(self, "_gw_display") else "")))
         return notes
+
+    def _rf_allowed_narrow(self, quiet: bool = False) -> None:
+        try:
+            if rfp.allowed_ips_wide(False) and not quiet:
+                log.info("транзит: AllowedIPs awgpair — только /32 второй стороны")
+        except Exception as e:                                # noqa: BLE001
+            log.warning("транзит: AllowedIPs линка пары: %s", e)
+
+    def _rf_slot_policy(self) -> None:
+        """Слот 29 появился: правило по метке и таблица слота — сразу, а не 10-м тактом живости: без
+        правила зонд с меткой ушёл бы основной таблицей через WAN и «прошёл»; кэш вердикта слота — прочь."""
+        try:
+            self._ensure_gateway_policy()
+        except Exception as e:                                # noqa: BLE001
+            log.warning("транзит: политика слота %s: %s", RF_PEER_ID, e)
+        for key in ("_rt_spare_last", "_rt_spare_next"):
+            cache = self.__dict__.get(key)
+            if isinstance(cache, dict):
+                cache.clear()
 
     def _rf_own_alive(self, g) -> bool:
         """Свой слот жив: три хороших подряд, либо не падал и не недоступен. Окно после
@@ -144,22 +182,33 @@ class ReserveRfSlotMixin:
         own = self.db.gateways()
         if not own:
             return []
-        own_dead = not any(self._rf_own_alive(g) for g in own)   # до любых сбросов окон
-        first = next((g for g in own if g.preferred), own[0])
+        alive = [g for g in own if self._rf_own_alive(g)]     # до любых сбросов окон
+        own_dead = not alive
+        pool = alive or own                                   # первый живой свой (предпочтительный из живых); все мертвы — предпочтительный
+        first = next((g for g in pool if g.preferred), pool[0])
         self.db.set_state(self._RT_ACTIVE_KEY, str(first.id))
         try:
             routing.switch_active(first.link_if)
         except routing.RoutingError as e:
             log.warning("транзит: трафик на слот %s не переведён: %s", first.id, e)
         self._rt_window_reset(RF_PEER_ID)
+        if not own_dead:
+            self.db.set_state(self._rt_keys(first.id)[1], "0")   # как путь автомата: «снова в строю» своего не будет
         self.rsv_update("rsv_rfpeer", use=None)               # эпизод кончился здесь: такт не объявит второй раз
         if hasattr(self, "reserve_st_sent_reset"):
             self.reserve_st_sent_reset()
         log.warning("транзит: слот «%s» пропал при активном — назад на слот %s", name, first.id)
+        try:
+            engaged = bool(self.routing_engaged())
+        except Exception:                                     # noqa: BLE001
+            engaged = True
+        if not engaged:
+            return []                                         # РФ-доступ выключил сам админ — не о чем сообщать
         if not why_code:
             peer = self.reserve_peer_state()
             code = str((peer.get("rfp") or {}).get("why") or "")
-            why_code = code if code in ("off", "down") else ("unpaired" if not self.reserve_paired() else "link")
+            why_code = code if code in ("off", "down", "no_gw", "rt_off", "peer") else \
+                ("unpaired" if not self.reserve_paired() else "link")
         if not own_dead:
             return [Notification(tg_id=int(config.ADMIN_ID), silent=True,
                                  text=rn.rf_transit_back(name, self._gw_display(first) if hasattr(self, "_gw_display") else ""))]

@@ -227,10 +227,12 @@ class ReserveQuorumProbesMixin:
         out: dict = {}
         probes = self.reserve_probes()
         side = self.reserve_quorum_side()
+        peer_port = int(self.reserve_quorum_peer_line().get("port") or 0) if side else 0   # порт её ответчика (st.quo)
         for name, rec in (probes.get("mine") or {}).items():
             conf = str(rec.get("conf") or "")
             if name.startswith("awgq") and len(name) == 6 and conf:
-                out[name] = {"conf": conf, "l": name[4], "target": "h", **_conf_addrs(conf)}
+                out[name] = {"conf": conf, "l": name[4], "target": "h",
+                             **_conf_addrs(conf, peer_port if name[4] != side else 0)}
         if side and self.reserve_quorum_leader_host() == probenet.other_side(side):
             conf = self.reserve_probe_conf(side, "r")
             if conf:
@@ -302,10 +304,11 @@ def _probe_conf_ok(conf: str) -> bool:
     return probenet.is_probe(allowed) and probenet.is_probe(addr) and bool(c.get("Peer", "Endpoint"))
 
 
-def _conf_addrs(conf: str) -> dict:
-    """{node_addr, resp, port} из конфига зонда."""
+def _conf_addrs(conf: str, port: int = 0) -> dict:
+    """{node_addr, resp, port} из конфига зонда; `port` — порт ответчика той линии (0 — свой)."""
     import re
     addr = re.search(r"(?m)^\s*Address\s*=\s*([0-9.]+)", conf)
     resp = re.search(r"(?m)^\s*AllowedIPs\s*=\s*([0-9.]+)", conf)
     from awgbot.infra import quoprobe
-    return {"node_addr": addr.group(1) if addr else "", "resp": resp.group(1) if resp else "", "port": quoprobe.port()}
+    return {"node_addr": addr.group(1) if addr else "", "resp": resp.group(1) if resp else "",
+            "port": int(port or 0) or quoprobe.port()}

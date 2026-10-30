@@ -34,6 +34,7 @@ class Voter:
     view: str = "new"
     since: float = 0.0            # с какого момента взгляд
     epoch: int = 0
+    fact: int = 0                 # эпоха по фактам (ответы ответчика, слова сервера) — без поднятой собой
     started: float = 0.0
     last_reply: float = 0.0       # последний ответ (monotonic), 0 — ещё не было
     last_probe: float = 0.0
@@ -74,6 +75,8 @@ class Voter:
         self.last_reply, self.last = now, r
         self.resends = 0
         self.pause_until = 0.0                                # пауза — до срока или первого ответа
+        if int(r.e) > int(self.fact):
+            self.fact = int(r.e)
         if int(r.e) > int(self.epoch):
             self.epoch = int(r.e)
             out.append(f"adopt:{self.epoch}")
@@ -147,11 +150,20 @@ class Voter:
         return True
 
     def epoch_in(self, e: int) -> bool:
-        """Эпоха из `qstate`/`state{e}`; больше известной — принята."""
+        """Эпоха из `qstate`/`state{e}` (или журнала линии) — факт; больше известной — принята."""
+        if int(e) > int(self.fact):
+            self.fact = int(e)
         if int(e) > int(self.epoch):
             self.epoch = int(e)
             return True
         return False
+
+    def raise_to(self, e: int) -> None:
+        """Кандидат после «забираю»: прежнему лидеру под меньшей эпохой больше не «да» — только
+        для своего слова и своей пробы; фактом (основой следующего `qtake`, `state`, `qstate`) не
+        становится: сорванное открытие и снятое исполнение её не отменяют."""
+        if int(e) > int(self.epoch):
+            self.epoch = int(e)
 
     def pause(self, now: float, seconds: float) -> None:
         self.pause_until = now + min(float(seconds), float(self.timing.pause_s))

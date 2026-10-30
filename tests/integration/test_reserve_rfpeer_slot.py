@@ -23,6 +23,7 @@
 from __future__ import annotations
 
 import itertools
+import os
 
 import pytest
 
@@ -327,7 +328,9 @@ def test_no_change_means_no_awg_set(rf):
 def test_a_link_raised_from_its_config_is_widened_within_one_tick(rf):
     _ready(rf)
     rp.ticks(rf, 2)
-    rf.k.allowed = [f"{rp.PEER4}/32"]                         # --reassert / смена ключей
+    rf.k.allowed = [f"{rp.PEER4}/32"]                         # --reassert / смена ключей: конфиг переписан
+    conf = f"{config.AWG_DIR}/awgpair.conf"
+    os.utime(conf, ns=(os.stat(conf).st_atime_ns, os.stat(conf).st_mtime_ns + 1_000_000))
     rp.tick(rf)
     assert rf.k.wide, "переподнятый линк пары остался узким дольше такта"
 

@@ -136,6 +136,8 @@ class ReserveRfOfferMixin:
             self.rsv_update("rsv_rfpeer", peer_use={"since": use_since, "told": True, "base": base})
             log.warning("транзит: «%s» ходит через мои шлюзы с %s", name, use_since)
             return [Notification(tg_id=int(config.ADMIN_ID), silent=True, text=rn.rf_peer_use(name, use_since))]
+        if use_since and ep and int(self.__dict__.get("_rf_offer_tick", 0)) % 10 == 0:
+            self._rf_peer_episode_advance(ep)                 # объём эпизода копится дельтами (перезагрузка не обнуляет)
         if not use_since and ep:
             up, dn = self._rf_peer_episode_bytes(ep)
             self.rsv_update("rsv_rfpeer", peer_use=None)
@@ -144,21 +146,41 @@ class ReserveRfOfferMixin:
         return []
 
     def reserve_rf_peer_counters(self) -> dict:
-        """Показания счётчиков транзита (байт ↑ в линки слотов, ↓ обратно); нет таблицы — нули."""
+        """Показания счётчиков транзита (байт ↑ в линки слотов, ↓ обратно) и поколение таблицы
+        (boot_id:handle — перезагрузка или flush ruleset обнуляют счётчики, как в опросе учёта);
+        нет таблицы — нули без поколения."""
         try:
+            from awgbot.domain.gwsnapshot import boot_id
             from awgbot.infra import rfacct
             st = rfacct.read()
-            return {"up": int(st.counters.get(rfacct.COUNTER_RFP_UP) or 0), "dn": int(st.counters.get(rfacct.COUNTER_RFP_DN) or 0)}
+            if st is None:
+                return {"up": 0, "dn": 0, "gen": ""}
+            return {"up": int(st.counters.get(rfacct.COUNTER_RFP_UP) or 0), "dn": int(st.counters.get(rfacct.COUNTER_RFP_DN) or 0),
+                    "gen": f"{boot_id()}:{int(st.handle)}"}
         except Exception:                                     # noqa: BLE001
-            return {"up": 0, "dn": 0}
+            return {"up": 0, "dn": 0, "gen": ""}
+
+    @staticmethod
+    def _rf_peer_episode_sum(ep: dict, now: dict) -> tuple[int, int]:
+        """Объём эпизода: накопленное + дельта от базы до `now` по поколению таблицы."""
+        from awgbot.infra import rfacct
+        base, acc = dict(ep.get("base") or {}), dict(ep.get("acc") or {})
+        out = []
+        for k in ("up", "dn"):
+            prev = int(base[k]) if k in base else None
+            out.append(int(acc.get(k) or 0) + rfacct.delta(str(base.get("gen") or ""), str(now.get("gen") or ""), prev, int(now.get(k) or 0)))
+        return out[0], out[1]
+
+    def _rf_peer_episode_advance(self, ep: dict) -> dict:
+        """Накопить дельту в `acc`, базу — на текущее: объём до и после перезагрузки «Beta» вместе (§11.3)."""
+        now = self.reserve_rf_peer_counters()
+        up, dn = self._rf_peer_episode_sum(ep, now)
+        ep = {**ep, "base": now, "acc": {"up": up, "dn": dn}}
+        self.rsv_update("rsv_rfpeer", peer_use=ep)
+        return ep
 
     def _rf_peer_episode_bytes(self, ep: dict) -> tuple[int, int]:
-        now = self.reserve_rf_peer_counters()
-        base = dict(ep.get("base") or {})
-        cu, cd = int(now.get("up") or 0), int(now.get("dn") or 0)
-        bu, bd = int(base.get("up") or 0), int(base.get("dn") or 0)
-        # счётчики с нуля после перезагрузки: показание ниже базы — всё текущее прошло после неё
-        return (cu - bu if cu >= bu else cu, cd - bd if cd >= bd else cd)
+        return self._rf_peer_episode_sum(ep, self.reserve_rf_peer_counters())
 
     def reserve_rf_peer_episode(self) -> dict:
         """Эпизод второй стороны для карточки: {since, up, dn}; пусто — нет."""
@@ -167,6 +189,17 @@ class ReserveRfOfferMixin:
             return {}
         up, dn = self._rf_peer_episode_bytes(ep)
         return {"since": str(ep.get("since") or ""), "up": up, "dn": dn}
+
+    def reserve_rfpeer_offer_now(self) -> None:
+        """Тумблер «Мои шлюзы для резерва» снят из обработчика: согласие пересчитать сразу (правило,
+        файервол, `st`); эпизод второй стороны и слот просящего — своим тактом, их уведомления
+        только оттуда."""
+        if not self.reserve_paired():
+            return
+        try:
+            self._rf_offer_sync()
+        except Exception as e:                                # noqa: BLE001
+            log.warning("РФ-доступ через второй сервер: согласие: %s", e)
 
     # ── удаление пары ───────────────────────────────────────────────────────
     def reserve_rfpeer_drop(self) -> None:

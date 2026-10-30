@@ -42,7 +42,9 @@ class ReserveQuorumLeaderMixin:
         if getattr(self, "guest", False):
             q = self.__dict__.get("_guest_quorum") or {}
             l, g, members = str(q.get("l") or ""), int(q.get("g") or 0), list(q.get("members") or [])
-            if not l or not members:
+            if not l or not members or not q.get("active", True):
+                # состава нет или линия основы выключена (цифры, блок зондов): второго писателя по кворуму
+                # быть не может, ограждения по голосам нет (аварийного возврата по Q1 у выключенной линии нет)
                 self.__dict__.pop("_rsv_qleader", None)
                 return None
             leader_host = probenet.other_side(l)              # клон живёт у второй стороны
@@ -256,7 +258,7 @@ class ReserveQuorumLeaderMixin:
             self.__dict__.pop("_guest_quorum", None)
             return
         self.__dict__["_guest_quorum"] = {"l": l, "g": int(body.get("g") or 0), "members": members,
-                                          "port": int(body.get("port") or 0)}
+                                          "port": int(body.get("port") or 0), "active": bool(body.get("active", True))}
         fenced = dict(self.rsv_get("rsv_qlog").get("fenced") or {})
         if fenced.get("hold"):
             self.rsv_update("rsv_qlog", fenced={k: v for k, v in fenced.items() if k != "hold"})
@@ -277,7 +279,8 @@ class ReserveQuorumLeaderMixin:
         peer = self.reserve_quorum_peer_line()
         if not peer.get("l") or not peer.get("members"):
             return None
-        return {"l": str(peer["l"]), "g": int(peer.get("g") or 0), "members": list(peer["members"]), "port": quoprobe.port()}
+        return {"l": str(peer["l"]), "g": int(peer.get("g") or 0), "members": list(peer["members"]), "port": quoprobe.port(),
+                "active": bool(peer.get("active"))}            # линия выключена — гость не ограждается по голосам
 
     def reserve_quorum_qcount_in(self, body: dict) -> None:
         self.__dict__["_guest_qcount"] = {"y": int(body.get("y") or 0), "v": int(body.get("v") or 0),

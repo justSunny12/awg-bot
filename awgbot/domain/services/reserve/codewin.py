@@ -66,7 +66,8 @@ class ReserveCodeWindowMixin:
         if not cw.get("open"):
             return []
         self.rsv_update("rsv_view", code={"open": False, "closed_why": by, "closed_at": timeutil.now_iso(),
-                                          "episode": str(cw.get("episode") or ""), "told": bool(cw.get("told"))})
+                                          "episode": str(cw.get("episode") or ""), "told": bool(cw.get("told")),
+                                          "by": str(cw.get("by") or "")})
         log.info("кворум: приём аварийного кода закрыт (%s)", by)
         pid = self.reserve_peer_admin_id()
         if cw.get("told") and pid and not quiet:

@@ -124,7 +124,7 @@ def test_the_leader_host_is_this_server_at_home_and_the_reserve_while_away(quo):
 def test_st_carries_the_line_for_the_second_server(quo):
     qc.enable(quo)
     part = quo.reserve_st_body().get("quo")
-    assert part == {"l": "a", "g": 1, "members": ["a", "b", "a1", "a2"], "active": True, "why": []}, part
+    assert part == {"l": "a", "g": 1, "members": ["a", "b", "a1", "a2"], "active": True, "why": [], "port": 8789}, part
 
 
 # ── ключи и адреса зондов ────────────────────────────────────────────────────

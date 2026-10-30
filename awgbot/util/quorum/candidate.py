@@ -61,7 +61,12 @@ class Candidate:
 
     # ── вход ────────────────────────────────────────────────────────────────
     def set_members(self, voters, v: int) -> None:
-        self.voters = tuple(n for n in voters if n != self.me)
+        """Состав сменился: голоса снятых уходят, «решено» снимается (порог другой — решение
+        заново по тому же счёту: держащееся большинство даёт `take`, упавшее — `rel`)."""
+        new_voters = tuple(n for n in voters if n != self.me)
+        if new_voters != self.voters or int(v) != self.v:
+            self.decided = False
+        self.voters = new_voters
         self.v = int(v)
         for n in list(self.votes):
             if n not in self.voters:

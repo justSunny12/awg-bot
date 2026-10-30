@@ -135,15 +135,26 @@ class ReserveTgViaMixin:
 
     @staticmethod
     def _tgvia_probe(iface: str) -> bool:
-        """DNS-запрос к резолверу подсети пользователей через аплинк — любой ответ: аплинк
-        жив (до основы дома или до её клона после переезда)."""
+        """DNS-запрос к резолверу сервера через аплинк — любой ответ: аплинк жив (до основы дома
+        или до её клона после переезда). Адрес — `DNS =` конфига аплинка (адрес сервера в его
+        подсети: у прежней раскладки он не .1), без него — .1 подсети пользователей."""
+        import re
         from awgbot.infra import gwguard
+        from awgbot.infra.gwguard import uplinktxn
+        resolver = ""
         try:
-            subnet = str(gwguard.unit_env("CLIENT_SUBNET") or "").split("/")[0]
-            parts = subnet.split(".")
-            resolver = ".".join(parts[:3] + ["1"]) if len(parts) == 4 else ""
-        except Exception:                                     # noqa: BLE001
+            with open(uplinktxn.uplink_conf_path(iface), encoding="utf-8") as f:
+                m = re.search(r"(?m)^\s*DNS\s*=\s*([0-9.]+)", f.read())
+            resolver = m.group(1) if m else ""
+        except (OSError, ValueError):
             resolver = ""
+        if not resolver:
+            try:
+                subnet = str(gwguard.unit_env("CLIENT_SUBNET") or "").split("/")[0]
+                parts = subnet.split(".")
+                resolver = ".".join(parts[:3] + ["1"]) if len(parts) == 4 else ""
+            except Exception:                                 # noqa: BLE001
+                resolver = ""
         return bool(resolver) and _dns_probe(resolver, iface)
 
     # ── перерезолв сразу (§4.12): повтор, пока запись не дала адрес ─────────

@@ -98,8 +98,8 @@ async def rf_mine_toggle(cb: CallbackQuery, services):
 async def rf_mine_off_yes(cb: CallbackQuery, services):
     if not await _set(cb, "app.reserve.rf_via_mine", False):
         return
-    if hasattr(services, "reserve_rfpeer_tick"):
-        await call(services.reserve_rfpeer_tick)              # согласие снято сразу: правило, файервол, st
+    if hasattr(services, "reserve_rfpeer_offer_now"):
+        await call(services.reserve_rfpeer_offer_now)         # согласие снято сразу: правило, файервол, st
     await _render(cb, "rsv", services)
     await cb.answer("Мои шлюзы для резерва: выкл")
 
