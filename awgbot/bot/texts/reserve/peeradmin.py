@@ -38,8 +38,9 @@ def screen(d: dict) -> str:
         since = d.get("down_since") or ""
         lines.append(f"🔴 линк с {_n(peer)}: нет связи" + (f" с {_e(_when(since))}" if since else ""))
     if d.get("has_gateway"):
-        lines.append(("🟢 РФ-доступ через шлюзы " + _n(me) + ": разрешён") if d.get("rf_via_mine")
-                     else f"☑️ РФ-доступ через шлюзы {_n(me)}: выключен его админом")
+        use_since = _when(((d.get("rfpeer") or {}).get("peer_use") or {}).get("since") or "")
+        lines.append((f"🟢 РФ-доступ через шлюзы {_n(me)}: разрешён" + (f" · сейчас идёт через них с {_e(use_since)}" if use_since else ""))
+                     if d.get("rf_via_mine") else f"☑️ РФ-доступ через шлюзы {_n(me)}: выключен его админом")
     mem = int(d.get("mem_free") or 0)
     if mem and mem < 400:
         lines.append(f"⚠️ у {_n(me)} мало свободной памяти ({mem} МБ) — твоих пользователей он может не потянуть")

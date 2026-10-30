@@ -44,6 +44,8 @@ reserve — взаимный резерв серверов AWG на сторон
   первого шага процесса открытия;
 - `rfzone` — РФ-доступ пользователей основы в зоне: запасной слот «шлюзы резерва»
   у гостя, разрешение резерва;
+- `rfpeer` — РФ-доступ через второй сервер: виртуальный слот «шлюзы второго» с
+  линком пары у просящего, согласие и правила у транзитного;
 - `tgpool` — пул адресов Telegram для порта вебхука: анонсы AS Telegram,
   обучение по SYN, Т-РУ25;
 - `journal` — эпоха линии данных и следование основы, пока её пользователи у
@@ -74,6 +76,7 @@ from .package import ReservePackageMixin
 from .pairing import ReservePairingMixin
 from .peeradmin import ReservePeerAdminMixin
 from .quorum import ReserveQuorumMixin
+from .rfpeer import ReserveRfPeerMixin
 from .rfzone import ReserveRfZoneMixin
 from .tgpool import ReserveTgPoolMixin
 from .screen import ReserveScreenMixin
@@ -90,7 +93,7 @@ class ReserveMixin(ReserveStateMixin, ReserveKeysMixin, ReserveInviteMixin, Rese
                    ReserveSessionMixin, ReserveLivenessMixin, ReserveScreenMixin, ReservePeerAdminMixin, ReservePackageMixin, ReserveUnpairMixin,
                    ReserveGuestMixin, ReserveDnsMixin, ReserveOutboundMixin, ReserveInboundMixin, ReserveNotifyMixin,
                    ReserveTrafficMixin, ReserveAwayMixin, ReserveGwSideMixin, ReserveZoneLinksMixin, ReserveGwGuestMixin,
-                   ReserveOpeningMixin, ReserveRfZoneMixin, ReserveTgPoolMixin, ReserveMergeOpsMixin,
+                   ReserveOpeningMixin, ReserveRfZoneMixin, ReserveRfPeerMixin, ReserveTgPoolMixin, ReserveMergeOpsMixin,
                    ReserveCodeWindowMixin, ReserveReturnMixin, ReserveOpenProcMixin, ReserveJournalMixin,
                    ReserveInboundBackMixin, ReserveStuckMixin, ReserveQuorumMixin):
     """Резерв серверов: всё о паре — в одном месте сервисов."""

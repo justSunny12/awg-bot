@@ -73,6 +73,7 @@ class ReservePeerAdminMixin:
             "inn": self.reserve_in(), "in_since": self.rsv_get("rsv_in").get("since") or "",
             "pkg_at": pkg_in.get("at") or "", "pkg_gen": int(pkg_in.get("gen") or 0),
             "rf_via_mine": settings.get_bool("app.reserve.rf_via_mine", True),
+            "rfpeer": self.reserve_rfpeer_view() if hasattr(self, "reserve_rfpeer_view") else {},
             "has_gateway": bool(self.db.gateways()),
             "traffic": self._reserve_traffic_view(),
             "peer_ready": bool(ps.get("ready")), "my_ready": settings.get_bool("app.reserve.ready", False),

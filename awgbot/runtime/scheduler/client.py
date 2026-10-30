@@ -238,6 +238,13 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
             await pkg.send_notifications(bot, notes)
         except Exception as e:                        # noqa: BLE001
             log.warning("routing_liveness: %s", e)
+        if hasattr(services, "reserve_rfpeer_tick"):
+            try:
+                # РФ-доступ через второй сервер — тем же ритмом, после вердиктов слотов: согласие,
+                # эпизод второй стороны, слот «шлюзы второго» (reserve/rfpeer)
+                await pkg.send_notifications(bot, await asyncio.to_thread(services.reserve_rfpeer_tick))
+            except Exception as e:                    # noqa: BLE001
+                log.warning("rfpeer: %s", e)
         try:
             # Слушатель канала линка — здесь же: слот могли завести или снять,
             # а привязка к адресу /30 существует, только пока поднят линк.

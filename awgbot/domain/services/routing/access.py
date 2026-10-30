@@ -57,13 +57,21 @@ class RoutingAccessMixin:
         who = f" {self._gw_link(active)}" if active is not None else ""
         tail = (" " + self._txt_rt_standby_also_down(also)) if also else ""
         return (f"🔴 Шлюз{who} не отвечает.{tail}\n"
-                + self._rt_effect_line())
+                + self._rt_effect_line() + self._rt_rfpeer_tail())
+
+    def _rt_rfpeer_tail(self) -> str:
+        """Т-РТ9: почему запасного РФ-доступа через второй сервер нет (пара есть, согласия нет)."""
+        why = self.reserve_rf_no_backup_why() if hasattr(self, "reserve_rf_no_backup_why") else ""
+        if not why:
+            return ""
+        import html
+        return f"\nЗапасного РФ-доступа через шлюзы «{html.escape(self.reserve_peer_name(), quote=False)}» нет: {html.escape(why, quote=False)}"
 
     def _txt_rt_gw_no_path(self, active=None, also=()) -> str:
         who = f" {self._gw_link(active)}" if active is not None else ""
         tail = (" " + self._txt_rt_standby_also_down(also)) if also else ""
         return (f"🔴 Шлюз{who} отвечает, но интернета за ним нет "
-                f"— проверь аплинк и NAT на самом шлюзе.{tail}\n" + self._rt_effect_line())
+                f"— проверь аплинк и NAT на самом шлюзе.{tail}\n" + self._rt_effect_line() + self._rt_rfpeer_tail())
 
     _RT_LINK_IF = "awglink"
 

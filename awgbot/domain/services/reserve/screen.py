@@ -65,6 +65,7 @@ class ReserveScreenMixin:
                 "force_why": self.reserve_force_check() if self.reserve_out() == "away" else "пользователи не у резерва",
                 "await_merge": bool(out.get("await_merge")),
                 "jrn_on": self.reserve_jrn_on(), "jrn_moved": self.reserve_jrn_moved(),
+                "rfpeer": self.reserve_rfpeer_view() if hasattr(self, "reserve_rfpeer_view") else {},
                 "jrn_follow": self.reserve_follow_view(),
                 "self_admin": self.reserve_self_peer_admin(),
                 "quorum": self._quorum_card_safe()}

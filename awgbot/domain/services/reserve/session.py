@@ -113,7 +113,16 @@ class ReserveSessionMixin:
                 "mem_free": self.reserve_mem_free_mb(), "online": int(self.__dict__.get("_rsv_guest_online") or 0),
                 "in_by": str(self.rsv_get("rsv_in").get("by") or ""), "zone": str(self._my_side().get("zone") or ""),
                 **({"jrn": jrn} if (jrn := self._jrn_st_part()) else {}),
-                **({"quo": quo} if (quo := self._quo_st_part()) else {})}
+                **({"quo": quo} if (quo := self._quo_st_part()) else {}),
+                **({"rfp": rfp} if (rfp := self._rfp_st_part()) else {})}
+
+    def _rfp_st_part(self) -> dict:
+        """РФ-доступ через второй сервер в `st`: согласие и факт пользования (reserve/rfpeer)."""
+        try:
+            return self.reserve_rfp_st_part() if hasattr(self, "reserve_rfp_st_part") else {}
+        except Exception as e:                                # noqa: BLE001
+            log.info("резерв: поле rfp в st не собралось: %s", e)
+            return {}
 
     def _quo_st_part(self) -> dict:
         """Кворум в `st`: своя линия, поколение состава, включён ли (quorum/members)."""
@@ -233,7 +242,10 @@ class ReserveSessionMixin:
             keep = jrn.get("keep") if isinstance(jrn.get("keep"), dict) else None
             mine = jrn.get("mine") if isinstance(jrn.get("mine"), dict) else None
             quo = body.get("quo") if isinstance(body.get("quo"), dict) else {}
-            self.rsv_update("rsv_peer_state", jrn_keep=dict(keep or {}), jrn_mine=dict(mine or {}), quo=dict(quo or {}))
+            rfp = body.get("rfp") if isinstance(body.get("rfp"), dict) else {}
+            self.rsv_update("rsv_peer_state", jrn_keep=dict(keep or {}), jrn_mine=dict(mine or {}), quo=dict(quo or {}),
+                            rfp={"offer": bool(rfp.get("offer")), "why": str(rfp.get("why") or "")[:16],
+                                 "use": str(rfp.get("use") or "")[:32]})
             self.reserve_jrn_keep_in(keep)
             self.reserve_keep_mine_in(mine)
             row = self.reserve_peer() or {}

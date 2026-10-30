@@ -19,10 +19,13 @@ class SlotsMixin:
     _RT_ACTIVE_KEY = "routing_active_gateway"
 
     def rt_slots(self) -> list:
-        """Слоты для маршрутизации: из БД и, у гостя на резерве, запасной «шлюзы
-        резерва» последним (reserve/rfzone)."""
+        """Слоты для маршрутизации: из БД и последним виртуальный — у гостя на резерве
+        запасной «шлюзы резерва» (reserve/rfzone), у хоста «шлюзы второго сервера»
+        (reserve/rfpeer): последний кандидат, не липкий."""
         slots = list(self.db.gateways())
         spare = self.guest_rf_spare() if hasattr(self, "guest_rf_spare") else None
+        if spare is None and hasattr(self, "rt_peer_slot"):
+            spare = self.rt_peer_slot()                       # у хоста — «шлюзы второго сервера» (reserve/rfpeer)
         if spare is not None and slots:
             slots.append(spare)
         return slots
@@ -88,6 +91,8 @@ class SlotsMixin:
 
     def _gw_display(self, gw) -> str:
         """«Pi4 (ЕК-22П10)» — имя и подпись, сырое: экранирует слой текстов."""
+        if self._gw_virtual(gw) and gw.label:
+            return gw.label                                   # «шлюзы «Beta»» — имени устройства нет
         name = self._gw_name(gw)
         return name + (f" ({gw.label})" if gw.label and gw.device_id else "")
 
@@ -100,14 +105,19 @@ class SlotsMixin:
         return html.escape(self._gw_display(gw), quote=False)
 
     def _gw_card_link(self, gw, label: str = "в карточке шлюза") -> str:
-        """Ссылка на карточку слота с произвольной подписью."""
+        """Ссылка на карточку слота с произвольной подписью; у виртуального слота карточки нет."""
         slot = int(getattr(gw, "id", 0) or 0)
-        return self._link(f"gw-{slot}", label) if slot else label
+        return self._link(f"gw-{slot}", label) if slot and not self._gw_virtual(gw) else label
+
+    @staticmethod
+    def _gw_virtual(gw) -> bool:
+        """Виртуальный слот (без строки в gateways): «шлюзы второго сервера» и запасной зоны."""
+        return int(getattr(gw, "id", 0) or 0) >= 29 and not int(getattr(gw, "device_id", 0) or 0)
 
     def _gw_link(self, gw) -> str:
         """Имя шлюза в уведомлении — ссылка на карточку слота (gw-<слот>)."""
         slot = int(getattr(gw, "id", 0) or 0)
-        if not slot or not self.bot_username:
+        if not slot or not self.bot_username or self._gw_virtual(gw):
             return self._gw_display_h(gw)
         return f'<a href="https://t.me/{self.bot_username}?start=gw-{slot}">{self._gw_display_h(gw)}</a>'
 

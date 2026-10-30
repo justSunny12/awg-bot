@@ -43,12 +43,12 @@ def render(spec: pkg.GuardSpec) -> str:
         if spec.nat_exclude_ifs:
             rule = f"oifname != {nftjson.ifs(spec.nat_exclude_ifs)} " + rule
         nat_chain.append("        " + rule)
-        nat_chain += _guest_postrouting(spec)
+        nat_chain += _guest_postrouting(spec) + _rfpeer_postrouting(spec)
         nat_chain.append("    }")
-    elif _guest_postrouting(spec):
+    elif _guest_postrouting(spec) or _rfpeer_postrouting(spec):
         nat_chain = ["", "    chain postrouting {",
                      "        type nat hook postrouting priority srcnat; policy accept;",
-                     *_guest_postrouting(spec), "    }"]
+                     *_guest_postrouting(spec), *_rfpeer_postrouting(spec), "    }"]
     nat_chain += _guest_prerouting(spec)
     if not spec.filter:
         # NAT-only: файервол выключен, но пользователям нужен выход наружу.
@@ -57,8 +57,8 @@ def render(spec: pkg.GuardSpec) -> str:
         # VPN-транзитом (связь подсетей — его часть); при открытой политике
         # хоста закрыть остальные пары можно только здесь.
         # Второе — частные адреса назначения не уходят к провайдеру (ниже).
-        rules = (_quarantine_forward(spec) + _pair_forward(spec) + _probe_forward(spec) + _wan_private_drop(spec)
-                 + _guest_forward(spec) + _tg_forward(spec))
+        rules = (_quarantine_forward(spec) + _rfpeer_forward(spec) + _pair_forward(spec) + _probe_forward(spec)
+                 + _wan_private_drop(spec) + _guest_forward(spec) + _tg_forward(spec))
         if spec.peer_link_block:
             links = nftjson.ifs(spec.peer_link_block)
             if spec.peer_link_ifs:
@@ -79,6 +79,7 @@ def render(spec: pkg.GuardSpec) -> str:
             # только канал своей паре (у стороны ВПС AllowedIPs = 0.0.0.0/0)
             block += ["", "    chain input {",
                       "        type filter hook input priority filter; policy accept;",
+                      *_rfpeer_input(spec),
                       "        ct state established,related accept",
                       *q_in,
                       "    }"]
@@ -104,6 +105,7 @@ def render(spec: pkg.GuardSpec) -> str:
         "",
         "    chain input {",
         "        type filter hook input priority filter; policy drop;",
+        *_rfpeer_input(spec),
         "        ct state established,related accept",
         "        ct state invalid drop",
         '        iifname "lo" accept',
@@ -155,6 +157,7 @@ def render(spec: pkg.GuardSpec) -> str:
             "    chain forward {",
             "        type filter hook forward priority filter; policy drop;",
             *_quarantine_forward(spec),
+            *_rfpeer_forward(spec),
             *_pair_forward(spec),
             *_probe_forward(spec),
             "        ct state established,related accept",
@@ -231,8 +234,54 @@ def _pair_input(spec) -> list[str]:
             f"        iifname {q} drop"]
 
 
+RFP_PRIVATE4 = (*pkg.PRIVATE4, "100.64.0.0/10", "169.254.0.0/16")
+
+
+def _rfpeer_input(spec) -> list[str]:
+    """Просящий: `AllowedIPs` линка пары расширены до 0.0.0.0/0, и вторая сторона может прислать
+    пакет с любым адресом — на хост с линка пары только к своему адресу в /30 (канал пары),
+    раньше `ct state established`: иначе пакет под чужое соединение хоста прошёл бы."""
+    if not spec.pair_if or not spec.rfp_self4:
+        return []
+    return [f"        iifname {nftjson.ifs([spec.pair_if])} ip daddr != {spec.rfp_self4} drop"]
+
+
+def _rfpeer_forward(spec) -> list[str]:
+    """РФ-доступ через второй сервер — раньше запрета пересылки линка пары. Транзитный:
+    с адреса второй стороны из линка пары — только в линки своих слотов и не в частные
+    адреса; обратно — только ответы. Просящий: пользователи из интерфейсов AWG в линк
+    пары не в частные; из линка пары — только ответы соединений, ушедших туда с маскарадом."""
+    if not spec.pair_if:
+        return []
+    q = nftjson.ifs([spec.pair_if])
+    priv = "{ " + ", ".join(RFP_PRIVATE4) + " }"
+    out: list[str] = []
+    if spec.rfp_offer4 and spec.link_ifs:
+        out += [f"        iifname {q} ip saddr {spec.rfp_offer4} oifname {nftjson.ifs(spec.link_ifs)} ip daddr != {priv} accept",
+                f"        oifname {q} ip daddr {spec.rfp_offer4} ct direction reply accept"]
+    if spec.rfp_self4 and spec.tunnel_ifs and spec.tunnel_nets4:
+        out += [f"        iifname {nftjson.ifs(spec.tunnel_ifs)} oifname {q} ip saddr @{pkg.SET_TUNNEL_NETS} ip daddr != {priv} accept",
+                f"        iifname {q} ct direction reply ct reply ip daddr {spec.rfp_self4} accept"]
+    return out
+
+
+def _rfpeer_postrouting(spec) -> list[str]:
+    """Маскарад транзита: у транзитного — с адреса второй стороны в линки слотов (шлюз адреса
+    линка пары не знает); у просящего — пользователи в линк пары своим адресом в /30."""
+    if not spec.pair_if:
+        return []
+    q = nftjson.ifs([spec.pair_if])
+    out: list[str] = []
+    if spec.rfp_offer4 and spec.link_ifs:
+        out.append(f"        oifname {nftjson.ifs(spec.link_ifs)} ip saddr {spec.rfp_offer4} masquerade")
+    if spec.rfp_self4 and spec.tunnel_nets4:
+        out.append(f"        oifname {q} ip saddr @{pkg.SET_TUNNEL_NETS} masquerade")
+    return out
+
+
 def _pair_forward(spec) -> list[str]:
-    """Пересылки через линк пары нет вовсе — раньше любых разрешений."""
+    """Пересылки через линк пары нет, кроме РФ-доступа через второй сервер (выше) — раньше
+    любых разрешений."""
     if not spec.pair_if:
         return []
     q = nftjson.ifs([spec.pair_if])

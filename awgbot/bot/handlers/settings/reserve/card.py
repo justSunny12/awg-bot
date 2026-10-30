@@ -79,10 +79,29 @@ async def ready_off_yes(cb: CallbackQuery, services):
 @router.callback_query(RsvCB.filter(F.action == "rfmine"))
 async def rf_mine_toggle(cb: CallbackQuery, services):
     on = settings.get_bool("app.reserve.rf_via_mine", True)
+    if on:
+        # выключение в эпизоде — диалог Т-РТ4: второй сервер сейчас ходит через мои шлюзы
+        view = await call(services.reserve_rfpeer_view) if hasattr(services, "reserve_rfpeer_view") else {}
+        ep = (view or {}).get("peer_use") or {}
+        if ep:
+            await edit(cb, st_t.rfmine_off_dialog(await call(services.reserve_peer_name), str(ep.get("since") or "")),
+                       rkb.confirm_rfmine_off())
+            await cb.answer()
+            return
     if not await _set(cb, "app.reserve.rf_via_mine", not on):
         return
     await _render(cb, "rsv", services)
     await cb.answer("Мои шлюзы для резерва: " + ("выкл" if on else "вкл"))
+
+
+@router.callback_query(RsvCB.filter(F.action == "rfmine_off"))
+async def rf_mine_off_yes(cb: CallbackQuery, services):
+    if not await _set(cb, "app.reserve.rf_via_mine", False):
+        return
+    if hasattr(services, "reserve_rfpeer_tick"):
+        await call(services.reserve_rfpeer_tick)              # согласие снято сразу: правило, файервол, st
+    await _render(cb, "rsv", services)
+    await cb.answer("Мои шлюзы для резерва: выкл")
 
 
 @router.callback_query(RsvCB.filter(F.action == "ret"))
@@ -156,7 +175,8 @@ async def unpair_ask(cb: CallbackQuery, services):
     if why:
         await cb.answer(ui.toast_cap(why), show_alert=True)
         return
-    await edit(cb, st_t.unpair_dialog(await call(services.reserve_peer_name)), rkb.confirm_unpair())
+    rfv = await call(services.reserve_rfpeer_view) if hasattr(services, "reserve_rfpeer_view") else {}
+    await edit(cb, st_t.unpair_dialog(await call(services.reserve_peer_name), rfv), rkb.confirm_unpair())
     await cb.answer()
 
 

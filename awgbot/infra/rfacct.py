@@ -44,7 +44,10 @@ MAP_UP = "rf_dev_up"
 MAP_DN = "rf_dev_dn"
 COUNTER_UP = "rf_up"
 COUNTER_DN = "rf_dn"
-RULES = 4                               # правил в цепочке forward: по паре на направление
+COUNTER_RFP_UP = "rfp_up"               # РФ-доступ через второй сервер: с линка пары в линки слотов и обратно
+COUNTER_RFP_DN = "rfp_dn"
+RULES = 4                               # правил в цепочке forward: по паре на направление (+2 при паре серверов)
+PAIR_IF = "awgpair"
 # тот же список, что PRIVATE_NETS обвязки шлюза (install/routing-gw-setup.sh)
 PRIVATE_NETS = ("10.0.0.0/8", "100.64.0.0/10", "169.254.0.0/16", "172.16.0.0/12", "192.168.0.0/16")
 
@@ -81,9 +84,14 @@ def _addr(a: str) -> str:
         return ""
 
 
-def render_static(links: list[str], subnets: list[str]) -> str:
+def rules_count(pair_peer4: str = "") -> int:
+    return RULES + (2 if pair_peer4 else 0)
+
+
+def render_static(links: list[str], subnets: list[str], pair_peer4: str = "") -> str:
     """Неизменяемая при опросе часть: таблица, наборы, цепочка и правила. Без
-    `delete table`: именованные счётчики и карты переживают `flush chain`."""
+    `delete table`: именованные счётчики и карты переживают `flush chain`.
+    `pair_peer4` — адрес второй стороны в линке пары: ещё два счётчика транзита."""
     links = [str(x) for x in links if x]
     subs = nets.normalize(subnets)
     priv = ", ".join(PRIVATE_NETS)
@@ -99,6 +107,8 @@ def render_static(links: list[str], subnets: list[str]) -> str:
               f"add map {TABLE} {MAP_DN} {{ type ipv4_addr : counter; }}",
               f"add counter {TABLE} {COUNTER_UP}",
               f"add counter {TABLE} {COUNTER_DN}",
+              f"add counter {TABLE} {COUNTER_RFP_UP}",
+              f"add counter {TABLE} {COUNTER_RFP_DN}",
               f"add chain {TABLE} {CHAIN} {{ type filter hook forward priority filter + 10; policy accept; }}",
               f"flush chain {TABLE} {CHAIN}"]
     if links and subs:
@@ -109,6 +119,14 @@ def render_static(links: list[str], subnets: list[str]) -> str:
             f"add rule {TABLE} {CHAIN} iifname {ifs} ip daddr @{SET_CLIENTS} ip saddr != @{SET_PRIVATE} counter name \"{COUNTER_DN}\"",
             f"add rule {TABLE} {CHAIN} iifname {ifs} ip daddr @{SET_CLIENTS} ip saddr != @{SET_PRIVATE} counter name ip daddr map @{MAP_DN}",
         ]
+        if pair_peer4:
+            links_only = [x for x in links if x != PAIR_IF]
+            if links_only:
+                lo = nftjson.ifs(links_only)
+                lines += [
+                    f"add rule {TABLE} {CHAIN} iifname \"{PAIR_IF}\" oifname {lo} ip saddr {pair_peer4} ip daddr != @{SET_PRIVATE} counter name \"{COUNTER_RFP_UP}\"",
+                    f"add rule {TABLE} {CHAIN} iifname {lo} oifname \"{PAIR_IF}\" ip daddr {pair_peer4} ip saddr != @{SET_PRIVATE} counter name \"{COUNTER_RFP_DN}\"",
+                ]
     return "\n".join(lines) + "\n"
 
 
@@ -230,7 +248,7 @@ _static_applied = ""                     # хэш последней приме�
 
 
 def sync(state: Optional[AcctState], links: list[str], subnets: list[str],
-         devices: list[tuple[int, str]]) -> bool:
+         devices: list[tuple[int, str]], pair_peer4: str = "") -> bool:
     """Привести таблицу к желаемому составу. Статика (наборы, цепочка,
     правила) переписывается только когда изменилась с последнего применения
     в этом процессе или таблицы нет; счётчики и карты — по диффу. Возвращает,
@@ -238,10 +256,10 @@ def sync(state: Optional[AcctState], links: list[str], subnets: list[str],
     global _static_applied
     if not links:
         return False
-    static = render_static(links, subnets)
+    static = render_static(links, subnets, pair_peer4)
     digest = hashlib.sha256(static.encode()).hexdigest()
     script = ""
-    if state is None or digest != _static_applied or state.rules != RULES:
+    if state is None or digest != _static_applied or state.rules != rules_count(pair_peer4):
         script += static
     script += render_devices(state, devices)
     if not script:

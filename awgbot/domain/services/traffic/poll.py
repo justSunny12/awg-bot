@@ -124,7 +124,7 @@ class PollMixin:
             if not rf_err:
                 try:
                     rfacct.sync(rf_state, rf_links, [n for n, _i in config.routing_client_subnets()],
-                                self.db.rf_acct_devices())
+                                self.db.rf_acct_devices(), self._rf_pair_peer4())
                 except rfacct.AcctError as e:
                     rf_err = str(e)
             self._rf_note_error(rf_err)
@@ -139,6 +139,16 @@ class PollMixin:
     _RF_MONTH_TX_KEY = "rf_month_tx"
     _RF_TOTAL_SAMPLE_KEY = "rf_total_sample"
 
+    def _rf_pair_peer4(self) -> str:
+        """Адрес второй стороны в линке пары — счётчики РФ-доступа через второй сервер; пусто — пары нет."""
+        if not hasattr(self, "reserve_paired") or not self.reserve_paired():
+            return ""
+        try:
+            from awgbot.infra.routing import rfpeer as rfp
+            return str(rfp.pair_conf().get("peer4") or "")
+        except Exception:                                     # noqa: BLE001
+            return ""
+
     def rf_links(self) -> list[str]:
         """Линки шлюзов из БД плюс интерфейс из конфига; пусто — учёта нет."""
         out: list[str] = []
@@ -148,6 +158,8 @@ class PollMixin:
         base = config.ROUTING_GW_INTERFACE
         if base and base not in out:
             out.append(base)
+        if out and hasattr(self, "reserve_paired") and self.reserve_paired():
+            out.append("awgpair")                             # РФ-доступ через второй сервер — тоже РФ-трафик пользователей
         return out
 
     def _rf_accumulate(self, state) -> None:

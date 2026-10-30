@@ -47,6 +47,7 @@ class LanMapMixin:
         for gw in slots:
             if 1 <= int(gw.id) <= lanspace.MAX_SLOTS:
                 bits |= routing.slot_mark(gw.id)
+        bits |= routing.slot_mark(29) | routing.slot_mark(30)   # виртуальные слоты: «шлюзы второго» и запасной зоны
         if mark & bits:
             return f"метка РФ-доступа 0x{mark:x} задевает биты меток слотов 0x{bits:x}", "routing.fwmark"
         return "", ""

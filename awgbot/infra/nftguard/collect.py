@@ -168,6 +168,7 @@ def build_spec(admin_ips, channel_extra=(), transit_links=()) -> pkg.GuardSpec:
         quarantine_ifs=pkg.quarantine_ifaces(links),
         quarantine_pairs=quarantine_pairs(pkg.quarantine_ifaces(links)),
         **pair_link(),
+        **rfpeer(),
         **guest_zone(),
         **zone_tg(),
         **quorum_probe(),
@@ -323,6 +324,23 @@ def pair_link() -> dict:
         return {}
     port = int(settings.get_int("app.reserve.pair_channel_port", 8788) or 8788)
     return {"pair_if": PAIR_IF, "pair_peer4": peer, "pair_port": port}
+
+
+def rfpeer() -> dict:
+    """РФ-доступ через второй сервер — из файла согласия бота (`reserve/rfpeer.json`,
+    без БД) и адресов линка пары: `offer` — я даю шлюзы (адрес второй стороны),
+    `slot` — у меня стоит слот «шлюзы второго» (свой адрес). Нет файла — полей нет."""
+    from awgbot.infra.routing import rfpeer as rfp
+    st = rfp.read()
+    if not st:
+        return {}
+    conf = rfp.pair_conf()
+    out: dict = {}
+    if st.get("offer") and conf.get("peer4"):
+        out["rfp_offer4"] = str(conf["peer4"])
+    if st.get("slot") and conf.get("self4"):
+        out["rfp_self4"] = str(conf["self4"])
+    return out
 
 
 JOIN_STAMP = "# awg-bot: сопряжение "

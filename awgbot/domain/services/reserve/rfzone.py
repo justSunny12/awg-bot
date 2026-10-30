@@ -54,7 +54,9 @@ class ReserveRfZoneMixin:
 
     @staticmethod
     def rt_is_spare(gw) -> bool:
-        return gw is not None and int(getattr(gw, "id", 0) or 0) == RF_SPARE_ID
+        """Виртуальный слот: запасной «шлюзы резерва» у гостя (30) или «шлюзы второго сервера»
+        у хоста (29, reserve/rfpeer): вердикт зондом через свою таблицу, не липкий."""
+        return gw is not None and int(getattr(gw, "id", 0) or 0) in (RF_SPARE_ID, RF_SPARE_ID - 1)
 
     def _spare_verdict(self, gw, active: bool) -> str:
         """Зонд наружу через таблицу запасного слота; между зондами — последний вердикт."""
@@ -79,22 +81,16 @@ class ReserveRfZoneMixin:
     def _rt_spare_yields(self, akey, ups: dict) -> bool:
         """Запасной слот активен, а слот основы ожил (три хороших подряд) —
         уступить: запасной не липкий."""
-        if akey != RF_SPARE_ID:
+        if akey not in (RF_SPARE_ID, RF_SPARE_ID - 1):
             return False
-        return any(k != RF_SPARE_ID and k is not None and int(v or 0) >= self._RT_UP_STREAK for k, v in ups.items())
+        return any(k not in (RF_SPARE_ID, RF_SPARE_ID - 1) and k is not None and int(v or 0) >= self._RT_UP_STREAK
+                   for k, v in ups.items())
 
     # ── резерв: что разрешаю гостю ──────────────────────────────────────────
     def reserve_rf_via_view(self) -> dict:
-        """Поля состояния гостю: `rf_via` — тумблер «Мои шлюзы для резерва» включён и
-        есть чем дать (режим включён, активный слот доступен), `rf_cidr` — /30
-        veth РФ-трафика."""
+        """Поля состояния гостю: `rf_via` — то же правило согласия, что у РФ-доступа через
+        второй сервер (reserve/rfpeer: тумблер, свой живой слот, сам не в транзите),
+        `rf_cidr` — /30 veth РФ-трафика."""
         from awgbot.core import settings
-        allowed = settings.get_bool("app.reserve.rf_via_mine", True) and bool(self.db.gateways())
-        ok = False
-        if allowed:
-            try:
-                active = self.active_gateway()
-                ok = bool(self.routing_engaged()) and active is not None and not self._rt_unavailable(active.id)
-            except Exception:                                 # noqa: BLE001
-                ok = False
+        ok = self.reserve_rf_offer()[0] if hasattr(self, "reserve_rf_offer") else False
         return {"rf_via": bool(ok), "rf_cidr": str(settings.get("app.reserve.zone_rf_cidr", "169.254.77.4/30") or "")}

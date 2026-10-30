@@ -42,7 +42,8 @@ def _strip_foreign_share(con) -> None:
        зондов и точки второй стороны в копию не идут; восстановленный сервер
        собирает состав, зонды и ключи кворума заново."""
     from awgbot.infra.db import listsnap
-    for key in ("rsv_pkg_in", "rsv_guest_links", "rsv_jrn_in", "rsv_jrn_out", "rsv_quorum", "rsv_probes", "rsv_qkeys", "rsv_qlog"):
+    for key in ("rsv_pkg_in", "rsv_guest_links", "rsv_jrn_in", "rsv_jrn_out", "rsv_quorum", "rsv_probes", "rsv_qkeys", "rsv_qlog",
+                "rsv_rfpeer"):
         try:
             con.execute("DELETE FROM server_state WHERE key = ?", (key,))
             con.commit()

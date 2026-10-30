@@ -82,6 +82,11 @@ def card(*, ready: bool, rf_on: bool, has_gateway: bool, ret_immediate: bool, na
         _back())
 
 
+def confirm_rfmine_off() -> InlineKeyboardMarkup:
+    """Т-РТ4: «⬅️ Отмена» первой, «Выключить» второй."""
+    return kc.confirm(SetCB(sec="rsv"), "Выключить", RsvCB(action="rfmine_off"))
+
+
 def confirm_move() -> InlineKeyboardMarkup:
     return kc.confirm(SetCB(sec="rsv"), "🔀 Перевести", RsvCB(action="move_yes"), danger=False)
 
