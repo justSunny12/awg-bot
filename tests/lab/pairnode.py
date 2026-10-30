@@ -29,8 +29,15 @@ data/ (bot.db, reserve/), awg/ (конфиги awg0 и awgpair), cmd/ (кома�
 
 Команды (файл cmd/<имя>, содержимое — аргументы JSON): load {n, prefix, pause, base},
 set {name, field, value}, share {slot, out}, code {out}, open_share {share}, move {},
-return {}, backup {out}.
+return {}, backup {out}, qpause {seconds} (кворум: плановая пауза лидера перед остановкой).
 Итог команды — cmd/<имя>.done (JSON) или cmd/<имя>.err.
+
+Шлюзы основы с кворумом (`LAB_GW_SLOTS=1,2`, сценарии кворума): их агентов заменяет
+`tests/lab/gwnode.py` — настоящий голосующий в пространстве шлюза. Для основы (сторона
+`a`) слоты есть в составе её линии с возможностью `quo1` (строк слотов в базе нет:
+линков слотов стенд не поднимает), снимок слота — поле `quo` из файла шлюза, живость
+канала конфигурации — его отметка, раздел `quorum` документа — файлом шлюзу; слова
+каналов шлюзов (гостевой у резерва, конфигурации у основы) — шина `tests/lab/labbus`.
 """
 from __future__ import annotations
 
@@ -185,6 +192,149 @@ def lab_world(svc, shared: Path) -> None:
     openproc.rsvopen_sandbox_props = props
 
 
+# ── обход дефекта на время прогона (только по LAB_QKEYS_SHIM=1) ──────────────
+
+def lab_qkeys_shim(svc) -> None:
+    """Порог `t` в `qkeys` затирается полем вида конверта (`gwlink.pack` кладёт вид
+    сообщения в тот же ключ `t`): приёмник отвергает слово, ключи кворума не
+    подтверждаются, кворум не включается. Обход стенда — только чтобы прогнать
+    сценарии дальше включения: порог берётся из состава линии второй стороны
+    (`st.quo`), как его посчитала бы основа. По умолчанию выключен: без него
+    сценарий падает на включении — это и есть находка."""
+    from awgbot.util import pairproto
+    from awgbot.util.quorum import members as qm
+    real = pairproto.check
+
+    def check(proto, kind, body, sender):
+        if kind == "qkeys" and isinstance(body.get("t"), str):
+            members = svc.reserve_quorum_peer_line().get("members") or []
+            body = {**body, "t": qm.threshold(max(1, len(members) - 1))}
+        return real(proto, kind, body, sender)
+    pairproto.check = check
+
+
+def lab_guard_shim() -> None:
+    """Пакет nftguard не выставляет `TG_OUT4` и `SET_TG_OUT` (а `collect.zone_tg` и `render`
+    берут их через пакет): при оболочке зоны с awggx сборка таблицы awg_bot_guard падает
+    AttributeError, файервол хоста не ставится — у зоны нет маскарада наружу, бот основы на
+    резерве не достаёт Telegram. Обход стенда — только по LAB_GUARD_SHIM=1: имена из
+    common — в пакет. По умолчанию выключен: без него сценарии кворума падают на переезде."""
+    from awgbot.infra import nftguard
+    from awgbot.infra.nftguard import common
+    for name in ("TG_OUT4", "SET_TG_OUT"):
+        if not hasattr(nftguard, name):
+            setattr(nftguard, name, getattr(common, name))
+
+
+# ── шлюзы основы с кворумом (gwnode) ─────────────────────────────────────────
+
+def lab_gateways(svc, pair: Path, slots: list[int]) -> dict:
+    """Слоты шлюзов-заглушек в мире узла; возвращает состояние для такта `lab_gw_step`."""
+    from types import SimpleNamespace
+    from awgbot.runtime import rsvactions
+    from awgbot.util.quorum import members as qm
+    shared, bus = pair / "shared", pair / "bus"
+    caps = ["cfg1", "rsv1", "quo1", "rsvtg1"]
+
+    def alive(slot: int) -> bool:
+        try:
+            return time.time() - float((shared / f"gw{slot}.link.alive").read_text()) < 15
+        except (OSError, ValueError):
+            return False
+
+    def snap(slot: int) -> dict:
+        try:
+            return json.loads((shared / f"gw{slot}.snap.json").read_text(encoding="utf-8")) or {}
+        except (OSError, ValueError):
+            return {}
+
+    real_caps, real_snap, real_sess = svc.gwlink_agent_caps, svc.gwlink_snapshot, svc.gwlink_session
+    svc.gwlink_agent_caps = lambda slot: list(caps) if int(slot) in slots else real_caps(slot)
+    svc.gwlink_snapshot = lambda slot: {"quo": snap(int(slot))} if int(slot) in slots else real_snap(slot)
+    svc.gwlink_session = lambda slot: ({"caps": list(caps)} if alive(int(slot)) else {}) if int(slot) in slots else real_sess(slot)
+    me = "A" if svc.reserve_quorum_side() == "a" else "B"
+    if me == "A":                                              # шлюзы стенда — линии основы; у резерва своих нет
+        svc._quorum_gw_nodes = lambda side: ([qm.gateway_node(side, s) for s in slots], [])
+    real_one = rsvactions._one
+
+    async def one(act: tuple) -> None:
+        kind = act[0] if act else ""
+        if kind in ("gw", "gwlink") and len(act) > 2 and int(act[1]) in slots:
+            from tests.lab import labbus
+            labbus.post(bus, f"G{int(act[1])}", {"from": me, "slot": int(act[1]), "ch": "guest" if kind == "gw" else "link",
+                                                  "kind": act[2], "body": act[3] if len(act) > 3 else {}})
+            return
+        await real_one(act)
+    rsvactions._one = one
+    return {"me": me, "slots": slots, "shared": shared, "bus": bus, "doc_at": 0.0, "SimpleNamespace": SimpleNamespace}
+
+
+async def lab_gw_step(svc, st: dict) -> None:
+    """Входящие слова шлюзов и (у основы) документ слотам и их снимки — раз в 5 с."""
+    from awgbot.runtime import rsvactions
+    from tests.lab import labbus
+    for m in labbus.take(st["bus"], st["me"]):
+        slot, kind, body = int(m.get("slot") or 0), str(m.get("kind") or ""), dict(m.get("body") or {})
+        try:
+            if m.get("ch") == "guest" and st["me"] == "B":
+                if kind == "hello":
+                    acts = await asyncio.to_thread(svc.reserve_guest_opened, slot, body)
+                else:
+                    acts = await asyncio.to_thread(svc.reserve_guest_in, slot, kind, body)
+            elif m.get("ch") == "link" and st["me"] == "A":
+                acts = await asyncio.to_thread(svc.reserve_quorum_link_in, slot, kind, body)
+            else:
+                acts = []
+            await rsvactions.run(acts)
+        except Exception as e:                                 # noqa: BLE001
+            import logging
+            logging.warning("шина стенда: слово %s шлюза %s: %s", kind, slot, e)
+    if st["me"] != "A" or time.monotonic() - st["doc_at"] < 5:
+        return
+    st["doc_at"] = time.monotonic()
+    from awgbot.core import config
+    for slot in st["slots"]:
+        try:
+            sec = await asyncio.to_thread(svc.gwcfg_quorum, st["SimpleNamespace"](id=slot))
+            state = "away" if svc.reserve_out() == "away" else "home"
+            doc = {"quorum": sec, "reserve": {"slot": slot, "name": str(config.SERVER_NAME or ""), "state": state}}
+            if sec is None:                                    # почему раздела нет — сценарию в разбор
+                from awgbot.util.quorum import members as qm
+                m = svc.reserve_quorum_mine() or svc.reserve_quorum_proposed()
+                doc["why_none"] = {"m": m.to_dict() if m else None, "peer_quo1": svc.reserve_quorum_peer_quo1(),
+                                   "own_ip": svc.reserve_own_ip(), "pub": bool(svc._quorum_server_pubkey()),
+                                   "port": svc._quorum_server_port(),
+                                   "node_rec": bool(((svc.reserve_probes().get(m.l) or {}).get("nodes") or {}).get(
+                                       qm.gateway_node(m.l, slot))) if m else None}
+            tmp = st["shared"] / f"gw{slot}.cfg.json.tmp"
+            tmp.write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
+            os.replace(tmp, st["shared"] / f"gw{slot}.cfg.json")
+            await asyncio.to_thread(svc.reserve_quorum_snapshot_in, slot, svc.gwlink_snapshot(slot).get("quo"))
+        except Exception as e:                                 # noqa: BLE001
+            import logging
+            logging.warning("документ шлюза %s: %s", slot, e)
+
+
+def _quo_status(svc) -> dict:
+    """Кворум узла для сценариев: включён ли и почему нет, счёт лидера, кандидат, свои
+    взгляды, ограждение, ход исполнения, линия второй стороны."""
+    out: dict = {}
+    for key, fn in (("why", lambda: svc.reserve_quorum_off_reasons()), ("count", lambda: svc.reserve_quorum_count()),
+                    ("cand", lambda: svc.reserve_quorum_candidate_view()), ("views", lambda: svc.reserve_quorum_my_views()),
+                    ("fenced", lambda: svc.reserve_quorum_fenced()), ("peer_line", lambda: svc.reserve_quorum_peer_line()),
+                    ("mine", lambda: (svc.reserve_quorum_mine().to_dict() if svc.reserve_quorum_mine() else None)),
+                    ("keys_on", lambda: svc.reserve_quorum_keys_on()),
+                    ("exec", lambda: {k: v for k, v in (svc.__dict__.get("_quo_exec") or {}).items() if k in ("stage", "e", "asked")}),
+                    ("gwviews", lambda: {n: v.get("w") for n, v in svc._qgwviews.items()}),
+                    ("qlog", lambda: svc.rsv_get("rsv_qlog")), ("moved_by", lambda: svc.rsv_get("rsv_view").get("moved_by"))):
+        try:
+            out[key] = fn()
+        except Exception as e:                                 # noqa: BLE001
+            out[key] = f"{type(e).__name__}: {e}"
+    out["active"] = out.get("why") == []
+    return out
+
+
 # ── работа ──────────────────────────────────────────────────────────────────
 
 def _status(svc, w: Path) -> dict:
@@ -195,10 +345,11 @@ def _status(svc, w: Path) -> dict:
           "last_i": svc.db.jrn_last_i(), "out": svc.rsv_get("rsv_out"), "in": svc.rsv_get("rsv_in"),
           "poll": svc.rsv_get("rsv_poll"), "pkg_sent": {k: v for k, v in svc.rsv_get("rsv_pkg_sent").items()
                                                           if k in ("gen", "at", "jrn")},
-          "pkg_in": {k: v for k, v in svc.rsv_get("rsv_pkg_in").items() if k in ("gen", "at")},
+          "pkg_in": {k: v for k, v in svc.rsv_get("rsv_pkg_in").items() if k in ("gen", "at", "m_gen")},
+          "m_gen": int(svc.reserve_keys().get("m_gen") or 0),
           "peer": {k: v for k, v in svc.reserve_peer_state().items() if k in ("ready", "caps", "version", "inn", "out")},
           "jrn_on": svc.reserve_jrn_on(), "code_window": svc.reserve_code_window(),
-          "tail_meta": svc.rsv_get("rsv_tail")}
+          "tail_meta": svc.rsv_get("rsv_tail"), "quo": _quo_status(svc)}
     try:
         keep = svc.reserve_keep_store()
         st["keep_last"] = list(keep.last()) if keep is not None else None
@@ -283,6 +434,10 @@ async def _command(svc, w: Path, name: str, args: dict) -> dict:
         acts = await asyncio.to_thread(svc.reserve_return_start, "button")   # «↩️ Вернуть пользователей»
         await rsvactions.run(acts)
         return {"acts": [a[0] for a in acts]}
+    if name == "qpause":
+        acts = await asyncio.to_thread(svc.reserve_quorum_pause_actions, int(args.get("seconds", 300)))
+        await rsvactions.run(acts)
+        return {"acts": [a[0] + ":" + str(a[1]) for a in acts]}
     if name == "backup":
         dst = sqlite3.connect(str(args["out"]))
         try:
@@ -318,6 +473,12 @@ async def run(a: argparse.Namespace) -> None:
     db.init_schema()
     svc = Services(db)
     lab_world(svc, Path(os.environ["LAB_SHARED"]))
+    if os.environ.get("LAB_QKEYS_SHIM") == "1":
+        lab_qkeys_shim(svc)
+    if os.environ.get("LAB_GUARD_SHIM") == "1":
+        lab_guard_shim()
+    gw_slots = [int(x) for x in os.environ.get("LAB_GW_SLOTS", "").split(",") if x.strip()]
+    gw_st = lab_gateways(svc, Path(os.environ["LAB_SHARED"]).parent, gw_slots) if gw_slots else None
     bot = Bot(config.BOT_TOKEN, session=AiohttpSession(api=TelegramAPIServer.from_base(os.environ["LAB_BOTAPI"])),
               default=DefaultBotProperties(parse_mode=ParseMode.HTML, link_preview_is_disabled=True))
     try:
@@ -344,6 +505,8 @@ async def run(a: argparse.Namespace) -> None:
     try:
         while True:
             await asyncio.sleep(0.5)
+            if gw_st is not None:
+                await lab_gw_step(svc, gw_st)
             for f in sorted(cmd.iterdir()):
                 if f.suffix in (".done", ".err", ".tmp"):
                     continue

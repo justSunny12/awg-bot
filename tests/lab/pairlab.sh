@@ -20,6 +20,10 @@
 #   pl_pair_up                    pl_init, оба узла с поллингом, журнал включён, снимки приняты
 #   pl_open_wait <срок>           ход процесса открытия у B до done или fail (open.status)
 #   pl_guest_start / pl_guest_stop   бот основы на резерве (guest_main) в зоне, команды — $PL/G
+#   pl_conf <узел> <ключ.через.точку> <значение JSON>   правка app.yaml узла (до pl_start)
+#   pl_gw_start <слот> / pl_gw_stop <слот>   шлюз основы с кворумом (gwnode) в lab-G1, lab-G2, lab-GR (слот 3);
+#                                 основе и резерву слоты — LAB_GW_SLOTS (до pl_start)
+#   pl_gq <слот> <выражение>      значение из status.json шлюза (выражение python над s)
 #   pl_cleanup                    всё снять (trap EXIT сценария)
 set -u
 PL_HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; PL_ROOT="$(cd "$PL_HERE/../.." && pwd)"
@@ -43,7 +47,8 @@ pl_env() {   # окружение узла; у A свои каталоги со�
     [ "$n" = A ] && printf '%s\n' "RSV_STATE_DIR=$w/rsv" "RSV_RUN=$w/grun" "RSV_VAR=$w/gvar" "RSV_ZONE=awg-guest-a"
     printf '%s\n' "AWG_BOT_CONF_DIR=$w/conf" "AWG_BOT_DATA_DIR=$w/data" "AWG_BOT_ENV=$w/env" \
         "LAB_SHARED=$PL/shared" "LAB_BOTAPI=http://${PL_GW[$n]}:8081" "LAB_VENV=$PL_VENV" \
-        "LAB_NETNS=${PL_NS[$n]}" "LAB_RECORD=$RECORD" "PYTHONPATH=$PL_ROOT" "HOME=/root"
+        "LAB_NETNS=${PL_NS[$n]}" "LAB_RECORD=$RECORD" "PYTHONPATH=$PL_ROOT" "HOME=/root" \
+        "QUO_NS=awg-quo-$n" "QUO_CONF_DIR=$w/quo" "LAB_GW_SLOTS=${LAB_GW_SLOTS:-}" "LAB_QKEYS_SHIM=${LAB_QKEYS_SHIM:-}" "LAB_GUARD_SHIM=${LAB_GUARD_SHIM:-}"
 }
 
 # Узлы входят только в сетевое пространство (nsenter --net), а не через `ip netns exec`:
@@ -113,7 +118,8 @@ ListenPort = $port
 MTU = 1376
 $OBF
 EOF
-        chmod 600 "$PL/$n/awg/"*.conf
+        awg genpsk > "$PL/$n/awg/wireguard_psk.key"           # общий PSK сервера: параметры интерфейса читают его вместе с конфигом
+        chmod 600 "$PL/$n/awg/"*.conf "$PL/$n/awg/wireguard_psk.key"
         local ns="${PL_NS[$n]}" ifc addr
         ip netns exec "$ns" sysctl -qw net.ipv4.ip_forward=1      # сервер AWG пересылает (выход зоны гостя — через него)
         for ifc in awg0 awgpair; do
@@ -208,6 +214,48 @@ pl_guest_stop() {
     kill "$PL_GUEST_PID" 2>/dev/null; sleep 1; kill -9 "$PL_GUEST_PID" 2>/dev/null; PL_GUEST_PID=""
 }
 
+pl_conf() {  # pl_conf <узел> <ключ.через.точку> <значение JSON> — правка conf/app.yaml узла
+    "$PY" -c 'import json,sys,yaml
+p=sys.argv[1]; d=yaml.safe_load(open(p, encoding="utf-8"))
+cur=d; keys=sys.argv[2].split(".")
+for k in keys[:-1]: cur=cur.setdefault(k, {})
+cur[keys[-1]]=json.loads(sys.argv[3])
+open(p, "w", encoding="utf-8").write(yaml.safe_dump(d, allow_unicode=True))' "$PL/$1/conf/app.yaml" "$2" "$3"
+}
+
+# Шлюз основы с кворумом: tests/lab/gwnode.py в пространстве lab-G<слот> (вход — nsenter --net:
+# пространство зондов awg-quo-G<слот> скрипт должен смонтировать в общем пространстве монтирования).
+declare -A PL_GWPID=()
+declare -A PL_GWNS=([1]=G1 [2]=G2 [3]=GR)      # слот 3 (ансамбль v = 4) — в пространстве GR топологии
+pl_gw_start() {
+    local s="$1" w="$PL/G$1"
+    mkdir -p "$w"
+    (cd "$PL_ROOT" && exec nsenter --net="/run/netns/lab-${PL_GWNS[$s]}" env QUO_NS="awg-quo-G$s" QUO_CONF_DIR="$w/quo" \
+        PYTHONPATH="$PL_ROOT" HOME=/root "$PY" -m tests.lab.gwnode --work "$w" --slot "$s" --pair "$PL") >>"$w/node.log" 2>&1 &
+    PL_GWPID[$s]=$!
+    sleep 1
+    kill -0 "${PL_GWPID[$s]}" 2>/dev/null || pl_fail "шлюз $s не запустился: $(tail -n8 "$w/node.log")"
+}
+
+pl_gw_stop() {
+    local p="${PL_GWPID[$1]:-}"
+    [ -n "$p" ] || return 0
+    kill "$p" 2>/dev/null; sleep 0.5; kill -9 "$p" 2>/dev/null; PL_GWPID[$1]=""
+}
+
+pl_gq() {    # pl_gq <слот> <выражение над s>
+    "$PY" -c 'import json,sys
+try:
+    s = json.load(open(sys.argv[1]))
+except Exception:
+    s = {}
+try:
+    v = eval(sys.argv[2], {"s": s})
+except Exception:
+    v = None
+print(json.dumps(v, ensure_ascii=False) if not isinstance(v, str) else v)' "$PL/G$1/status.json" "$2"
+}
+
 pl_cmd() {   # pl_cmd <узел> <команда> [json] [срок, с]
     local n="$1" c="$2" body="${3:-{\}}" budget="${4:-60}" d="$PL/$1/cmd"
     rm -f "$d/$c.done" "$d/$c.err"
@@ -253,6 +301,9 @@ pl_cleanup_quiet() {
     pkill -9 -f "[g]uest_main" 2>/dev/null
     for n in A B; do pl_stop "$n"; done
     pkill -9 -f "[p]airnode run --work $PL/" 2>/dev/null       # и узлы прерванного прогона
+    for n in 1 2 3; do pl_gw_stop "$n"; done
+    pkill -9 -f "[g]wnode --work $PL/" 2>/dev/null
+    for n in A B G1 G2 G3; do ip netns del "awg-quo-$n" 2>/dev/null; done   # зонды — вместе с пространством
     [ -n "$PL_BOTAPI_PID" ] && kill -9 "$PL_BOTAPI_PID" 2>/dev/null; PL_BOTAPI_PID=""
     systemctl stop awg-bot-guest.service awg-bot-guest-dns.service awg-bot-rsvopen.service 2>/dev/null
     ip netns exec lab-B bash "$PL_Z" --teardown >/dev/null 2>&1; ip netns exec lab-B bash "$PL_Z" --wipe >/dev/null 2>&1
