@@ -1327,6 +1327,14 @@ cmd_reserve() {  # reserve status | plan | selftest | open | zone | teardown | t
         status)
             require_installed
             [[ -x /usr/local/sbin/reserve-pair-setup.sh ]] && sh /usr/local/sbin/reserve-pair-setup.sh --status 2>/dev/null || echo "pair=absent"
+            # РФ-доступ через второй сервер: файл согласия бота и AllowedIPs линка пары (рантайм)
+            if [[ -f "$DATA_DIR/reserve/rfpeer.json" ]]; then
+                local _rfp; _rfp="$(tr -d '\n ' < "$DATA_DIR/reserve/rfpeer.json")"
+                case "$_rfp" in *'"offer":true'*) echo "rfpeer=offer" ;; *'"slot":true'*) echo "rfpeer=slot" ;; *) echo "rfpeer=off" ;; esac
+            else
+                echo "rfpeer=off"
+            fi
+            command -v awg >/dev/null 2>&1 && echo "allowed=$(awg show awgpair allowed-ips 2>/dev/null | awk '{$1=""; print}' | tr -d '\n' | sed 's/^ //')"
             bash "$zone" --status ;;
         plan)     bash "$zone" --plan ;;
         selftest) require_root; bash "$zone" --selftest ;;
