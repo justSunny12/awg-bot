@@ -220,6 +220,37 @@ async def _one(services, act: tuple) -> None:
         from awgbot.bot.notifier import send_notifications
         if _bot is not None:
             await send_notifications(_bot, act[1])
+    elif kind == "tg":
+        # обход: Telegram агента через awgrsv (метка сокетов Bot API) и обратно; сессия Bot API —
+        # заново на каждом переключении: живые соединения остались бы на прежнем пути
+        from awgbot.infra.gwguard import rsv as rsvlink
+        await asyncio.to_thread(rsvlink.run, "tg", str(act[1]))
+        await _renew_session(check=str(act[1]) == "on")
+    elif kind == "reresolve":
+        from awgbot.domain.gateway.reserve import uplink
+        p = dict(act[1] or {})
+        await asyncio.to_thread(uplink.reresolve_now, str(p.get("name") or ""), str(p.get("expect") or ""),
+                                str(p.get("why") or ""), int(p.get("move") or 0))
+
+
+async def _renew_session(*, check: bool) -> None:
+    from awgbot.core import settings
+    from awgbot.runtime import tgsession
+    if _bot is None:
+        return
+    old = getattr(_bot, "session", None)
+    _bot.session = tgsession.make(ipv4_only=settings.get_bool("app.gateway.ipv4_only", True))
+    if old is not None:
+        try:
+            await old.close()
+        except Exception:                                     # noqa: BLE001
+            pass
+    if check:
+        try:
+            await asyncio.wait_for(_bot.get_me(), timeout=10)
+        except Exception as e:                                # noqa: BLE001
+            log.warning("обход: через awgrsv Telegram не ответил за 10 с (%s) — обход остаётся, другого пути нет",
+                        type(e).__name__)
 
 
 async def tick(services, bot=None) -> None:

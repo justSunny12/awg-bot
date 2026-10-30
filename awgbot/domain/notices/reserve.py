@@ -490,6 +490,12 @@ def gateway_case4(reserve: str, since: str, seen: list) -> str:
             f"переезда не будет")
 
 
+def gateway_tg_via(reserve: str, since: str) -> str:
+    """Т-К24 (админу шлюза, без звука, один раз на эпизод обхода): аплинк молчит,
+    бот шлюза на связи через резерв; отбоя нет — строка панели пропадает сама."""
+    return f"📨 Аплинк молчит с {_when(since)} — бот шлюза на связи через {_n(reserve)}"
+
+
 def gateway_move_failed(reserve: str, since: str, reason: str) -> str:
     """Т-РА5."""
     return f"⚠️ Сервер AWG не отвечает с {_when(since)}, переезд на {_n(reserve)} не состоялся: {_e(reason)}"

@@ -353,7 +353,7 @@ def test_hello_carries_the_share_generation_and_the_view(gw, host):
     gw.reserve_watch_tick(now=1000.0)                       # первое чтение — взгляд есть
     assert gw.reserve_view_ready() is True
     body = gw.reserve_guest_hello_body()
-    assert {k: body[k] for k in ("slot", "caps", "m_gen")} == {"slot": 1, "caps": ["rsv1", "quo1"], "m_gen": 1}, body   # quo1 — кворум (4.2.0)
+    assert {k: body[k] for k in ("slot", "caps", "m_gen")} == {"slot": 1, "caps": ["rsv1", "quo1", "rsvtg1"], "m_gen": 1}, body   # quo1 — кворум (4.2.0)
     _watch(gw, 1000.0, 60)
     assert gw.reserve_guest_hello_body()["seen"], "hello после «не вижу» несёт «вижу»"
 

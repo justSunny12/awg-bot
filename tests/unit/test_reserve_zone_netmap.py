@@ -374,7 +374,7 @@ def test_the_zone_table_maps_each_clone_subnet_to_its_block_before_the_masquerad
     want = ['oifname "awggv-n" ip saddr 10.8.1.0/24 snat ip prefix to ip saddr map { 10.8.1.0/24 : 169.254.96.0/24 }',
             'oifname "awggv-n" ip saddr 10.8.2.0/24 snat ip prefix to ip saddr map { 10.8.2.0/24 : 169.254.97.0/24 }']
     assert post[1:3] == want, "\n".join(post)
-    assert post[-1] == 'oifname { "awggv-n", "awggr-n" } masquerade', \
+    assert post[-1] == 'oifname { "awggv-n", "awggr-n", "awggx-n" } masquerade', \
         "маскарад прочего (бот основы, резолвер, РФ-veth) пропал или встал раньше NETMAP"
     assert "ВНИМАНИЕ" not in r.stdout
     assert zone.read_state()["netmap"].split() == ["10.8.1.0/24=169.254.96.0/24", "10.8.2.0/24=169.254.97.0/24"]
@@ -384,7 +384,7 @@ def test_a_zone_without_netmap_masquerades_everything(zone):
     zone.put_state(netmap="")
     assert zone.sh('zone_nft "awg0"').returncode == 0
     (table, _), = zone.tables()
-    assert "snat" not in table and _post(table)[-1] == 'oifname { "awggv-n", "awggr-n" } masquerade'
+    assert "snat" not in table and _post(table)[-1] == 'oifname { "awggv-n", "awggr-n", "awggx-n" } masquerade'
 
 
 def test_a_shell_without_clones_draws_no_netmap_even_if_the_state_has_one(zone):
@@ -403,7 +403,7 @@ def test_a_kernel_that_rejects_netmap_gets_the_masquerade_a_warning_and_an_empty
     tables = zone.tables()
     assert len(tables) == 2, f"таблица загружалась {len(tables)} раз(а), ждали второй заход без NETMAP"
     assert "snat ip prefix" in tables[0][0] and "snat" not in tables[1][0], "второй заход снова с NETMAP"
-    assert _post(tables[1][0])[-1] == 'oifname { "awggv-n", "awggr-n" } masquerade'
+    assert _post(tables[1][0])[-1] == 'oifname { "awggv-n", "awggr-n", "awggx-n" } masquerade'
     assert any(ln.startswith("ВНИМАНИЕ") and "NETMAP" in ln for ln in r.stdout.splitlines()), r.stdout
     assert zone.read_state()["netmap"] == "", \
         "netmap остался в состоянии — хост проложил бы маршруты и маскарад блоков, которых в зоне нет"

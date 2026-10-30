@@ -169,6 +169,7 @@ def build_spec(admin_ips, channel_extra=(), transit_links=()) -> pkg.GuardSpec:
         quarantine_pairs=quarantine_pairs(pkg.quarantine_ifaces(links)),
         **pair_link(),
         **guest_zone(),
+        **zone_tg(),
         **quorum_probe(),
     )
 
@@ -195,6 +196,20 @@ def quorum_probe() -> dict:
             return {"probe_if": config.AWG_INTERFACE, "probe_net4": str(iface.network), "probe_resp4": str(iface.ip),
                     "probe_port": int(port)}
     return {}
+
+
+def zone_tg() -> dict:
+    """Выход агентов шлюзов основы из зоны в Telegram: veth awggx стоит с оболочкой
+    (state.json: tg=up), не только в переезде; его нет — полей нет."""
+    from awgbot.infra import rsvzone
+    st = rsvzone.state()
+    if str(st.get("tg") or "") != "up":
+        return {}
+    try:
+        net = ipaddress.ip_network(str(st.get("zone_tg_cidr") or "169.254.77.8/30"), strict=False)
+    except ValueError:
+        return {}
+    return {"zone_tg_if": "awggx-h", "zone_tg_net4": str(net), "tg_out4": list(pkg.TG_OUT4)}
 
 
 def zone_link_ports() -> list[int]:

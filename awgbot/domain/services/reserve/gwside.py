@@ -119,6 +119,12 @@ class ReserveGwSideMixin:
                 lines.append(f"{k} = {zone['obf'][k]}")
         from awgbot.infra import nftguard
         allowed = [f"{zone_addr}/32"] + [n for n in nftguard.tunnel_nets() if n]     # РФ-трафик пользователей основы
+        # выход агента в Telegram через зону второго сервера при мёртвом аплинке — только если умеют оба (§4.11)
+        caps = self.gwlink_agent_caps(gw.id) if hasattr(self, "gwlink_agent_caps") else []
+        tg = "rsvtg1" in (caps or []) and "rsvtg1" in (self.reserve_peer_state().get("caps") or [])
+        if tg:
+            from awgbot.infra.nftguard.common import TG_OUT4
+            allowed += list(TG_OUT4)
         lines += ["", "[Peer]", f"PublicKey = {zone['pub']}", f"PresharedKey = {rec['psk']}",
                   f"AllowedIPs = {', '.join(allowed)}", f"Endpoint = {zone['host']}:{int(zone['port'])}",
                   f"PersistentKeepalive = {ka}"]
@@ -134,7 +140,7 @@ class ReserveGwSideMixin:
         return {"self": own_host(), "name": str(config.SERVER_NAME or ""), "slot": int(gw.id),
                 "state": self.reserve_gw_state(), "move": self.reserve_move_gen(),
                 "record": self.reserve_dns_name(), "peer_host": self.reserve_peer_ip(), "chan": int(zone.get("chan") or 0),
-                "share": share, "link": {"conf": "\n".join(lines) + "\n"}}
+                "share": share, "tg": tg, "link": {"conf": "\n".join(lines) + "\n"}}
 
     def reserve_gw_state(self) -> str:
         """Слово основы шлюзам: `away` — пользователи у резерва (после подъёма клона),

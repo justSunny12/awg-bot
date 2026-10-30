@@ -127,6 +127,7 @@ def _zone_env() -> dict:
         from awgbot.core import settings
         return {**paths, "ZONE_CIDR": str(settings.get("app.reserve.zone_cidr", "169.254.77.0/30") or "169.254.77.0/30"),
                 "ZONE_RF_CIDR": str(settings.get("app.reserve.zone_rf_cidr", "169.254.77.4/30") or "169.254.77.4/30"),
+                "ZONE_TG_CIDR": str(settings.get("app.reserve.zone_tg_cidr", "169.254.77.8/30") or "169.254.77.8/30"),
                 "ZONE_POOL": _zone_pool(),
                 "RF_TABLE": str(int(config.ROUTING_TABLE))}
     except Exception:                                     # noqa: BLE001 — настройки недоступны (CLI без conf)

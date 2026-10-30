@@ -17,11 +17,12 @@ from __future__ import annotations
 from . import record, uplink
 from .quorum import GatewayQuorumMixin
 from .store import ReserveStoreMixin
+from .tgvia import ReserveTgViaMixin
 from .vote import ReserveVoteMixin
 from .watch import ReserveWatchMixin
 
 
-class GatewayReserveMixin(ReserveStoreMixin, ReserveWatchMixin, ReserveVoteMixin, GatewayQuorumMixin):
+class GatewayReserveMixin(ReserveStoreMixin, ReserveWatchMixin, ReserveVoteMixin, GatewayQuorumMixin, ReserveTgViaMixin):
     """Резерв у агента шлюза — одним миксином в GatewayServices."""
 
 

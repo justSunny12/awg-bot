@@ -48,9 +48,20 @@ def journal_capable() -> bool:
     return bool(_JSON_OK[probe])
 
 
+def tg_path_capable() -> bool:
+    """Оболочка зоны с veth `awggx` стоит (state.json: tg=up) — агенты шлюзов
+    основы могут выходить в Telegram через мою зону (`rsvtg1`, концепт «кворум» §4.11)."""
+    try:
+        from awgbot.infra import rsvzone
+        return str(rsvzone.state().get("tg") or "") == "up"
+    except Exception:                                         # noqa: BLE001
+        return False
+
+
 def caps() -> list[str]:
-    """Возможности этого процесса в паре: постоянные и, если умеет, журнал."""
-    return list(CAPS) + (list(JOURNAL_CAPS) if journal_capable() else [])
+    """Возможности этого процесса в паре: постоянные, если умеет — журнал, если
+    оболочка зоны с `awggx` стоит — выход агентов в Telegram."""
+    return list(CAPS) + (list(JOURNAL_CAPS) if journal_capable() else []) + (["rsvtg1"] if tg_path_capable() else [])
 
 
 def journal_pair(mine: list[str], theirs: list[str]) -> bool:

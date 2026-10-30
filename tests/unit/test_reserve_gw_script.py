@@ -284,7 +284,7 @@ def test_the_admin_addresses_survive_a_reboot_without_the_unit_passing_them(gw):
 def test_open_and_close_keep_the_admin_addresses(gw):
     gw.up_with(ADMIN_IPS="10.9.1.2")
     gw.run("--open", "10.9.1.0/24")
-    assert _state(gw) == {"open": "1", "src": "10.9.1.0/24", "admins": "10.9.1.2"}, _state(gw)
+    assert _state(gw) == {"open": "1", "src": "10.9.1.0/24", "admins": "10.9.1.2", "tg": "0"}, _state(gw)
     gw.run("--close")
     assert _state(gw)["admins"] == "10.9.1.2", "закрытие пересылки стёрло адреса админов"
     gw.up.unlink()

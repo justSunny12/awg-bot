@@ -132,6 +132,7 @@ def reserve_print(sec: dict | None) -> str:
             f"chan={int(sec.get('chan') or 0)}\n"
             # адрес основы и имя записи — опора факта записи и текстов: их смена тянет документ
             f"peer_host={norm(sec.get('peer_host'))}\nrecord={norm(sec.get('record'))}\n"
-            f"name={norm(sec.get('name'))}\nslot={int(sec.get('slot') or 0)}\n")
+            f"name={norm(sec.get('name'))}\nslot={int(sec.get('slot') or 0)}\n"
+            + (f"tg=1\n" if sec.get("tg") else ""))           # без флага отпечаток прежний: документ 4.1.x не тянется
     return section_print("reserve", text)
 

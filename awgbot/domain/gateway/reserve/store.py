@@ -64,7 +64,8 @@ def _write(data: dict, path: Path = STORE_PATH) -> None:
 
 # своё о ходе дел в reserve.json — переживает каждый новый документ
 _KEEP_KEYS = ("open_at", "share_given_at", "view_told", "reserve_view", "reserve_state_at", "moved_told",
-              "pending_notes", "link_pending", "link_retry_mono", "reserve_down_last")
+              "pending_notes", "link_pending", "link_retry_mono", "reserve_down_last",
+              "tg_via", "tg_since", "reresolve_pending", "reresolved_move")
 NOTE_TTL_S = 24 * 3600            # уведомление без доставки дольше — устарело
 NOTE_RETRY_S = 60
 
@@ -150,7 +151,7 @@ class ReserveStoreMixin:
             return ""
         return gwcfg.reserve_print({"link": {"conf": sec["conf"]}, "share": sec.get("share") or {},
                                     "state": sec.get("state") or "idle", "move": int(sec.get("move") or 0),
-                                    "self": sec.get("self") or "", "chan": int(sec.get("chan") or 0),
+                                    "self": sec.get("self") or "", "chan": int(sec.get("chan") or 0), "tg": bool(sec.get("tg")),
                                     "peer_host": sec.get("peer_host") or "", "record": sec.get("record") or "",
                                     "name": sec.get("name") or "", "slot": int(sec.get("slot") or 0)})
 
@@ -169,14 +170,20 @@ class ReserveStoreMixin:
                "self": str(checked.get("self") or ""), "name": str(checked.get("name") or ""),
                "slot": int(checked.get("slot") or cur.get("slot") or 0),
                "record": str(checked.get("record") or ""), "peer_host": str(checked.get("peer_host") or ""),
-               "chan": int(checked.get("chan") or 0), "admins": list(self._reserve_admin_ips()),
+               "chan": int(checked.get("chan") or 0), "tg": bool(checked.get("tg")), "admins": list(self._reserve_admin_ips()),
                "peer_addr": _peer_addr(str(checked.get("conf_text") or "")),
                "reserve_state": cur.get("reserve_state") or "idle", "reserve_move": int(cur.get("reserve_move") or 0),
                "applied_at": timeutil.now_iso()}
         for k in _KEEP_KEYS:                                  # своё о ходе дел — не из документа, не стирать
             if k in cur:
                 new[k] = cur[k]
-        changed = any(cur.get(k) != new[k] for k in ("conf", "share", "state", "move", "self", "chan"))
+        changed = any(cur.get(k) != new[k] for k in ("conf", "share", "state", "move", "self", "chan", "tg"))
+        # слово возврата: основа вернула пользователей (idle, номер не меньше номера резерва) — аплинк
+        # на адрес основы по записи сразу, не через 180 с рукопожатия (концепт «кворум» §4.12, решение 17)
+        if new["state"] == "idle" and cur.get("state") == "away" and new["move"] >= int(new["reserve_move"] or 0) \
+                and new.get("self") and int(new.get("reresolved_move") or 0) < new["move"]:
+            new["reresolve_pending"] = {"name": new["record"], "expect": new["self"], "why": "возврат", "move": new["move"]}
+            new["reresolved_move"] = new["move"]
         # адреса админов сменились — тоже повод переподнять: набор rsv_admin4 заполняет только --up
         link_changed = cur.get("conf") != new["conf"] or not rsvlink.present() or cur.get("admins") != new["admins"]
         note = ""
@@ -271,6 +278,10 @@ class ReserveStoreMixin:
             actions.append(("notify", [self.reserve_note(cur, rn.gateway_move_failed(
                 str(cur.get("name") or ""), since or str(cur.get("share_given_at") or ""), reason), sound=True)]))
             cur["share_given_at"] = ""
+        if state == "serving" and int(move) > int(cur.get("reresolved_move") or 0) and cur.get("peer_host") and cur.get("record"):
+            # переезд: аплинк — на адрес второго сервера по записи сразу (§4.12), один раз на номер переезда
+            cur["reresolve_pending"] = {"name": str(cur["record"]), "expect": str(cur["peer_host"]), "why": "переезд", "move": int(move)}
+            cur["reresolved_move"] = int(move)
         cur["reserve_state"], cur["reserve_move"] = state, int(move)
         cur["reserve_state_at"] = timeutil.now_iso()
         _write(cur, self._RSV_STORE)
@@ -317,9 +328,11 @@ class ReserveStoreMixin:
         все подсети туннеля основы (основная и окно переезда профилей); конфига
         нет — подсеть пользователей из окружения обвязки."""
         import re
+        from awgbot.infra.nftguard.common import TG_OUT4
         cur = self.reserve_section()
         m = re.search(r"(?m)^\s*AllowedIPs\s*=\s*(.+)$", str(cur.get("conf") or ""))
         nets = [x.strip() for x in m.group(1).split(",") if x.strip()] if m else []
+        nets = [n for n in nets if n not in TG_OUT4]          # диапазоны Telegram — путь агента наружу, не источники
         if nets:
             return nets
         from awgbot.infra import gwguard
@@ -353,7 +366,25 @@ class ReserveStoreMixin:
         return {"name": str(cur.get("name") or ""), "seen": seen or "absent", "since": since,
                 "open": rsvlink.is_open(), "state": str(cur.get("reserve_state") or "idle"),
                 "since_open": str(cur.get("open_at") or ""), "rx": int(c[0]), "tx": int(c[1]),
-                "share": bool((cur.get("share") or {}).get("y"))}
+                "share": bool((cur.get("share") or {}).get("y")),
+                "tg_via": bool(cur.get("tg_via")), "tg_since": str(cur.get("tg_since") or ""),   # Т-К23
+                "uplink_ip": self._uplink_conf_ip(), "primary": str(cur.get("self") or "")}    # Т-К27
+
+    @staticmethod
+    def _uplink_conf_ip() -> str:
+        """Endpoint аплинка в конфиге — адрес, а не имя: за переездом не пойдёт (Т-К27);
+        конфиг читается с диска, сети не трогает. Пусто — имя или аплинка нет."""
+        from awgbot.core import config
+        from awgbot.infra import gwguard
+        from . import uplink
+        try:
+            iface = config.GW_UPLINK_IF or gwguard.uplink_interface()
+        except Exception:                                     # noqa: BLE001
+            iface = ""
+        if not iface:
+            return ""
+        host, _port = uplink.conf_endpoint(iface)
+        return host if host and uplink.is_ip(host) else ""
 
     # ── снимок для сервера ──────────────────────────────────────────────────
     def reserve_snapshot(self) -> dict | None:

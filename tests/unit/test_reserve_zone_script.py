@@ -144,7 +144,7 @@ def test_status_prints_key_value_lines_without_root_on_a_bare_host(box):
     assert r.returncode == 0, r.stderr
     got = dict(line.split("=", 1) for line in r.stdout.splitlines())
     assert got == {"zone": "absent", "phase": "", "iface": "", "ifaces": "", "netmap": "", "netmap_why": "", "netmap_miss": "",
-                   "store": "absent", "guest": "inactive", "rep": "absent"}
+                   "store": "absent", "guest": "inactive", "rep": "absent", "tg": "down"}
 
 
 def test_status_reports_the_state_file_and_the_encrypted_snapshot(box, tmp_path):

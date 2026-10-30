@@ -101,7 +101,7 @@ class ReserveWatchMixin:
             actions += self.reserve_forward_decide()
         except Exception as e:                                # noqa: BLE001
             log.info("reserve: решение о пересылке: %s", e)
-        for fn in (self.reserve_link_retry_tick, self.reserve_notes_retry):
+        for fn in (self.reserve_link_retry_tick, self.reserve_notes_retry, self.reserve_tgvia_tick):
             try:
                 actions += fn(now)
             except Exception as e:                            # noqa: BLE001

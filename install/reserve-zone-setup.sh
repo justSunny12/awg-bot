@@ -17,6 +17,16 @@
 #   RSV_ZONE=awg-guest        имя пространства (и пространства журнала гостя)
 #   ZONE_CIDR=169.254.77.0/30 veth бота основы (хост .1, зона .2)
 #   ZONE_RF_CIDR=169.254.77.4/30  veth РФ-трафика к шлюзам резерва (хост .5, зона .6)
+#   ZONE_TG_CIDR=169.254.77.8/30  veth выхода агентов шлюзов основы в Telegram при мёртвом
+#                             аплинке (хост .9, зона .10): постоянный, в оболочке; из зоны
+#                             через него — только tcp 443 на набор Telegram с адресов
+#                             шлюзов в /30 линков, ≤ 8 соединений с источника (таблица
+#                             маршрутов TG_TABLE=153 по источнику, не main зоны)
+#   ZONE_TG_CIDR=169.254.77.8/30  veth выхода агентов шлюзов основы в Telegram при мёртвом
+#                             аплинке (хост .9, зона .10): постоянный, в оболочке; из зоны
+#                             через него — только tcp 443 на набор Telegram с адресов
+#                             шлюзов в /30 линков, ≤ 8 соединений с источника (таблица
+#                             маршрутов TG_TABLE=153 по источнику, не main зоны)
 #   ZONE_POOL=169.254.96.0/19 пул NETMAP: подсеть каждого клона 1:1 на свой блок той же
 #                             длины (хост видит устройства основы поодиночке — CAKE
 #                             делит загрузку по ним, а не по сайтам назначения)
@@ -167,9 +177,17 @@ LINKS_DIR="${RSV_LINKS_DIR:-/var/lib/awg-bot/reserve/links}"
 INSTALL_DIR="${INSTALL_DIR:-/opt/awg-bot}"
 ZONE_CIDR="${ZONE_CIDR:-169.254.77.0/30}"
 ZONE_RF_CIDR="${ZONE_RF_CIDR:-169.254.77.4/30}"
+ZONE_TG_CIDR="${ZONE_TG_CIDR:-169.254.77.8/30}"
+TG_TABLE="${TG_TABLE:-153}"
+# набор Telegram — тот же, что TG_NETS обвязки шлюза и TG_RANGES агента
+TG_NETS="91.108.4.0/22 91.108.8.0/22 91.108.12.0/22 91.108.16.0/22 91.108.20.0/22 91.108.56.0/22 149.154.160.0/20 185.76.151.0/24"
+ZONE_TG_CIDR="${ZONE_TG_CIDR:-169.254.77.8/30}"
+TG_TABLE="${TG_TABLE:-153}"
+# набор Telegram — тот же, что TG_NETS обвязки шлюза и TG_RANGES агента
+TG_NETS="91.108.4.0/22 91.108.8.0/22 91.108.12.0/22 91.108.16.0/22 91.108.20.0/22 91.108.56.0/22 149.154.160.0/20 185.76.151.0/24"
 ZONE_POOL="${ZONE_POOL:-169.254.96.0/19}"
 RF_TABLE="${RF_TABLE:-100}"
-VH="awggv-h"; VN="awggv-n"; RH="awggr-h"; RN="awggr-n"
+VH="awggv-h"; VN="awggv-n"; RH="awggr-h"; RN="awggr-n"; XH="awggx-h"; XN="awggx-n"
 UNIT="/etc/systemd/system/awg-bot-guest.service"
 DNS_UNIT="/etc/systemd/system/awg-bot-guest-dns.service"
 JOURNAL_CONF="/etc/systemd/journald@$ZONE.conf"
@@ -188,6 +206,8 @@ cidr_host() {   # cidr_host CIDR N — N-й адрес /30 (1 или 2)
 }
 HOST_V="$(cidr_host "$ZONE_CIDR" 1)"; ZONE_V="$(cidr_host "$ZONE_CIDR" 2)"
 HOST_R="$(cidr_host "$ZONE_RF_CIDR" 1)"; ZONE_R="$(cidr_host "$ZONE_RF_CIDR" 2)"
+HOST_X="$(cidr_host "$ZONE_TG_CIDR" 1)"; ZONE_X="$(cidr_host "$ZONE_TG_CIDR" 2)"
+HOST_X="$(cidr_host "$ZONE_TG_CIDR" 1)"; ZONE_X="$(cidr_host "$ZONE_TG_CIDR" 2)"
 
 kernel_ge() {
     local k; k="$(uname -r | cut -d- -f1)"
@@ -287,8 +307,64 @@ zone_nft() {   # zone_nft "клоны" — таблица зоны; NETMAP от�
     state_write netmap= netmap_why=kernel netmap_miss=
 }
 
+link_nets() {   # /30 линков шлюзов основы по Address сторон зоны: с этих адресов агенты идут в Telegram
+    local f addr base last
+    for f in "$LINKS_DIR"/*.conf; do
+        [ -f "$f" ] || continue
+        addr="$(awk -F'[ =]+' '/^Address/{print $2; exit}' "$f")"; addr="${addr%/*}"
+        case "$addr" in *.*.*.*) ;; *) continue ;; esac
+        base="${addr%.*}"; last="${addr##*.}"
+        printf '%s.%s/30 ' "$base" "$(( last - last % 4 ))"
+    done
+}
+
+tg_path_up() {   # постоянный veth awggx и маршруты к набору Telegram по источнику (таблица TG_TABLE)
+    if ! ip link show "$XH" >/dev/null 2>&1; then
+        ip link add "$XH" type veth peer name "$XN" || { say "ВНИМАНИЕ: veth $XH не создался — выхода агентов в Telegram нет"; return 0; }
+        ip link set "$XN" netns "$ZONE"
+    fi
+    ip addr replace "$HOST_X/30" dev "$XH"; ip link set "$XH" up
+    nsx ip addr replace "$ZONE_X/30" dev "$XN"; nsx ip link set "$XN" up
+    local n
+    for n in $TG_NETS; do nsx ip route replace "$n" via "$HOST_X" dev "$XN" table "$TG_TABLE"; done
+    for n in $(link_nets); do
+        nsx ip rule list | grep -q "from $n lookup $TG_TABLE" || nsx ip rule add from "$n" lookup "$TG_TABLE"
+    done
+    state_write tg=up zone_tg_cidr="$ZONE_TG_CIDR"
+}
+
+link_nets() {   # /30 линков шлюзов основы по Address сторон зоны: с этих адресов агенты идут в Telegram
+    local f addr base last
+    for f in "$LINKS_DIR"/*.conf; do
+        [ -f "$f" ] || continue
+        addr="$(awk -F'[ =]+' '/^Address/{print $2; exit}' "$f")"; addr="${addr%/*}"
+        case "$addr" in *.*.*.*) ;; *) continue ;; esac
+        base="${addr%.*}"; last="${addr##*.}"
+        printf '%s.%s/30 ' "$base" "$(( last - last % 4 ))"
+    done
+}
+
+tg_path_up() {   # постоянный veth awggx и маршруты к набору Telegram по источнику (таблица TG_TABLE)
+    if ! ip link show "$XH" >/dev/null 2>&1; then
+        ip link add "$XH" type veth peer name "$XN" || { say "ВНИМАНИЕ: veth $XH не создался — выхода агентов в Telegram нет"; return 0; }
+        ip link set "$XN" netns "$ZONE"
+    fi
+    ip addr replace "$HOST_X/30" dev "$XH"; ip link set "$XH" up
+    nsx ip addr replace "$ZONE_X/30" dev "$XN"; nsx ip link set "$XN" up
+    local n
+    for n in $TG_NETS; do nsx ip route replace "$n" via "$HOST_X" dev "$XN" table "$TG_TABLE"; done
+    for n in $(link_nets); do
+        nsx ip rule list | grep -q "from $n lookup $TG_TABLE" || nsx ip rule add from "$n" lookup "$TG_TABLE"
+    done
+    state_write tg=up zone_tg_cidr="$ZONE_TG_CIDR"
+}
+
 zone_nft_load() {   # таблица зоны: вход — только канал с линков, DNS и ICMP с клона, вебхук с veth; пересылка — см. §3.2
     local chan="${GUEST_CHANNEL_PORT:-8787}" ifaces="${1:-}" iface="${1%% *}" nm="${2:-}" whp pair
+    # выход агентов в Telegram: только пока veth стоит и есть линки — источники одним набором
+    local tgsrc=""; if nsx ip link show "$XN" >/dev/null 2>&1; then set -- $(link_nets); [ $# -gt 0 ] && tgsrc="{ $(printf '%s, ' "$@" | sed 's/, $//') }"; fi
+    # выход агентов в Telegram: только пока veth стоит и есть линки — источники одним набором
+    local tgsrc=""; if nsx ip link show "$XN" >/dev/null 2>&1; then set -- $(link_nets); [ $# -gt 0 ] && tgsrc="{ $(printf '%s, ' "$@" | sed 's/, $//') }"; fi
     local paddr pnet pport; paddr="$(state_get probe_addr)"; pnet="$(state_get probe_net)"; pport="$(state_get probe_port)"
     case "$pport" in ''|*[!0-9]*) pport=8789 ;; esac
     # «iface» — первый интерфейс (его правила именные), «ifset» — все клоны одним набором nft
@@ -302,6 +378,8 @@ delete table inet awg_guest
 table inet awg_guest {
     set admin4 { type ipv4_addr; }
     set private4 { type ipv4_addr; flags interval; elements = { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 } }
+    set tg_out4 { type ipv4_addr; flags interval; elements = { $(printf '%s, ' $TG_NETS | sed 's/, $//') } }
+    set tg_out4 { type ipv4_addr; flags interval; elements = { $(printf '%s, ' $TG_NETS | sed 's/, $//') } }
     chain input {
         type filter hook input priority filter; policy drop;
         iifname "lo" accept
@@ -328,12 +406,13 @@ $( [ -n "$iface" ] && cat <<EOF2
 EOF2
 )
 $( [ -n "$iface" ] && printf '        iifname "awglink*" oifname %s ct state established,related accept\n' "$ifset" )
+$( [ -n "$tgsrc" ] && printf '        iifname "awglink*" ip saddr %s ip daddr @tg_out4 tcp dport 443 ct state new meter tg_src { ip saddr ct count over 8 } drop\n        iifname "awglink*" oifname "%s" ip saddr %s ip daddr @tg_out4 tcp dport 443 accept\n' "$tgsrc" "$XN" "$tgsrc" )
         iifname "awglink*" drop
     }
     chain zone_post {
         type nat hook postrouting priority srcnat; policy accept;
 $( for pair in $nm; do printf '        oifname "%s" ip saddr %s snat ip prefix to ip saddr map { %s : %s }\n' "$VN" "${pair%%=*}" "${pair%%=*}" "${pair#*=}"; done )
-        oifname { "$VN", "$RN" } masquerade
+        oifname { "$VN", "$RN", "$XN" } masquerade
     }
 }
 EOF
@@ -372,8 +451,9 @@ cmd_shell() {
     nsx ip link set lo up
     nsx sysctl -qw net.ipv4.ip_forward=1 2>/dev/null || true
     mkdir -p "$LINKS_DIR"; chmod 0700 "$LINKS_DIR"
-    zone_nft "$(state_ifaces)" || die "nft отверг таблицу зоны"
     link_sides_up
+    tg_path_up
+    zone_nft "$(state_ifaces)" || die "nft отверг таблицу зоны"   # после сторон линков: их /30 — источники пути к Telegram
     state_write zone=present
     say "shell: ok"
 }
@@ -715,6 +795,7 @@ cmd_wipe() {
 }
 cmd_status() {
     if [ -e "$NS" ]; then say "zone=present"; else say "zone=absent"; fi
+    if [ -e "$NS" ] && nsx ip link show "$XN" >/dev/null 2>&1; then say "tg=up"; else say "tg=down"; fi
     say "phase=$(state_get phase)"; say "iface=$(state_get iface)"; say "ifaces=$(state_ifaces)"; say "netmap=$(state_get netmap)"
     say "netmap_why=$(state_get netmap_why)"; say "netmap_miss=$(state_get netmap_miss)"
     if mountpoint -q "$RUN" 2>/dev/null; then say "store=mounted"; else say "store=absent"; fi

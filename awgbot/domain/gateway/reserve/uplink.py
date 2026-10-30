@@ -76,6 +76,56 @@ def set_endpoint(iface: str, pub: str, endpoint: str) -> bool:
     return proc.returncode == 0
 
 
+_IP_TOLD: set[str] = set()
+
+
+def reresolve_now(name: str, expect: str, why: str = "", move: int = 0, iface: str = "") -> str:
+    """Endpoint аплинка — по записи `name` у авторитетного сервера, если она даёт
+    `expect` (адрес второго сервера при переезде, основы при возврате); не по
+    кэшу резолвера (TTL до 300 с). Условия: Endpoint в конфиге — имя и совпадает
+    с `name`. `set` | `same` | `skip:<почему>` (концепт «кворум» §4.12)."""
+    from awgbot.util import dnsapi
+    iface = iface or gwguard.uplink_interface()
+    if not iface:
+        return "skip:no-uplink"
+    host, port = conf_endpoint(iface)
+    if not host or not port:
+        return "skip:no-endpoint"
+    if is_ip(host):
+        _ip_told(iface, host)
+        return "skip:ip"
+    if not name or host.lower().rstrip(".") != str(name).lower().rstrip("."):
+        return "skip:other-name"
+    ip = expect if is_ip(expect) else resolve(expect)
+    if not ip:
+        return "skip:unresolved"
+    try:
+        addrs = dnsapi.read_authoritative(name)
+    except dnsapi.DnsError as e:
+        log.info("аплинк %s: запись %s у авторитетного сервера не прочитана: %s", iface, name, e)
+        return "skip:unread"
+    if ip not in addrs:
+        return "skip:record"
+    if gwguard._endpoint_host(iface) == ip:
+        return "same"
+    pub = (gwguard._awg(["show", iface, "peers"]).split() or [""])[0]
+    if not pub:
+        return "skip:no-peer"
+    if not set_endpoint(iface, pub, f"{ip}:{port}"):
+        log.warning("аплинк %s: Endpoint %s:%s по записи не применился", iface, ip, port)
+        return "skip:set-failed"
+    log.info("аплинк %s: Endpoint по записи у авторитетного сервера — %s (%s, move %s)", iface, ip, why or "сразу", move)
+    return "set"
+
+
+def _ip_told(iface: str, host: str) -> None:
+    """Endpoint — адрес: строка журнала один раз за запуск (§4.12)."""
+    if iface in _IP_TOLD:
+        return
+    _IP_TOLD.add(iface)
+    log.warning("аплинк %s: Endpoint — адрес %s, за переездом пользователей не пойдёт", iface, host)
+
+
 def reresolve(iface: str = "", stale: int = HANDSHAKE_STALE) -> str:
     """Один проход: `fresh` — рукопожатие свежее; `same` — адрес тот же;
     `set` — Endpoint переставлен; `skip:<почему>` — не к чему."""
@@ -91,6 +141,7 @@ def reresolve(iface: str = "", stale: int = HANDSHAKE_STALE) -> str:
     if not host or not port:
         return "skip:no-endpoint"
     if is_ip(host):
+        _ip_told(iface, host)
         return "skip:ip"                      # адрес в конфиге — IP: переезжать некуда
     ip = resolve(host)
     if not ip:

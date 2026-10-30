@@ -17,7 +17,8 @@ from awgbot.util import timeutil
 
 from ..base import log
 
-GW_CAPS: tuple[str, ...] = ("rsv1", "quo1")          # quo1 — кворум: зонды, взгляды, точка ключа кворума
+GW_CAPS: tuple[str, ...] = ("rsv1", "quo1", "rsvtg1")   # quo1 — кворум: зонды, взгляды, точка ключа кворума;
+                                                          # rsvtg1 — выход в Telegram через awgrsv при мёртвом аплинке
 
 
 class ReserveVoteMixin:

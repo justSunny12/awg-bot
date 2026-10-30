@@ -57,7 +57,8 @@ def render(spec: pkg.GuardSpec) -> str:
         # VPN-транзитом (связь подсетей — его часть); при открытой политике
         # хоста закрыть остальные пары можно только здесь.
         # Второе — частные адреса назначения не уходят к провайдеру (ниже).
-        rules = _quarantine_forward(spec) + _pair_forward(spec) + _probe_forward(spec) + _wan_private_drop(spec) + _guest_forward(spec)
+        rules = (_quarantine_forward(spec) + _pair_forward(spec) + _probe_forward(spec) + _wan_private_drop(spec)
+                 + _guest_forward(spec) + _tg_forward(spec))
         if spec.peer_link_block:
             links = nftjson.ifs(spec.peer_link_block)
             if spec.peer_link_ifs:
@@ -165,6 +166,7 @@ def render(spec: pkg.GuardSpec) -> str:
             out.append(f"        ip daddr {spec.admin_dns4} drop")
         out += _wan_private_drop(spec)
         out += _guest_forward(spec)          # зона резерва — после запрета частных адресов наружу
+        out += _tg_forward(spec)             # агенты шлюзов основы из зоны — только к Telegram
         if spec.peer_link_ifs:
             # линк ↔ линк: связь подсетей между слотами с VPN-транзитом;
             # что именно едет, ограничивает AllowedIPs на стороне шлюза
@@ -255,11 +257,33 @@ def _probe_forward(spec) -> list[str]:
 
 
 def _guest_sets(spec) -> list[str]:
-    """Набор пула адресов Telegram — только пока зона обслуживает (serving)."""
+    """Набор пула адресов Telegram — только пока зона обслуживает (serving); набор
+    Telegram для выхода агентов из зоны — пока стоит veth awggx."""
+    out = []
+    if spec.zone_tg_if:
+        out.append(pkg._set_block(pkg.SET_TG_OUT, "ipv4_addr", spec.tg_out4 or list(pkg.TG_OUT4), True))
     if not spec.guest_webhook_port or not spec.guest_zone4:
+        return out
+    return out + [pkg._set_block(pkg.SET_TG_POOL, "ipv4_addr", spec.tg_pool4 or list(pkg.DEFAULT_TG_POOL), True),
+                  f"    set {pkg.SET_TG_SEEN} {{\n        type ipv4_addr\n        flags dynamic,timeout\n        timeout 10m\n        size 4096\n    }}"]
+
+
+def _tg_forward(spec) -> list[str]:
+    """Выход агентов шлюзов основы из зоны (veth awggx): только во внешние
+    интерфейсы, только tcp 443 на набор Telegram; прочее с veth — drop. В обеих
+    формах файервола — без своего фильтра пересылку решала бы политика хоста."""
+    if not spec.zone_tg_if:
         return []
-    return [pkg._set_block(pkg.SET_TG_POOL, "ipv4_addr", spec.tg_pool4 or list(pkg.DEFAULT_TG_POOL), True),
-            f"    set {pkg.SET_TG_SEEN} {{\n        type ipv4_addr\n        flags dynamic,timeout\n        timeout 10m\n        size 4096\n    }}"]
+    v = nftjson.ifs([spec.zone_tg_if])
+    out = []
+    if not spec.filter:
+        out.append(f"        oifname {v} ct state established,related accept")
+    if spec.wan_ifs:
+        out.append(f"        iifname {v} oifname {nftjson.ifs(spec.wan_ifs)} ip daddr @{pkg.SET_TG_OUT} tcp dport 443 accept")
+    else:
+        out.append(f"        iifname {v} ip daddr @{pkg.SET_TG_OUT} tcp dport 443 accept")
+    out.append(f"        iifname {v} drop")
+    return out
 
 
 def _guest_input(spec) -> list[str]:
@@ -351,6 +375,11 @@ def _guest_postrouting(spec) -> list[str]:
         out.append(f"        oifname {nftjson.ifs(spec.link_ifs)} ip saddr {spec.guest_rf_zone4} masquerade")
     if spec.guest_phase == "relay" and spec.relay_to and spec.relay_udp_port:
         out.append("        ct status dnat meta l4proto udp masquerade")
+    if spec.zone_tg_if and spec.zone_tg_net4:                 # агенты из зоны к Telegram — адресом хоста
+        rule = f"ip saddr {spec.zone_tg_net4} masquerade"
+        if spec.nat_exclude_ifs:
+            rule = f"oifname != {nftjson.ifs(spec.nat_exclude_ifs)} " + rule
+        out.append("        " + rule)
     return out
 
 

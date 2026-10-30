@@ -73,6 +73,7 @@ def gateway_panel(st, upd: dict | None = None, chan: dict | None = None, pending
     rsv_line = reserve_panel_line(getattr(st, "rsv", None) or {})
     if rsv_line:
         parts.append(rsv_line)
+        parts += reserve_tg_lines(getattr(st, "rsv", None) or {})
     quo_line = quorum_panel_line(getattr(st, "quo", None) or {})
     if quo_line:
         parts.append(quo_line)
@@ -174,6 +175,26 @@ def reserve_panel_line(rsv: dict) -> str:
         tail = f" · через резервный линк {updown_brief(rx, tx)}" if rx + tx else ""
         return f"🛟 Резерв {name}: пользователи на нём" + (f" с {since}" if since else "") + tail
     return f"🛟 Резерв {name}: на связи" + (" · часть ключа есть" if rsv.get("share") else " · части ключа ещё нет")
+
+
+def reserve_tg_lines(rsv: dict) -> list[str]:
+    """Под Т-РА1: Т-К23 «📨 Telegram — через «Beta»: аплинк молчит с 14:05» (пока обход
+    включён) и Т-К27 — Endpoint аплинка адрес, а не имя (пока пара есть)."""
+    if not rsv:
+        return []
+    from awgbot.util import timeutil
+    name = f"«{_e(rsv.get('name') or 'резерв')}»"
+    out = []
+    if rsv.get("tg_via"):
+        try:
+            since = timeutil.fmt_clock_ui(timeutil.parse_iso(str(rsv.get("tg_since") or "")))
+        except (ValueError, TypeError):
+            since = ""
+        out.append(f"📨 Telegram — через {name}: аплинк молчит" + (f" с {since}" if since else ""))
+    if rsv.get("uplink_ip"):
+        out.append(f"⚠️ Аплинк смотрит на адрес <code>{_e(rsv['uplink_ip'])}</code>, а не на имя — после переезда "
+                   f"пользователей на {name} он не переключится")
+    return out
 
 
 def quorum_panel_line(quo: dict) -> str:
