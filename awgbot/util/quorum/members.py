@@ -183,13 +183,11 @@ class Composition:
         return True
 
 
-def off_reasons(m: Members | None, *, peer_quo1: bool, acked: bool, timing_problem: str = "",
+def off_reasons(m: Members | None, *, acked: bool, timing_problem: str = "",
                 overlaps: list[str] | None = None, big_slots: list[int] | None = None,
                 keys_ok: bool = True) -> list[str]:
     """Почему кворум линии не включён — кодами (тексты — у бота): пусто — включён."""
     out: list[str] = []
-    if not peer_quo1:
-        out.append("peer_old")
     if m is None or not m.enabled:
         out.append("no_gateways")
     if not acked:

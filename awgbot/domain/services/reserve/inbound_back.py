@@ -121,7 +121,7 @@ class ReserveInboundBackMixin:
         except rsvzone.ZoneError as e:
             log.warning("резерв: хранилище гостя не снято: %s", e)
         self.reserve_pkg_in_drop()
-        if str(inn.get("kind") or "") in ("dead", "rf", "nogw", "code"):
+        if str(inn.get("kind") or "") in ("dead", "rf", "code"):
             self.rsv_put("rsv_shares", None)              # прямая скомпрометирована — доля резерва прочь
         with _LOCK:
             self.reserve_set_in("relay", kind=str(inn.get("kind") or ""), relay_to=to, relay_until=until,

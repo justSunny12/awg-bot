@@ -330,7 +330,7 @@ class ReserveReturnMixin:
         kind = str(out.get("kind") or "")
         own_go = out.get("go_sent")
         if own_go is None:                                    # отметки нет (состояние до этой линии) — по виду переезда
-            own_go = kind in ("button", "rf", "nogw")
+            own_go = kind in ("button", "rf")
         by = "k" if own_go else "share"
         if by in ("share", "code"):
             # процесс открытия держал вторую точку прямой (или видел код) и конверт

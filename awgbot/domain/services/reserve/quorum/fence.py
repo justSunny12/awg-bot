@@ -37,8 +37,6 @@ class ReserveQuorumFenceMixin:
     # ── действия лидера ─────────────────────────────────────────────────────
     def reserve_quorum_fence_apply(self, act: str, ld) -> list[tuple]:
         """`fence` / `unfence` / `start` правила лидера → журнал и уведомления."""
-        if not self.reserve_quorum_act():
-            return []
         from awgbot.domain.notices import reserve as rn
         from ...types import Notification
         now = time.monotonic()
@@ -122,8 +120,6 @@ class ReserveQuorumFenceMixin:
         нужно (держатель — не я). Отметка принятия — на диске (`rsv_qlog.adopted`) и
         раньше записи в журнал: страховка такта в другом потоке и после перезапуска
         эпоху не вернёт — вернёт правило лидера по факту второй стороны."""
-        if not self.reserve_quorum_act():
-            return
         self.rsv_update("rsv_qlog", adopted={"e": int(e), "at": timeutil.now_iso(), "who": str(who)[:64]})
         try:
             meta = self.db.jrn_adopt(int(e), why=f"кворум: эпоха {int(e)} у {who}")
@@ -162,7 +158,7 @@ class ReserveQuorumFenceMixin:
         until = timeutil.to_iso(timeutil.shift(timeutil.now(), int(seconds)))
         body = {"l": m.l, "until": until}
         actions: list[tuple] = []
-        if self.reserve_online() and self.reserve_quorum_peer_quo1():
+        if self.reserve_online():
             actions.append(("send", "qpause", body))
         from awgbot.util.quorum import members as qm
         for node in m.gateways:

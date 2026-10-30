@@ -42,7 +42,7 @@ def setup_reserve_jobs(scheduler, services, bot) -> None:
             # голосование: живость шлюзов основы по сторонам зоны, матрица случаев,
             # демпфер случаев 3 и Н3, просьбы основе — действия исполняет rsvactions
             from awgbot.runtime import rsvactions
-            await rsvactions.run(await asyncio.to_thread(services.reserve_vote_tick))
+            await rsvactions.run(await asyncio.to_thread(services.reserve_gwguest_tick))
         except Exception as e:                           # noqa: BLE001
             log.warning("резерв: такт голосования: %s", e)
         try:

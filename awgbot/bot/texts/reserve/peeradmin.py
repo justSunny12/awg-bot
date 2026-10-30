@@ -82,18 +82,13 @@ def screen(d: dict) -> str:
     if q:                                                     # Т-К22
         mine = "видит" if q.get("w") in ("see", "held") else ("не видит" + (f" с {_e(_when(q['since']))}" if q.get("since") else ""))
         lines.append(f"🗳 Твой {_n(peer)} видят {int(q.get('y') or 0)} из {int(q.get('v') or 0)} · этот сервер — {mine}")
-    case = str(d.get("case") or "")
     inn = d.get("inn") or "idle"
     if d.get("code_needed"):
-        lines.append(f"🆘 Сервер и шлюзы не отвечают {_n(me)} с {_e(_when(d.get('code_since') or ''))} — пришли аварийный код "
-                     "резерва, и пользователи переедут сюда; вернётся шлюз, который не видит сервер, — переедут сами")
-    elif case in ("1", "5") and inn == "idle":
-        lines.append(f"🔴 Сервер не отвечает ни {_n(me)}, ни шлюзам — пользователи переезжают сюда")
-    elif d.get("rf_line"):
-        lines.append(_e(d["rf_line"]))
+        lines.append(f"🆘 {_n(me)} не видит твой сервер с {_e(_when(d.get('code_since') or ''))}, а голосов для переезда "
+                     "не хватает — пришли аварийный код резерва, и пользователи переедут сюда")
     if inn in ("taking", "serving"):
         why = {"dead": " — сервер не отвечал", "button": " — ты перевёл их кнопкой", "rf": " — сервер недоступен из РФ",
-               "nogw": f" — шлюзы не на связи с {_n(me)}", "code": " — по твоему аварийному коду"}.get(str(d.get("in_kind") or ""), "")
+               "code": " — по твоему аварийному коду"}.get(str(d.get("in_kind") or ""), "")
         lines += ["", f"📥 Твои пользователи и бот здесь с {_e(_when(d.get('in_since') or ''))}{why}"]
     if d.get("pkg_at"):
         lines += ["", f"📦 Данные для переезда — от {_e(_when(d['pkg_at']))}"]

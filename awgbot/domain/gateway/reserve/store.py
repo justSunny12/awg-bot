@@ -63,7 +63,7 @@ def _write(data: dict, path: Path = STORE_PATH) -> None:
 
 
 # своё о ходе дел в reserve.json — переживает каждый новый документ
-_KEEP_KEYS = ("open_at", "share_given_at", "view_told", "reserve_view", "reserve_state_at", "moved_told",
+_KEEP_KEYS = ("open_at", "share_given_at", "reserve_state_at", "moved_told",
               "pending_notes", "link_pending", "link_retry_mono", "reserve_down_last",
               "tg_via", "tg_since", "reresolve_pending", "reresolved")
 NOTE_TTL_S = 24 * 3600            # уведомление без доставки дольше — устарело
@@ -133,8 +133,6 @@ class ReserveStoreMixin:
     def _note_still_true(cur: dict, cond: dict) -> bool:
         if cond.get("open") and not rsvlink.is_open():
             return False                                      # Т-РА3: пересылка уже закрыта — переезд кончился
-        if cond.get("view_since") and str(cur.get("view_told") or "") != str(cond["view_since"]):
-            return False                                      # Т-РА4: взгляд сменился
         return True
 
     def reserve_section(self) -> dict:
@@ -278,7 +276,7 @@ class ReserveStoreMixin:
             self._quorum_epoch_in(int(e))                     # эпоха линии от резерва (кворум) — голосующим
         if state == "idle" and reason and cur.get("share_given_at"):
             from awgbot.domain.notices import reserve as rn
-            _primary, since = self.reserve_primary_seen() if hasattr(self, "reserve_primary_seen") else ("", "")
+            _w, since = self.quorum_own_view() if hasattr(self, "quorum_own_view") else ("", "")
             actions.append(("notify", [self.reserve_note(cur, rn.gateway_move_failed(
                 str(cur.get("name") or ""), since or str(cur.get("share_given_at") or ""), reason), sound=True)]))
             cur["share_given_at"] = ""
@@ -399,15 +397,13 @@ class ReserveStoreMixin:
 
     # ── снимок для сервера ──────────────────────────────────────────────────
     def reserve_snapshot(self) -> dict | None:
-        """Поле `rsv` снимка: связь с резервом, поколение доли, пересылка,
-        состояние резерва, взгляд на основу. None — раздела нет."""
+        """Поле `rsv` снимка: связь с резервом, пересылка, состояние резерва. None — раздела нет."""
         cur = self.reserve_section()
         if not cur:
             return None
         seen, since = self.reserve_seen() if hasattr(self, "reserve_seen") else ("", "")
-        primary, _ = self.reserve_primary_seen() if hasattr(self, "reserve_primary_seen") else ("", "")
-        return {"seen": seen or "absent", "since": since, "gen": int((cur.get("share") or {}).get("gen") or 0),
-                "open": rsvlink.is_open(), "state": str(cur.get("reserve_state") or "idle"), "primary": primary}
+        return {"seen": seen or "absent", "since": since, "open": rsvlink.is_open(),
+                "state": str(cur.get("reserve_state") or "idle")}
 
 
 def _peer_addr(conf_text: str) -> str:

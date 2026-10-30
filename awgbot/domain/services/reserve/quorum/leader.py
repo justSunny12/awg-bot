@@ -222,7 +222,7 @@ class ReserveQuorumLeaderMixin:
         первым словом сессии, а до него гость не знает, не возвращает ли основа пользователей
         прямо сейчас (аварийный возврат по Q1) — без права записи, пока состав не пришёл и правило
         лидера не набрало большинство «да». Состояние `waiting` снимает только состав."""
-        if self.reserve_quorum_guest_phase() != "waiting" or not self.reserve_quorum_act():
+        if self.reserve_quorum_guest_phase() != "waiting":
             return
         meta = self.db.jrn_fence(why="кворум: старт гостя — жду состав")
         if meta is None and not self._quorum_jrn_fenced():

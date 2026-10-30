@@ -116,6 +116,8 @@ class ReservePairingMixin:
             warn.append("У этого сервера шлюзов нет — твои пользователи к нему не переедут, пока не подключишь шлюз; "
                         "его пользователей этот сервер принять сможет")
         from awgbot.core.compat import version_key
+        if version_key(tok.version) and version_key(tok.version)[:3] < (4, 2, 0):
+            raise ServiceError(f"«{tok.name}» на v{tok.version} — для резерва нужен 4.2.0 или новее у обоих серверов")
         ask_version = bool(version_key(tok.version) and version_key(config.INSTALLED_VERSION)
                            and version_key(tok.version)[:3] > version_key(config.INSTALLED_VERSION)[:3])
         return {"token": raw, "tok": tok, "warn": warn, "ask_version": ask_version}
@@ -258,6 +260,10 @@ class ReservePairingMixin:
             if not bool(msg.get("gw")) and not self.reserve_has_gateway():
                 # ни у кого нет шлюза — переезд невозможен ни в одну сторону (Т-Р4)
                 return {"ok": False, "why": "nogw"}
+            if "quo1" not in (msg.get("caps") or []):
+                # второй сервер ниже 4.2.0: переезд решает кворум, прежних правил нет — пара не создаётся;
+                # приглашение живо — код можно ввести после обновления
+                return {"ok": False, "why": "old"}
             if st.get("state") == "accepted" and st.get("eph") != hashlib.sha256(a_eph).hexdigest():
                 return {"ok": False, "why": "gone"}
             st["sessions"] = int(st.get("sessions") or 0) + 1

@@ -109,7 +109,7 @@ class ReserveSessionMixin:
                 "healthy": bool(self.reserve_away() and self._healthy_safe()), "can_return": bool(self._can_return_safe()),
                 "pkg": {"gen": int(pkg_in.get("gen") or 0), "fp": str(pkg_in.get("fp") or "")},
                 "in_kind": str(self.rsv_get("rsv_in").get("kind") or ""),
-                "voters": self._voters_body(), "admin_id": int(config.ADMIN_ID), "admin_opened": bool(peer_admin.get("opened")),
+                "admin_id": int(config.ADMIN_ID), "admin_opened": bool(peer_admin.get("opened")),
                 "mem_free": self.reserve_mem_free_mb(), "online": int(self.__dict__.get("_rsv_guest_online") or 0),
                 "in_by": str(self.rsv_get("rsv_in").get("by") or ""), "zone": str(self._my_side().get("zone") or ""),
                 **({"jrn": jrn} if (jrn := self._jrn_st_part()) else {}),
@@ -160,14 +160,6 @@ class ReserveSessionMixin:
     def reserve_guest_online_set(self, n: int) -> None:
         """Число устройств основы на связи у гостя (локальный канал) — в st основе («там M»)."""
         self.__dict__["_rsv_guest_online"] = int(n or 0)
-
-    def _voters_body(self) -> list[dict]:
-        """Мои шлюзы с агентом rsv1 — только номера слотов: имена устройств и
-        мест второй стороне не раскрываются, в её текстах шлюз — «шлюз 2»."""
-        try:
-            return [{"slot": int(g["slot"])} for g in self._reserve_gateways_view() if g.get("rsv")][:16]
-        except Exception:                                     # noqa: BLE001
-            return []
 
     def reserve_st_if_changed(self) -> dict | None:
         """Тело `st`, если оно изменилось с последней отправки (направления,
@@ -225,10 +217,10 @@ class ReserveSessionMixin:
                                caps=list(body.get("caps") or []), gen=int(body.get("gen") or 0),
                                ports=[int(p) for p in body.get("ports") or [] if isinstance(p, int)],
                                ready=bool(body.get("ready")),
-                               has_gateway=bool(body.get("gw")) if "gw" in body else (bool(body.get("voters")) or bool(prev.get("gw"))),
+                               has_gateway=bool(body.get("gw")) if "gw" in body else bool(prev.get("gw")),
                                zone=str(body.get("zone") or ""))
             peer.update(out=str(body.get("out") or ""), inn=str(body.get("in") or ""), self_host=str(body.get("self") or ""),
-                        pkg=dict(body.get("pkg") or {}), voters=list(body.get("voters") or []),
+                        pkg=dict(body.get("pkg") or {}),
                         admin_opened=bool(body.get("admin_opened")), at=timeutil.now_iso(), at_ts=time.time(),
                         healthy=bool(body.get("healthy")), can_return=bool(body.get("can_return")),
                         in_kind=str(body.get("in_kind") or ""),

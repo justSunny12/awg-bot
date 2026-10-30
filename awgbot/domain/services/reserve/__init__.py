@@ -73,7 +73,6 @@ from .package import ReservePackageMixin
 from .pairing import ReservePairingMixin
 from .peeradmin import ReservePeerAdminMixin
 from .quorum import ReserveQuorumMixin
-from .rfblock import ReserveRfBlockMixin
 from .rfzone import ReserveRfZoneMixin
 from .tgpool import ReserveTgPoolMixin
 from .screen import ReserveScreenMixin
@@ -81,15 +80,16 @@ from .session import ReserveSessionMixin
 from .state import ReserveStateMixin
 from .traffic import ReserveTrafficMixin
 from .unpair import ReserveUnpairMixin
-from .vote import ReserveVoteMixin
+from .gwguest import ReserveGwGuestMixin
+from .opening import ReserveOpeningMixin
 from .zonelinks import ReserveZoneLinksMixin
 
 
 class ReserveMixin(ReserveStateMixin, ReserveKeysMixin, ReserveInviteMixin, ReservePairingMixin,
                    ReserveSessionMixin, ReserveLivenessMixin, ReserveScreenMixin, ReservePeerAdminMixin, ReservePackageMixin, ReserveUnpairMixin,
                    ReserveGuestMixin, ReserveDnsMixin, ReserveOutboundMixin, ReserveInboundMixin, ReserveNotifyMixin,
-                   ReserveTrafficMixin, ReserveAwayMixin, ReserveGwSideMixin, ReserveZoneLinksMixin, ReserveVoteMixin,
-                   ReserveRfBlockMixin, ReserveRfZoneMixin, ReserveTgPoolMixin, ReserveMergeOpsMixin,
+                   ReserveTrafficMixin, ReserveAwayMixin, ReserveGwSideMixin, ReserveZoneLinksMixin, ReserveGwGuestMixin,
+                   ReserveOpeningMixin, ReserveRfZoneMixin, ReserveTgPoolMixin, ReserveMergeOpsMixin,
                    ReserveCodeWindowMixin, ReserveReturnMixin, ReserveOpenProcMixin, ReserveJournalMixin,
                    ReserveInboundBackMixin, ReserveStuckMixin, ReserveQuorumMixin):
     """Резерв серверов: всё о паре — в одном месте сервисов."""

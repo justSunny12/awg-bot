@@ -21,7 +21,6 @@ _REASONS = {
     "dead": "сервер AWG не отвечает",
     "button": "ты перевёл пользователей кнопкой",
     "rf": "сервер AWG недоступен из РФ",
-    "nogw": "шлюзы не на связи с ним, РФ-доступ идёт через шлюзы {name}",
 }
 
 
@@ -32,7 +31,7 @@ def main_line(d: dict) -> str:
     since = _when(d.get("since") or "")
     head = f"🛟 Работаю на резерве {name}" + (f" с {since}" if since else "")
     primary = d.get("primary") or {}
-    if primary.get("status") == "alive" and d.get("return") == "button" and d.get("reason") != "nogw":
+    if primary.get("status") == "alive" and d.get("return") == "button":
         return head + " · сервер AWG снова в строю — «⚙️ Настройки» → «🛟 Резерв» → «↩️ Вернуть пользователей»"
     reason = _REASONS.get(str(d.get("reason") or ""), "")
     return head + (f" — {reason.format(name=name)}" if reason else "")
@@ -46,8 +45,6 @@ def primary_line(d: dict) -> str:
     st, since = str(primary.get("status") or ""), _when(primary.get("since") or "")
     tail = f" с {since}" if since else ""
     if st == "alive":
-        if d.get("reason") == "nogw":
-            return f"сервер AWG {own}: 🟢 на связи · шлюзы не на связи с {name}{tail} — РФ-доступ через шлюзы {name}"
         return f"сервер AWG {own}: 🟢 на связи"
     if st == "rf":
         return f"сервер AWG {own}: 🚫 недоступен из РФ{tail} — {name} его видит, шлюзы нет"

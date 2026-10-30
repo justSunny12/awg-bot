@@ -45,16 +45,12 @@ class ReserveScreenMixin:
         dirs = self.reserve_directions()
         sent = self.rsv_get("rsv_pkg_sent")
         out = self.rsv_get("rsv_out")
-        voters = []
-        for g in self._reserve_gateways_view():
-            if g["rsv"]:
-                voters.append(g["name"])
         return {"peer": peer, "peer_state": ps, "ready": settings.get_bool("app.reserve.ready", False),
                 "rf_on": settings.get_bool("app.reserve.rf_via_mine", True), "has_gateway": bool(self.db.gateways()),
                 "ret_immediate": str(settings.get("app.reserve.return", "immediate") or "immediate") == "immediate",
                 "online": self.reserve_online(), "seen": self.reserve_peer_seen(), "down_since": self.reserve_down_since(),
                 "out": self.reserve_out(), "out_since": out.get("since") or "", "inn": self.reserve_in(),
-                "dir_out": dirs["out"], "dir_in": dirs["in"], "voters": voters,
+                "dir_out": dirs["out"], "dir_in": dirs["in"],
                 "pkg_sent_at": max(str(sent.get("at") or ""), self.reserve_jrn_synced_at()), "traffic": self._reserve_traffic_view(),
                 "pkg_error": str(self.rsv_get("rsv_view").get("pkg_error") or ""),
                 "move_why": self.reserve_move_check(), "evict_why": self.reserve_evict_check(),
@@ -62,8 +58,7 @@ class ReserveScreenMixin:
                 "in_relay_until": str(self.rsv_get("rsv_in").get("relay_until") or ""),
                 "out_relay_until": str(out.get("relay_until") or ""), "out_step": str(out.get("step") or ""),
                 "dns": self.reserve_dns_screen_data(),
-                "gw_links": self.reserve_gateway_views(), "rf_line": self.reserve_rf_line(),
-                "peer_case_line": self.reserve_peer_case_line(),
+                "gw_links": self.reserve_gateway_views(),
                 "auto_block": str(self.rsv_get("rsv_view").get("auto_block") or ""),
                 "code_open": bool(self.reserve_code_window()["open"]),
                 "mem_free": int(ps.get("mem_free") or 0), "here": self._online_count(), "there": int(ps.get("there") or 0),

@@ -39,8 +39,8 @@ class ReserveQuorumTieMixin:
             notes.append(Notification(tg_id=pid, force_sound=True, keyboard="peer_code",
                                       text=rn.quorum_tie_peer(name, since, see, no, info, said)))
         actions: list[tuple] = [("notify", notes)]
-        if c.own == "uns" and hasattr(self, "_code_window") and not self.reserve_code_window()["open"]:
-            actions += self._code_window("H4", quiet=True)    # окно кода — пока свой взгляд «не вижу» и ничья длится; без Н4
+        if c.own == "uns" and not self.reserve_code_window()["open"]:
+            actions += self.reserve_code_window_quiet(True)   # окно кода — пока свой взгляд «не вижу» и ничья длится
         log.warning("кворум: ничья о «%s» с %s — видят %s, не видят %s", name, since, see, no)
         return actions
 
@@ -59,8 +59,8 @@ class ReserveQuorumTieMixin:
         if pid and bool(self.rsv_get("rsv_peer_admin").get("opened")):
             notes.append(Notification(tg_id=pid, force_sound=True, text=rn.quorum_tie_over(name, y, v, outcome)))
         actions: list[tuple] = [("notify", notes)]
-        if self.reserve_code_window()["open"] and not self.__dict__.get("_quo_exec") and hasattr(self, "_code_window"):
-            actions += self._code_window("6", quiet=True)
+        if self.reserve_code_window()["open"] and not self.__dict__.get("_quo_exec"):
+            actions += self.reserve_code_window_quiet(False)
         log.info("кворум: ничьей о «%s» больше нет — %s", name, outcome)
         return actions
 
@@ -83,7 +83,7 @@ class ReserveQuorumTieMixin:
         T_tie — Т-К5 поимённо; прошло — Т-К6."""
         from awgbot.domain.notices import reserve as rn
         from ...types import Notification
-        if ld.v % 2 or not self.reserve_quorum_act():
+        if ld.v % 2:
             return []
         yes = set(ld.yes_nodes(now))
         views = self.reserve_quorum_gw_views(ld.l)

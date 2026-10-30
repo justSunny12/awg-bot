@@ -151,7 +151,7 @@ class ReserveQuorumKeysMixin:
     def reserve_qkeys_body(self) -> dict | None:
         """`qkeys` второму серверу: его точки многочлена и прямой кода, оба ящика; None —
         подтверждено или слать нечего (повтор не чаще RESEND_S)."""
-        if not self.reserve_quorum_keys_on() or not self.reserve_quorum_peer_quo1():
+        if not self.reserve_quorum_keys_on():
             return None
         poly, line = self._quorum_poly(), self._quorum_code_line()
         side = self.reserve_quorum_side()

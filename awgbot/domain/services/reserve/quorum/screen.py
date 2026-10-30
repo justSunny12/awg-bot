@@ -39,7 +39,7 @@ class ReserveQuorumScreenMixin:
         why = self.reserve_quorum_off_reasons()
         m = self.reserve_quorum_mine()
         out: dict = {"on": not why, "why": why, "side": side, "peer_name": self.reserve_peer_name(),
-                     "observe": not self.reserve_quorum_act(), "pending": self.reserve_quorum_pending()}
+                     "pending": self.reserve_quorum_pending()}
         if m is not None:
             leader_host = self.reserve_quorum_leader_host()
             mine = {"g": int(m.g), "v": m.v(leader_host), "t": m.t(leader_host), "leader_here": leader_host == side,

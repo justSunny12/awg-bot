@@ -92,9 +92,6 @@ class ReserveQuorumCandidateMixin:
             self.__dict__.pop("_quo_exec", None)
             return []
         self._quorum_candidate_feed(c, now)
-        if not self.reserve_quorum_act():
-            c.tick(now)                                       # наблюдение: счёт для карточки, без действий
-            return []
         actions: list[tuple] = []
         for act in c.tick(now):
             if act.startswith("ask:"):
@@ -124,37 +121,9 @@ class ReserveQuorumCandidateMixin:
         cw = dict(self.rsv_get("rsv_view").get("code") or {})
         want = c.own == "uns" and not c.see_nodes() and not qm.majority(len(c.no_nodes()), c.v) and self.reserve_in() == "idle"
         if want and not cw.get("open"):
-            return self._code_window_quorum(True, c)
+            return self.reserve_code_window_set(True, since=self._quorum_no_since(c), n=len(c.no_nodes()), v=c.v, t=qm.threshold(c.v))
         if not want and cw.get("open") and cw.get("by") == "quorum":
-            return self._code_window_quorum(False, c)
-        return []
-
-    def _code_window_quorum(self, open_: bool, c: Candidate) -> list[tuple]:
-        from awgbot.core import config
-        from ...types import Notification
-        rn = self._rn()
-        primary = self.reserve_peer_name()
-        cw = dict(self.rsv_get("rsv_view").get("code") or {})
-        if open_:
-            since = self._quorum_no_since(c)
-            opened = bool(self.rsv_get("rsv_peer_admin").get("opened"))
-            pid = self.reserve_peer_admin_id()
-            n, v, t = len(c.no_nodes()), c.v, qm.threshold(c.v)
-            notes = [Notification(tg_id=int(config.ADMIN_ID), text=rn.quorum_code_needed_reserve(primary, since, n, v, t, opened))]
-            if pid and opened:
-                notes.append(Notification(tg_id=pid, force_sound=True, keyboard="peer_code",
-                                          text=rn.quorum_code_needed_primary(primary, str(config.SERVER_NAME or ""), since, n, v, t)))
-            self.rsv_update("rsv_view", code={"open": True, "since": since, "told": bool(pid and opened), "tries": [],
-                                              "episode": since, "by": "quorum"})
-            log.warning("кворум: «%s» не вижу, голосов для переезда не хватает (не видят %d из %d, нужно %d) — приём кода открыт",
-                        primary, n, v, t)
-            return [("notify", notes)]
-        self.rsv_update("rsv_view", code={"open": False, "closed_why": "quorum", "closed_at": timeutil.now_iso(),
-                                          "episode": str(cw.get("episode") or ""), "told": bool(cw.get("told"))})
-        log.info("кворум: приём аварийного кода закрыт — взгляды вернулись")
-        pid = self.reserve_peer_admin_id()
-        if cw.get("told") and pid:
-            return [("notify", [Notification(tg_id=pid, text=rn.code_window_closed(primary, "primary_seen"))])]
+            return self.reserve_code_window_set(False)
         return []
 
     def _quorum_known_e(self, c: Candidate) -> int:
@@ -208,8 +177,7 @@ class ReserveQuorumCandidateMixin:
         self.__dict__["_quo_exec"] = {"stage": "ask", "at": now, "e": e, "since": since, "points": {}, "need_at": 0.0, "own": c.own}
         log.warning("кворум: забираю «%s» под эпоху %s: «нет» %d из %d", self.reserve_peer_name(), e + 1, len(c.no_nodes()), c.v)
         if self.reserve_online():
-            voters = [{"slot": qm.parse_node(n)[1], "see": (c.votes.get(n) or {}) and c.votes[n].w in ("see", "held")} for n in c.voters]
-            actions.append(("send", "ask", {"case": "q", "since": since, "voters": voters[:16]}))
+            actions.append(("send", "ask", {"case": "q", "since": since}))
             self.__dict__["_quo_exec"]["asked"] = True
         else:
             self.__dict__["_quo_exec"]["stage"] = "points"
@@ -290,6 +258,11 @@ class ReserveQuorumCandidateMixin:
             return out
         ask_s = settings.get_int("app.reserve.ask_seconds", 60)
         if stage == "ask" and now - float(ex.get("at") or now) >= ask_s:
+            if 0 < int(ex.get("busy") or 0) < 3 and self.reserve_online():
+                # лидер ответил «занят» (плановая пауза) — повторить просьбу (§3.6), не сразу по точкам
+                ex["at"] = now
+                log.info("кворум: «%s» был занят — прошу снова (%d)", self.reserve_peer_name(), int(ex["busy"]))
+                return [("send", "ask", {"case": "q", "since": str(ex.get("since") or "")})]
             ex["stage"] = "points"
             log.warning("кворум: «%s» не ответил на просьбу за %d с — по точкам", self.reserve_peer_name(), ask_s)
             return self._quorum_need(c, str(ex.get("since") or ""))
@@ -298,10 +271,11 @@ class ReserveQuorumCandidateMixin:
             if actions:
                 return actions
             if now - float(ex.get("need_at") or now) >= 2 * NEED_RETRY_S:
-                if c.own == "uns" and not self.reserve_code_window()["open"] and hasattr(self, "_code_window"):
+                if c.own == "uns" and not self.reserve_code_window()["open"]:
                     ex["stage"] = "code"
                     log.warning("кворум: точек не хватает — приём аварийного кода открыт")
-                    return self._code_window("H4")
+                    return self.reserve_code_window_set(True, since=str(ex.get("since") or ""), n=len(c.no_nodes()), v=c.v,
+                                                        t=qm.threshold(c.v))
                 ex["need_at"] = now
                 return self._quorum_need(c, str(ex.get("since") or ""))
         return []

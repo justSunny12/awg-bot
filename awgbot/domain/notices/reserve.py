@@ -77,8 +77,6 @@ def hosting_started(primary: str, kind: str, since: str, extra: str = "") -> str
     at = _when(since)
     if kind == "rf":
         return f"📥 Пользователи и бот {_n(primary)} у тебя: {_n(primary)} недоступен из РФ с {at} — его шлюзы его не видят, этот сервер видит"
-    if kind == "nogw":
-        return f"📥 Пользователи и бот {_n(primary)} у тебя: его шлюзы не на связи с этим сервером с {at} — РФ-доступ его пользователей идёт через твои шлюзы"
     if kind == "code":
         return f"📥 Пользователи и бот {_n(primary)} у тебя по аварийному коду его админа: {_n(primary)} и его шлюзы не отвечают с {at}"
     text = f"📥 Пользователи и бот {_n(primary)} у тебя: {_n(primary)} не отвечает с {at} ни этому серверу, ни своим шлюзам"
@@ -107,9 +105,6 @@ def moved_to_reserve(reserve: str, kind: str, since: str, dead_since: str = "", 
         tail = f". Следующим из РФ могут закрыть и адрес {_n(reserve)} <code>{_e(reserve_ip)}</code>" if reserve_ip else ""
         return (f"🚫 Сервер AWG недоступен из РФ с {dead}: шлюзы его не видят, резерв {_n(reserve)} видит — пользователи и бот "
                 f"работают на {_n(reserve)} с {at}; {mailed}{tail}")
-    if kind == "nogw":
-        return (f"🛟 Шлюзы не на связи с резервом {_n(reserve)} с {dead} — пользователи и бот работают на {_n(reserve)} с {at}, "
-                f"РФ-доступ идёт через шлюзы {_n(reserve)}; {mailed}. Вернутся шлюзы — пользователи вернутся сюда")
     if kind == "code":
         return (f"🔴 Сервер AWG и шлюзы не отвечали резерву {_n(reserve)} с {dead} — по твоему аварийному коду пользователи и бот "
                 f"работают на {_n(reserve)} с {at}; {mailed}")
@@ -244,20 +239,6 @@ def gateway_reserve_up(gw: str, reserve: str) -> str:
     return f"🟢 Шлюз {_n(gw)} снова на связи с резервом {_n(reserve)}"
 
 
-def code_needed_reserve(primary: str, since: str, admin_opened: bool) -> str:
-    """Т-РУ7 (Н4, админу резерва): сам принять пользователей не могу."""
-    tail = (" — сам принять его пользователей он не может: нужен аварийный код админа " + _n(primary)
-            + (", бот написал ему" if admin_opened else "; его админ этот бот ещё не открывал — написать ему некуда"))
-    return (f"⚠️ {_n(primary)} не отвечает с {_when(since)}, его шлюзы тоже не на связи с этим сервером{tail}. "
-            f"Вернётся шлюз, который не видит {_n(primary)}, — пользователи переедут сами")
-
-
-def code_needed_primary(primary: str, reserve: str, since: str) -> str:
-    """Т-РУ7б (Н4, админу основы в чат его роли в боте резерва)."""
-    return (f"🆘 Сервер {_n(primary)} и его шлюзы не отвечают резерву {_n(reserve)} с {_when(since)}. Если сервер упал — "
-            f"пришли аварийный код резерва; вернётся шлюз, который не видит сервер, — пользователи переедут сами")
-
-
 def quorum_code_needed_reserve(primary: str, since: str, n: int, v: int, t: int, admin_opened: bool) -> str:
     """Т-К21 (Т-РУ7 под кворумом, админу резерва): голосов для переезда не хватает."""
     tail = (" — сам принять её пользователей этот сервер не может: нужен аварийный код админа " + _n(primary)
@@ -274,12 +255,10 @@ def quorum_code_needed_primary(primary: str, reserve: str, since: str, n: int, v
 
 
 def code_window_closed(primary: str, why: str) -> str:
-    """Т-РН3 (админу основы): приём кода закрыт — переезд не нужен или идёт сам."""
-    if why == "gw_sees":                                      # primary здесь — «шлюз N» (имён шлюзов основы у резерва нет)
-        return f"ℹ️ {_e(primary[:1].upper() + primary[1:])} снова на связи и видит сервер — переезд не нужен"
-    if why == "gw_unseen":
-        return f"ℹ️ {_e(primary[:1].upper() + primary[1:])} снова на связи и не видит сервер — переезд идёт сам, код не нужен"
-    return f"ℹ️ {_n(primary)} снова на связи — переезд не нужен"
+    """Т-РН3 (админу основы): приём кода закрыт — большинство снова видит сервер или голосов хватило."""
+    if why == "taken":
+        return "ℹ️ Голосов хватило — переезд идёт сам, код не нужен"
+    return f"ℹ️ Большинство снова видит {_n(primary)} — переезд не нужен"
 
 
 def code_wrong(left: int) -> str:
@@ -289,41 +268,6 @@ def code_wrong(left: int) -> str:
 
 def code_open_failed(primary: str, reason: str) -> str:
     return f"⚠️ Код подошёл, но пользователей {_n(primary)} поднять не удалось: {_e(reason)}. Приём кода снова открыт"
-
-
-def rf_block_warning(reserve: str, gateways: list, since: str, until: str) -> str:
-    """Т-РУ13 (основе, случай 3): похоже, сервер недоступен из РФ."""
-    at, to = _when(since), _when(until)
-    if len(gateways) == 1:
-        return (f"🚫 Шлюз {_n(gateways[0])} не видит этот сервер с {at}, а {_n(reserve)} видит — похоже, сервер недоступен "
-                f"из РФ или у шлюза плохой путь до него. Если так останется до {to}, пользователи и бот переедут на {_n(reserve)}")
-    return (f"🚫 Шлюзы {_names(gateways)} не видят этот сервер с {at}, а {_n(reserve)} видит — похоже, сервер недоступен "
-            f"из РФ. Если так останется до {to}, пользователи и бот переедут на {_n(reserve)}")
-
-
-def nogw_warning(reserve: str, since: str, until: str) -> str:
-    """Т-РУ23 (основе, Н3): шлюзы не на связи с резервом."""
-    return (f"⚠️ Шлюзы не на связи с резервом {_n(reserve)} с {_when(since)} — если так останется до {_when(until)}, "
-            f"пользователи и бот переедут на {_n(reserve)} ради РФ-доступа через его шлюзы")
-
-
-def case4_notice(reserve: str, unseen: list, seen: list, since: str) -> str:
-    """Т-РУ21 (основе, случай 4): дело в сети шлюза, переезда не будет."""
-    who = ("Шлюз " + _names(unseen)) if len(unseen) == 1 else ("Шлюзы " + _names(unseen))
-    verb = "не видит" if len(unseen) == 1 else "не видят"
-    sees = _n(reserve) + (" и " + _names(seen) if seen else "")
-    return f"⚠️ {who} {verb} этот сервер с {_when(since)}, а {sees} видят — похоже, дело в сети шлюза; переезда не будет"
-
-
-def ask_refused(reserve: str, case: str, since: str, link_if: str = "", reserve_ip: str = "") -> str:
-    """Т-РУ22 (основе): отказ на просьбу резерва — причина у этого сервера."""
-    at = _when(since)
-    if case == "nogw":
-        tail = f". Проверь путь шлюзов до <code>{_e(reserve_ip)}</code>" if reserve_ip else ""
-        return (f"ℹ️ Шлюзы не на связи с резервом {_n(reserve)} с {at}, но этот сервер их видит и РФ-доступ работает — "
-                f"переезда на {_n(reserve)} не будет{tail}")
-    return (f"⚠️ Шлюзы не видят этот сервер с {at}, а {_n(reserve)} видит: на сервере не поднят линк "
-            f"<code>{_e(link_if or 'awglink')}</code> — дело не в РФ, переезда на {_n(reserve)} не будет")
 
 
 def forced_home(reserve: str, journal: bool = False) -> str:
@@ -475,34 +419,17 @@ def webhook_restored_reserve(primary: str) -> str:
 # ── агент шлюза ─────────────────────────────────────────────────────────────
 
 def gateway_moved(reserve: str, case: str, since: str, record: str = "", ip: str = "", others: dict | None = None) -> str:
-    """Т-РА3: пользователи переехали на резерв; case — dead | rf | partial | nogw."""
+    """Т-РА3: пользователи переехали на резерв; case — dead (этот шлюз сервер не видит) | rf (не видит,
+    а резерв видит) | seen (Т-РА3б: этому шлюзу сервер отвечает — так решило большинство)."""
     at = _when(since)
     rec = f": запись <code>{_e(record)}</code> → <code>{_e(ip)}</code>" if record and ip else ""
     if case == "rf":
         return (f"🚫 Сервер AWG недоступен отсюда с {at}, а {_n(reserve)} его видит — похоже, сервер закрыт из РФ; "
                 f"пользователи переехали на {_n(reserve)}{rec}")
-    if case == "partial":
-        unseen = _names((others or {}).get("unseen") or [])
-        who = f" и шлюзу {unseen}" if unseen else ""
-        return (f"🟡 Пользователи переехали на резерв {_n(reserve)}: сервер AWG не отвечает ему{who}, этому шлюзу — отвечает. "
-                f"РФ-доступ пользователей с {_n(reserve)} идёт и через этот шлюз")
-    if case == "nogw":
-        return (f"🟡 Пользователи переехали на резерв {_n(reserve)}: этот шлюз не на связи с ним с {at} — "
-                f"РФ-доступ пользователей идёт через шлюзы {_n(reserve)}")
+    if case == "seen":
+        return (f"🟡 Пользователи переехали на резерв {_n(reserve)} — так решило большинство голосующих; "
+                f"этому шлюзу сервер AWG отвечает")
     return f"🔴 Сервер AWG не отвечает с {at} — пользователи переехали на резерв {_n(reserve)}{rec}"
-
-
-def gateway_rf_warning(reserve: str, since: str, until: str) -> str:
-    """Т-РА4 (случай 3, до переезда)."""
-    return (f"⚠️ Сервер AWG не отвечает с {_when(since)}, а {_n(reserve)} его видит — похоже, сервер недоступен из РФ; "
-            f"если так останется до {_when(until)}, пользователи переедут на {_n(reserve)}")
-
-
-def gateway_case4(reserve: str, since: str, seen: list) -> str:
-    """Т-РА4 (случай 4): дело в сети этого шлюза."""
-    who = _n(reserve) + (" и " + _names(seen) if seen else "")
-    return (f"⚠️ Сервер AWG не отвечает этому шлюзу с {_when(since)}, а {who} его видят — похоже, дело в сети этого шлюза; "
-            f"переезда не будет")
 
 
 def gateway_tg_via(primary: str, reserve: str, since: str) -> str:

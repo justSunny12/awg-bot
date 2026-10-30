@@ -110,9 +110,9 @@ class ReserveEpochMixin:
         return self._peer_alive(peer) and fresh and str(peer.get("inn") or "idle") not in HOSTING
 
     def _quorum_rules_home(self) -> bool:
-        """Линия с включённым кворумом и решениями по нему (quorum/members, решение 9)."""
+        """Линия с включённым кворумом: роль дома решают голоса (quorum/members)."""
         try:
-            return bool(self.reserve_quorum_active() and self.reserve_quorum_act())
+            return bool(self.reserve_quorum_active())
         except Exception:                                     # noqa: BLE001
             return False
 

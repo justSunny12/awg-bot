@@ -89,7 +89,7 @@ PAIR_KINDS: dict[str, tuple[str, dict]] = {
     # обычная сессия
     "st":           (BOTH, {"ready": (_B, None), "name": (_S, MAX_NAME), "version": (_S, 24), "caps": (_L, 16),
                             "gen": (_I, None), "ports": (_L, 4), "self": (_S, MAX_HOST), "out": (_S, 16),
-                            "in": (_S, 16), "pkg": (_D, None), "voters": (_L, MAX_LIST), "admin_id": (_I, None),
+                            "in": (_S, 16), "pkg": (_D, None), "admin_id": (_I, None),
                             "admin_opened": (_B, None), "gw": (_B, None),
                             "healthy": (_B, None), "can_return": (_B, None), "in_kind": (_S, 16), "mem_free": (_I, None), "online": (_I, None), "in_by": (_S, 8),
                             "zone": (_S, 120), "jrn": (_D, None), "quo": (_D, None)}),
@@ -101,7 +101,7 @@ PAIR_KINDS: dict[str, tuple[str, dict]] = {
                             "blob": (_S, MAX_BLOB), "share": (_S, 64), "m_gen": (_I, None), "jrn": (_D, None)}),
     "pkg_ok":       (BOTH, {"gen": (_I, None), "fp": (_S, 64)}),
     "pkg_bad":      (BOTH, {"gen": (_I, None), "reason": (_S, MAX_REASON)}),
-    "ask":          (BOTH, {"case": (_S, 8), "since": (_S, 32), "voters": (_L, MAX_LIST)}),
+    "ask":          (BOTH, {"case": (_S, 8), "since": (_S, 32)}),    # кандидат кворума: case = "q"
     "ask_no":       (BOTH, {"reason": (_S, 16)}),
     # переезд кнопкой: `go_req` — запусти процесс открытия и дай разовый ключ; `open_eph` —
     # его публичная часть и идентификатор открытия; `go` — ключ пакета конвертом к нему
@@ -121,7 +121,6 @@ PAIR_KINDS: dict[str, tuple[str, dict]] = {
     "relay":        (BOTH, {"until": (_S, 32)}),
     "wiped":        (BOTH, {}),
     "evict":        (BOTH, {}),
-    "view":         (BOTH, {"case": (_S, 8), "since": (_S, 32), "voters": (_L, MAX_LIST)}),
     "gone":         (BOTH, {}),
     # кворум резерва (quo1): состав линии и подтверждение, конфиг зонда второму серверу, точки и
     # ящики ключа, взгляд голосующего, эпоха и роль держателя, плановая пауза лидера
@@ -158,12 +157,7 @@ PAIR_KINDS: dict[str, tuple[str, dict]] = {
 JRN_KINDS: tuple[str, ...] = ("jev", "jcnt", "jack", "jneed", "jstale", "jcack", "jtail", "jtail_ok")
 
 GUEST_KINDS: dict[str, tuple[str, dict]] = {
-    "hello":  (GATEWAY, {"slot": (_I, None), "caps": (_L, 16), "m_gen": (_I, None), "seen": (_S, 32),
-                         "nonce": (_S, 32)}),
-    "seen":   (GATEWAY, {"seen": (_S, 32)}),
-    "view":   (RESERVE, {"seen": (_S, 32), "voters": (_L, MAX_LIST), "in": (_S, 16), "pkg_gen": (_I, None)}),
-    "need":   (RESERVE, {"case": (_S, 8), "since": (_S, 32), "m_gen": (_I, None)}),
-    "share":  (GATEWAY, {"share": (_S, 64), "m_gen": (_I, None)}),
+    "hello":  (GATEWAY, {"slot": (_I, None), "caps": (_L, 16), "nonce": (_S, 32)}),
     "state":  (RESERVE, {"state": (_S, 16), "move": (_I, None), "reason": (_S, MAX_REASON), "e": (_I, None)}),
     "ping":   (BOTH, {"n": (_S, 32)}),                    # проба по подозрению — с любой стороны
     "pong":   (BOTH, {"n": (_S, 32)}),
@@ -195,7 +189,7 @@ def kinds_for(proto: str) -> dict[str, tuple[str, dict]]:
 # поля, которых может не быть (добавлены внутри линии; отсутствие — ложь/пусто)
 OPTIONAL: dict[str, frozenset] = {"st": frozenset({"healthy", "can_return", "in_kind", "mem_free", "online", "in_by", "zone",
                                                      "jrn", "quo"}),
-                                  "need": frozenset({"m_gen"}), "state": frozenset({"reason", "e"}), "qview": frozenset({"i"}),
+                                  "state": frozenset({"reason", "e"}), "qview": frozenset({"i"}),
                                   "go": frozenset({"ttl", "k", "sealed", "oid"}), "go_req": frozenset({"ttl"}),
                                   "pkg": frozenset({"jrn"}), "released": frozenset({"epoch", "last"}),
                                   "jstale": frozenset({"F"}),

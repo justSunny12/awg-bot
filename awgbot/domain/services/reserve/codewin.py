@@ -1,16 +1,16 @@
 """
-codewin.py — часть пакета reserve (см. __init__): Н4 — окно аварийного кода
-(выделено из vote: там матрица и голосование, здесь — приём кода).
-
-Окно открыто только в Н4 (основа и её шлюзы не отвечают резерву): Т-РУ7
-админу резерва, Т-РУ7б админу основы (если он открыл бота резерва). Код
-из чата роли — транзитом в процесс открытия (M и K собирает только он);
-итог — ответом на сообщение по ходу процесса (codewait), иначе уведомлением
-(`reserve_code_failed`). Три попытки в час; нечитаемый ввод попыткой не
-считается (`garbled`). Окно закрывается ДО запуска процесса открытия (иначе
-такт голосования закрыл бы его как «шлюз видит основу»). Окно, открывшееся
-снова в том же эпизоде: Т-РУ7 резерву не повторяется, Т-РУ7б админу основы —
-ещё раз без звука (код ему снова нужен).
+codewin.py — часть пакета reserve (см. __init__): окно аварийного кода —
+приём кода админа основы в боте резерва, когда голосов для переезда не
+хватает. Окно открывает и закрывает кандидат кворума (quorum/candidate: в ходе
+решения точек не хватило; вне решения — свой «не вижу», никто не видит,
+большинства «нет» нет, Т-К21), ничья кворума — тихо (quorum/tie: тревогу с
+кнопкой кода шлёт сама), и запасной сигнал по линку пары, когда линия без
+кворума. Код из чата роли — транзитом в процесс открытия (M и K собирает
+только он); итог — ответом на сообщение по ходу процесса (codewait), иначе
+уведомлением (`reserve_code_failed`). Три попытки в час; нечитаемый ввод
+попыткой не считается (`garbled`). Окно закрывается ДО запуска процесса
+открытия. Окно, открывшееся снова в том же эпизоде: уведомление резерву не
+повторяется, админу основы — ещё раз без звука (код ему снова нужен).
 """
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ from awgbot.util import rsvkeys, timeutil
 from ..types import Notification
 from ..gateway_link.common import log
 from . import codewait
-from .vote import CODE_TRIES, CODE_WINDOW_S, MOVE_CASES
+from .opening import CODE_TRIES, CODE_WINDOW_S
 
 
 class ReserveCodeWindowMixin:
@@ -32,61 +32,59 @@ class ReserveCodeWindowMixin:
         cw = self.rsv_get("rsv_view").get("code") or {}
         return {"open": bool(cw.get("open")), "since": str(cw.get("since") or "")}
 
-    def _code_window(self, case: str, *, quiet: bool = False) -> list[tuple]:
-        if quiet:
-            return self._code_window_quiet(case)
+    def reserve_code_window_set(self, open_: bool, *, since: str = "", n: int = 0, v: int = 0, t: int = 0,
+                                by: str = "quorum") -> list[tuple]:
+        """Окно кода кандидата: открыть — Т-К21 админу резерва и (если он открывал бота)
+        админу основы с кнопкой кода; тот же эпизод снова — админу основы без звука;
+        закрыть — взгляды вернулись (Т-РН3 админу основы, если его звали)."""
         view = self.rsv_get("rsv_view")
         cw = dict(view.get("code") or {})
-        actions: list[tuple] = []
         primary = self.reserve_peer_name()
-        if case == "H4" and self.reserve_in() == "idle":
-            if not cw.get("open"):
-                since = str(view.get("case_since") or timeutil.now_iso())
-                if cw.get("episode") == since:
-                    # тот же эпизод (окно закрывалось и открылось снова): Т-РУ7 резерву не повторяется,
-                    # но админу основы код снова нужен — Т-РУ7б без звука (зона могла быть снята)
-                    cw.update(open=True)
-                    self.rsv_update("rsv_view", code=cw)
-                    pid = self.reserve_peer_admin_id()
-                    if cw.get("told") and pid:
-                        actions.append(("notify", [Notification(tg_id=pid, silent=True, keyboard="peer_code",
-                                                                text=self._rn().code_needed_primary(primary, str(config.SERVER_NAME or ""), since))]))
-                    return actions
-                opened = bool(self.rsv_get("rsv_peer_admin").get("opened"))
-                pid = self.reserve_peer_admin_id()
-                notes = [Notification(tg_id=int(config.ADMIN_ID), text=self._rn().code_needed_reserve(primary, since, opened))]
-                if pid and opened:
-                    notes.append(Notification(tg_id=pid, force_sound=True,
-                                              text=self._rn().code_needed_primary(primary, str(config.SERVER_NAME or ""), since),
-                                              keyboard="peer_code"))
-                self.rsv_update("rsv_view", code={"open": True, "since": since, "told": bool(pid and opened), "tries": [],
-                                                  "episode": since})
-                log.warning("резерв: Н4 — основа и её шлюзы не отвечают; приём аварийного кода открыт")
-                actions.append(("notify", notes))
-        elif cw.get("open"):
-            why = "primary_seen" if self.reserve_peer_seen() != "down" else ("gw_unseen" if case in MOVE_CASES else "gw_sees")
-            self.rsv_update("rsv_view", code={"open": False, "closed_why": why, "closed_at": timeutil.now_iso(),
-                                              "episode": str(cw.get("episode") or ""), "told": bool(cw.get("told"))})
-            log.info("резерв: приём аварийного кода закрыт (%s)", why)
+        rn = self._rn()
+        if open_:
+            if cw.get("open") or self.reserve_in() != "idle":
+                return []
+            since = str(since or timeutil.now_iso())
             pid = self.reserve_peer_admin_id()
-            if cw.get("told") and pid:
-                gw_name = next((self.reserve_gw_name(s) for s in self._voters()), primary)
-                actions.append(("notify", [Notification(tg_id=pid, text=self._rn().code_window_closed(
-                    primary if why == "primary_seen" else gw_name, why))]))
-        return actions
+            if cw.get("episode") == since:
+                cw.update(open=True, by=by)
+                self.rsv_update("rsv_view", code=cw)
+                if cw.get("told") and pid:
+                    return [("notify", [Notification(tg_id=pid, silent=True, keyboard="peer_code",
+                                                     text=rn.quorum_code_needed_primary(primary, str(config.SERVER_NAME or ""), since, n, v, t))])]
+                return []
+            opened = bool(self.rsv_get("rsv_peer_admin").get("opened"))
+            notes = [Notification(tg_id=int(config.ADMIN_ID), text=rn.quorum_code_needed_reserve(primary, since, n, v, t, opened))]
+            if pid and opened:
+                notes.append(Notification(tg_id=pid, force_sound=True, keyboard="peer_code",
+                                          text=rn.quorum_code_needed_primary(primary, str(config.SERVER_NAME or ""), since, n, v, t)))
+            self.rsv_update("rsv_view", code={"open": True, "since": since, "told": bool(pid and opened), "tries": [],
+                                              "episode": since, "by": by})
+            log.warning("кворум: «%s» не вижу, голосов для переезда не хватает (не видят %d из %d, нужно %d) — приём кода открыт",
+                        primary, n, v, t)
+            return [("notify", notes)]
+        if not cw.get("open"):
+            return []
+        self.rsv_update("rsv_view", code={"open": False, "closed_why": by, "closed_at": timeutil.now_iso(),
+                                          "episode": str(cw.get("episode") or ""), "told": bool(cw.get("told"))})
+        log.info("кворум: приём аварийного кода закрыт — взгляды вернулись")
+        pid = self.reserve_peer_admin_id()
+        if cw.get("told") and pid:
+            return [("notify", [Notification(tg_id=pid, text=rn.code_window_closed(primary, "primary_seen"))])]
+        return []
 
-    def _code_window_quiet(self, case: str) -> list[tuple]:
-        """Окно кода без уведомлений Н4 — ничья кворума: тревогу обоим админам шлёт
+    def reserve_code_window_quiet(self, open_: bool) -> list[tuple]:
+        """Окно кода без уведомлений — ничья кворума: тревогу обоим админам шлёт
         quorum/tie (Т-К5в несёт кнопку кода), отбой — Т-К6."""
         view = self.rsv_get("rsv_view")
         cw = dict(view.get("code") or {})
-        if case == "H4" and self.reserve_in() == "idle":
+        if open_ and self.reserve_in() == "idle":
             if not cw.get("open"):
                 since = timeutil.now_iso()
                 self.rsv_update("rsv_view", code={"open": True, "since": since, "told": False, "tries": [],
-                                                  "episode": str(cw.get("episode") or since)})
+                                                  "episode": str(cw.get("episode") or since), "by": "tie"})
                 log.warning("резерв: ничья — приём аварийного кода открыт")
-        elif cw.get("open"):
+        elif not open_ and cw.get("open"):
             self.rsv_update("rsv_view", code={"open": False, "closed_why": "tie_over", "closed_at": timeutil.now_iso(),
                                               "episode": str(cw.get("episode") or ""), "told": False})
             log.info("резерв: приём аварийного кода закрыт (ничьей нет)")

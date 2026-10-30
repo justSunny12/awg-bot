@@ -176,6 +176,20 @@ class GatewayQuorumMixin:
         slot = int((self.reserve_section() if hasattr(self, "reserve_section") else {}).get("slot") or 0)
         return f"{sec.get('l')}{slot}" if sec.get("l") and slot else ""
 
+    def quorum_own_view(self) -> tuple[str, str]:
+        """Свой взгляд зонда на сервер AWG линии: (see | held | sus | uns | new | "", с какого момента);
+        пусто — зонда нет (раздела quorum нет или шлюз не в составе)."""
+        sec = self.quorum_section()
+        l = str(sec.get("l") or "")
+        if not l:
+            return "", ""
+        name = f"awgq{l}h"
+        v = self._gw_qvoters.get(name)
+        stored = dict((sec.get("views") or {}).get(name) or {})
+        if v is not None:
+            return str(v.view or ""), str(stored.get("since") or "")
+        return str(stored.get("w") or ""), str(stored.get("since") or "")
+
     def _quorum_epoch_in(self, e: int) -> None:
         for v in self._gw_qvoters.values():
             v.epoch_in(int(e))

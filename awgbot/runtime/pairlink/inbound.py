@@ -177,8 +177,7 @@ class InboundMixin:
         await asyncio.to_thread(self.services.reserve_slots_ok_in, list(body.get("slots") or []))
 
     async def _in_ask(self, sess: _Session, body: dict) -> None:
-        await self._actions(await asyncio.to_thread(self.services.reserve_ask_in, str(body["case"]), str(body["since"]),
-                                                    list(body.get("voters") or [])))
+        await self._actions(await asyncio.to_thread(self.services.reserve_ask_in, str(body["case"]), str(body["since"])))
 
     async def _in_ask_no(self, sess: _Session, body: dict) -> None:
         await self._actions(await asyncio.to_thread(self.services.reserve_ask_no_in, str(body["reason"])))
@@ -210,10 +209,6 @@ class InboundMixin:
 
     async def _in_qpause(self, sess: _Session, body: dict) -> None:
         await self._in_quorum("qpause", body)
-
-    async def _in_view(self, sess: _Session, body: dict) -> None:
-        await self.notes(await asyncio.to_thread(self.services.reserve_view_in, str(body["case"]), str(body["since"]),
-                                                 list(body.get("voters") or [])))
 
     async def _in_pkg_ok(self, sess: _Session, body: dict) -> None:
         await asyncio.to_thread(self.services.reserve_pkg_ok, int(body["gen"]), str(body["fp"]))

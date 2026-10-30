@@ -164,7 +164,7 @@ class ReserveQuorumProbesMixin:
         """`qprobe` второму серверу: его интерфейс зонда к моему AWG; None — не
         изменилось с последней отправки или слать нечего."""
         m = self.reserve_quorum_proposed()
-        if m is None or not self.reserve_quorum_peer_quo1():
+        if m is None:
             return None
         conf = self.reserve_probe_conf(probenet.other_side(m.l), "h")
         if not conf:
@@ -206,7 +206,7 @@ class ReserveQuorumProbesMixin:
         """Раздел `quorum` документа слота: состав, поколение, порог, порт, конфиги
         зондов (к основе и к клону), эпоха. None — пары нет или шлюз не в составе."""
         m = self.reserve_quorum_mine() or self.reserve_quorum_proposed()   # действующий состав; новому узлу — после qmem_ok
-        if m is None or not self.reserve_quorum_peer_quo1():  # второй сервер 4.1.x: линия на матрице, зондов нет (§3.7.11)
+        if m is None:
             return None
         node = qm.gateway_node(m.l, int(gw.id))
         if node not in m.members:
@@ -227,11 +227,10 @@ class ReserveQuorumProbesMixin:
         out: dict = {}
         probes = self.reserve_probes()
         side = self.reserve_quorum_side()
-        if self.reserve_quorum_peer_quo1():                   # второй сервер 4.1.x: его порт AWG пробы не ждёт
-            for name, rec in (probes.get("mine") or {}).items():
-                conf = str(rec.get("conf") or "")
-                if name.startswith("awgq") and len(name) == 6 and conf:
-                    out[name] = {"conf": conf, "l": name[4], "target": "h", **_conf_addrs(conf)}
+        for name, rec in (probes.get("mine") or {}).items():
+            conf = str(rec.get("conf") or "")
+            if name.startswith("awgq") and len(name) == 6 and conf:
+                out[name] = {"conf": conf, "l": name[4], "target": "h", **_conf_addrs(conf)}
         if side and self.reserve_quorum_leader_host() == probenet.other_side(side):
             conf = self.reserve_probe_conf(side, "r")
             if conf:

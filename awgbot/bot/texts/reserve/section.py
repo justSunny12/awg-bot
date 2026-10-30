@@ -198,10 +198,9 @@ def card_text(d: dict) -> str:
     else:
         lines.append("📤 Твои пользователи: на этом сервере")
         if out_ok:
-            gws = ", ".join(_n(g) for g in d.get("voters") or [])
             sent = d.get("pkg_sent_at") or ""
             tail = f"данные для переезда у {_n(name)} от {_e(_when(sent))}" if sent else f"данные для переезда у {_n(name)} ещё не отправлены"
-            lines.append("└ " + tail + (f" · падение подтвердят шлюзы {gws}" if gws else ""))
+            lines.append("└ " + tail)
             if d.get("pkg_error"):
                 lines.append(f"└ ⚠️ данные для переезда не собираются: {_e(d['pkg_error'])}")
         else:
@@ -212,8 +211,6 @@ def card_text(d: dict) -> str:
             if g.get("seen") == "down" or (g.get("seen") == "absent" and g.get("online")):
                 since = g.get("since") or ""
                 lines.append(f"└ ⚠️ {_n(g['name'])} не на связи с {_n(name)}" + (f" с {_e(_when(since))}" if since else ""))
-        if d.get("peer_case_line"):
-            lines.append("└ " + _e(d["peer_case_line"]))
         lines += quorum_mine_lines(d.get("quorum") or {})
         if d.get("move_why") and out_ok:
             lines.append("└ перевести кнопкой нельзя: " + _e(d["move_why"]))
@@ -234,11 +231,9 @@ def card_text(d: dict) -> str:
             lines.append(f"└ 🟡 изменения из бота на {_n(name)} придут, когда он выйдет на связь" if d.get("jrn_moved")
                          else f"└ ⏳ жду реплику {_n(name)} — изменения из неё применятся, когда он выйдет на связь")
         if d.get("code_open"):
-            lines.append(f"└ 🆘 {_n(name)} и его шлюзы не отвечают — жду аварийный код его админа")
+            lines.append(f"└ 🆘 {_n(name)} не отвечает, голосов для переезда не хватает — жду аварийный код его админа")
         elif d.get("auto_block"):
             lines.append("└ ⚠️ автоматический аварийный переезд невозможен: " + _e(d["auto_block"]))
-        elif d.get("rf_line"):
-            lines.append("└ " + _e(d["rf_line"]))
     dns = d.get("dns") or {}
     if dns.get("name"):
         prov = dns.get("provider_label") or "вручную"
@@ -272,10 +267,8 @@ _W = {"see": "видит", "held": "видит", "uns": "не видит", "sus"
 
 def _quorum_off_why(codes: list, peer: str) -> str:
     for c in codes or []:
-        if c == "peer_old":
-            return f"у {peer} нет v4.2.0 — переезды по прежним правилам"
         if c == "no_gateways":
-            return "у этого сервера нет шлюзов с агентом v4.2.0 — переезд по прежним правилам: по взглядам шлюзов, кнопкой и по аварийному коду"
+            return "у этого сервера нет шлюзов с агентом v4.2.0 — переезд кнопкой и по аварийному коду, автоматического нет"
         if c.startswith("timing:"):
             return "цифры времени не сходятся (reserve.quorum в app.yaml)"
         if c.startswith("overlap:"):
@@ -305,7 +298,7 @@ def quorum_mine_lines(q: dict) -> list[str]:
         out.append(f"└ 🟡 Состав голосующих меняется: жду подтверждения {peer}")
     if mine.get("leader_here") and "y" in mine:
         y = int(mine.get("y") or 0)
-        if mine.get("role") == "fenced" and not q.get("observe"):
+        if mine.get("role") == "fenced":
             since = _when(mine.get("fenced_since") or "")
             out.append(f"└ ⚠️ Без кворума{(' с ' + _e(since)) if since else ''} — этот сервер видят {y} из {v}: бот не принимает "
                        "решений и не отвечает пользователям, VPN работает")

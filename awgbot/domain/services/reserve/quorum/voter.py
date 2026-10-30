@@ -87,7 +87,7 @@ class ReserveQuorumVoterMixin:
         views = dict(self.rsv_get("rsv_view").get("quo_views") or {})
         views[name] = {"w": w, "since": timeutil.now_iso(), "l": str(rec.get("l") or ""), "target": str(rec.get("target") or "")}
         self.rsv_update("rsv_view", quo_views=views)
-        if w == "sus" or not self.reserve_quorum_peer_quo1() or not self.reserve_online():
+        if w == "sus" or not self.reserve_online():
             return []
         body = {"l": str(rec.get("l") or ""), "g": int(self._quorum_line_gen(str(rec.get("l") or "")) or 0), "w": w,
                 "since": views[name]["since"], "e": int(v.epoch)}

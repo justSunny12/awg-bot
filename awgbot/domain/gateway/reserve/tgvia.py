@@ -26,6 +26,8 @@ tgvia.py — часть пакета reserve агента (см. __init__): вы
 from __future__ import annotations
 
 import random
+import socket
+import struct
 import time
 
 from awgbot.core import config
@@ -136,7 +138,6 @@ class ReserveTgViaMixin:
         """DNS-запрос к резолверу подсети пользователей через аплинк — любой ответ: аплинк
         жив (до основы дома или до её клона после переезда)."""
         from awgbot.infra import gwguard
-        from .watch import _dns_probe
         try:
             subnet = str(gwguard.unit_env("CLIENT_SUBNET") or "").split("/")[0]
             parts = subnet.split(".")
@@ -203,3 +204,26 @@ class ReserveTgViaMixin:
 
 
 __all__ = ["ReserveTgViaMixin"]
+
+
+UPLINK_PROBE_TIMEOUT = 2.0
+
+
+def _dns_probe(resolver: str, iface: str, timeout: float = UPLINK_PROBE_TIMEOUT) -> bool:
+    """Один DNS-запрос (A «.») к резолверу через интерфейс; любой ответ — жизнь."""
+    qid = int(time.time()) & 0xFFFF
+    msg = struct.pack(">HHHHHH", qid, 0x0100, 1, 0, 0, 0) + b"\x00" + struct.pack(">HH", 2, 1)
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        try:
+            s.setsockopt(socket.SOL_SOCKET, 25, iface.encode() + b"\x00")   # SO_BINDTODEVICE
+        except OSError:
+            pass
+        s.settimeout(timeout)
+        s.sendto(msg, (resolver, 53))
+        data, _ = s.recvfrom(512)
+        return len(data) >= 12 and data[:2] == msg[:2]
+    except OSError:
+        return False
+    finally:
+        s.close()

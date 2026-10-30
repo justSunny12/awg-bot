@@ -20,7 +20,7 @@ from awgbot.core.compat import COMPAT_FLOOR, version_key
 # seal1 — ключ пакета при переезде кнопкой принимается только конвертом к разовому ключу
 # процесса открытия (`go_req` → `open_eph` → `go{sealed}`)
 # quo1 — кворум: состав линии, зонды, взгляды и решения по большинству (концепт «кворум», 4.2.0)
-CAPS: tuple[str, ...] = ("pair1", "pkg2", "zone1", "guest1", "vote1", "keys1", "peer1", "hook1", "seal1", "quo1")
+CAPS: tuple[str, ...] = ("pair1", "pkg2", "zone1", "guest1", "keys1", "peer1", "hook1", "seal1", "quo1")
 # журнал данных (util/rsvjrn): события вместо пакета на каждое изменение, снимок `pkg3`, возврат
 # без слияния — объявляется, только если у SQLite есть JSON-функции и захват событий встал
 JOURNAL_CAPS: tuple[str, ...] = ("pkg3", "jrn1")
@@ -69,7 +69,7 @@ def journal_pair(mine: list[str], theirs: list[str]) -> bool:
     return "jrn1" in (mine or []) and "jrn1" in (theirs or [])
 
 
-_NEEDED_TO_HOST: tuple[str, ...] = ("zone1", "guest1", "vote1")
+_NEEDED_TO_HOST: tuple[str, ...] = ("zone1", "guest1", "quo1")   # quo1 — переезд решает кворум: без него направления не готовы
 
 
 def pkg_format(mine: list[str], theirs: list[str]) -> str:

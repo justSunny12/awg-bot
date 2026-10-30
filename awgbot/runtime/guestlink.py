@@ -3,9 +3,9 @@ guestlink.py — гостевой канал на стороне шлюза: к�
 линка `awgrsv` к стороне зоны резерва. Конверт — `util/gwlink` с ключом из
 PSK линка (`pairproto.guest_key`), словарь — `pairproto.GUEST_KINDS`.
 
-В простое ни байта: `hello` в начале сессии (слот, возможности, поколение
-доли, взгляд на основу), `seen` при смене взгляда, `share` по `need`, `pong`
-на `ping`; от резерва — `view`, `need`, `state`, `ping`. Переподключение с
+В простое ни байта: `hello` в начале сессии (слот, возможности), `pong` на
+`ping`, слова кворума (`qview`, `qshare`); от резерва — `state`, `ping` и слова
+кандидата (`q*`). Переподключение с
 отступом и джиттером; линк восстановился — сразу.
 
 Такт 5 с (`tick`): наблюдатели живости (domain/gateway/reserve/watch) и
@@ -194,11 +194,6 @@ async def _one(services, act: tuple) -> None:
         c = client()
         if c is None or not await c.send(act[1], act[2] if len(act) > 2 else None):
             log.info("гостевой канал: «%s» не ушло — сессии нет", act[1])
-    elif kind == "gw_ping":
-        from awgbot.runtime import linkclient
-        lc = linkclient.ensure(services)
-        if lc is not None and getattr(lc, "_writer", None) is not None:
-            await lc._send("ping", {"n": str(act[1])})      # noqa: SLF001 — проба живости по каналу конфигурации
     elif kind == "link":
         # слово своему серверу по каналу конфигурации (кворум: qview) — литералом вида: сторож
         # видов канала (tests/unit/test_gwlink_kinds) читает отправителей

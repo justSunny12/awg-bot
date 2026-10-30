@@ -73,7 +73,7 @@ class ReserveQuorumTickMixin:
                     self.__dict__.get("_quo_peers_sync_g") != int(m.g):
                 self.__dict__["_quo_peers_sync_at"], self.__dict__["_quo_peers_sync_g"] = now, int(m.g)
                 try:
-                    self.reserve_probe_peers_sync(m if self.reserve_quorum_peer_quo1() and m.gateways else None)
+                    self.reserve_probe_peers_sync(m if m.gateways else None)
                 except Exception as e:                        # noqa: BLE001
                     log.warning("кворум: пиры-зонды: %s", e)
             body = self.reserve_qprobe_body()

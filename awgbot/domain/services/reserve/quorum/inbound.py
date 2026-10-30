@@ -12,6 +12,8 @@ holder, r}` — эпоха и роль держателя. Гостевой ка
 """
 from __future__ import annotations
 
+import time
+
 from awgbot.util import timeutil
 from awgbot.util.quorum import VIEWS
 
@@ -133,6 +135,31 @@ class ReserveQuorumInboundMixin:
             if cur.get("via") != "link" or cur.get("w") != w:
                 self._qgwviews[node] = {"w": w, "since": str(quo.get("since") or ""), "e": int(quo.get("e") or 0),
                                         "g": int(quo.get("g") or 0), "l": side, "at": timeutil.now_iso(), "via": "snap"}
+
+    # ── просьба кандидата по каналу пары ────────────────────────────────────
+    def reserve_ask_in(self, case: str, since: str) -> list[tuple]:
+        """`ask{q}` кандидата: он набрал «нет» большинством — я лишён кворума (или вот-вот):
+        отдаю эпоху сам путём кнопки; занят — `ask_no{busy}`, кандидат переспросит."""
+        name = self.reserve_peer_name()
+        if case != "q":
+            log.warning("кворум: просьба «%s» неизвестного вида %r — не отвечаю", name, case)
+            return []
+        why = self.reserve_move_check()
+        if why:
+            log.info("кворум: просьба «%s» по кворуму — занят: %s", name, why)
+            return [("send", "ask_no", {"reason": "busy"})]
+        log.warning("кворум: по решению кворума перевожу пользователей на «%s» (с %s)", name, since)
+        self.reserve_move_start(kind="dead", dead_since=since)
+        return [("live",)]
+
+    def reserve_ask_no_in(self, reason: str) -> list[tuple]:
+        """`ask_no{busy}` лидера на мою просьбу: исполнение ждёт `ask_seconds` и просит снова (до трёх раз)."""
+        ex = self.__dict__.get("_quo_exec")
+        if ex and str(ex.get("stage") or "") == "ask" and str(reason or "") == "busy":
+            ex["busy"] = int(ex.get("busy") or 0) + 1
+            ex["at"] = time.monotonic()
+            log.info("кворум: «%s» занят — переспрошу через ask_seconds", self.reserve_peer_name())
+        return []
 
     def reserve_quorum_gw_views(self, l: str, t: str = "h") -> dict:
         """Взгляды узлов на линию `l` (шлюзы и второй сервер), как они известны мне;

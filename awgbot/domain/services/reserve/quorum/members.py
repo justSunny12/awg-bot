@@ -43,15 +43,6 @@ class ReserveQuorumMembersMixin:
     def reserve_quorum_timing(self) -> Timing:
         return Timing.from_settings(self.reserve_quorum_settings(), settings.get_int("app.reserve.rf_block_minutes", 15))
 
-    def reserve_quorum_act(self) -> bool:
-        """Ключ `app.reserve.quorum.act` (conf/app.yaml): решения по кворуму (лишение кворума,
-        переезд) — только при true; при false — наблюдение и счёт, а переезд решает
-        матрица по долям прямой, как без кворума."""
-        return bool(self.reserve_quorum_settings().get("act", True))
-
-    def reserve_quorum_peer_quo1(self) -> bool:
-        return "quo1" in (self.reserve_peer_state().get("caps") or [])
-
     def _quorum_gw_nodes(self, side: str) -> tuple[list[str], list[int]]:
         """(узлы шлюзов с агентом quo1, слоты выше предела блока)."""
         nodes, big = [], []
@@ -122,7 +113,7 @@ class ReserveQuorumMembersMixin:
         """`qmem` второму серверу: предложенный состав, пока не подтверждён; повтор не
         чаще QMEM_RESEND_S."""
         m = self.reserve_quorum_proposed()
-        if m is None or not self.reserve_quorum_pending() or not self.reserve_quorum_peer_quo1():
+        if m is None or not self.reserve_quorum_pending():
             return None
         now = time.monotonic()
         sent = self.__dict__.get("_qmem_sent")
@@ -219,7 +210,7 @@ class ReserveQuorumMembersMixin:
         proposed = self.reserve_quorum_proposed()
         _nodes, big = self._quorum_gw_nodes(side)
         keys_ok = self.reserve_quorum_keys_ok(m) if hasattr(self, "reserve_quorum_keys_ok") else True
-        return qm.off_reasons(m if m is not None else proposed, peer_quo1=self.reserve_quorum_peer_quo1(), acked=m is not None,
+        return qm.off_reasons(m if m is not None else proposed, acked=m is not None,
                               timing_problem=self.reserve_quorum_timing().check(), overlaps=self._quorum_overlaps(),
                               big_slots=big, keys_ok=keys_ok)
 

@@ -38,7 +38,7 @@ class ReserveQuorumReturnsMixin:
 
     def reserve_quorum_healthy(self) -> bool | None:
         """Здоров ли я глазами голосующих (Q2 > v/2); None — кворум не ведёт."""
-        if not self.reserve_quorum_active() or not self.reserve_quorum_act() or self.reserve_out() != "away":
+        if not self.reserve_quorum_active() or self.reserve_out() != "away":
             return None
         q2 = self.reserve_quorum_q2()
         return bool(q2.get("majority")) if q2 else False
@@ -87,9 +87,6 @@ class ReserveQuorumReturnsMixin:
                     c.view_in(node, w, now, since=str(gv.get("since") or ""), e=int(gv.get("e") or 0),
                               info=Info.from_dict(gv.get("i")) if gv.get("i") else None)
             c.channel(node, alive)
-        if not self.reserve_quorum_act():
-            c.tick(now)
-            return []
         actions: list[tuple] = []
         for act in c.tick(now):
             if act.startswith("ask:"):
