@@ -88,6 +88,25 @@ def test_after_coming_home_from_a_remainder_the_automaton_does_not_flap(q, monke
         assert q.s.reserve_out() == "home", "остаток вебхука снова повёл основу в away — дребезг"
 
 
+def test_a_remainder_word_does_not_lead_away_again_when_the_session_drops(q, monkeypatch):
+    """Дома после остатка вебхука сессия пары рвётся: то же слово Telegram (409) второй раз в away
+    не ведёт — одно слово, одно решение; новое 409 после возврата права — ведёт."""
+    _webhook_away(q)
+    _live_idle_peer(q, monkeypatch)
+    q.s.reserve_out_tick()
+    assert q.s.reserve_out() == "home"
+    _silent_peer(q)
+    monkeypatch.setattr(q.s, "reserve_peer_seen", lambda: "down")
+    for _ in range(3):
+        q.s.reserve_out_tick()
+        assert q.s.reserve_out() == "home", "обрыв сессии после остатка вебхука снова увёл основу в away — дребезг"
+    assert q.s._follow_wanted() == (False, "вебхук у резерва без гостя"), "роль следует за словом, уже признанным остатком"
+    q.s.reserve_set_poll("mine")
+    q.s.reserve_set_poll("away", why="webhook")               # новое слово — новая отметка
+    q.s.reserve_out_tick()
+    assert q.s.reserve_out() == "away", "новое 409 после возврата права не повело в away"
+
+
 def test_a_reserve_still_serving_keeps_me_away(q, monkeypatch):
     _webhook_away(q)
     _live_idle_peer(q, monkeypatch, inn="serving")

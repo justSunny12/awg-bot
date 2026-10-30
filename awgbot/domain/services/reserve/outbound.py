@@ -261,7 +261,7 @@ class ReserveOutboundMixin:
         работают возвраты: «сразу» по Q2, аварийный по Q1, рычаг «⚠️ Вернуть без …»."""
         if out.get("await_merge") or str(out.get("return_why") or "") == "force":
             return False
-        return self._webhook_says_away(out) and not self._webhook_remainder(out, peer)
+        return self._webhook_says_away(out) and not self._webhook_remainder(out, peer) and not self._webhook_word_spent(out)
 
     def _tick_leaving(self, out: dict) -> list[tuple]:
         step = str(out.get("step") or "pkg")
@@ -471,7 +471,8 @@ class ReserveOutboundMixin:
             # проверка зависшего вебхука считают от них
             with _LOCK:
                 cur = dict(self.rsv_get("rsv_out"))
-                cur.update(state="home", kind="", step="", by="", await_merge=False, since=str(cur.get("home_since") or ""))
+                cur.update(state="home", kind="", step="", by="", await_merge=False, since=str(cur.get("home_since") or ""),
+                           webhook_rem_ts=self.rsv_get("rsv_poll").get("at_ts"))   # это слово Telegram — остаток, второй раз не ведёт
                 cur.pop("at_ts", None)
                 if cur.get("home_at_ts") is not None:
                     cur["at_ts"] = cur["home_at_ts"]

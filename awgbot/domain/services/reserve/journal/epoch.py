@@ -96,13 +96,21 @@ class ReserveEpochMixin:
             if serving:
                 return True, "резерв несёт моих пользователей"
             return False, ("кворум: решает большинство" if self._quorum_rules_home() else "пользователи и Telegram здесь")
-        if self._webhook_remainder(out, peer):
+        if self._webhook_remainder(out, peer) or self._webhook_word_spent(out):
             return False, "вебхук у резерва без гостя"
         return True, "Telegram: вебхук у резерва"
 
     def _webhook_says_away(self, out: dict) -> bool:
         """Слово Telegram «вебхук у резерва» сказано после перехода в это состояние направления."""
         return self.reserve_poll() == "away" and not _earlier(self.rsv_get("rsv_poll"), out)
+
+    def _webhook_word_spent(self, out: dict) -> bool:
+        """Одно слово — одно решение: это слово Telegram уже признано остатком (живой резерв сказал
+        после него, что моих не несёт — `_tick_away` вернул домой); снова в away оно не ведёт, даже
+        если сессия пары потом рвётся. Новое 409 после возврата права — новая отметка."""
+        rem = out.get("webhook_rem_ts")
+        at = self.rsv_get("rsv_poll").get("at_ts")
+        return rem is not None and at is not None and float(at) == float(rem)
 
     def _webhook_remainder(self, out: dict, peer: dict) -> bool:
         """Вебхук у резерва — остаток: живой резерв после моего перехода говорит, что моих не несёт."""
