@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 
 from .members import majority
 from .probe import Info
-from .timing import Timing
+from .timing import Timing, jitter
 
 
 @dataclass
@@ -52,6 +52,7 @@ class Candidate:
     no_since: float | None = None                  # большинство «нет» держится с
     rf_since: float | None = None                  # случай 3: шлюзы не видят, я вижу — с
     asked_at: float | None = None
+    ask_next: float = 0.0        # следующий повтор опроса (ask_repeat_s ± 40 %)
     asked: set = field(default_factory=set)
     tie_since: float | None = None
     tie_told: bool = False
@@ -165,8 +166,9 @@ class Candidate:
         # большинстве тоже: лишний, но быстрый — счёт для карточки и ничьей)
         if self.own == "uns" and self.gateway_no() >= 1 and not self.decided:
             pending = [n for n in self.voters if n not in no]
-            if pending and (self.asked_at is None or now - self.asked_at >= self.timing.ask_repeat_s):
+            if pending and (self.asked_at is None or now >= self.ask_next):
                 self.asked_at = now
+                self.ask_next = now + jitter(self.timing.ask_repeat_s)
                 self.asked.update(pending)
                 out.append("ask:" + ",".join(pending))
         # ничья

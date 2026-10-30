@@ -92,12 +92,13 @@ class ReserveTgViaMixin:
         from awgbot.domain.notices import reserve as rn
         since = timeutil.now_iso()
         cur.update(tg_via=True, tg_since=since)
+        # очередь уведомления — до записи раздела: Т-К24 не должно теряться, если аплинк мёртв и
+        # отправка не дошла (такт повторит недоставленное из pending_notes)
+        note = self.reserve_note(cur, rn.gateway_tg_via(str(cur.get("name") or ""), str(cur.get("peer_name") or ""), since), silent=True)
         _write(cur, self._RSV_STORE)
         st = self.__dict__.setdefault("_tgvia", {})
         st.update(probe_at=now + PROBE_EVERY_S * random.uniform(0.6, 1.4), streak=0)
-        primary, _since = self.reserve_primary_seen() if hasattr(self, "reserve_primary_seen") else ("", "")
         log.warning("обход: аплинк молчит с %s, Telegram — через awgrsv", since)
-        note = self.reserve_note(cur, rn.gateway_tg_via(str(cur.get("name") or ""), str(cur.get("peer_name") or ""), since), silent=True)
         return [("tg", "on"), ("notify", [note]), ("push",)]
 
     def _tgvia_off(self, cur: dict, why: str) -> list[tuple]:

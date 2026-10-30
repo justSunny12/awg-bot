@@ -239,8 +239,12 @@ class ReserveQuorumLeaderMixin:
         для счёта «да» на клоне; состояние `waiting` кончается, дальше — правило лидера
         (старт без права записи до первого большинства «да»)."""
         first = self.reserve_quorum_guest_phase() == "waiting"
-        self.__dict__["_guest_quorum"] = {"l": str(body.get("l") or ""), "g": int(body.get("g") or 0),
-                                          "members": [str(m) for m in (body.get("members") or [])][:64],
+        l = str(body.get("l") or "")
+        members = [str(m) for m in (body.get("members") or []) if isinstance(m, str)][:64]
+        if l not in ("a", "b") or not members:
+            log.warning("кворум: слово quorum без линии или состава — не состав, жду дальше")
+            return
+        self.__dict__["_guest_quorum"] = {"l": l, "g": int(body.get("g") or 0), "members": members,
                                           "port": int(body.get("port") or 0)}
         fenced = dict(self.rsv_get("rsv_qlog").get("fenced") or {})
         if fenced.get("hold"):

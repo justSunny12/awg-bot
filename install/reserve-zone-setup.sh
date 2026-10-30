@@ -337,8 +337,6 @@ zone_nft_load() {   # таблица зоны: вход — только кан�
     local chan="${GUEST_CHANNEL_PORT:-8787}" ifaces="${1:-}" iface="${1%% *}" nm="${2:-}" whp pair
     # выход агентов в Telegram: только пока veth стоит и есть линки — источники одним набором
     local tgsrc=""; if nsx ip link show "$XN" >/dev/null 2>&1; then set -- $(link_nets); [ $# -gt 0 ] && tgsrc="{ $(printf '%s, ' "$@" | sed 's/, $//') }"; fi
-    # выход агентов в Telegram: только пока veth стоит и есть линки — источники одним набором
-    local tgsrc=""; if nsx ip link show "$XN" >/dev/null 2>&1; then set -- $(link_nets); [ $# -gt 0 ] && tgsrc="{ $(printf '%s, ' "$@" | sed 's/, $//') }"; fi
     local paddr pnet pport; paddr="$(state_get probe_addr)"; pnet="$(state_get probe_net)"; pport="$(state_get probe_port)"
     case "$pport" in ''|*[!0-9]*) pport=8789 ;; esac
     # «iface» — первый интерфейс (его правила именные), «ifset» — все клоны одним набором nft

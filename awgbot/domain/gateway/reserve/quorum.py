@@ -29,7 +29,7 @@ from awgbot.util.quorum.voter import Voter
 from ..base import log
 
 STORE_PATH = Path("/var/lib/awg-gw/quorum.json")
-_KEEP_KEYS = ("views", "pledges", "told", "apply_mono", "share_given_at")
+_KEEP_KEYS = ("views", "pledges", "told", "apply_mono", "share_given_at", "e_known")
 APPLY_EVERY_S = 300
 
 
@@ -179,6 +179,16 @@ class GatewayQuorumMixin:
     def _quorum_epoch_in(self, e: int) -> None:
         for v in self._gw_qvoters.values():
             v.epoch_in(int(e))
+        self._quorum_epoch_persist(int(e))
+
+    def _quorum_epoch_persist(self, e: int) -> None:
+        """Известная эпоха — на диск (`e_known`): после перезапуска агента пробы идут с ней,
+        а не с эпохой документа (после `qtake` прежний лидер иначе снова набирал бы «да» под
+        старой эпохой до `qstate` резерва)."""
+        sec = self.quorum_section()
+        if sec.get("l") and int(sec.get("e_known") or 0) < int(e):
+            sec["e_known"] = int(e)
+            _write(sec, self._QUO_STORE)
 
     def quorum_runtime_plan(self) -> dict:
         return {"responder": None, "probes": self.quorum_probe_ifaces()}
@@ -204,7 +214,7 @@ class GatewayQuorumMixin:
             if v is None:
                 v = Voter(str(rec["l"]), me, timing=timing)
                 v.start(now)
-                v.epoch_in(int(sec.get("e") or 0))
+                v.epoch_in(max(int(sec.get("e") or 0), int(sec.get("e_known") or 0)))
                 self._gw_qvoters[name] = v
                 self._pledge_restore(name, v, now)
             elif v.timing != timing:
@@ -293,6 +303,7 @@ class GatewayQuorumMixin:
             return self._quorum_asked(name, v, now)
         if kind == "qtake":
             v.take(int(body.get("e") or 0))
+            self._quorum_epoch_persist(int(v.epoch))
             self._pledge_store(name, None)
             log.warning("quorum: кандидат забирает основу под эпоху %s — обязательство снято", v.epoch)
             return []
