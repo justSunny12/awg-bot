@@ -108,8 +108,8 @@ class ReserveQuorumLeaderMixin:
         from awgbot.infra import quoprobe
         if getattr(self, "guest", False):
             q = self.__dict__.get("_guest_quorum") or {}
-            if not q.get("l") or not q.get("members"):
-                return None
+            if not q.get("l") or not q.get("members") or not q.get("active", True):
+                return None                                   # линия основы выключена — сокета без ответов не держим
             return probenet.responder_addr(str(q["l"]), clone=True), int(q.get("port") or quoprobe.port())
         m = self.reserve_quorum_mine()
         if m is None or not self.reserve_quorum_active():

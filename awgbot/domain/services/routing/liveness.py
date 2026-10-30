@@ -129,6 +129,7 @@ class RoutingLivenessMixin:
         self.lan_map_tick(slot_policy=not engaged)
         slots = self.rt_slots()
         active = self.active_gateway()
+        raw_active = str(self.db.get_state(self._RT_ACTIVE_KEY) or "")   # записанный активный — для слота 29 (пропал?)
         # Зонды СНАРУЖИ замка и до транзакции: они длятся секунды (сеть), и
         # держать на это время БД или реконсиляцию значило бы менять один отказ
         # на другой.
@@ -287,7 +288,12 @@ class RoutingLivenessMixin:
         elif ok:
             if announced:
                 self.db.set_state(a_ann_k, "0")
-                notes.append(Notification(config.ADMIN_ID, self._txt_rt_gw_up(active)))
+                # слот «шлюзы второго сервера» пропал этим тактом (активным записан он, а в слотах его нет):
+                # возврат на свой объявляет rfpeer (Т-РТ7), «снова в строю» было бы вторым письмом
+                peer_gone = hasattr(self, "_RT_PEER_SLOT") and raw_active == str(self._RT_PEER_SLOT) \
+                    and (active is None or active.id != self._RT_PEER_SLOT)
+                if not peer_gone:
+                    notes.append(Notification(config.ADMIN_ID, self._txt_rt_gw_up(active)))
         elif not announced and self._rt_unavailable(akey):
             self.db.set_state(a_ann_k, "1")
             if refused:

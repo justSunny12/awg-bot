@@ -76,7 +76,7 @@ class _Cand:
         monkeypatch.setattr(cand_mod, "time", types.SimpleNamespace(monotonic=b.clock.monotonic, time=b.clock.time))
         self.s.rsv_update("rsv_peer_state", quo={"l": LINE, "g": 1, "members": list(members), "active": True, "why": []})
         assert self.s.reserve_quorum_side() == "a", "подготовка: резерв в тестах — сторона a"
-        self.s.reserve_qkeys_in({"l": LINE, "m_gen": 1, "q_gen": 4, "t": 3, "x": rsvkeys.RESERVE_X,
+        self.s.reserve_qkeys_in({"l": LINE, "m_gen": 1, "q_gen": 4, "thr": 3, "x": rsvkeys.RESERVE_X,
                                  "y": RSV_Y, "qbox": QBOX, "c_gen": 1, "cy": RSV_Y, "cbox": QBOX})
         self.v = Voter(LINE, "a")
         self.v.view = "see"

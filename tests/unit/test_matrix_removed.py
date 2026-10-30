@@ -114,7 +114,9 @@ def test_the_matrix_modules_are_gone_from_the_server_reserve_package(module):
 def test_the_pair_channel_has_no_view_and_st_has_no_voters():
     assert "view" not in pp.PAIR_KINDS, "вид `view` канала пары остался"
     assert "voters" not in pp.PAIR_KINDS["st"][1], "поле `voters` в `st` осталось"
-    assert set(pp.PAIR_KINDS["ask"][1]) == {"case", "since"}, f"поля ask: {sorted(pp.PAIR_KINDS['ask'][1])}"
+    # kind (dead | rf, Р6) — вид переезда кворума, необязательный; полей матрицы нет
+    assert set(pp.PAIR_KINDS["ask"][1]) == {"case", "since", "kind"}, f"поля ask: {sorted(pp.PAIR_KINDS['ask'][1])}"
+    assert pp.OPTIONAL["ask"] == frozenset({"kind"})
 
 
 @pytest.mark.parametrize("kind", ["seen", "view", "need", "share"])

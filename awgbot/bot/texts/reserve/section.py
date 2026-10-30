@@ -600,8 +600,9 @@ def rfpeer_peer_lines(r: dict, peer: str) -> list[str]:
         return []
     from awgbot.util.textfmt.base import human_bytes
     since = _when(ep.get("since") or "")
-    return [f"└ 🇷🇺 РФ-доступ пользователей {_n(peer)} идёт через мои шлюзы" + (f" с {_e(since)}" if since else "")
-            + f" · ↑ {human_bytes(int(ep.get('up') or 0))} ↓ {human_bytes(int(ep.get('dn') or 0))}"]
+    up, dn = int(ep.get("up") or 0), int(ep.get("dn") or 0)
+    vol = f" · ↑ {human_bytes(up)} ↓ {human_bytes(dn)}" if up or dn else ""   # нули не выводим
+    return [f"└ 🇷🇺 РФ-доступ пользователей {_n(peer)} идёт через мои шлюзы" + (f" с {_e(since)}" if since else "") + vol]
 
 
 def rfmine_off_dialog(peer: str, since: str) -> str:
