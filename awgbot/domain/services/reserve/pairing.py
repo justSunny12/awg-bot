@@ -117,7 +117,7 @@ class ReservePairingMixin:
                         "его пользователей этот сервер принять сможет")
         from awgbot.core.compat import version_key
         if version_key(tok.version) and version_key(tok.version)[:3] < (4, 2, 0):
-            raise ServiceError(f"«{tok.name}» на v{tok.version} — для резерва нужен 4.2.0 или новее у обоих серверов")
+            raise ServiceError(f"Второй сервер на v{tok.version} — для резерва нужен 4.2.0 или новее у обоих серверов")
         ask_version = bool(version_key(tok.version) and version_key(config.INSTALLED_VERSION)
                            and version_key(tok.version)[:3] > version_key(config.INSTALLED_VERSION)[:3])
         return {"token": raw, "tok": tok, "warn": warn, "ask_version": ask_version}
