@@ -153,6 +153,12 @@ def _away(services, mp):
     services.reserve_set_out("away")
 
 
+def _peer_use(services, mp):
+    """Второй сервер ходит в РФ через мои шлюзы (эпизод РФ-доступа через второй сервер) — тумблер в диалог Т-РТ4."""
+    services.rsv_update("rsv_rfpeer", peer_use={"since": _iso(NOW.replace(hour=14, minute=5)), "told": True,
+                                                "base": {"up": 0, "dn": 0}})
+
+
 def _serving(services, mp):
     services.reserve_set_in("serving")
     services.rsv_put("rsv_pkg_in", {"at": _iso(NOW.replace(hour=11, minute=30)), "gen": 3, "fp": "ab" * 8})
@@ -279,6 +285,10 @@ RESERVE = [
          data=_rsv(ready=True, gw="rsv", paired=True), title="готовность выключена"),
     Shot("adm.rsv.rfmine", role="admin", press=[RSV, RsvCB(action="rfmine")],
          data=_rsv(ready=True, gw="rsv", paired=True), title="Мои шлюзы для резерва: выкл"),
+    Shot("adm.rsv.rfmine.episode", role="admin", press=[RSV, RsvCB(action="rfmine")],
+         data=_rsv(ready=True, gw="rsv", paired=True, then=[_peer_use]), title="Т-РТ4: выключить «Мои шлюзы для резерва» в эпизоде — диалог"),
+    Shot("adm.rsv.rfmine.off", role="admin", press=[RSV, RsvCB(action="rfmine"), RsvCB(action="rfmine_off")],
+         data=_rsv(ready=True, gw="rsv", paired=True, then=[_peer_use]), title="Т-РТ4: «Выключить» — согласие снято"),
     Shot("adm.rsv.ret", role="admin", press=[RSV, RsvCB(action="ret")],
          data=_rsv(ready=True, gw="rsv", paired=True), title="рычаг возврата: по кнопке"),
     Shot("adm.rsv.unpair", role="admin", press=[RSV, RsvCB(action="unpair")],

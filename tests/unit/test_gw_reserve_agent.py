@@ -127,11 +127,11 @@ def _decide(gw, host):
 
 def test_the_section_lands_in_a_private_file_and_raises_the_link_once(gw, host, tmp_path):
     p = tmp_path / "reserve.json"
-    assert p.exists() and stat.S_IMODE(os.stat(p).st_mode) == 0o600, "reserve.json с долей ключа не 0600"
+    assert p.exists() and stat.S_IMODE(os.stat(p).st_mode) == 0o600, "reserve.json не 0600"
     assert host.ups == [gw.conf], "линк к резерву не поднят конфигом раздела"
     res = gw.reserve_apply(_checked(gw.conf))
     assert host.ups == [gw.conf] and not res["changed"], "тот же раздел переподнял линк"
-    assert gw.reserve_section()["share"]["y"] == "cd" * 16
+    assert "share" not in gw.reserve_section(), "доля прямой в разделе reserve — её больше нет (точка — в quorum)"
 
 
 def test_without_the_section_the_agent_removes_the_file_and_the_link(gw, host, tmp_path):

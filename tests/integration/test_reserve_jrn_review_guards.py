@@ -46,7 +46,7 @@ from awgbot.util import timeutil
 from tests.integration import _reserve_common as rc
 from tests.integration import _reserve_move as rm
 from tests.integration._reserve_jrn_duo import Duo
-from tests.integration._reserve_vote_common import RSV_SHARE, T_UP, Cand, box, gw_sent
+from tests.integration._reserve_vote_common import T_UP, Cand, box, gw_sent
 from tests.integration.test_rsvopen import DNS
 from tests.integration.test_rsvopen import box as open_box
 
@@ -335,7 +335,8 @@ def test_a_button_move_is_not_refused_for_a_manual_record(box):
 def test_an_emergency_opening_goes_with_the_dns_envelope(box):
     """Контроль: конверт DNS есть (или пакет прежнего выпуска без отметки) — точки открывают."""
     pkg = box.s.rsv_get("rsv_pkg_in")
-    box.s.rsv_put("rsv_pkg_in", {**pkg, "has_dns": True, "share": RSV_SHARE})
+    box.s.rsv_put("rsv_pkg_in", {**pkg, "has_dns": True})
+    _code_box_of_the_package(box.s)
     assert box.s.reserve_open_block() == ""
     _points(box)
     assert len(box.launched) == 1, "точки шлюза и резерва при конверте DNS не открыли пакет"

@@ -48,9 +48,9 @@ class _Kernel:
         return AcctState(handle=self.handle, counters=dict(self.counters),
                          up=dict(self.up), dn=dict(self.dn), rules=4)
 
-    def sync(self, state, links, subnets, devices):
+    def sync(self, state, links, subnets, devices, pair_peer4=""):
         self.syncs.append({"state": state, "links": list(links), "subnets": list(subnets),
-                           "devices": list(devices)})
+                           "devices": list(devices), "pair_peer4": pair_peer4})
         if self.sync_error:
             raise rfacct.AcctError(self.sync_error)
         if not self.exists:

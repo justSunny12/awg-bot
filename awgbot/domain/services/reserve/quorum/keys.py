@@ -123,15 +123,15 @@ class ReserveQuorumKeysMixin:
         if not self.reserve_quorum_keys_on():
             return []
         poly_on = self.reserve_quorum_poly_on()
-        decide = bool(want_on and m is not None and m.enabled)
+        decisions_on = bool(want_on and m is not None and m.enabled)
         actions: list[tuple] = []
-        if decide and not poly_on:
+        if decisions_on and not poly_on:
             self._quorum_new_poly(m.t(m.l), f"включение голосования о сервере (состав {m.g})")
             actions += self._quorum_enabled_notes(m)
             log.warning("кворум: голосование о «%s» включено — состав %s, порог %d; ключ и код прежние",
                         str(config.SERVER_NAME or m.l), ", ".join(m.members), m.t(m.l))
             return actions
-        if poly_on and not decide:
+        if poly_on and not decisions_on:
             with _LOCK:
                 self.rsv_update("rsv_qkeys", poly=[], t=0, disabled_at=timeutil.now_iso())
             if m is None or not m.enabled:
