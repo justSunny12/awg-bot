@@ -473,9 +473,9 @@ def test_lost_devices_of_the_report_are_listed_in_the_notice(away):
 # ── новое поколение ключа — только после возврата по долям или коду ─────────
 
 @pytest.mark.parametrize("kind, go_sent, regen", [
-    ("button", True, False), ("rf", True, False), ("nogw", True, False),   # K отдан мной (`go`) — прямая цела
+    ("button", True, False), ("rf", True, False),                          # K отдан мной (`go`) — прямая цела
     ("button", False, True), ("dead", False, True), ("code", False, True),  # своего go не было — по долям/коду
-    ("button", None, False), ("rf", None, False), ("nogw", None, False),    # отметки нет (прежнее состояние):
+    ("button", None, False), ("rf", None, False),                           # отметки нет (прежнее состояние):
     ("dead", None, True), ("code", None, True),                             # по виду переезда
 ])
 def test_the_generation_changes_after_a_return_only_when_the_package_was_opened_by_shares_or_code(away, kind, go_sent,

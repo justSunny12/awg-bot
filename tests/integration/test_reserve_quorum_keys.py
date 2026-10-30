@@ -33,7 +33,7 @@ from awgbot.util.rsvpkg import seal
 from tests.integration import _reserve_common as rc
 from tests.integration import _reserve_move as rm
 from tests.integration._reserve_quorum import PEER_ADMIN, line, notes, setup_line
-from tests.integration._reserve_vote_common import M_GEN, RSV_SHARE, box
+from tests.integration._reserve_vote_common import M_GEN, RSV_SHARE, Cand, box, code_window_outside
 from tools import rsvopen
 
 pytestmark = pytest.mark.integration
@@ -157,27 +157,21 @@ def test_the_old_code_does_not_open_the_package_after_enabling(line):
     assert (m.hex(), k.hex()) == (_keys(line.s)["m"], _keys(line.s)["k"]), "новый код не открыл пакет"
 
 
-@pytest.mark.parametrize("why", ["peer_old", "no_quo1_gateway"])
-def test_without_the_conditions_the_keys_stay_on_the_line_of_m(line, why):
-    """Смешанная пара (§3.7.11): «Beta» 4.1.x или ни одного шлюза с quo1 —
-    ключей кворума нет, код и доли шлюзов — на прямой «2 из n», как было."""
-    if why == "peer_old":
-        line.peer_quo1(False)
-        line.add_gw(1)
-    else:
-        line.add_gw(1, quo=False)
-    before = _keys(line.s)
+def test_with_only_the_second_server_voting_one_point_cannot_open(line):
+    """Шлюзов с quo1 нет — голосует только второй сервер (v = 1): у «Beta»
+    единственная точка многочлена ключа кворума, а порог не ниже 2 — открыть
+    пакет одной своей точкой она не может, только по аварийному коду."""
+    line.add_gw(1, quo=False)
     line.propose()
-    if line.s.reserve_quorum_proposed().gateways:
-        line.ack_members()
-    assert not line.s.reserve_quorum_wanted()
+    line.ack_members()
+    assert line.s.reserve_quorum_proposed().members == ("a", "b")
     line.sync_keys()
-    line.s.quorum_tick()
-    assert not line.s.reserve_quorum_keys_on() and int(_keys(line.s)["m_gen"]) == int(before["m_gen"])
-    assert line.s.reserve_code() == _prime_code(line.s)
-    assert line.s.reserve_qkeys_body() is None, "qkeys второму серверу при линии на матрице"
-    reasons = line.s.reserve_quorum_off_reasons()
-    assert ("peer_old" if why == "peer_old" else "no_gateways") in reasons, reasons
+    q = line.s.reserve_qkeys()
+    if q.get("on") and q.get("poly"):
+        assert int(q.get("t") or 0) >= 2, f"v = 1: порог многочлена {q.get('t')} — «Beta» откроет пакет одна"
+    body = line.s.reserve_qkeys_body()
+    assert body is not None and body.get("cbox"), "v = 1: ящика кода у второго сервера нет — аварийный код не откроет"
+    assert not line.s.reserve_quorum_decisions(), "v = 1: решения по голосам разрешены"
 
 
 # ── смена состава ───────────────────────────────────────────────────────────
@@ -251,25 +245,21 @@ def test_after_a_new_m_the_second_server_gets_qkeys_again(on):
 
 # ── выключение ──────────────────────────────────────────────────────────────
 
-@pytest.mark.parametrize("why", ["peer_rolled_back", "last_gateway_rolled_back"])
-def test_switching_off_returns_the_code_to_the_line_of_m_with_a_new_generation(on, why):
-    k0, code0 = _keys(on.s), on.s.reserve_code()
-    if why == "peer_rolled_back":
-        on.peer_quo1(False)
-    else:
-        on.gw_quo(1, False)
-        on.propose()
-        on.ack_members()
-    acts = on.sync_keys()
-    assert not on.s.reserve_quorum_keys_on(), f"{why}: ключи остались под кворумом"
-    k1 = _keys(on.s)
-    assert int(k1["m_gen"]) == int(k0["m_gen"]) + 1 and k1["m"] != k0["m"], "выключение без нового поколения M"
-    code = on.s.reserve_code()
-    assert code != code0 and code == _prime_code(on.s), "после выключения код не на прямой M"
-    assert on.s.reserve_code_notify_pending(), "новый код после выключения админу не поставлен"
-    assert not on.s.reserve_qkeys().get("poly") and not on.s.reserve_qkeys().get("mc"), "коэффициенты ключей кворума остались"
-    assert on.s.reserve_qkeys_body() is None
-    assert not notes(acts)
+def test_the_last_gateway_rolled_back_takes_its_old_point_out_of_the_game(on):
+    """Переход v 2 → 1 (шлюз откатился, `quo1` нет): у шлюза осталась точка
+    прежнего многочлена, у «Beta» — своя; при прежнем пороге 2 их двух хватает
+    на M. Поэтому многочлен прежнего состава и ящик кворума у второго сервера
+    уходят, M и K — новые, а код (прямая кода со шлюзом не связана) — прежний."""
+    k0, q0, code0 = _keys(on.s), dict(on.s.reserve_qkeys()), on.s.reserve_code()
+    on.gw_quo(1, False)
+    on.propose()
+    on.ack_members()
+    on.sync_keys()
+    k1, q1 = _keys(on.s), on.s.reserve_qkeys()
+    assert k1["m"] != k0["m"] and int(k1["m_gen"]) == int(k0["m_gen"]) + 1, \
+        "v 2 → 1: M прежний — точка откатившегося шлюза и точка резерва открывают пакет"
+    assert not q1.get("poly") or q1.get("poly") != q0.get("poly"), "v 2 → 1: многочлен прежнего состава остался"
+    assert on.s.reserve_code() == code0, "v 2 → 1: код сменился, хотя прямая кода со шлюзом не связана"
 
 
 # ── возврат после переезда ──────────────────────────────────────────────────
@@ -354,12 +344,6 @@ def test_a_new_pair_session_sends_unconfirmed_qkeys_at_once(line):
     assert line.s.reserve_qkeys_body() is not None and line.s.reserve_qkeys_body() is None
     line.s.reserve_session_opened({})
     assert line.s.reserve_qkeys_body() is not None, "после новой сессии пары qkeys ждут 60 с"
-
-
-def test_no_qkeys_to_a_peer_that_lost_quo1(on):
-    on.s.rsv_update("rsv_qkeys", acked={})
-    on.peer_quo1(False)
-    assert on.s.reserve_qkeys_body() is None, "qkeys второму серверу 4.1.x — незнакомый вид рвёт сессию"
 
 
 @pytest.mark.parametrize("body", [{"l": "b", "m_gen": 9, "q_gen": 9, "c_gen": 9}, {"m_gen": 2, "q_gen": 1, "c_gen": 1}],
@@ -570,8 +554,7 @@ def h4(box, monkeypatch):
     monkeypatch.setattr(rsvzone, "wipe", lambda: "")
     box.peer_admin_opened()
     box.primary(False)
-    box.tick()
-    assert box.case == "H4" and box.s.reserve_code_window()["open"]
+    code_window_outside(Cand(box))                        # окно кода открыл кандидат: свой «не вижу», шлюзы молчат
     return box
 
 

@@ -18,7 +18,7 @@ import base64
 
 import pytest
 
-from awgbot.core import settings
+from awgbot.core import config, settings
 from awgbot.domain.services.reserve import invite as invitemod
 from awgbot.domain.services.types import ServiceError
 from awgbot.util import joinsas, pairproto, pairtoken, timeutil
@@ -174,6 +174,53 @@ def test_nobody_has_a_gateway_and_the_pairing_is_refused(services, rsv):
     out = services.reserve_pair_hello(Acceptor(res["state"]["id"]).hello(gw=False))
     assert (out["ok"], out.get("why")) == (False, "nogw"), "сопряжение без шлюзов у обеих сторон принято"
     assert invitemod._live() == {}, "отвергнутый hello завёл сессию и код"
+
+
+def test_an_acceptor_below_4_2_0_is_refused_as_old_and_the_invitation_waits(services, rsv):
+    """Принявший без `quo1` (ниже 4.2.0): переезд решает кворум, прежних правил
+    нет — сопряжение отказано причиной «old», сессии и кода нет, а приглашение
+    живо: после обновления тот же админ подключается тем же приглашением."""
+    from awgbot.domain.services.reserve import compat
+    res = services.reserve_invite_issue()
+    before = dict(services.reserve_invite())
+    acc = Acceptor(res["state"]["id"])
+    out = services.reserve_pair_hello(acc.hello(caps=[c for c in compat.CAPS if c != "quo1"], version="4.1.1"))
+    assert (out["ok"], out.get("why")) == (False, "old"), f"второй сервер 4.1.x принят в пару: {out}"
+    assert invitemod._live() == {}, "отвергнутый hello завёл сессию и код"
+    after = services.reserve_invite()
+    assert after.get("id") == before.get("id") and after.get("state") == before.get("state"), \
+        f"отказ «old» закрыл приглашение: {before.get('state')} → {after.get('state')}"
+    again = services.reserve_pair_hello(acc.hello())
+    assert again["ok"], f"после обновления то же приглашение не принято: {again}"
+
+
+def test_the_old_refusal_says_what_to_do_and_that_the_invitation_waits():
+    from awgbot.bot.texts.reserve import notices as rnt
+    text = rnt.refused_by_inviter("old")
+    assert "4.2.0" in text and "приглашение ждёт" in text and not text.endswith("."), text
+
+
+@pytest.mark.parametrize("version", ["4.1.1", "4.0.2", "4.1.9.3"])
+def test_an_invitation_from_a_server_below_4_2_0_is_refused_before_connecting(services, rsv, version):
+    """Принявший 4.2.0, приглашение от сервера ниже 4.2.0 — отказ ещё до
+    подключения (ServiceError с версией и требованием), а не пара без кворума."""
+    with pytest.raises(ServiceError, match="для резерва нужен 4.2.0 или новее у обоих серверов") as e:
+        services.reserve_accept_parse(Inviter(version=version).token)
+    assert f"v{version}" in str(e.value), str(e.value)
+
+
+def test_the_version_refusal_comes_before_the_readiness_and_generation_checks(services, rsv, monkeypatch):
+    """Старый пригласивший — первое, что слышит админ: «включи готовность» или
+    «обновитесь до одного поколения AWG» ему не помогут."""
+    settings.set_value("app.reserve.ready", False)
+    monkeypatch.setattr(services, "_awg_generation", lambda: 1)
+    with pytest.raises(ServiceError, match="4.2.0 или новее"):
+        services.reserve_accept_parse(Inviter(version="4.1.1", awg_gen=2).token)
+
+
+def test_an_invitation_of_4_2_0_and_newer_is_accepted(services, rsv):
+    for version in ("4.2.0", "4.2.0.1", "4.3.0"):
+        assert services.reserve_accept_parse(Inviter(version=version).token)["tok"].version == version
 
 
 def test_a_gateway_on_one_side_pairs_with_one_ready_direction(services, rsv):
@@ -338,9 +385,10 @@ def test_no_own_gateway_is_a_warning_not_a_refusal(services, rsv):
     assert services.reserve_accept_parse(Inviter().token)["warn"] == []
 
 
-def test_a_newer_inviter_is_a_question_not_a_refusal(services, rsv):
-    assert services.reserve_accept_parse(Inviter(version="4.1.0").token)["ask_version"] is True
-    assert services.reserve_accept_parse(Inviter(version="4.0.0.2").token)["ask_version"] is False, \
+def test_a_newer_inviter_is_a_question_not_a_refusal(services, rsv, monkeypatch):
+    monkeypatch.setattr(config, "INSTALLED_VERSION", "4.2.0")
+    assert services.reserve_accept_parse(Inviter(version="4.3.0").token)["ask_version"] is True
+    assert services.reserve_accept_parse(Inviter(version="4.2.0.2").token)["ask_version"] is False, \
         "хотфикс — та же линия, вопроса нет"
 
 

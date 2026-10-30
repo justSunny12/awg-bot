@@ -24,7 +24,6 @@ def _all_texts() -> list[tuple[str, str]]:
         ("hosting_started.button", rn.hosting_started("Beta", "button", SINCE)),
         ("hosting_started.dead", rn.hosting_started("Beta", "dead", SINCE)),
         ("hosting_started.rf", rn.hosting_started("Beta", "rf", SINCE)),
-        ("hosting_started.nogw", rn.hosting_started("Beta", "nogw", SINCE)),
         ("hosting_started.code", rn.hosting_started("Beta", "code", SINCE)),
         ("hosting_ended", rn.hosting_ended("Beta", "↑ 1 ГБ")),
         ("hosting_ended.empty", rn.hosting_ended("Beta", "")),
@@ -32,7 +31,6 @@ def _all_texts() -> list[tuple[str, str]]:
         ("moved.button", rn.moved_to_reserve("Beta", "button", SINCE)),
         ("moved.dead", rn.moved_to_reserve("Beta", "dead", SINCE, SINCE)),
         ("moved.rf", rn.moved_to_reserve("Beta", "rf", SINCE, SINCE, "198.51.100.7")),
-        ("moved.nogw", rn.moved_to_reserve("Beta", "nogw", SINCE, SINCE)),
         ("moved.code", rn.moved_to_reserve("Beta", "code", SINCE, SINCE)),
         ("returned_home", rn.returned_home("Beta", {"clients": 1, "devices": 2, "extensions": 3, "blocks": 4}, "↑ 1 ГБ")),
         ("returned_home.empty", rn.returned_home("Beta", {}, "")),
@@ -79,12 +77,12 @@ def test_the_hosting_notice_tells_the_reason_of_each_kind():
     assert "перевёл к тебе" in rn.hosting_started("Beta", "button", SINCE)
     assert "не отвечает" in rn.hosting_started("Beta", "dead", SINCE)
     assert "недоступен из РФ" in rn.hosting_started("Beta", "rf", SINCE)
-    assert "шлюзы не на связи" in rn.hosting_started("Beta", "nogw", SINCE)
+    assert "шлюзы не на связи" not in rn.hosting_started("Beta", "nogw", SINCE), "вариант переезда «шлюзы не на связи» остался"
     assert "аварийному коду" in rn.hosting_started("Beta", "code", SINCE)
 
 
 def test_the_primary_side_notice_lists_what_clients_were_told():
-    for kind in ("button", "dead", "rf", "nogw", "code"):
+    for kind in ("button", "dead", "rf", "code"):
         assert "переподключи VPN" in rn.moved_to_reserve("Beta", kind, SINCE, SINCE), kind
 
 

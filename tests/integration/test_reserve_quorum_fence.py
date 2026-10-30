@@ -93,7 +93,6 @@ def _notes(actions) -> list:
 
 @pytest.fixture()
 def q(mv, monkeypatch):
-    settings.set_value("app.reserve.quorum.act", True)
     return _Q(mv.svc, monkeypatch)
 
 
@@ -231,18 +230,51 @@ def test_held_yes_is_not_counted_for_the_return(q):
 
 # ── без решений ─────────────────────────────────────────────────────────────
 
-def test_with_act_off_the_count_runs_but_the_journal_is_not_touched(q):
+def test_a_leftover_act_off_in_the_settings_still_fences(q):
+    """Ключа `quorum.act` больше нет: `false`, оставшийся в чьём-то app.yaml,
+    не читается — лидер без большинства дольше T_down лишён права записи."""
     settings.set_value("app.reserve.quorum.act", False)
-    q.tick()
-    assert q.meta()[:2] == ("self", "holder"), "act=false: старт лидера всё равно снял право записи"
-    q.probe("b")
-    q.probe("a1")
-    q.tick()
+    _lead(q)
     acts = _fence(q)
-    assert q.meta()[:2] == ("self", "holder"), "act=false: лишение кворума тронуло журнал"
-    assert _notes(acts) == [] and not q.s.reserve_quorum_fenced()
+    assert q.meta()[:2] == ("self", "follower"), "прежний act=false оставил лидеру право записи без кворума"
+    assert len(_notes(acts)) == 1 and q.s.reserve_quorum_fenced()
+
+
+def _solo(q) -> None:
+    """Состав из двух серверов: голосующий у лидера `a` — только `b` (v = 1)."""
+    q.s.rsv_update("rsv_quorum", active={"l": "a", "g": 1, "members": ["a", "b"]},
+                   mine={"l": "a", "g": 1, "members": ["a", "b"]})
+
+
+def test_with_v_1_the_leader_is_never_fenced_and_the_journal_stays(q):
+    """Голосует только второй сервер: судьбу сервера один голос не решает —
+    ни старта без права записи, ни лишения кворума при «да» 0 из 1, журнал
+    (держатель, роль, эпоха) не трогается; счёт для карточки идёт."""
+    _solo(q)
+    before = q.meta()
+    acts = q.tick()
+    assert q.meta() == before, f"v = 1: старт лидера тронул журнал: {q.meta()}"
+    q.probe("b")
+    q.tick()
+    assert q.s.reserve_quorum_count()["y"] == 1 and q.s.reserve_quorum_count()["v"] == 1, q.s.reserve_quorum_count()
+    for _ in range(10):                                   # 10 × (W + T_down) без единого «да»
+        q.advance(W + T_DOWN)
+        acts += q.tick()
+    assert q.meta() == before, f"v = 1: «да» 0 из 1 лишило лидера записи: {q.meta()}"
+    assert not q.s.reserve_quorum_fenced() and _notes(acts) == [], "v = 1: ограждение или Т-К7"
     c = q.s.reserve_quorum_count()
-    assert c["role"] == "fenced" and c["y"] == 0 and c["v"] == 3, "наблюдение: счёт для карточки не идёт"
+    assert (c["y"], c["v"]) == (0, 1), f"карточке не «0 из 1»: {c}"
+
+
+def test_shrinking_to_v_1_lifts_a_fence_of_the_old_composition(q):
+    _lead(q)
+    _fence(q)
+    assert q.meta()[:2] == ("self", "follower")
+    _solo(q)
+    q.tick()
+    q.tick()
+    assert not q.s.reserve_quorum_fenced(), "при v = 1 ограждение прежнего состава осталось"
+
 
 
 def test_the_quorum_switched_off_while_fenced_lifts_the_fence(q):
@@ -304,12 +336,12 @@ def test_an_adopted_epoch_survives_the_tick_insurance(q):
     assert q.meta() == ("peer", "follower", e + 1), "страховка такта сняла принятую по пробе эпоху"
 
 
-def test_a_probe_with_a_larger_epoch_does_nothing_to_the_journal_with_act_off(q):
+def test_a_probe_with_a_larger_epoch_is_adopted_despite_a_leftover_act_off(q):
     settings.set_value("app.reserve.quorum.act", False)
     _lead(q)
     e = q.s.reserve_quorum_epoch()
-    assert q.probe("a1", e=e + 1) is not None
-    assert q.meta() == ("self", "holder", e), "act=false: проба тронула журнал"
+    q.probe("a1", e=e + 1)
+    assert q.meta() == ("peer", "follower", e + 1), "прежний act=false: эпоха больше по пробе не принята"
 
 
 def test_qstate_of_my_line_with_a_larger_epoch_adopts_and_a_smaller_one_does_not(q):
@@ -328,7 +360,6 @@ def test_qstate_of_my_line_with_a_larger_epoch_adopts_and_a_smaller_one_does_not
 def test_the_guest_leader_fences_its_own_base_the_same_way(services, monkeypatch):
     """Лидер-гость (клон основы у резерва) — то же правило на своей базе:
     состав ему даёт бот резерва (`quorum{l, g, members}`), голосующие — a, a1, a2."""
-    settings.set_value("app.reserve.quorum.act", True)
     monkeypatch.setattr(config, "GUEST", True)
     q = _Q(services, monkeypatch)
     services.reserve_quorum_guest_in({"l": "a", "g": 1, "members": MEMBERS, "port": 8789})
@@ -400,7 +431,6 @@ def test_the_guest_starts_without_write_until_the_composition_arrives(services, 
     """Решение 31.10.2026 (вариант 2): бот основы на резерве стартует в состоянии `waiting` —
     без права записи, пока бот резерва не пришлёт состав; «кворум выключен» это не снимает.
     Состав пришёл — старт лидера, первое большинство «да» возвращает запись."""
-    settings.set_value("app.reserve.quorum.act", True)
     monkeypatch.setattr(config, "GUEST", True)
     q = _Q(services, monkeypatch)
     assert services.reserve_quorum_guest_phase() == "waiting"
@@ -421,11 +451,3 @@ def test_the_guest_starts_without_write_until_the_composition_arrives(services, 
     q.probe("a")
     q.tick()
     assert q.meta()[:2] == ("self", "holder"), "гость с большинством «да» не вернулся к записи"
-
-
-def test_a_guest_start_with_act_off_does_not_fence(services, monkeypatch):
-    settings.set_value("app.reserve.quorum.act", False)
-    monkeypatch.setattr(config, "GUEST", True)
-    q = _Q(services, monkeypatch)
-    services.reserve_quorum_guest_start()
-    assert q.meta()[:2] == ("self", "holder"), "act=false: старт гостя тронул журнал"

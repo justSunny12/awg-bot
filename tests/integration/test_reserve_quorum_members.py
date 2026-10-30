@@ -101,14 +101,6 @@ def test_a_new_pair_session_sends_the_pending_line_again_at_once(line):
     assert line.s.reserve_qmem_body() is not None, "после новой сессии пары состав ждёт 30 с — второй сервер его не видел"
 
 
-def test_no_qmem_to_a_peer_without_quo1(line):
-    """«Beta» 4.1.x не знает вида qmem: незнакомый вид рвёт сессию канала пары (§3.3)."""
-    line.peer_quo1(False)
-    line.add_gw(1)
-    line.propose()
-    assert line.s.reserve_qmem_body() is None
-
-
 def test_qmem_ok_of_the_proposed_generation_makes_the_line_active(line):
     line.add_gw(1)
     proposed = line.propose()
@@ -294,7 +286,7 @@ async def test_the_scheduler_holds_back_words_to_the_peer_while_the_pair_channel
     monkeypatch.setattr(pairlink, "online", lambda: False)
     monkeypatch.setattr(pairlink, "send", lambda *a, **k: None)
     monkeypatch.setattr(line.s, "reserve_liveness_tick", lambda now=None: (None, []))
-    monkeypatch.setattr(line.s, "reserve_vote_tick", lambda: [])
+    monkeypatch.setattr(line.s, "reserve_gwguest_tick", lambda: [])
     monkeypatch.setattr(line.s, "reserve_st_if_changed", lambda: None)
     monkeypatch.setattr(line.s, "quorum_runtime_plan", lambda: {"responder": None, "probes": {}})
     monkeypatch.setattr(line.s, "quorum_tick", lambda: [("send", "qmem", {"l": "a", "g": 1}), ("notify", ["Т-К12"])])

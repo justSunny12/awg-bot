@@ -46,7 +46,7 @@ RESERVE = {
     "tg_pool_learn_syn": 3,
     "tg_pool_stale_days": 3,
     "quorum": {"port": 8789, "probe_seconds": 15, "no_seconds": 45, "yes_window_seconds": 40, "down_seconds": 20,
-               "up_seconds": 100, "pledge_minutes": 10, "tie_minutes": 3, "act": True},
+               "up_seconds": 100, "pledge_minutes": 10, "tie_minutes": 3},
 }
 
 

@@ -134,7 +134,7 @@ class Acceptor:
         self.kp = b""
 
     def hello(self, *, addr: str = ADDR_B, gw: bool = True, **over) -> dict:
-        body = {"pair": self.pair_id, "eph": b64u(self.pub), "name": "Beta", "version": "4.0.0",
+        body = {"pair": self.pair_id, "eph": b64u(self.pub), "name": "Beta", "version": "4.2.0",
                 "caps": list(compat.CAPS), "gen": 0, "ports": [45871], "seen": "", "bot": "beta_vpn_bot",
                 "gw": gw, "nonce": "", "_peer_addr": addr}
         body.update(over)
@@ -152,7 +152,7 @@ class Inviter:
     """Вторая сторона, пригласившая этот сервер: приглашение и её половина
     сопряжения."""
 
-    def __init__(self, *, version: str = "4.0.0", expires_in: int = 3600, awg_gen: int = 0,
+    def __init__(self, *, version: str = "4.2.0", expires_in: int = 3600, awg_gen: int = 0,
                  pair_id: str = "a1b2c3d4e5f60718"):
         self.pair_id = pair_id
         self.peer_priv = key()
@@ -175,7 +175,7 @@ class Inviter:
         k = joinsas.shared(self.priv, a_eph)
         self.code = joinsas.code(self.pair_id, None, a_eph, self.pub, k, tag=joinsas.PAIR_SAS_TAG)
         self.kp = joinsas.pair_key(self.pair_id, k, tag=joinsas.PAIR_KEY_TAG)
-        body = {"eph": b64u(self.pub), "name": "Beta", "version": "4.0.0", "caps": list(compat.CAPS), "gen": 0,
+        body = {"eph": b64u(self.pub), "name": "Beta", "version": "4.2.0", "caps": list(compat.CAPS), "gen": 0,
                 "ports": [45871], "bot": "beta_vpn_bot", "gw": True}
         body.update(over)
         return body

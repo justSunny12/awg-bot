@@ -5,8 +5,7 @@
 (runtime/webhook.py), мусор от подписанного собеседника рвёт гостевой канал
 (runtime/guestlink.py), одна сборка пакета на сессию
 (runtime/pairlink/inbound.py), перепроверка getWebhookInfo в ожидании права
-отвечать (runtime/pollctl.py), отметка `tgpool refresh` (tgpool.py), демпфер
-после перезагрузки хоста (rfblock.py).
+отвечать (runtime/pollctl.py), отметка `tgpool refresh` (tgpool.py).
 
 Цена ошибки: токен с переводом строки — в env юнита гостя дописывается
 строка, которую положил собеседник (ADMIN_ID, путь, что угодно); локальные
@@ -37,7 +36,6 @@ from awgbot.runtime.pairlink.inbound import InboundMixin
 from awgbot.util.rsvpkg import bot as pkgbot
 
 from tests.integration import _reserve_common as rc
-from tests.integration._reserve_vote_common import box, sent
 from tests.integration.test_reserve_pollctl import _update, lab, paired
 from tests.integration.test_reserve_tgpool import pool
 from tests.integration.test_rsvopen import TOKEN
@@ -46,7 +44,7 @@ from tests.integration.test_rsvpkg_bot import _open, live
 
 pytestmark = pytest.mark.integration
 rsv = rc.rsv
-__all__ = ["box", "lab", "live", "opener", "paired", "pool"]
+__all__ = ["lab", "live", "opener", "paired", "pool"]
 
 
 # ── токен в пакете — одной строкой ──────────────────────────────────────────
@@ -231,29 +229,3 @@ def test_the_refresh_mark_without_a_pair_does_nothing(services, rsv):
     flag.write_text("")
     assert services.reserve_tg_pool_due(1.0) is False
     _ = config
-
-
-# ── демпфер случаев 3/Н3 после перезагрузки хоста ───────────────────────────
-
-def test_the_damper_starts_over_after_a_host_reboot(box, tmp_path, monkeypatch):
-    """Отметка демпфера из прежней загрузки (monotonic в базе — «из будущего»)
-    — счёт заново: просьба основе не раньше rf_block_minutes после старта."""
-    monkeypatch.setattr(rsvzone, "STATE_DIR", tmp_path / "rsv")
-    monkeypatch.setattr(rsvzone, "OPEN_STATUS", tmp_path / "rsv" / "open.status")
-    box.primary(True)
-    box.hello(1, sees=False)
-    box.hello(2, sees=False)
-    box.tick()
-    view = box.s.rsv_get("rsv_view")
-    box.s.rsv_update("rsv_view", rf={**view["rf"], "mono": box.clock.t + 10 ** 7})   # прежняя загрузка
-    acts = []
-    for _ in range(int(10 * 60 / 5)):
-        box.advance(5)
-        box.keepalive()
-        acts += box.tick()
-    assert not sent(acts, "ask"), "после перезагрузки демпфер обойдён — просьба основе сразу"
-    for _ in range(int(6 * 60 / 5)):
-        box.advance(5)
-        box.keepalive()
-        acts += box.tick()
-    assert sent(acts, "ask"), "демпфер после перезагрузки не досчитал"

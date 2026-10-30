@@ -74,7 +74,6 @@ class _Cand:
         self.b = b
         self.s = b.s
         monkeypatch.setattr(cand_mod, "time", types.SimpleNamespace(monotonic=b.clock.monotonic, time=b.clock.time))
-        settings.set_value("app.reserve.quorum.act", True)
         self.s.rsv_update("rsv_peer_state", quo={"l": LINE, "g": 1, "members": list(members), "active": True, "why": []})
         assert self.s.reserve_quorum_side() == "a", "подготовка: резерв в тестах — сторона a"
         self.s.reserve_qkeys_in({"l": LINE, "m_gen": 1, "q_gen": 4, "t": 3, "x": rsvkeys.RESERVE_X,
@@ -186,10 +185,15 @@ def test_a_peer_admin_who_never_opened_the_bot_gets_nothing_and_the_alarm_says_s
     assert "написать ему некуда" in got[config.ADMIN_ID][0].text, got[config.ADMIN_ID][0].text
 
 
-def test_own_uns_at_a_tie_opens_the_code_window(c):
-    c.tie("uns")
-    c.run(T_TIE + 5)
-    assert c.s.reserve_code_window()["open"], "ничья и свой «не вижу» — приём аварийного кода закрыт"
+def test_own_uns_at_a_tie_opens_the_code_window_quietly(c):
+    """Ничья и свой «не вижу» — окно кода открыто тихо: тревогу с кнопкой кода
+    несёт сама Т-К5в, отдельного Т-К21 нет — иначе два громких сообщения на одну аварию."""
+    acts = c.tie("uns")
+    acts += c.run(T_TIE + 5)
+    cw = c.s.rsv_get("rsv_view").get("code") or {}
+    assert cw.get("open") and cw.get("by") == "tie", f"ничья и свой «не вижу» — окно кода не открыто ничьей: {cw}"
+    other = [n.text for n in notes(acts) if "Ничья" not in n.text]
+    assert not other, f"при ничьей сверх тревоги ушло ещё: {other}"
 
 
 def test_own_see_at_a_tie_does_not_open_the_code_window(c):
@@ -268,10 +272,12 @@ def test_with_an_odd_v_there_is_never_a_tie(box, monkeypatch):
     assert not _tie_notes(acts) and not c.s.rsv_get("rsv_qlog").get("tie"), "ничья при нечётном v"
 
 
-def test_with_act_off_there_is_no_alarm(c):
+def test_a_leftover_act_off_in_the_settings_does_not_silence_the_alarm(c):
+    """Ключа `quorum.act` больше нет: оставшийся в чьём-то app.yaml `false`
+    не читается — решения по кворуму идут всегда, тревога ничьей тоже."""
     settings.set_value("app.reserve.quorum.act", False)
     acts = c.tie() + c.run(T_TIE + 5)
-    assert not notes(acts), "act=false: кандидат шлёт тревогу ничьей"
+    assert set(_tie_notes(acts)) == {config.ADMIN_ID, rc.PEER_ADMIN}, "прежний act=false заглушил тревогу ничьей"
 
 
 # ── лидер ───────────────────────────────────────────────────────────────────
@@ -329,7 +335,6 @@ class _Lead:
 
 @pytest.fixture()
 def ld(mv, monkeypatch):
-    settings.set_value("app.reserve.quorum.act", True)
     w = _Lead(mv.svc, monkeypatch)
     w.start()
     return w
@@ -436,7 +441,6 @@ class _Q3(_Lead):
 
 @pytest.fixture()
 def q3(mv, monkeypatch):
-    settings.set_value("app.reserve.quorum.act", True)
     w = _Q3(mv.svc, monkeypatch)
     w.start()
     return w

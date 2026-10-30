@@ -28,7 +28,7 @@ rsv = rc.rsv
 
 def _st(**over) -> dict:
     body = {"ready": True, "name": "Beta", "version": "4.0.0", "caps": list(compat.CAPS), "gen": 0, "ports": [45871],
-            "self": rc.HOST_B, "out": "home", "in": "idle", "pkg": {"gen": 0, "fp": ""}, "voters": [],
+            "self": rc.HOST_B, "out": "home", "in": "idle", "pkg": {"gen": 0, "fp": ""},
             "admin_id": PEER_ADMIN, "admin_opened": False, "gw": True}
     body.update(over)
     return body
@@ -94,6 +94,47 @@ def test_a_peer_that_lost_a_capability_turns_my_direction_off_once(services, pai
     off = [n for n in notes if n.text.startswith("⚠️ Резерв")]
     assert len(off) == 1 and "принимать пользователей" in off[0].text, notes
     assert not services.reserve_st_in(_st(caps=caps))
+
+
+def test_a_peer_without_quo1_makes_both_directions_not_ready_and_says_so_once(services, paired):
+    """Второй сервер откатился ниже 4.2.0 (`quo1` нет): переезд решает кворум, а
+    прежних правил больше нет — направления «туда» и «сюда» не готовы, Т-РУ9 один
+    раз; вернул `quo1` — «снова совместим» один раз."""
+    services.reserve_st_in(_st())
+    assert services.reserve_directions()["out"][0], f"подготовка: {services.reserve_directions()}"
+    caps = [c for c in compat.CAPS if c != "quo1"]
+    notes = services.reserve_st_in(_st(caps=caps))
+    dirs = services.reserve_directions()
+    assert not dirs["out"][0], f"без quo1 у второй стороны мои пользователи к ней «переедут»: {dirs}"
+    off = [n for n in notes if n.text.startswith("⚠️ Резерв")]
+    assert len(off) == 1, [n.text for n in notes]
+    assert not services.reserve_st_in(_st(caps=caps)), "Т-РУ9 повторилось на тот же st"
+    back = services.reserve_st_in(_st())
+    assert len([n for n in back if "снова совместим" in n.text]) == 1, [n.text for n in back]
+
+
+def _side(caps, **over) -> dict:
+    d = {"version": "4.2.0", "ready": True, "caps": list(caps), "gw": True, "floor": "4.0.0", "gen": 1,
+         "ports": [45871], "name": "Beta"}
+    d.update(over)
+    return d
+
+
+def test_direction_ready_without_quo1_on_either_side_is_not_ready_both_ways():
+    """Переезд решает кворум: сторона без `quo1` (откат ниже 4.2.0) — направление
+    не готово в обе стороны: ни мои пользователи к ней, ни её — ко мне."""
+    full = list(compat.CAPS)
+    old = [c for c in full if c != "quo1"]
+    assert compat.direction_ready(_side(full, ports=[1]), _side(full, ports=[2]))[0], "подготовка: оба 4.2.0 — готово"
+    ok_out, why_out = compat.direction_ready(_side(full, ports=[1]), _side(old, ports=[2]))
+    assert not ok_out, "к стороне без quo1 «переедут»"
+    ok_in, why_in = compat.direction_ready(_side(old, ports=[1]), _side(full, ports=[2]))
+    assert not ok_in, f"пользователи стороны без quo1 «переедут» сюда — кворума о ней нет: {why_in}"
+
+
+def test_vote1_is_no_capability_any_more():
+    assert "vote1" not in compat.CAPS, "возможность матрицы vote1 всё ещё объявляется"
+    assert "quo1" in compat.CAPS
 
 
 def test_compatibility_back_says_so_once(services, paired):
@@ -267,7 +308,7 @@ def test_the_same_admin_id_on_both_servers_is_the_admin_not_the_role(services, r
 
 SUMMARY_KEYS = {"peer", "me", "version", "direction_in", "awg_ok", "link_online", "seen", "down_since", "inn",
                 "in_since", "pkg_at", "pkg_gen", "rf_via_mine", "has_gateway", "traffic", "peer_ready", "my_ready",
-                "code_needed", "code_since", "gw_views", "case", "case_since", "rf_line", "in_kind", "zone_links",
+                "code_needed", "code_since", "in_kind", "zone_links",
                 "mem_free", "has_client", "self_admin", "tg_pool", "quorum"}        # quorum — Т-К22 (4.2.0)
 
 

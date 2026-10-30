@@ -46,7 +46,7 @@ from awgbot.util import timeutil
 from tests.integration import _reserve_common as rc
 from tests.integration import _reserve_move as rm
 from tests.integration._reserve_jrn_duo import Duo
-from tests.integration._reserve_vote_common import RSV_SHARE, box, gw_sent
+from tests.integration._reserve_vote_common import RSV_SHARE, T_UP, Cand, box, gw_sent
 from tests.integration.test_rsvopen import DNS
 from tests.integration.test_rsvopen import box as open_box
 
@@ -293,19 +293,27 @@ def test_a_stuck_webhook_over_a_dead_link_waits_for_the_link_timeout_not_for_the
 
 # ── A14: аварийное открытие при записи «вручную» ────────────────────────────
 
+def _points(box) -> list[tuple]:
+    """Кандидат: свой «не вижу» и «нет» шлюзов T_up, канала пары нет — сразу точки; шлюз 1 отдаёт свою."""
+    box.online = False
+    c = Cand(box)
+    c.own("uns")
+    c.view(1, "uns")
+    c.view(2, "uns")
+    acts = c.tick() + c.run(T_UP + 5)
+    return acts + c.share(1)
+
+
 def test_an_emergency_opening_is_refused_when_the_primary_record_is_manual(box):
-    """Пакет без конверта DNS (запись у основы «вручную»): доли шлюзов не открывают —
-    записью некому управлять; причина — строкой карточки."""
+    """Пакет без конверта DNS (запись у основы «вручную»): большинство «нет» не
+    забирает — записью некому управлять; причина — строкой карточки."""
     pkg = box.s.rsv_get("rsv_pkg_in")
     box.s.rsv_put("rsv_pkg_in", {**pkg, "has_dns": False})
     why = box.s.reserve_open_block()
     assert why.startswith("DNS-запись у «") and why.endswith("» настраивается вручную"), why
     assert box.s.reserve_auto_block() == why, "карточка не называет причину"
-    box.primary(False)
-    box.hello(1, sees=False)
-    box.hello(2, sees=True)
-    acts = box.share(1)
-    assert box.launched == [], f"процесс открытия запущен при записи «вручную»: {acts}"
+    acts = _points(box)
+    assert not gw_sent(acts, "qtake") and box.launched == [], f"процесс открытия запущен при записи «вручную»: {acts}"
     assert box.s.reserve_in() == "idle"
     assert not [b for _, b in gw_sent(acts, "state") if b.get("state") == "serving"], acts
 
@@ -318,15 +326,12 @@ def test_a_button_move_is_not_refused_for_a_manual_record(box):
 
 
 def test_an_emergency_opening_goes_with_the_dns_envelope(box):
-    """Контроль: конверт DNS есть (или пакет прежнего выпуска без отметки) — доли открывают."""
+    """Контроль: конверт DNS есть (или пакет прежнего выпуска без отметки) — точки открывают."""
     pkg = box.s.rsv_get("rsv_pkg_in")
     box.s.rsv_put("rsv_pkg_in", {**pkg, "has_dns": True, "share": RSV_SHARE})
     assert box.s.reserve_open_block() == ""
-    box.primary(False)
-    box.hello(1, sees=False)
-    box.hello(2, sees=True)
-    box.share(1)
-    assert len(box.launched) == 1
+    _points(box)
+    assert len(box.launched) == 1, "точки шлюза и резерва при конверте DNS не открыли пакет"
 
 
 def test_the_opening_process_by_shares_without_a_provider_fails_with_the_readme_text(open_box):

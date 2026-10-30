@@ -24,7 +24,7 @@ import json
 
 import pytest
 
-from awgbot.core import config, settings
+from awgbot.core import config
 from awgbot.domain.services.types import ServiceError
 
 from tests.integration import _reserve_common as rc
@@ -134,7 +134,6 @@ def test_after_a_restart_the_candidate_does_not_repeat_the_tie_alarm_but_sends_t
 
 @pytest.fixture()
 def tl(mv, monkeypatch):
-    settings.set_value("app.reserve.quorum.act", True)
     w = _TieLead(mv.svc, monkeypatch)
     w.start()
     return w

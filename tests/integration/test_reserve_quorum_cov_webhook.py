@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import pytest
 
-from awgbot.core import settings
 from awgbot.util import timeutil
 
 from tests.integration import _reserve_common as rc
@@ -33,7 +32,6 @@ mv = rm.mv
 
 @pytest.fixture()
 def q(mv, monkeypatch):
-    settings.set_value("app.reserve.quorum.act", True)
     w = _Q(mv.svc, monkeypatch)
     _lead(w)
     return w

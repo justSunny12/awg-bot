@@ -162,6 +162,12 @@ def _not_ready(services, mp):
     settings.set_value("app.reserve.ready", False)
 
 
+def _v420(services, mp):
+    """Этот сервер — 4.2.0: сопряжение только между 4.2.0 и новее (общая сборка снимков — v1.2.3)."""
+    from awgbot.core import config
+    mp.setattr(config, "INSTALLED_VERSION", "4.2.0")
+
+
 def _token(**over) -> str:
     """Строка приглашения «Beta» с постоянными ключами-заглушками."""
     from awgbot.util import pairtoken
@@ -240,14 +246,18 @@ RESERVE = [
     Shot("adm.rsv.accept", role="admin", press=[RSV, RsvCB(action="accept")], data=_rsv(ready=True, gw="rsv"),
          title="«📥 Принять приглашение»: приглашение строки"),
     Shot("adm.rsv.accept.dialog", role="admin",
-         steps=[("press", RSV), ("press", RsvCB(action="accept")), ("text", _token())],
-         data=_rsv(ready=True, gw="rsv"), title="диалог принятия: «Отмена» первой, РФ-доступ"),
+         steps=[("press", RSV), ("press", RsvCB(action="accept")), ("text", _token(version="4.2.0"))],
+         data=_rsv(ready=True, gw="rsv", then=[_v420]), title="диалог принятия: «Отмена» первой, РФ-доступ"),
     Shot("adm.rsv.accept.rf", role="admin",
-         steps=[("press", RSV), ("press", RsvCB(action="accept")), ("text", _token()), ("press", RsvCB(action="rf"))],
-         data=_rsv(ready=True, gw="rsv"), title="диалог принятия: РФ-доступ выключен"),
+         steps=[("press", RSV), ("press", RsvCB(action="accept")), ("text", _token(version="4.2.0")),
+                ("press", RsvCB(action="rf"))],
+         data=_rsv(ready=True, gw="rsv", then=[_v420]), title="диалог принятия: РФ-доступ выключен"),
     Shot("adm.rsv.accept.nogw", role="admin",
-         steps=[("press", RSV), ("press", RsvCB(action="accept")), ("text", _token(version="1.3.0"))],
-         data=_rsv(ready=True), title="у принявшего шлюзов нет, пригласивший новее — предупреждения"),
+         steps=[("press", RSV), ("press", RsvCB(action="accept")), ("text", _token(version="4.3.0"))],
+         data=_rsv(ready=True, then=[_v420]), title="у принявшего шлюзов нет, пригласивший новее — предупреждения"),
+    Shot("adm.rsv.accept.old", role="admin",
+         steps=[("press", RSV), ("press", RsvCB(action="accept")), ("text", _token(version="4.1.1"))],
+         data=_rsv(ready=True, gw="rsv", then=[_v420]), title="приглашение сервера ниже 4.2.0 — отказ до подключения"),
     Shot("adm.rsv.accept.garbage", role="admin",
          steps=[("press", RSV), ("press", RsvCB(action="accept")), ("text", "привет")],
          data=_rsv(ready=True, gw="rsv"), title="не приглашение — переспрос"),

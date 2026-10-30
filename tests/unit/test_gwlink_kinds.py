@@ -194,7 +194,6 @@ _CLIENT_REFS: dict[str, tuple[dict | None, int, str]] = {
     "keep": ({"v": 1, "hash": "ab12" * 4, "at": "2026-10-12T08:40:00+03:00", "items": _KEEP_ITEMS,
               "traffic": {"month": "2026-10", "rx": 10, "tx": 20}}, gwlink.PAD_DELTA,
              "2b0dc7f7b047b2d31cb441cae22f111dcfe9f7e7dbea6c449c80316e51d663bd"),
-    "ping": ({"n": "0123456789abcdef"}, 0, "978d672e6075ad267de78a9d58c76a9c5d0d7766923aba90393f5b180e781a52"),
 }
 
 

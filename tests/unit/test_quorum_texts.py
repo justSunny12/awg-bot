@@ -24,7 +24,7 @@ CLOCK = timeutil.fmt_clock_ui(timeutil.parse_iso(SINCE))   # как строки
 
 
 def _card(**over) -> dict:
-    q = {"on": True, "why": [], "side": "a", "peer_name": "Beta", "observe": False,
+    q = {"on": True, "why": [], "side": "a", "peer_name": "Beta",
          "mine": {"g": 2, "v": 3, "t": 2, "leader_here": True, "y": 2, "role": "lead", "fenced_since": "",
                   "voters": [{"node": "b", "name": "Beta", "w": "see", "since": "", "age": 3, "silent": False},
                              {"node": "a1", "name": "Шлюз 1", "w": "see", "since": "", "age": 5, "silent": False},
@@ -75,13 +75,27 @@ def test_a_fenced_leader_line_names_the_episode_start():
     assert line.startswith(f"└ ⚠️ Без кворума с {CLOCK} — этот сервер видят 1 из 3"), line
 
 
-def test_in_observation_only_a_fenced_leader_is_not_said_to_stop_answering():
-    """Скрытый ключ act = false — решений нет: «бот не отвечает пользователям»
-    было бы неправдой."""
+def test_a_leftover_observe_flag_does_not_soften_the_fenced_line():
+    """Режима «только наблюдение» больше нет: даже если в данных остался
+    `observe`, лишённый кворума лидер не отвечает пользователям — так и сказано."""
     q = _card(observe=True)
-    q["mine"].update(role="fenced", y=1)
+    q["mine"].update(role="fenced", y=1, fenced_since=SINCE)
     line = quorum_mine_lines(q)[0]
-    assert "не отвечает" not in line and line.startswith("└ 🗳 Этот сервер видят 1 из 3"), line
+    assert line.startswith("└ ⚠️ Без кворума") and "не отвечает пользователям" in line, line
+
+
+@pytest.mark.parametrize("y", [1, 0])
+def test_with_v_1_the_card_says_only_the_second_server_votes_and_its_count(y):
+    """Т-К1а: голосует только второй сервер — ни «Без кворума», ни порога
+    переезда; автоматического переезда нет, а сколько из одного его видят — видно."""
+    q = _card()
+    q["mine"].update(v=1, t=1, y=y, role="fenced" if not y else "lead",
+                     voters=[{"node": "b", "name": "Beta", "w": "see" if y else "uns", "since": "", "age": 3, "silent": False}])
+    lines = quorum_mine_lines(q)
+    text = "\n".join(lines)
+    assert "Без кворума" not in text and "переедут, если" not in text, text
+    assert "автоматического нет" in lines[0] and "«Beta»" in lines[0], lines
+    assert f"{y} из 1" in text, f"v = 1: карточка не говорит «{y} из 1»: {lines}"
 
 
 def test_the_bot_on_the_reserve_line_comes_from_its_count():
@@ -98,8 +112,9 @@ def test_without_a_count_the_line_says_voters_and_threshold():
 
 
 @pytest.mark.parametrize("code, want", [
-    ("peer_old", "у «Beta» нет v4.2.0 — переезды по прежним правилам"),
-    ("no_gateways", "у этого сервера нет шлюзов с агентом v4.2.0 — переезд по прежним правилам: по взглядам шлюзов, кнопкой и по аварийному коду"),
+    ("no_gateways", "у этого сервера нет шлюзов с агентом v4.2.0 — переезд кнопкой и по аварийному коду, автоматического нет"),
+    ("not_acked", "состав голосующих ждёт подтверждения"),
+    ("keys", "ключи голосования ещё не у всех"),
     ("timing:up_seconds 50 < …", "цифры времени не сходятся (reserve.quorum в app.yaml)"),
     ("overlap:169.254.0.0/16", "блок зондов <code>169.254.88.0/24</code> пересекается с <code>169.254.0.0/16</code>"),
     ("slot:61", "«Шлюз 61»: номер слота больше 58 — в голосовании не участвует"),
