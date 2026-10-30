@@ -216,13 +216,16 @@ class ReserveOutboundMixin:
             return self._tick_await_merge(out)
         if self.reserve_poll() == "away" and self._webhook_stuck(out, time.monotonic()):
             return [("take_home",)]                           # дома: вебхук не здесь, запись на мне, резерв молчит
-        if self._peer_serving_after_home(out, peer) or self._quorum_adopted_past_me(out) or self._webhook_away_past_me(out, peer):
+        fact = self._peer_serving_after_home(out, peer) or self._quorum_adopted_past_me(out)
+        if fact or self._webhook_away_past_me(out, peer):
             # переезд прошёл мимо меня (то же правило, что у роли, journal/epoch; и по принятой эпохе
             # кворума, и по слову Telegram «вебхук у резерва») — пакет открыт не моим K (своего `go` не
             # было): по долям или по коду; слово резерва (in_by) здесь не слушаем — поколение после
-            # возврата сменится
+            # возврата сменится. `by = webhook` — только слово Telegram: живой резерв, сказавший потом,
+            # что моих не несёт, вернёт домой (остаток вебхука, _tick_away)
             self.reserve_set_out("away", kind=str(peer.get("in_kind") or "dead"), step="", taken_at=timeutil.now_iso(),
-                                 by="share", go_sent=False, gen=int((peer.get("pkg") or {}).get("gen") or 0),
+                                 by="share" if fact else "webhook", go_sent=False, gen=int((peer.get("pkg") or {}).get("gen") or 0),
+                                 home_since=str(out.get("since") or ""), home_at_ts=out.get("at_ts"),
                                  guest_stopped=False, await_merge=False,
                                  last_switch=timeutil.now_iso(), healthy_mono=0, healthy_since="", can_return=False)
             self.reserve_set_poll("away")
@@ -461,6 +464,23 @@ class ReserveOutboundMixin:
 
     def _tick_away(self, out: dict) -> list[tuple]:
         now = time.monotonic()
+        if str(out.get("by") or "") == "webhook" and self._webhook_remainder(out, self.reserve_peer_state()):
+            # в away по одному слову Telegram, а живой резерв после перехода говорит, что моих не несёт:
+            # остаток вебхука — домой, запись здесь; сам вебхук снимет проверка зависшего (outbound_stuck)
+            # отметки home — прежние (home_since/home_at_ts): как будто автомат и не уходил, роль и
+            # проверка зависшего вебхука считают от них
+            with _LOCK:
+                cur = dict(self.rsv_get("rsv_out"))
+                cur.update(state="home", kind="", step="", by="", await_merge=False, since=str(cur.get("home_since") or ""))
+                cur.pop("at_ts", None)
+                if cur.get("home_at_ts") is not None:
+                    cur["at_ts"] = cur["home_at_ts"]
+                cur.pop("home_since", None)
+                cur.pop("home_at_ts", None)
+                self.rsv_put("rsv_out", cur)
+            self.reserve_epoch_sync()
+            log.warning("резерв: «%s» на связи без моего гостя — вебхук у него остаток, я дома", self.reserve_peer_name())
+            return [("live",)]
         if self.reserve_poll() == "away" and self._webhook_stuck(out, now):
             return [("take_home",)]
         if self.reserve_healthy():
