@@ -20,6 +20,7 @@ class ReserveRfScreenMixin:
             why = self.reserve_rf_no_backup_why() if hasattr(self, "reserve_rf_no_backup_why") else ""
             if why:
                 out["offer_missing"] = why
+                out["offer_missing_code"] = self.reserve_rf_no_backup_code()   # ☑️ — выключенная настройка, иначе ⚠️
             elif cur.get("slot"):
                 try:
                     if self._rt_dead(RF_PEER_ID):

@@ -163,6 +163,7 @@ def test_back_to_the_own_slot_after_three_good_and_ten_minutes(rf):
     assert rf.active_gateway().id == 1 and rf.switched[-1] == "awglink"
     assert rp.texts(notes) == [rn.rf_transit_back("Beta", "Pi4")], rp.texts(notes)
     assert rp.texts(notes)[0] == "🟢 РФ-доступ снова через свой шлюз «Pi4» — шлюзы «Beta» больше не нужны"
+    assert rn.rf_transit_back("Beta", "Pi4", "дача") == "🟢 РФ-доступ снова через свой шлюз «Pi4» (дача) — шлюзы «Beta» больше не нужны"
     assert not rf.reserve_rfp_st_part()["use"], "st.rfp.use не снят — «Beta» считает эпизод идущим"
     assert rp.ticks(rf, 3) == []
 

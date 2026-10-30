@@ -184,7 +184,7 @@ def reserve_tg_lines(rsv: dict) -> list[str]:
     if not rsv:
         return []
     from awgbot.util import timeutil
-    name = f"«{_e(rsv.get('name') or 'сервер')}»"
+    name = f"«{_e(rsv['name'])}»" if rsv.get("name") else "сервера AWG"   # без имени — без «ёлочек» (родовое слово)
     peer = f"«{_e(rsv['peer_name'])}»" if rsv.get("peer_name") else "резерв"
     out = []
     if rsv.get("tg_via"):

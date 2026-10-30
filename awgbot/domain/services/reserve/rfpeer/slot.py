@@ -135,8 +135,7 @@ class ReserveRfSlotMixin:
             own = self.active_gateway()
             if own is not None and not self.rt_is_peer_slot(own) and self._rf_own_alive(own):
                 log.info("транзит: свой слот %s ожил — РФ-доступ обратно", own.id)
-                notes.append(Notification(tg_id=int(config.ADMIN_ID), silent=True,
-                                          text=rn.rf_transit_back(name, self._gw_display(own) if hasattr(self, "_gw_display") else "")))
+                notes.append(Notification(tg_id=int(config.ADMIN_ID), silent=True, text=rn.rf_transit_back(name, *self._rf_gw_title(own))))
         return notes
 
     def _rf_allowed_narrow(self, quiet: bool = False) -> None:
@@ -210,8 +209,7 @@ class ReserveRfSlotMixin:
             why_code = code if code in ("off", "down", "no_gw", "rt_off", "peer") else \
                 ("unpaired" if not self.reserve_paired() else "link")
         if not own_dead:
-            return [Notification(tg_id=int(config.ADMIN_ID), silent=True,
-                                 text=rn.rf_transit_back(name, self._gw_display(first) if hasattr(self, "_gw_display") else ""))]
+            return [Notification(tg_id=int(config.ADMIN_ID), silent=True, text=rn.rf_transit_back(name, *self._rf_gw_title(first)))]
         why = lost_why(why_code, name)
         lost = dict(cur.get("lost") or {})
         if lost.get("why") == why and lost.get("told"):
@@ -220,14 +218,26 @@ class ReserveRfSlotMixin:
         return [Notification(tg_id=int(config.ADMIN_ID), critical=True, text=rn.rf_transit_lost(name, why))]
 
     # ── для текстов ─────────────────────────────────────────────────────────
-    def reserve_rf_no_backup_why(self) -> str:
-        """Почему запасного РФ-доступа через второй сервер нет (Т-РТ2/Т-РТ9); пусто — есть или не о чем."""
-        from .offer import why_words
+    def _rf_gw_title(self, g) -> tuple[str, str]:
+        """(имя, подпись) своего шлюза для Т-РТ7 — «Имя» (подпись), как в карточке и диалогах."""
+        name = self._gw_name(g) if hasattr(self, "_gw_name") else ""
+        label = str(getattr(g, "label", "") or "") if getattr(g, "device_id", 0) else ""
+        return name, label
+
+    def reserve_rf_no_backup_code(self) -> str:
+        """Код причины, почему запасного РФ-доступа через второй сервер нет (off, no_gw, rt_off, down,
+        peer; `wait` — второй сервер пока не ответил); пусто — есть или не о чем."""
         if not self.reserve_paired() or not self.db.gateways():
             return ""
-        peer = self.reserve_peer_state()
-        rfp_peer = dict(peer.get("rfp") or {})
+        rfp_peer = dict(self.reserve_peer_state().get("rfp") or {})
         if rfp_peer.get("offer"):
             return ""
-        name = self.reserve_peer_name()
-        return why_words(name).get(str(rfp_peer.get("why") or ""), "второй сервер пока не ответил")
+        return str(rfp_peer.get("why") or "") or "wait"
+
+    def reserve_rf_no_backup_why(self) -> str:
+        """Та же причина словами (Т-РТ2/Т-РТ9); пусто — есть или не о чем."""
+        from .offer import why_words
+        code = self.reserve_rf_no_backup_code()
+        if not code:
+            return ""
+        return why_words(self.reserve_peer_name()).get(code, "второй сервер пока не ответил")

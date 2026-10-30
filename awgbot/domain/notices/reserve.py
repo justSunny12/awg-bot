@@ -477,9 +477,9 @@ def rf_transit_on(reserve: str, since: str, until: str) -> str:
             f"Ответит свой шлюз — трафик вернётся на него сам, не раньше {_when(until)}")
 
 
-def rf_transit_back(reserve: str, own: str) -> str:
-    """Т-РТ7 (админу просящего, без звука): РФ-доступ снова через свой шлюз."""
-    who = f" {_n(own)}" if own else ""
+def rf_transit_back(reserve: str, own: str, label: str = "") -> str:
+    """Т-РТ7 (админу просящего, без звука): РФ-доступ снова через свой шлюз — «Имя» (подпись), как везде."""
+    who = (f" {_n(own)}" if own else "") + (f" ({_e(label)})" if own and label else "")
     return f"🟢 РФ-доступ снова через свой шлюз{who} — шлюзы {_n(reserve)} больше не нужны"
 
 
@@ -497,8 +497,9 @@ def rf_peer_use(primary: str, since: str) -> str:
 
 def rf_peer_done(primary: str, up: int, dn: int) -> str:
     """Т-РТ11 (админу транзитного, без звука): эпизод кончился, объём за него (нули не выводим)."""
+    from awgbot.util.textfmt.base import _updown
     head = f"🇷🇺 РФ-доступ {_n(primary)} снова идёт через его шлюзы"
     if not int(up or 0) and not int(dn or 0):
         return head
-    return f"{head} — через твои прошло ↑ {_bytes(up)} ↓ {_bytes(dn)}"
+    return f"{head} — через твои прошло {_updown(int(up or 0), int(dn or 0))}"   # вид как на главной
 

@@ -69,7 +69,7 @@ async def test_the_card_shows_the_peer_using_my_gateways_with_the_volume(ui):
     ui.k.up, ui.k.dn = MB + 120 * MB, MB + 1434 * MB
     text, _ = await card_h.reserve_screen(ui)
     want = (f"└ 🇷🇺 РФ-доступ пользователей «Beta» идёт через мои шлюзы с {_at(since)} · "
-            f"↑ {human_bytes(120 * MB)} ↓ {human_bytes(1434 * MB)}")
+            f"(↑ {human_bytes(120 * MB)} | ↓ {human_bytes(1434 * MB)})")   # вид как на главной
     assert want in text.splitlines(), text
     lines = text.splitlines()
     assert lines.index(want) > lines.index("📥 Пользователи «Beta»: на его сервере"), "Т-РТ3 не в блоке «📥»"
@@ -192,14 +192,15 @@ async def test_no_offer_tells_why_there_is_no_backup_path(ui, code, reason):
     rp.settle(ui)
     rp.peer_rfp(ui, offer=False, why=code)
     text, _ = await card_h.reserve_screen(ui)
-    assert f"└ ☑️ Запасного РФ-доступа через шлюзы «Beta» нет: {reason}" in text.splitlines(), text
+    mark = "☑️" if code == "off" else "⚠️"                     # ☑️ — выключенная настройка; условие не выполнено — ⚠️
+    assert f"└ {mark} Запасного РФ-доступа через шлюзы «Beta» нет: {reason}" in text.splitlines(), text
 
 
 async def test_no_answer_from_the_peer_yet_is_said_plainly(ui):
     rp.settle(ui)
     rp.peer_rfp(ui, offer=False, why="")
     text, _ = await card_h.reserve_screen(ui)
-    assert "└ ☑️ Запасного РФ-доступа через шлюзы «Beta» нет: второй сервер пока не ответил" in text.splitlines()
+    assert "└ ⚠️ Запасного РФ-доступа через шлюзы «Beta» нет: второй сервер пока не ответил" in text.splitlines()
 
 
 def test_the_probe_down_line_and_its_moment():
@@ -227,7 +228,7 @@ async def test_the_card_tells_when_the_peer_slot_does_not_answer(ui):
 
 
 def test_more_explains_the_rf_path_without_the_view_matrix():
-    more = st_t.MORE
+    more = st_t.more_text()
     assert "РФ-доступ пользователей идёт через шлюзы резерва, пока его админ это разрешает" in more
     assert "не раньше чем через 10 минут после переключения" in more
     assert "15 минут" not in more and "хотя бы одному твоему шлюзу" not in more, "случаи матрицы взглядов остались"

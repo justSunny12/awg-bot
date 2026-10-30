@@ -258,7 +258,7 @@ def test_the_episode_end_tells_the_volume_through_my_gateways(rf):
     assert [(n.text, n.silent, n.critical) for n in notes] == \
         [(rn.rf_peer_done("Beta", 120 * MB, 1434 * MB), True, False)], notes
     assert notes[0].text == (f"🇷🇺 РФ-доступ «Beta» снова идёт через его шлюзы — через твои прошло "
-                             f"↑ {human_bytes(120 * MB)} ↓ {human_bytes(1434 * MB)}")
+                             f"(↑ {human_bytes(120 * MB)} | ↓ {human_bytes(1434 * MB)})")
     assert "peer_use" not in rf.rsv_get("rsv_rfpeer") or not rf.rsv_get("rsv_rfpeer")["peer_use"]
     assert not rp.ticks(rf, 3), "Т-РТ11 повторилось"
 
@@ -284,7 +284,7 @@ def test_counters_restarted_from_zero_keep_what_passed_after_the_reboot(rf):
     rf.k.up, rf.k.dn = 3 * MB, 7 * MB
     rp.peer_rfp(rf, offer=False, use="")
     text = rp.tick(rf)[0].text
-    assert text.endswith(f"↑ {human_bytes(3 * MB)} ↓ {human_bytes(7 * MB)}"), \
+    assert text.endswith(f"(↑ {human_bytes(3 * MB)} | ↓ {human_bytes(7 * MB)})"), \
         f"прошедшее после перезагрузки потеряно (база эпизода старше нового счётчика): {text}"
 
 
