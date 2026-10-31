@@ -312,28 +312,55 @@ async def broadcast(bot, tg_ids, text, photos=(), texts_by_tg=None) -> tuple[int
     """Массовая рассылка объявления по списку tg_id. Возвращает (доставлено,
     tg_id недоставленных — отчёт называет их поимённо). Ошибки отправки
     (заблокировали бота, удалён аккаунт) считаем в «не удалось» и продолжаем. Пейсинг между сообщениями — как в общей рассылке
-    (флуд-контроль Telegram); RetryAfter внутри _send пережидается один раз.
+    (флуд-контроль Telegram). RetryAfter до _RETRY_AFTER_CAP с пережидается
+    на месте и повторяется один раз; пауза дольше — адресат уходит в конец
+    рассылки (слот окна не держит), там после своей паузы — один повтор, и
+    отчёт считает его по итогу повтора, а не по первому отказу.
     parse_mode берётся дефолтный (бот сконфигурирован с HTML). Тихие часы к
     объявлениям НЕ применяем — это осознанная явная отправка админом."""
-    async def one(tg_id) -> bool:
+    loop = asyncio.get_running_loop()
+    late: dict = {}                              # tg_id → срок повтора в конце рассылки
+
+    def _text(tg_id):
         # texts_by_tg — свой текст адресату (объявление с продлением: шапка с
         # его датами); нет в карте — общий
-        t = texts_by_tg.get(tg_id, text) if texts_by_tg else text
+        return texts_by_tg.get(tg_id, text) if texts_by_tg else text
+
+    async def again(tg_id) -> bool:
         try:
-            await send_announcement(bot, tg_id, t, photos)
+            await send_announcement(bot, tg_id, _text(tg_id), photos)
+            return True
+        except Exception as e2:                      # noqa: BLE001
+            log.warning("broadcast: не доставлено %s (после retry): %s", tg_id, e2)
+            return False
+
+    async def one(tg_id):
+        try:
+            await send_announcement(bot, tg_id, _text(tg_id), photos)
             return True
         except TelegramRetryAfter as e:
-            await asyncio.sleep(e.retry_after)
-            try:
-                await send_announcement(bot, tg_id, t, photos)
-                return True
-            except Exception as e2:                  # noqa: BLE001
-                log.warning("broadcast: не доставлено %s (после retry): %s", tg_id, e2)
-                return False
+            wait = max(0, int(e.retry_after or 0))
+            if wait > _RETRY_AFTER_CAP:
+                log.warning("broadcast: flood-контроль на %s с — %s в конец рассылки", wait, tg_id)
+                late[tg_id] = loop.time() + wait
+                return None
+            await asyncio.sleep(wait)
+            return await again(tg_id)
         except Exception as e:                       # noqa: BLE001
             log.warning("broadcast: не доставлено %s: %s", tg_id, e)
             return False
+
+    async def tail(tg_id) -> bool:
+        left = late[tg_id] - loop.time()
+        if left > 0:
+            await asyncio.sleep(left)
+        return await again(tg_id)
+
     ids = [t for t in tg_ids if t]
     results = await _paced(ids, one)
+    if late:
+        queue = sorted(late, key=late.get)
+        after = dict(zip(queue, await _paced(queue, tail)))
+        results = [after.get(t, r) if r is None else r for t, r in zip(ids, results)]
     ok = sum(1 for r in results if r is True)
     return ok, [t for t, r in zip(ids, results) if r is not True]
