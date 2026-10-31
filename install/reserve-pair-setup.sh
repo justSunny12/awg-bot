@@ -120,6 +120,7 @@ write_conf() {   # write_conf FILE SELF_ADDR PRIV PEER_PUB PEER_ADDR [PSK] [ENDP
     _f="$1"; _addr="$2"; _priv="$3"; _ppub="$4"; _paddr="$5"; _psk="${6:-}"; _ep="${7:-}"; _stamp="${8:-}"
     check_values "$_addr" "$_priv" "$_ppub" "$_paddr" "$_psk" "$_ep"
     case "$_stamp" in *[!A-Za-z0-9_.-]*) die "id приглашения не того вида" ;; esac
+    _um="$(umask)"; umask 077                     # приватный ключ — файл 0600 с рождения, не после chmod
     {
         say "# Линк пары серверов AWG (резерв). Сгенерировано reserve-pair-setup.sh."
         [ -n "$_stamp" ] && say "${STAMP_PREFIX}${_stamp}"
@@ -138,6 +139,7 @@ write_conf() {   # write_conf FILE SELF_ADDR PRIV PEER_PUB PEER_ADDR [PSK] [ENDP
         [ -n "$_ep" ] && say "Endpoint = $_ep"
         say "PersistentKeepalive = $PAIR_KEEPALIVE"
     } > "$_f"
+    umask "$_um"
     chmod 600 "$_f"
 }
 

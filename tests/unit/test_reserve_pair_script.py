@@ -358,3 +358,12 @@ def test_status_reports_the_stamp_and_the_link(host):
 def test_an_unknown_mode_prints_usage(host):
     r = host.run("--bogus")
     assert r.returncode == 2 and "использование" in r.stdout
+
+
+def test_the_config_with_the_private_key_is_born_owner_only(host):
+    """chmod 600 после записи — окно, в котором приватный ключ линка читает
+    любой; файл обязан родиться 0600 (chmod здесь — пустышка)."""
+    fake_cmd(host.bin / "chmod", "exit 0\n")
+    r = _join(host)
+    assert r.returncode == 0, r.stdout
+    assert (host.conf.stat().st_mode & 0o077) == 0, oct(host.conf.stat().st_mode)

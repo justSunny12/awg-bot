@@ -127,7 +127,7 @@ def probe_host(tmp_path):
     h = _Host(tmp_path)
     h.put("/etc/amnezia/amneziawg/awg0.conf",
           "[Interface]\nAddress = 10.8.1.1/24\nAddress = 169.254.88.1/24\n\n"
-          "[Peer]\nPublicKey = DUMMY\nAllowedIPs = 169.254.88.2/32\n")
+          "[Peer]\nPublicKey = DUMMY\nAllowedIPs = 169.254.88.2/32\n").chmod(0o600)
     d = tmp_path / "awg-bot-uninstall.X"
     d.mkdir()
     return h, Path(str(d.resolve()))
@@ -140,8 +140,9 @@ def test_the_tail_survives_a_vanished_probe_interface_under_errexit(probe_host):
     r = _tail(h, d, ip_addr_fails=True)
     assert r.returncode == 0, r.stdout + r.stderr
     assert "OK Готово." in r.stdout, r.stdout
-    conf = (h.root / "etc/amnezia/amneziawg/awg0.conf").read_text(encoding="utf-8")
-    assert "169.254.88." not in conf, "пиры зондов и адрес ответчика остались в конфиге"
+    path = h.root / "etc/amnezia/amneziawg/awg0.conf"
+    assert "169.254.88." not in path.read_text(encoding="utf-8"), "пиры зондов и адрес ответчика остались в конфиге"
+    assert (path.stat().st_mode & 0o077) == 0, f"конфиг с приватным ключом стал {oct(path.stat().st_mode)}"
 
 
 def test_the_tail_removes_its_whole_temp_dir_last(probe_host):

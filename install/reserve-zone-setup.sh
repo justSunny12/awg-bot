@@ -222,7 +222,9 @@ has_cake() { modinfo sch_cake >/dev/null 2>&1; }   # modinfo знает и за�
 state_write() {   # state_write KEY=VALUE … — слить с прежним; без python — отказ, состояние не затирается
     [ -n "$PY" ] || die "нет python для состояния зоны"
     mkdir -p "$STATE_DIR"; chmod 0755 "$STATE_DIR"
-    local tmp; tmp="$(mktemp)"
+    # временный файл — рядом с состоянием: mv из /tmp в /run — копия между
+    # файловыми системами, не атомарная замена
+    local tmp; tmp="$(mktemp "$STATE_DIR/.state.XXXXXX")"
     "$PY" - "$STATE" "$tmp" "$@" <<'EOF' || { rm -f "$tmp"; die "состояние зоны не записано"; }
 import json, sys
 path, out, *kv = sys.argv[1:]

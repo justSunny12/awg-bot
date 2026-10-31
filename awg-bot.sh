@@ -375,7 +375,7 @@ yaml_set_soft() {  # как yaml_set, но отсутствие ключа — �
 yaml_set() {  # yaml_set FILE KEY VALUE
     local file="$1" key="$2" val="$3"
     grep -qE "^[[:space:]]*${key}:" "$file" || die "в $file нет ключа '$key' — шаблон конфига не тот?"
-    local esc="${val//\\/\\\\}"; esc="${esc//&/\\&}"
+    local esc="${val//\\/\\\\}"; esc="${esc//&/\\&}"; esc="${esc//|/\\|}"   # «|» — разделитель s|…|…|
     sed -i -E "s|^([[:space:]]*)${key}:.*|\1${key}: ${esc}|" "$file"
 }
 yaml_get() {  # yaml_get FILE KEY → печатает значение (снимает кавычки и хвостовой # коммент)
@@ -1198,7 +1198,9 @@ cmd_post_uninstall() {
             # под pipefail упавший ip (интерфейса уже нет) иначе обрывал хвост
             { ip -4 addr show dev "$qi" 2>/dev/null || true; } | awk '/inet 169\.254\.88\./{print $2}' \
                 | while read -r a; do ip addr del "$a" dev "$qi" 2>/dev/null || true; done
-            awk -v RS= -v ORS='\n\n' '!/AllowedIPs *= *169\.254\.88\./' "$qf" | sed '/^Address *= *169\.254\.88\./d' > "$qf.tmp" && mv "$qf.tmp" "$qf"
+            # umask 077: в конфиге приватный ключ интерфейса — копия не 0644 даже на миг
+            ( umask 077; awk -v RS= -v ORS='\n\n' '!/AllowedIPs *= *169\.254\.88\./' "$qf" \
+                | sed '/^Address *= *169\.254\.88\./d' > "$qf.tmp" ) && mv "$qf.tmp" "$qf"
         done
     fi
     if [[ "${AWG_ROLE:-}" == "gateway" ]]; then
