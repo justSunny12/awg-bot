@@ -12,11 +12,11 @@ util/probenet в AllowedIPs) едут отдельным полем `probes` (о
 адрес) и ставятся на клон (его ответчик слушает на втором адресе клона —
 `probe_resp`, второй адрес интерфейса основы из блока с номером хоста на один
 больше); адрес интерфейса из блока не берётся (`probenet.primary_addr`).
-Адреса зоны (`admin`, `dns`, `upstreams`) — только IPv4: гостевая зона резерва
-IPv4-only. Сборка адрес IPv6 не кладёт (строка в журнал), проверка резерва его
-отбрасывает (поле `v6_dropped` — процессу открытия в журнал), а не отвергает
-часть целиком: клон в аварию важнее лишнего адреса. Прежний разбор незнакомые
-поля пропускает.
+Адреса зоны (`admin`, `dns`, `upstreams`) — только IPv4: проект IPv6 не
+поддерживает, гостевая зона резерва IPv4-only. Сборка адрес IPv6 не кладёт
+(строка в журнал), проверка резерва часть с ним отвергает (`VpnPartError`
+«только IPv4») — ни один выпуск IPv6 в пакет не кладёт, такой пакет не наш.
+Прежний разбор незнакомые поля пропускает.
 """
 from __future__ import annotations
 
@@ -207,22 +207,15 @@ def _check(part: dict) -> dict:
                     _key(p["psk"], "PresharedKey")
                 if not probenet.is_probe(str(p.get("ip", ""))) or "/" in str(p.get("ip", "")):
                     raise VpnPartError("адрес пира-зонда вне блока зондов")
-    dropped: list[str] = []
     for k in ("admin", "dns", "upstreams"):
         if not isinstance(part.get(k, []), list):
             raise VpnPartError(f"{k}: не список")
-        keep = []
         for a in part.get(k, []):
-            if ipaddress.ip_address(str(a)).version != 4:   # не адрес вовсе — ValueError, это VpnPartError
-                dropped.append(f"{k} {a}")
-                continue
-            keep.append(str(a))
-        if k in part:
-            part[k] = keep
-    if dropped:
-        # зона IPv4-only: скрипт зоны кладёт адреса в наборы …4 и v6 молча терял; отказ всей части
-        # ради лишнего адреса не дал бы клону встать в аварию — адрес прочь, открытие скажет о нём
-        part["v6_dropped"] = dropped
+            # зона IPv4-only (скрипт зоны кладёт адреса в наборы …4), а сборка IPv6 не кладёт ни в одном выпуске
+            try:
+                ipaddress.IPv4Address(str(a))
+            except ValueError:
+                raise VpnPartError(f"{k}: только IPv4 ({str(a)[:45]})") from None
     if not isinstance(part.get("tz", ""), str) or "\n" in part.get("tz", ""):
         raise VpnPartError("пояс не того вида")
     return part
