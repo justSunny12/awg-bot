@@ -93,7 +93,7 @@ class ReserveOpeningMixin:
             self._relay_yield()
             from awgbot.infra import rsvzone
             rsvzone.open_status_write("launching")
-            self.reserve_set_in("taking", kind=kind, gen=int(pkg_in.get("gen") or 0), why=case, extra="",
+            self.reserve_set_in("taking", kind=kind, gen=int(pkg_in.get("gen") or 0), why=kind, case=case, extra="",   # why — гостю причина
                                 by="code" if "code" in secret else "share",
                                 open_started=timeutil.now_iso(), deadline=time.monotonic() + self._open_wait_s(),
                                 up_sent=False, tg_taken=False, ended_auto="code" not in secret,   # по коду — не автоматический
