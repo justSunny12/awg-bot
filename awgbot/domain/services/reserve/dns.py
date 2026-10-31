@@ -29,6 +29,12 @@ TTL_WARN_S = 300                  # TTL записи выше — предупр
 _OWN_IP_TTL = 600
 
 
+def _ttl_known(ttl: int) -> dict:
+    """TTL для `rsv_dns`: 0 — записей в ответе нет (смена записи посреди переезда, пропажа),
+    а не TTL; последний известный остаётся — его гость берёт паузой перед «переподключи VPN»."""
+    return {"ttl": int(ttl)} if int(ttl or 0) > 0 else {}
+
+
 class ReserveDnsMixin:
     # ── настройка ───────────────────────────────────────────────────────────
     def reserve_dns(self) -> dict:
@@ -153,7 +159,7 @@ class ReserveDnsMixin:
         except dnsapi.DnsError:
             return None
         self.rsv_update("rsv_dns", current=addrs[0] if addrs else "", checked_at=timeutil.now_iso(), addrs=list(addrs),
-                        ttl=int(ttl))
+                        **_ttl_known(ttl))
         return addrs == [ip]                                  # вторая A-запись увела бы половину пользователей мимо
 
     def reserve_own_ip(self) -> str:
@@ -239,7 +245,7 @@ class ReserveDnsMixin:
         if not own:
             return []
         self.rsv_update("rsv_dns", current=addrs[0] if addrs else "", checked_at=timeutil.now_iso(), addrs=list(addrs),
-                        ttl=int(ttl))
+                        **_ttl_known(ttl))
         if not addrs:                                         # записи нет вовсе — пользователи не резолвят имя
             if w.get("told") == "missing":
                 return []
