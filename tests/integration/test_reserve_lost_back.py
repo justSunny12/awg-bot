@@ -19,7 +19,6 @@ from __future__ import annotations
 import pytest
 
 from awgbot.domain.services.reserve import package
-from awgbot.util import timeutil
 
 from tests.integration import _reserve_common as rc
 from tests.integration import _reserve_move as rm
