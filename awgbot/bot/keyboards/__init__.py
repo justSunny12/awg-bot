@@ -41,7 +41,7 @@ from .admin import (
     traffic_profiles_kb, expiring_kb, online_devices_kb,
     traffic_devices_kb, gateway_card_button, to_client_card, invite_menu, add_device_addslot, client_state_icon, DEVS_PRESETS, TRAFFIC_PRESETS)
 from .settings import (
-    settings_back, restart_now_or_later, settings_server, private_dns_choices,
+    settings_back, restart_now_or_later, restart_now, settings_server, private_dns_choices,
     private_dns_offer_kb, migration_prepare_confirm, migration_generation_pending,
     settings_firewall, ssh_port_finisher, settings_subs, migration_confirm, update_notify,
     migration_needed, update_done_menu, fleet_confirm, fleet_final)
@@ -77,7 +77,7 @@ __all__ = [
     "admin_client_device_list", "unassigned_devices", "reassign_targets",
     "reassign_addslot", "traffic_profiles_kb", "expiring_kb",
     "online_devices_kb", "traffic_devices_kb",
-    "settings_back", "restart_now_or_later",
+    "settings_back", "restart_now_or_later", "restart_now",
     "settings_server", "private_dns_choices", "private_dns_offer_kb",
     "migration_prepare_confirm", "migration_generation_pending", "settings_firewall", "ssh_port_finisher",
     "settings_subs", "migration_confirm",

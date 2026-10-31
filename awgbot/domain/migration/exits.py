@@ -284,8 +284,24 @@ class MigrationExitsMixin:
             # Теперь она мусор в /usr/src и в DKMS.
             self._prune_old_kernel_builds()
         self.db.set_state(self._PROMOTED_KEY, new_if)
+        # Отметка «ждёт перезапуска» живёт до старта нового процесса: config.*
+        # прочитаны прежним, и до перезапуска бот считает основным погашенный
+        # интерфейс — монитор по ней молчит, выдача устройств отказывает.
+        self.db.set_state(self._RESTART_KEY, new_if)
         log.info("переезд: основным интерфейсом стал %s (поколение %s)", new_if, target)
         return new_if
+
+    _RESTART_KEY = "awg_restart_needed"
+
+    def migration_restart_pending(self) -> str:
+        """Имя интерфейса, ставшего основным на финале, пока бот не перезапущен
+        (константы config ещё от погашенного интерфейса); пусто — ждать нечего."""
+        return self.db.get_state(self._RESTART_KEY) or ""
+
+    def migration_restart_done(self) -> None:
+        """Старт нового процесса: деплой-значения перечитаны — отметка снимается."""
+        if self.db.get_state(self._RESTART_KEY):
+            self.db.set_state(self._RESTART_KEY, "")
 
     @staticmethod
     def _prune_old_kernel_builds() -> None:
