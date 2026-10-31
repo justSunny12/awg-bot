@@ -55,12 +55,9 @@ class ReserveQuorumInboundMixin:
         if kind == "qpause":
             v = self._qvoters.get(f"awgq{str(body.get('l') or '')}h") if hasattr(self, "_qvoters") else None
             if v is not None:
-                try:
-                    secs = max(0.0, timeutil.elapsed(timeutil.now(), timeutil.parse_iso(str(body.get("until") or ""))))
-                except (ValueError, TypeError):
-                    secs = 0.0
+                from awgbot.util.quorum.voter import pause_seconds
                 import time as _t
-                v.pause(_t.monotonic(), secs)
+                v.pause(_t.monotonic(), pause_seconds(body))  # dur — длительность, until — по своим часам
                 log.info("кворум: «%s» просит паузу до %s", self.reserve_peer_name(), body.get("until"))
             return []
         if kind == "qmem":

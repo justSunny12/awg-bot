@@ -337,11 +337,8 @@ class GatewayQuorumMixin:
         if kind == "qneed":
             return self._quorum_need_in(sec, v, int(body.get("q_gen") or 0), str(body.get("since") or ""))
         if kind == "qpause":
-            try:
-                secs = max(0.0, timeutil.elapsed(timeutil.now(), timeutil.parse_iso(str(body.get("until") or ""))))
-            except (ValueError, TypeError):
-                secs = 0.0
-            v.pause(now, secs)
+            from awgbot.util.quorum.voter import pause_seconds
+            v.pause(now, pause_seconds(body))                 # dur — длительность, until — по своим часам
             log.info("quorum: сервер AWG просит паузу до %s", body.get("until"))
             return []
         return []

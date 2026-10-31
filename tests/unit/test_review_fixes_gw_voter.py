@@ -14,10 +14,11 @@ from __future__ import annotations
 import pytest
 
 from tests.unit.test_gw_quorum import clock, gw, host
+from tests.unit.test_gw_quorum_decision import ag
 from tests.unit.test_quorum_cov_gw_agent import NAME, _seeing, _tick
 
 pytestmark = pytest.mark.unit
-__all__ = ["clock", "gw", "host"]
+__all__ = ["ag", "clock", "gw", "host"]
 
 
 def _said(acts) -> list[dict]:
@@ -79,3 +80,35 @@ def test_the_epoch_of_the_clone_reply_goes_to_the_probe_of_the_home_server(gw, c
         if ps:
             break
     assert ps and ps[-1].e == 13, f"проба к серверу дома с прежней эпохой: {[p.e for p in ps]}"
+
+
+# ── qpause: длительность, а не срок по чужим часам ──────────────────────────
+
+def test_qpause_with_a_duration_holds_even_when_the_clocks_differ(ag):
+    """Часы лидера убежали на 10 минут назад: `until` по моим часам уже прошёл, `dur` — 120 с."""
+    from awgbot.util import timeutil
+    ag.see()
+    past = timeutil.to_iso(timeutil.shift(timeutil.now(), -600))
+    ag.word("qpause", until=past, dur=120)
+    ag.run(100, answer=False, step=5)
+    assert ag.v.view != "uns", "пауза лидера по расходящимся часам — ноль: «не вижу» во время обновления"
+    ag.run(30, answer=False, step=5)
+    assert ag.v.view == "uns", "после длительности паузы «не вижу» не наступило"
+
+
+def test_qpause_duration_passes_the_guest_dictionary():
+    from awgbot.util import pairproto as pp
+    body = pp.check(pp.GUEST_PROTO, "qpause", {"l": "a", "until": "2026-10-31T10:00:00+03:00", "dur": 300}, pp.RESERVE)
+    assert body.get("dur") == 300, "словарь гостевого канала отбросил длительность паузы"
+    body = pp.check(pp.PAIR_PROTO, "qpause", {"l": "a", "until": "2026-10-31T10:00:00+03:00", "dur": 300}, pp.INVITER)
+    assert body.get("dur") == 300, "словарь канала пары отбросил длительность паузы"
+    assert "dur" not in pp.check(pp.GUEST_PROTO, "qpause", {"l": "a", "until": "2026-10-31T10:00:00+03:00"}, pp.RESERVE)
+
+
+def test_pause_seconds_prefers_the_duration():
+    from awgbot.util import timeutil
+    from awgbot.util.quorum.voter import pause_seconds
+    soon = timeutil.to_iso(timeutil.shift(timeutil.now(), 60))
+    assert pause_seconds({"until": soon, "dur": 200}) == 200.0
+    assert 55 <= pause_seconds({"until": soon}) <= 60, "без длительности — срок по своим часам, как прежде"
+    assert pause_seconds({"until": "мусор", "dur": True}) == 0.0
