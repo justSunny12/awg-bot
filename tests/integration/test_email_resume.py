@@ -56,6 +56,7 @@ def test_poll_once_matches_code_and_marks_seen(monkeypatch):
     """poll_once: непрочитанное письмо с кодом в теме → on_code вызван, письмо
     помечено \\Seen, при успехе шлётся ответ."""
     from awgbot.infra import email_resume as er
+    from awgbot.infra import mail
     from awgbot.infra.mail import MailAccount
     acc = MailAccount("box@icloud.com", "app-pass", "imap.mail.me.com", 993, "smtp.mail.me.com", 587)
 
@@ -81,7 +82,7 @@ def test_poll_once_matches_code_and_marks_seen(monkeypatch):
             stored.append((num, val))
         def logout(self): pass
 
-    monkeypatch.setattr(er.net4, "IMAP4_SSL4", FakeIMAP)
+    monkeypatch.setattr(mail.net4, "IMAP4_SSL4", FakeIMAP)
     monkeypatch.setattr(er, "send_success_reply", lambda acc, to: replied.append(to))
 
     seen_codes = []
@@ -102,6 +103,7 @@ def test_poll_once_finds_code_in_spam(monkeypatch):
     """Письмо с кодом попало в «спам» (не INBOX) — poll_once его всё равно
     находит и обрабатывает. Несуществующие папки молча пропускаются."""
     from awgbot.infra import email_resume as er
+    from awgbot.infra import mail
     import imaplib
     from awgbot.infra.mail import MailAccount
     acc = MailAccount("box@icloud.com", "app-pass", "imap.mail.me.com", 993, "smtp.mail.me.com", 587)
@@ -127,7 +129,7 @@ def test_poll_once_finds_code_in_spam(monkeypatch):
         def store(self, num, flag, val): pass
         def logout(self): pass
 
-    monkeypatch.setattr(er.net4, "IMAP4_SSL4", FakeIMAP)
+    monkeypatch.setattr(mail.net4, "IMAP4_SSL4", FakeIMAP)
     monkeypatch.setattr(er, "send_success_reply", lambda acc, to: None)
 
     accepted = er.poll_once(acc, lambda code: code == "AbCd2345")

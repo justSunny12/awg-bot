@@ -511,6 +511,7 @@ def test_the_mailbox_poll_connects_with_a_ten_second_limit(monkeypatch):
     """Опрос ящика кодов возобновления открывает IMAP с пределом 10 с — фоновая
     задача не должна зависать на почтовом сервере."""
     from awgbot.infra import email_resume as er
+    from awgbot.infra import mail
     from awgbot.infra.mail import MailAccount
     seen: list[dict] = []
 
@@ -521,7 +522,7 @@ def test_the_mailbox_poll_connects_with_a_ten_second_limit(monkeypatch):
         def select(self, box): return "NO", [b""]
         def logout(self): pass
 
-    monkeypatch.setattr(er.net4, "IMAP4_SSL4", FakeIMAP)
+    monkeypatch.setattr(mail.net4, "IMAP4_SSL4", FakeIMAP)
     acc = MailAccount("box@example.org", "pass", "imap.example.org", 993, "smtp.example.org", 587)
     assert er.poll_once(acc, lambda code: False) == 0
     assert seen and seen[0].get("timeout") == 10, f"IMAP открыт с пределом {seen and seen[0].get('timeout')}"

@@ -34,8 +34,8 @@ def test_the_temporary_file_is_private_from_the_first_byte(tmp_path, monkeypatch
     seen = {}
     real_fsync, real_replace = os.fsync, os.replace
 
-    def fsync(fd):
-        seen["fsync"] = stat.S_IMODE(os.fstat(fd).st_mode)
+    def fsync(fd):                                        # первый fsync — файла; следом fsync каталога
+        seen.setdefault("fsync", stat.S_IMODE(os.fstat(fd).st_mode))
         return real_fsync(fd)
 
     def replace(src, dst):
@@ -81,9 +81,21 @@ def test_a_failure_mid_write_keeps_the_old_file_and_leaves_no_tmp(tmp_path, monk
         monkeypatch.setattr(os, "fsync", boom)
     elif where == "replace":
         monkeypatch.setattr(os, "replace", boom)
-    with pytest.raises((OSError, TypeError)):
-        # «write»: не строка — падение в f.write, после mkstemp
-        fsatomic.write_private(p, object() if where == "write" else "BOT_TOKEN=NEW\n")
+    else:                                                 # «write»: обрыв в f.write, временный файл уже создан
+        real_fdopen = os.fdopen
+
+        class _Full:
+            def __init__(self, f):
+                self.f = f
+            def __enter__(self):
+                return self
+            def __exit__(self, *a):
+                self.f.close()
+            def write(self, b):
+                raise OSError(28, "No space left on device")
+        monkeypatch.setattr(os, "fdopen", lambda fd, *a, **k: _Full(real_fdopen(fd, *a, **k)))
+    with pytest.raises(OSError):
+        fsatomic.write_private(p, "BOT_TOKEN=NEW\n")
     assert p.read_text(encoding="utf-8") == "BOT_TOKEN=OLD\n", "прежний файл задет"
     assert sorted(x.name for x in tmp_path.iterdir()) == ["env"], "временный файл остался"
 
