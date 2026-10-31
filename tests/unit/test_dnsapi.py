@@ -375,6 +375,10 @@ def test_cloudflare_set_refuses_a_non_ipv4_before_the_patch(monkeypatch):
         {"code": 10000, "message": "Authentication error"}]}))}, "Authentication error"),
     ({("PATCH", "/zones/Z1/dns_records/R1"): (200, json.dumps({"success": False, "errors": []}))}, "код 200"),
     ({("PATCH", "/zones/Z1/dns_records/R1"): (502, "<html>Bad gateway</html>")}, "не JSON"),
+    # JSON, но не объект (прокси, заглушка) — DnsError, а не AttributeError на .get
+    ({("PATCH", "/zones/Z1/dns_records/R1"): (200, json.dumps(["ok"]))}, "не объектом JSON"),
+    ({("PATCH", "/zones/Z1/dns_records/R1"): (500, "null")}, "не объектом JSON"),
+    ({("PATCH", "/zones/Z1/dns_records/R1"): (403, json.dumps({"success": False, "errors": ["denied"]}))}, "denied"),
     ({("GET", "/zones?name=example.net&"): (200, json.dumps({"success": True, "result": []}))}, "зона"),
     ({("GET", "/zones/Z1/dns_records?type=A&name=vpn.example.net"):
         (200, json.dumps({"success": True, "result": []}))}, "A-записи"),
@@ -573,6 +577,9 @@ def test_digitalplat_set_refuses_a_non_ipv4_before_the_patch(monkeypatch):
         "code": "unauthorized", "message": "Invalid API key"}}))}, "Invalid API key"),
     ({("PATCH", "/domains/example.dpdns.org/dns/records/R7"): (200, json.dumps({"success": False}))}, "код 200"),
     ({("PATCH", "/domains/example.dpdns.org/dns/records/R7"): (502, "<html>Bad gateway</html>")}, "не JSON"),
+    # JSON, но не объект — DnsError, а не AttributeError на .get
+    ({("GET", "/domains"): (200, json.dumps([{"domain": "example.dpdns.org"}]))}, "не объектом JSON"),
+    ({("PATCH", "/domains/example.dpdns.org/dns/records/R7"): (200, '"ok"')}, "не объектом JSON"),
 ])
 def test_digitalplat_api_failures_are_dns_errors(monkeypatch, over, words):
     _Http(monkeypatch, digitalplat, _dp_routes(over))
