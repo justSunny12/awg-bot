@@ -8,6 +8,7 @@ from awgbot.bot import keyboards as kb
 from awgbot.bot import texts, ui
 from awgbot.bot.roles import GATEWAY
 from awgbot.bot.callbacks import GwCB
+from awgbot.bot.errors import error_line
 from awgbot.bot.handlers import settingscore as core
 from awgbot.bot.handlers.common import call, edit_nav, send_menu, ask_here, ask_tracked
 from awgbot.bot.inputs import parse_uint
@@ -97,9 +98,8 @@ async def gw_ssh_allow_received(message: Message, state: FSMContext, services):
     try:
         after = await call(services.ssh_allow_add, raw)
     except ServiceError as e:
-        # html — деталь уже размечена и экранирована доменом (адрес моноширинным)
-        why = str(e) if getattr(e, "html", False) else texts._e(str(e))
-        await ask_tracked(message, services, f"⚠️ {why}. Попробуй ещё раз")
+        # html — деталь уже размечена и экранирована доменом (адрес моноширинным): error_html это учитывает
+        await ask_tracked(message, services, f"{error_line(e)}. Попробуй ещё раз")
         return
     await state.clear()
     new = [x for x in after if x not in before]

@@ -7,6 +7,7 @@ from awgbot.core import settings
 from awgbot.bot import ui
 from awgbot.bot import texts
 from awgbot.bot.callbacks import SetCB
+from awgbot.bot.errors import error_line
 from awgbot.bot.states import SettingsInput
 from awgbot.bot.handlers.common import call, ask_tracked
 from .base import Hooks, ask, after_input
@@ -107,7 +108,7 @@ async def _receive_text(message: Message, state: FSMContext, services, hooks: Ho
         try:
             after = await call(services.firewall_allow_add, raw)
         except ServiceError as e:
-            await ask_tracked(message, services, f"⚠️ {texts._e(str(e))}")
+            await ask_tracked(message, services, error_line(e))
             return
         await state.clear()
         added = [x for x in after if x not in before] or [raw]

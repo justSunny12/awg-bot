@@ -28,9 +28,27 @@ from __future__ import annotations
 
 from aiogram.types import CopyTextButton, InlineKeyboardButton, InlineKeyboardMarkup
 
+from awgbot.util.textfmt import atoms as _atoms
 from awgbot.util.textfmt.atoms import (  # noqa: F401
     STATUS, TOAST_MAX, TEXT_MAX, _TAG, st, tick, head, prompt, label, sub, screen, confirm,
-    fail, result, changed, Toast, _u16, toast, toast_cap, note_budget)
+    fail, result, changed, Toast, _u16, note_budget)
+
+
+def toast(text, limit: int = TOAST_MAX, *, html: bool = False) -> str:
+    """Всплывашка (atoms.toast); исключение — через bot/errors.error_text: отказ
+    проекта своими словами (разметка снята), прочее — «внутренняя ошибка»."""
+    if isinstance(text, BaseException):
+        from awgbot.bot.errors import error_text
+        return _atoms.toast(error_text(text), limit)
+    return _atoms.toast(text, limit, html=html)
+
+
+def toast_cap(text, limit: int = TOAST_MAX, *, html: bool = False) -> str:
+    """toast с заглавной; исключение — как у toast."""
+    if isinstance(text, BaseException):
+        from awgbot.bot.errors import error_text
+        return _atoms.toast_cap(error_text(text), limit)
+    return _atoms.toast_cap(text, limit, html=html)
 
 
 # ── клавиатуры ───────────────────────────────────────────────────────────────

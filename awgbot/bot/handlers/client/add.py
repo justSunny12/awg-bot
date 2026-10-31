@@ -9,6 +9,7 @@ from awgbot.bot import ui
 from awgbot.bot import texts
 from awgbot.bot import screens
 from awgbot.bot.callbacks import CancelCB, DelDeviceCB, DeviceCB, PresetCB
+from awgbot.bot.errors import error_line
 from awgbot.bot.filters import RoleFilter
 from awgbot.bot.inputs import TRAFFIC_GB_MAX, parse_uint
 from awgbot.bot.notifier import notify_one
@@ -98,7 +99,7 @@ async def _create_own(message: Message, services, client, name: str) -> None:
         await back_to_context(message, services, {}, "client", client, note=await _limit_note(services, client))
         return
     except ServiceError as e:
-        await back_to_context(message, services, {}, "client", client, note=f"⚠️ {texts._e(str(e))}")
+        await back_to_context(message, services, {}, "client", client, note=error_line(e))
         return
     plimit = await call(services.profile_traffic_limit, client.id)
     await cleanup_content(message.bot, services, message.chat.id)
@@ -114,7 +115,7 @@ async def _create_for_friend(target: Message, services, client, name: str, tlimi
         await back_to_context(target, services, {}, "client", client, note=await _limit_note(services, client))
         return
     except ServiceError as e:
-        await back_to_context(target, services, {}, "client", client, note=f"⚠️ {texts._e(str(e))}")
+        await back_to_context(target, services, {}, "client", client, note=error_line(e))
         return
     code = await call(services.make_device_friendly, created.device_id)
     dev = await call(services.db.get_device, created.device_id)

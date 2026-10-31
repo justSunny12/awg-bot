@@ -11,6 +11,7 @@ from awgbot.bot import texts
 from awgbot.bot import ui
 from awgbot.bot import keyboards as kb
 from awgbot.bot.callbacks import GwMarkCB
+from awgbot.bot.errors import error_line
 from awgbot.bot.states import GatewayToken
 from awgbot.domain.services import ServiceError
 from awgbot.bot.handlers.common import call, edit, ask_here, ask_tracked, cleanup_content
@@ -163,12 +164,12 @@ async def gateway_token_received(message: Message, state: FSMContext, services):
         token_slot = slot or await call(services.gwjoin_peek_slot)
     except ServiceError as e:
         await state.clear()
-        await ask_tracked(message, services, f"⚠️ {texts._e(str(e))}")
+        await ask_tracked(message, services, error_line(e))
         return
     try:
         await call(services.set_gw_bot_token, token, token_slot)
     except ServiceError as e:
-        await ask_tracked(message, services, f"⚠️ {texts._e(str(e))}")
+        await ask_tracked(message, services, error_line(e))
         return
     await state.clear()
     await cleanup_content(message.bot, services, message.chat.id)   # приглашение отслужило

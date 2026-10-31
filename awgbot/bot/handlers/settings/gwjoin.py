@@ -17,8 +17,9 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from awgbot.bot import keyboards as kb
-from awgbot.bot import texts, ui
+from awgbot.bot import ui
 from awgbot.bot.callbacks import GwJoinCB
+from awgbot.bot.errors import error_line
 from awgbot.bot.handlers.common import ask_tracked, call, cleanup_content
 from awgbot.bot.states import GatewayJoinCode
 from awgbot.bot.texts.routing import join as jt
@@ -52,7 +53,7 @@ async def gwjoin_go(message: Message, services, *, device_id: int | None = None,
     try:
         res = await call(services.gwjoin_issue, device_id=device_id, slot_id=slot or None, same=same)
     except ServiceError as e:
-        await message.answer(f"⚠️ {str(e) if e.html else texts._e(str(e))}", reply_markup=kb.settings_back("rt"))
+        await message.answer(error_line(e), reply_markup=kb.settings_back("rt"))
         return
     st = res["state"]
     stale = res.get("stale")
@@ -95,7 +96,13 @@ async def gwjoin_code_received(message: Message, state: FSMContext, services):
         pass
     data = await state.get_data()
     slot, jid = int(data.get("gwjoin_slot") or 0), str(data.get("gwjoin_id") or "")
-    res = await call(services.gwjoin_code, slot, jid, text)
+    try:
+        res = await call(services.gwjoin_code, slot, jid, text)
+    except ServiceError as e:
+        # ввод уже удалён — без ответа диалог выглядел бы повисшим; состояние
+        # остаётся: отказ не окончательный (замок, база), код можно прислать снова
+        await ask_tracked(message, services, error_line(e), reply_markup=_CANCEL())
+        return
     from awgbot.runtime import linkserver
     result = res.get("result")
     if result == "format":

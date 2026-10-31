@@ -13,6 +13,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from awgbot.bot.callbacks import AdminSelfCB, Menu
+from awgbot.bot.errors import error_line
 from awgbot.bot.handlers.common import call, edit, ask_here, ask_tracked, back_to_context, cleanup_content, send_menu
 from awgbot.domain.services import LimitReached, ServiceError
 from awgbot.bot.states import AdminSelfAddDevice
@@ -74,7 +75,7 @@ async def self_add_name(message: Message, services, state: FSMContext):
     try:
         created = await call(services.add_device, ac.id, name, 0)
     except (LimitReached, ServiceError) as e:
-        await back_to_context(message, services, {"ctx_kind": "devices"}, "admin", note=f"⚠️ {texts._e(str(e))}")
+        await back_to_context(message, services, {"ctx_kind": "devices"}, "admin", note=error_line(e))
         return
     await cleanup_content(message.bot, services, message.chat.id)
     await send_menu(message, services, texts.device_created(name, 0), kb.device_created_kb(created.device_id))

@@ -8,6 +8,7 @@ from awgbot.bot import keyboards as kb
 from awgbot.bot import ui
 from awgbot.bot import texts
 from awgbot.bot.callbacks import DeviceCB, Menu, PresetCB
+from awgbot.bot.errors import error_line
 from awgbot.bot.filters import RoleFilter
 from awgbot.bot.inputs import TRAFFIC_GB_MAX, parse_uint
 from awgbot.bot.handlers.common import (
@@ -177,7 +178,7 @@ async def client_device_edit_name_apply(message: Message, client, services, stat
     try:
         await call(services.rename_device, dev.id, name)
     except ServiceError as e:
-        await back_to_context(message, services, data, "client", client, note=f"⚠️ {texts._e(str(e))}")
+        await back_to_context(message, services, data, "client", client, note=error_line(e))
         return
     await back_to_context(message, services, data, "client", client,
                           note=texts.name_note(old_name, name))

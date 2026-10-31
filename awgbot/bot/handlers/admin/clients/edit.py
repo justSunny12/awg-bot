@@ -14,6 +14,7 @@ from aiogram import F
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 from awgbot.bot.callbacks import ClientCB, PresetCB
+from awgbot.bot.errors import error_line
 from awgbot.bot.inputs import TRAFFIC_GB_MAX, parse_uint
 from awgbot.bot.handlers.common import call, edit, ask_here, ask_tracked, back_to_context
 from awgbot.bot.notifier import send_notifications
@@ -240,7 +241,7 @@ async def _period_end_chosen(message: Message, services, state: FSMContext, clie
     try:
         s, e, notes = await call(services.set_subscription_dates, client.id, new_start, new_end)
     except ServiceError as ex:
-        await back_to_context(message, services, data, "admin", note=f"⚠️ {texts._e(str(ex))}")
+        await back_to_context(message, services, data, "admin", note=error_line(ex))
         return
     # пользователю — по тумблеру: уведомления домена (истекла / продлена), а без них
     # — «Срок подписки изменён»; держателям его устройств — всегда

@@ -11,6 +11,7 @@ from awgbot.bot import keyboards as kb
 from awgbot.bot import ui
 from awgbot.bot import texts
 from awgbot.bot.states import BackupPassphrase
+from awgbot.bot.errors import error_html, error_line, spoken
 from awgbot.bot.handlers.common import call, ask_tracked, cleanup_content, send_menu
 from awgbot.bot.inputs import PORT_MAX, parse_uint
 from awgbot.domain.services import ServiceError
@@ -94,7 +95,7 @@ async def port_received(message: Message, state: FSMContext, services, hooks: Ho
     try:
         busy = await call(services.ssh_port_busy, port)
     except ServiceError as e:
-        await ask_tracked(message, services, f"⚠️ {texts._e(str(e))}")
+        await ask_tracked(message, services, error_line(e))
         return
     if busy:
         await state.clear()
@@ -112,7 +113,7 @@ async def port_received(message: Message, state: FSMContext, services, hooks: Ho
         return
     except ServiceError as e:
         # действие не выполнено, ничего не изменилось — ⚠️ (🔴 — состояние объекта)
-        await after_input(message, services, hooks, spec.sec, f"⚠️ Порт не изменён: {texts._e(str(e))}")
+        await after_input(message, services, hooks, spec.sec, f"⚠️ Порт не изменён: {error_html(e)}")
     else:
         await after_input(message, services, hooks, spec.sec, spec.changed_text(old, port))
 
@@ -141,7 +142,8 @@ async def backup_now(cb: CallbackQuery, services, hooks: Hooks) -> None:
         await cb.message.answer(no_key, reply_markup=kb.hide_only())
         return
     except Exception as e:                            # noqa: BLE001
-        await cb.message.answer(f"⚠️ {texts._e(str(e))}")
+        log.warning("бэкап сейчас: копия не собрана: %s", e, exc_info=not spoken(e))
+        await cb.message.answer(error_line(e))         # сырой текст чужого исключения человеку не идёт
         return
     caption = await call(services.backup_caption)
     if await call(services.backup_channel) == "email":
@@ -152,7 +154,7 @@ async def backup_now(cb: CallbackQuery, services, hooks: Hooks) -> None:
                                     reply_markup=kb.hide_only())
             await call(services.backup_event_covered, made_at)       # копия по событию уже не нужна
         except mail.MailError as e:
-            await cb.message.answer(f"🔴 {texts._e(str(e))}")
+            await cb.message.answer(error_line(e, "🔴"))
         await hooks.render(cb, services, "backup")
         return
     sent = False
