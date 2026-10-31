@@ -488,6 +488,7 @@ WorkingDirectory=$INSTALL_DIR
 ExecStart=$INSTALL_DIR/venv/bin/python -m awgbot
 Restart=on-failure
 RestartSec=5
+TimeoutStopSec=30
 TemporaryFileSystem=/etc/awg-bot:ro /var/lib/awg-bot:ro /root:ro /home:ro
 InaccessiblePaths=-/etc/amnezia -/etc/awg-gw -/var/backups
 ReadWritePaths=$RUN $VAR

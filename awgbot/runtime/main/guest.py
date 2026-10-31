@@ -162,7 +162,15 @@ async def run_guest() -> None:
     scheduler.start()
     log.info("гость: бот основы на резерве запущен (клон %s, данные в памяти)", config.AWG_INTERFACE)
     try:
-        await ctl.stop_req.wait()
+        if not await _wait_stop(ctl):
+            # сигнал юнита (systemctl stop, перезапуск): без обработчика asyncio.run завершал
+            # процесс без finally — финальный снимок rep.bin не писался; снимок — ниже
+            log.warning("гость: остановка сигналом юнита — финальный снимок, реплика боту резерва не идёт")
+            if wh is not None:
+                with contextlib.suppress(Exception):
+                    await wh.stop()                      # правки после снимка в rep.bin не попали бы
+                wh = None
+            return
         journal = services.guest_jrn_on()
         log.info("гость: команда возврата — %s", "последние записи журнала основе" if journal
                  else "финальный снимок и реплика боту резерва")
@@ -205,6 +213,30 @@ async def run_guest() -> None:
         with contextlib.suppress(Exception):
             await bot.session.close()
         db.close()
+
+
+async def _wait_stop(ctl) -> bool:
+    """Ждать команду `stop` локального канала или сигнал юнита (SIGTERM/SIGINT).
+    True — по команде (возврат: реплика боту резерва), False — по сигналу (`finally`
+    пишет снимок rep.bin: остановка не по команде). Обработчики снимаются на выходе."""
+    import signal
+    loop = asyncio.get_running_loop()
+    term = asyncio.Event()
+    installed = []
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        with contextlib.suppress(NotImplementedError, RuntimeError):
+            loop.add_signal_handler(sig, term.set)
+            installed.append(sig)
+    waits = [asyncio.ensure_future(ctl.stop_req.wait()), asyncio.ensure_future(term.wait())]
+    try:
+        await asyncio.wait(waits, return_when=asyncio.FIRST_COMPLETED)
+        return ctl.stop_req.is_set()
+    finally:
+        for w in waits:
+            w.cancel()
+        for sig in installed:
+            with contextlib.suppress(Exception):
+                loop.remove_signal_handler(sig)
 
 
 async def _jrn_release(services, ctl, jrn_task) -> None:
