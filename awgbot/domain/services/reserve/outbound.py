@@ -200,6 +200,8 @@ class ReserveOutboundMixin:
         state = str(out.get("state") or "home")
         if state == "leaving":
             return self._tick_leaving(out)
+        if state == "away" and out.get("await_merge"):
+            return self._tick_force_take(out)                 # возврат без резерва: deleteWebhook ещё не прошёл
         if state == "away":
             return self._tick_away(out)
         if state == "returning":

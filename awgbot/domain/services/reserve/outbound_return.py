@@ -8,7 +8,8 @@ take_tg (`deleteWebhook`, поллинг) → record_back (запись → св
 (journal/handover) реплики и слияния нет: `released{epoch, last}` → догон
 (`jrn_back`, `reserve_jrn_back_tick`) → сразу take_tg; отчёт Т-РУ5б — сводка
 эпохи. Рычаг «вернуть без резерва» (резерв не на связи): запись на себя,
-Telegram забирается, реплика вольётся по выходу резерва на связь (await_merge)
+Telegram забирается (deleteWebhook не прошёл — повтор раз в минуту, ~5 мин
+отказов — уведомление), реплика вольётся по выходу резерва на связь (await_merge)
 — или не вольётся (резерв вернулся пустым); с журналом вместо реплики — правки
 бота на резерве хвостом (`reserve_c9_start`, journal/c9), и пока его журнал
 данных на диске резерва новее перенесённого (`reserve_disk_waiting`), возврат
@@ -25,6 +26,7 @@ record_back без факта 30 мин — `back` всё равно и Т-РУ1
 """
 from __future__ import annotations
 
+import random
 import time
 
 from awgbot.core import config
@@ -34,6 +36,9 @@ from ..types import Notification, ServiceError
 from ..gateway_link.common import log
 from .outbound import FORCE_OFFLINE_S, RECORD_WAIT_S, RELAY_WAIT_S, RELEASED_WAIT_S
 from .state import HOSTING, _LOCK
+
+FORCE_TAKE_RETRY_S = 60          # возврат без резерва: повтор deleteWebhook
+FORCE_TAKE_TELL_S = 5 * 60       # столько отказов — админу
 
 
 class ReserveReturnMixin:
@@ -97,7 +102,8 @@ class ReserveReturnMixin:
             except ServiceError as e:
                 actions.append(("notify", [Notification(tg_id=int(config.ADMIN_ID), force_sound=True,
                                                         text=rn.record_not_changed(self.reserve_dns_name(), str(e), own))]))
-        self.rsv_update("rsv_out", await_merge=True, force_at=timeutil.now_iso())
+        self.rsv_update("rsv_out", await_merge=True, force_at=timeutil.now_iso(), take_home_at=time.monotonic(),
+                        take_home_told=False)
         # решения — снова здесь (await_merge): бот на резерве отрезан, его правки вольются при встрече
         guest_e = int(self.db.jrn_meta()["epoch"]) if self.reserve_following() else 0
         self.reserve_epoch_sync()                             # точка взятия эпохи — последнее применённое от него
@@ -105,6 +111,27 @@ class ReserveReturnMixin:
             self.reserve_c9_start(guest_e)                    # журнал: его правки после этой точки — хвостом
         log.warning("резерв: возврат без резерва «%s» — запись на себя, забираю Telegram", self.reserve_peer_name())
         return actions + [("take_home",)]
+
+    def _tick_force_take(self, out: dict) -> list[tuple]:
+        """away с отметкой await_merge: рычаг (или аварийный возврат по кворуму) выдал
+        `take_home`, а deleteWebhook не прошёл — бот нем: повтор раз в минуту (с разбросом),
+        ~5 минут отказов — админу, со звуком, один раз."""
+        now = time.monotonic()
+        if not livestep.mono_due(out.get("take_home_at"), now, FORCE_TAKE_RETRY_S * random.uniform(0.8, 1.2)):
+            return []
+        self.rsv_update("rsv_out", take_home_at=now)
+        actions: list[tuple] = [("take_home",)]
+        try:
+            long = timeutil.elapsed(timeutil.parse_iso(str(out.get("force_at") or ""))) >= FORCE_TAKE_TELL_S
+        except ValueError:
+            long = True
+        if long and not out.get("take_home_told"):
+            from awgbot.domain.notices import reserve as rn
+            self.rsv_update("rsv_out", take_home_told=True)
+            log.warning("резерв: deleteWebhook не проходит %d мин — бот не отвечает", FORCE_TAKE_TELL_S // 60)
+            actions.append(("notify", [Notification(tg_id=int(config.ADMIN_ID), force_sound=True,
+                                                    text=rn.take_tg_stuck(self.reserve_peer_name()))]))
+        return actions
 
     def _tick_await_merge(self, out: dict) -> list[tuple]:
         """В состоянии home после возврата без резерва: он вышел на связь и всё ещё несёт мой бот —
