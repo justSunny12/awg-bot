@@ -11,6 +11,12 @@ PSK линка (`pairproto.guest_key`), словарь — `pairproto.GUEST_KIND
 Такт 5 с (`tick`): наблюдатели живости (domain/gateway/reserve/watch) и
 исполнение их действий: проба основы по каналу конфигурации, слова резерву,
 пересылка (скрипт линка к резерву), снимок серверу, уведомления.
+
+Такт кворума (`quorum_tick`) — своим заданием планировщика: у наблюдателей
+медленные шаги (подъём линка скриптом, DNS, уведомления, обход Telegram с
+`getMe`), за которыми проба голосующего опоздала бы дольше `no_s` — ложное
+«не вижу» кандидату. Слова кворума (qview резерву и серверу, снимок) уходят
+фоном по очереди, проба их не ждёт.
 """
 from __future__ import annotations
 
@@ -271,12 +277,45 @@ async def tick(services, bot=None) -> None:
     await run_actions(services, actions)
     if c is not None:
         services.__dict__["_quo_reserve_online"] = bool(c.online)
+
+
+_quo_q: tuple[object, asyncio.Lock] | None = None   # (петля, замок очереди слов кворума)
+_quo_tasks: set = set()
+
+
+def _quo_lock() -> asyncio.Lock:
+    global _quo_q
+    loop = asyncio.get_running_loop()
+    if _quo_q is None or _quo_q[0] is not loop:
+        _quo_q = (loop, asyncio.Lock())
+    return _quo_q[1]
+
+
+async def _quo_send(services, acts: list) -> None:
+    async with _quo_lock():                                  # слова кворума — в порядке смены взгляда
+        await run_actions(services, acts)
+
+
+def _quo_spawn(services, acts) -> None:
+    """Слова кворума — фоном: отправка по каналу ждёт до SEND_TIMEOUT, проба — нет."""
+    t = asyncio.get_running_loop().create_task(_quo_send(services, list(acts)))
+    _quo_tasks.add(t)
+    t.add_done_callback(_quo_tasks.discard)
+
+
+async def quorum_tick(services, bot=None) -> None:
+    """Такт кворума из планировщика агента (своё задание): зонды в awg-quo, пробы и
+    взгляд голосующего (runtime/quorum); слова — фоном по очереди."""
+    global _bot
+    if bot is not None:
+        _bot = bot
+    c = client()
+    services.__dict__["_quo_reserve_online"] = bool(c is not None and c.online)
     try:
-        # кворум: зонды в awg-quo, пробы и взгляд голосующего (runtime/quorum)
         from awgbot.runtime import quorum as _quorum
 
         async def _act(acts) -> None:
-            await run_actions(services, acts)
+            _quo_spawn(services, acts)
         await _quorum.tick(services, _act)
     except Exception as e:                                # noqa: BLE001
         log.warning("кворум (шлюз): такт: %s", e)

@@ -140,3 +140,77 @@ async def test_without_a_way_to_learn_the_index_the_responder_is_kept(monkeypatc
         assert rt._resp[1] is first
     finally:
         await rt.stop()
+
+
+# ── такт кворума агента — своё задание ──────────────────────────────────────
+
+async def test_the_quorum_tick_of_the_agent_is_a_job_of_its_own(tmp_path, monkeypatch):
+    from apscheduler.triggers.interval import IntervalTrigger
+
+    from awgbot.core import config
+    from awgbot.domain.gateway import GatewayServices
+    from awgbot.infra.db import Database
+    from awgbot.runtime import scheduler as sch
+    monkeypatch.setattr(config, "ROLE", "gateway")
+    db = Database(tmp_path / "gw.db")
+    db.init_schema()
+    scheduler = sch.setup_gateway_scheduler(GatewayServices(db), object())
+    try:
+        jobs = {j.id: j for j in scheduler.get_jobs()}
+        job = jobs.get("gw_quorum_tick")
+        assert job is not None and "gw_reserve_tick" in jobs, f"такт кворума не отдельным заданием: {sorted(jobs)}"
+        assert isinstance(job.trigger, IntervalTrigger) and job.trigger.interval.total_seconds() == 5
+        assert int(job.trigger.jitter or 0) > 0, "такт кворума без джиттера"
+        assert job.max_instances == 1 and job.coalesce
+    finally:
+        scheduler.shutdown(wait=False)
+        db.close()
+
+
+async def test_the_reserve_tick_does_not_run_the_quorum(monkeypatch):
+    """Медленный шаг наблюдателей резерва не держит пробу: такт резерва кворум не зовёт."""
+    from awgbot.runtime import guestlink
+    called = []
+    monkeypatch.setattr(rq, "tick", lambda *a, **k: called.append(1))
+
+    class _Svc:
+        def reserve_present(self):
+            return False
+
+        def reserve_watch_tick(self):
+            return []
+    monkeypatch.setattr(guestlink, "_client", None)
+    await guestlink.tick(_Svc())
+    assert called == [], "такт резерва снова ведёт кворум — проба ждёт подъёма линка, DNS и Telegram"
+
+
+async def test_a_slow_quorum_word_does_not_hold_the_next_probe(monkeypatch):
+    """Слово кворума, застрявшее в отправке, — фоном: такт кворума отдаёт пробу и возвращается."""
+    from awgbot.runtime import guestlink
+    gate = asyncio.Event()
+    sent: list[str] = []
+
+    async def slow_one(services, act):
+        sent.append(act[1])
+        await gate.wait()
+    monkeypatch.setattr(guestlink, "_one", slow_one)
+    monkeypatch.setattr(guestlink, "_client", None)
+    probes: list[str] = []
+
+    async def fake_tick(services, act):
+        probes.append("probe")
+        await act([("guest", "qview", {"w": "uns"}), ("link", "qview", {"w": "uns"})])
+    monkeypatch.setattr(rq, "tick", fake_tick)
+    svc = types.SimpleNamespace()
+    await asyncio.wait_for(guestlink.quorum_tick(svc), 1.0)
+    await asyncio.wait_for(guestlink.quorum_tick(svc), 1.0)
+    assert probes == ["probe", "probe"], "такт кворума ждёт отправки слов"
+    await asyncio.sleep(0.05)
+    assert sent == ["qview"], f"слова кворума не по очереди: {sent}"
+    gate.set()
+    for _ in range(50):
+        if len(sent) == 4:
+            break
+        await asyncio.sleep(0.01)
+    assert sent == ["qview"] * 4, sent
+    assert svc._quo_reserve_online is False
