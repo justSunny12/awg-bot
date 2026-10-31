@@ -233,11 +233,12 @@ class ReserveEpochMixin:
             if meta is not None:
                 log.warning("резерв: эпоха %s здесь (%s, применено по %s)", meta["epoch"], why, applied)
                 self.reserve_follow_clear()
-                if prev_e and not self.rsv_get("rsv_c9") and self._pkg_journal():
+                if prev_e and self._pkg_journal():
                     # эпоху взял у бота на резерве без его released (срыв, зависший вебхук, «вернуть без
                     # резерва»): его правки после applied — хвостом при встрече, одним путём (rsv_c9);
-                    # прежний путь (пакет целиком) — его правки придут репликой, хвоста не ждать
-                    self.reserve_c9_start(prev_e)
+                    # отметка прошлого эпизода другой эпохи — заменяется (reserve_c9_arm); прежний путь
+                    # (пакет целиком) — его правки придут репликой, хвоста не ждать
+                    self.reserve_c9_arm(prev_e)
         return 0
 
     def reserve_epoch_check(self) -> None:
