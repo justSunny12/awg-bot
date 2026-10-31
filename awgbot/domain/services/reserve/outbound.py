@@ -167,7 +167,7 @@ class ReserveOutboundMixin:
         out = self._out()
         if out.get("go_sent"):
             # K ушёл резерву — он его знает: новый K и свежий пакет под ним (после `back` резерв
-            # сносит прежний пакет и долю, досылка — по отметке)
+            # сносит прежний пакет, досылка — по отметке)
             self.reserve_new_k()
             self.reserve_pkg_mark()
         record_back = ""

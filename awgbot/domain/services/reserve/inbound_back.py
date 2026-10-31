@@ -5,8 +5,8 @@ inbound_back.py — часть пакета reserve (см. __init__): «поль
 Ожидание реплики гостя после `stop` (`_tick_releasing`: молчит — `rep.bin` с
 диска или `released` без реплики). `back` основы: пересылка хвоста (`--relay`, файервол с DNAT, `relay_flush`;
 адрес основы — IP, имя резолвится сейчас; срыв открытия до смены записи — без
-хвоста, сразу idle), учёт, `relay{until}`, `--wipe`, прежний пакет и доля —
-прочь, `wiped`, Т-РУ5 → relay до `relay_max_days` или тишины
+хвоста, сразу idle), учёт, `relay{until}`, `--wipe`, прежний пакет — прочь,
+`wiped`, Т-РУ5 → relay до `relay_max_days` или тишины
 `relay_idle_hours` (по счётчику правила DNAT — nftguard.relay_packets) → idle.
 Новое открытие при relay — пересылка уступает (`_relay_yield`); открытие
 сорвалось — возвращается (`_relay_restore`).

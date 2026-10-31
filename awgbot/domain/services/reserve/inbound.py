@@ -9,8 +9,8 @@ inbound.py — часть пакета reserve (см. __init__): «пользо�
 `("guest", команда, тело)` — боту основы по локальному каналу, `("notify",
 [...])`, `("fw",)` — перерисовать файервол хоста.
 
-Переезд кнопкой (`go_req{gen, kind}`; предусловия — `reserve_open_block`
-без доли: зона свободна, мои пользователи здесь, готовность, направление, пакет):
+Переезд кнопкой (`go_req{gen, kind}`; предусловия — `reserve_open_block`:
+зона свободна, мои пользователи здесь, готовность, направление, пакет):
 пересылка хвоста прошлого возврата уступает (`_relay_yield`),
 `open.status = launching`, хранилище гостя монтирует бот (у хоста), процесс
 открытия временным юнитом с песочницей (openproc, `rsvopen_sandbox_props`;
@@ -388,7 +388,7 @@ class ReserveInboundMixin:
 
     def _tick_serving(self, inn: dict) -> list[tuple]:
         """Зона снята мимо бота (`awg-bot reserve teardown`, перезагрузка хоста): состояние
-        idle без паузы матрице, шлюзам основы — idle, админу — итог; пакет и доля остаются."""
+        idle без паузы кворуму, шлюзам основы — idle, админу — итог; пакет и ключи кворума остаются."""
         from awgbot.infra import rsvzone
         from awgbot.domain.notices import reserve as rn
         phase = str(rsvzone.state().get("phase") or "")
@@ -396,10 +396,10 @@ class ReserveInboundMixin:
             return []
         name = self.reserve_peer_name()
         log.warning("резерв: зона в состоянии %s, а я считаю serving — пользователей «%s» больше не несу", phase or "idle", name)
-        # пакет и долю не трогаем: основа может быть всё ещё мертва — матрица откроет снова
-        # (С11), процесс возьмёт `rep.bin`, если он новее пакета
+        # пакет и ключи кворума не трогаем: основа может быть всё ещё мертва — кандидат кворума откроет
+        # снова (по точкам или по коду), процесс возьмёт `rep.bin`, если он новее пакета
         with _LOCK:
-            self.reserve_set_in("idle", step="", reason="зона снята", ended_auto=False)   # матрица откроет снова без паузы
+            self.reserve_set_in("idle", step="", reason="зона снята", ended_auto=False)   # кворум откроет снова без паузы
         actions: list[tuple] = [("fw",), ("notify", [Notification(tg_id=int(config.ADMIN_ID), text=rn.hosting_failed(name, "зона снята"))])]
         if hasattr(self, "reserve_gw_state_actions"):
             actions += self.reserve_gw_state_actions(force=True)
