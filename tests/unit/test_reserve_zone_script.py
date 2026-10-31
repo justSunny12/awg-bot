@@ -16,7 +16,9 @@
 — бот думает, что зона поднята; юнит гостя без `TemporaryFileSystem` над
 `/etc/awg-bot` и `/var/lib/awg-bot` — бот основы на резерве читает env и базу
 самого резерва; без `LogNamespace` — журнал гостя оседает на диск резерва;
-без `MemorySwapMax=0` и `LimitCORE=0` — ключи основы уходят в своп и в дамп.
+без `MemorySwapMax=0` и `LimitCORE=0` — ключи основы уходят в своп и в дамп;
+привязан файл сокета локального канала, а не каталог — после рестарта бота
+резерва гость навсегда стучится в старый сокет.
 """
 from __future__ import annotations
 
@@ -191,6 +193,22 @@ def test_the_guest_unit_hides_the_hosts_secrets_and_keeps_keys_out_of_swap_dumps
         "конфиг и данные гостя — в хранилище в памяти"
     assert lines["ReadWritePaths"].split() == ["/run/awg-bot-guest", "/var/lib/awg-bot-guest"], \
         "писать гость может только в хранилище и в каталог rep.bin"
+
+
+def test_the_guest_unit_binds_the_socket_directory_read_only_not_the_socket_file(tmp_path):
+    """Привязка файла сокета монтирует его inode на старте гостя; бот резерва на рестарте
+    удаляет сокет и создаёт новый — гость стучался бы в старый навсегда (tg_taken, записи
+    журнала, состав кворума, stop при возврате). Каталог на чтение: connect к сокету на
+    ro-монтировании работает, и новый сокет в нём виден."""
+    from awgbot.infra import rsvzone
+    text = _unit_text(tmp_path)
+    assert not [ln for ln in text.splitlines() if "guest.sock" in ln], "файл сокета привязан в песочницу гостя"
+    binds = [ln.split("=", 1)[1].split() for ln in text.splitlines() if ln.startswith("BindReadOnlyPaths=")]
+    assert ["-/run/awg-bot/rsv"] in binds, f"каталог сокета не привязан на чтение: {binds}"
+    assert not [ln for ln in text.splitlines() if ln.startswith("BindPaths=")], "гостю привязано что-то на запись"
+    src = Path(rsvzone.__file__).read_text(encoding="utf-8")
+    assert rsvzone.GUEST_SOCK.parent == rsvzone.STATE_DIR and '"RSV_STATE_DIR", "/run/awg-bot/rsv"' in src, \
+        "гость ищет сокет не в привязанном каталоге"
 
 
 @pytest.mark.parametrize("args", [(), ("--nope",), ("plan",)])
