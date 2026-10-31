@@ -97,7 +97,7 @@ class ReserveQuorumCandidateMixin:
     # ── такт ────────────────────────────────────────────────────────────────
     def reserve_quorum_candidate_tick(self, now: float | None = None) -> list[tuple]:
         now = time.monotonic() if now is None else now
-        took = self._quorum_took_tick()
+        took = self._quorum_took_tick() + self._quorum_code_settle()
         c = self._quorum_candidate_setup()
         if c is None:
             self.__dict__.pop("_quo_exec", None)
@@ -128,6 +128,22 @@ class ReserveQuorumCandidateMixin:
         actions += self._quorum_exec_tick(c, now)
         actions += self._quorum_code_watch(c)
         return took + actions
+
+    def _quorum_code_settle(self) -> list[tuple]:
+        """Пользователи второй стороны у меня: окно кода, открытое кандидатом или по линку пары,
+        закрыто (автоматический переезд — Т-РН3 «голосов хватило», кнопка — тихо); отметка ввода
+        кода (`pending`) после состоявшегося переезда прочь — иначе окно не открылось бы снова."""
+        inn = self.reserve_in()
+        if inn not in ("taking", "serving", "releasing"):
+            return []
+        cw = dict(self.rsv_get("rsv_view").get("code") or {})
+        if cw.get("open"):
+            auto = str(self.rsv_get("rsv_in").get("kind") or "") in ("dead", "rf")
+            return self.reserve_code_window_set(False, by="taken", quiet=not auto)
+        if cw.get("pending") and inn != "taking":             # в taking исход кода ещё впереди (reserve_code_failed)
+            cw["pending"] = False
+            self.rsv_update("rsv_view", code=cw)
+        return []
 
     def _quorum_took_tick(self) -> list[tuple]:
         """Исход отданного `qtake`: переезд состоялся (serving, releasing) — эпоха e + 1 у шлюзов
@@ -177,7 +193,9 @@ class ReserveQuorumCandidateMixin:
                 return []
             self.__dict__.pop("_quo_watch_block", None)
             return self.reserve_code_window_set(True, since=self._quorum_no_since(c), n=len(c.no_nodes()), v=c.v, t=qm.threshold(c.v))
-        if not want and cw.get("open") and cw.get("by") == "quorum":
+        if not want and cw.get("open") and cw.get("by") == "quorum" and (maj or c.see_nodes()):
+            # закрывает только факт: кто-то видит или «нет» набрало большинство; свой «ещё не смотрел»
+            # (перезапуск бота: голосующий заново, каналы шлюзов не поднялись) — не повод, окно ждёт взгляда;
             # голосов хватило — переезд идёт сам; при v = 1 — второй сервер снова видит; иначе — большинство
             return self.reserve_code_window_set(False, by="taken" if maj else ("seen" if c.v < 2 else "quorum"))
         return []

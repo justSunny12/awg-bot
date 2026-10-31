@@ -39,7 +39,16 @@ class ReserveLivenessMixin:
 
     @property
     def _lv(self) -> Liveness:
-        return self.__dict__.setdefault("_reserve_liveness", Liveness())
+        lv = self.__dict__.get("_reserve_liveness")
+        if lv is None:
+            lv = Liveness()
+            if str(self.rsv_get("rsv_peer_state").get("down_since") or ""):
+                # перезапуск бота посреди «недоступен»: эпизод тот же (отметка на диске, Т-РУ8 ушло) — не
+                # «на связи» до первой жизни; первый отсчёт rx — база, не жизнь (`_lv_base`)
+                lv.state, lv.told = "down", True
+                self.__dict__["_lv_base"] = True
+            self.__dict__["_reserve_liveness"] = lv
+        return lv
 
     def _pair_rx(self) -> int | None:
         """Счётчик rx линка пары; None — интерфейса нет или не прочитан."""
@@ -61,10 +70,18 @@ class ReserveLivenessMixin:
         """Такт живости (5 с). Возвращает (действие для канала: ping/"", уведомления)."""
         if not self.reserve_paired():
             self.__dict__.pop("_reserve_liveness", None)
+            self.__dict__.pop("_lv_base", None)
             return "", []
         now = time.monotonic() if now is None else now
         lv = self._lv
-        act = step(lv, now, self._pair_rx(), suspect_s=settings.get_int("app.reserve.suspect_seconds", 40),
+        rx = self._pair_rx()
+        if self.__dict__.get("_lv_base") and not lv.pending_up:
+            if rx is not None:
+                lv.last_rx = rx                               # база счётчика восстановленного «недоступен»
+                self.__dict__.pop("_lv_base", None)
+            return "", []
+        self.__dict__.pop("_lv_base", None)
+        act = step(lv, now, rx, suspect_s=settings.get_int("app.reserve.suspect_seconds", 40),
                    probe_s=settings.get_int("app.reserve.probe_seconds", 15))
         notes: list[Notification] = []
         if act == "down":
