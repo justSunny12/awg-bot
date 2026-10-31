@@ -15,7 +15,7 @@ from awgbot.core import settings
 from awgbot.runtime import main as pkg          # подменяемое тестами — через пакет
 
 from . import alive
-from .common import log
+from .common import log, shutdown_steps
 
 
 async def run_gateway() -> None:
@@ -194,11 +194,17 @@ async def run_gateway() -> None:
         await dp.start_polling(bot, polling_timeout=50,
                                allowed_updates=dp.resolve_used_update_types())
     finally:
+        log.info("Останавливаюсь…")
         scheduler.shutdown(wait=False)
         conf_watcher.stop()
-        from awgbot.runtime import linkclient
-        await linkclient.shutdown()
-        log.info("Останавливаюсь…")
+        from awgbot.runtime import guestlink, linkclient, quorum
+        # в порядке, обратном подъёму: зонды кворума и гостевой канал к резерву поднимает
+        # такт, канал конфигурации — старт; каждый шаг с пределом
+        await shutdown_steps([
+            ("зонды кворума", quorum.shutdown),
+            ("гостевой канал", guestlink.shutdown),
+            ("канал конфигурации", linkclient.shutdown),
+        ])
         with contextlib.suppress(Exception):
             await bot.session.close()
         with contextlib.suppress(Exception):

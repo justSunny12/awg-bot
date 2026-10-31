@@ -32,7 +32,7 @@ from aiogram.enums import ParseMode
 from awgbot.core import config
 from awgbot.runtime import main as pkg          # подменяемое тестами — через пакет
 
-from .common import log
+from .common import log, shutdown_steps
 
 MOVE_NOTIFY_DELAY_S = 60          # TTL записи: переподключение раньше попало бы на прежний адрес из кэша
 JRN_DRAIN_S = 20                  # возврат: подтверждения основы на последние записи до released
@@ -194,9 +194,14 @@ async def run_guest() -> None:
             except Exception as e:                       # noqa: BLE001
                 log.info("гость: финальный снимок при остановке: %s", e)
         scheduler.shutdown(wait=False)
-        if wh is not None:
-            await wh.stop()
-        await ctl.stop()
+        from awgbot.runtime import quorum
+        # обратно подъёму: вебхук, ответчик кворума на клоне (такт), локальный канал к боту
+        # резерва; каждый шаг с пределом — зависший не оставляет остальные без close
+        await shutdown_steps([
+            *([("слушатель вебхука", wh.stop)] if wh is not None else []),
+            ("ответчик кворума", quorum.shutdown),
+            ("локальный канал", ctl.stop),
+        ])
         with contextlib.suppress(Exception):
             await bot.session.close()
         db.close()

@@ -3,16 +3,39 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from datetime import datetime
-from typing import Mapping, Optional
+from typing import Awaitable, Callable, Iterable, Mapping, Optional
 
 FRESH_INSTALL_MARKER = ".fresh-install"   # кладёт установщик агента (awg-bot.sh), снимает первый запуск
 
 LOG_FORMAT = "%(levelname)s %(name)s: %(message)s"
+SHUTDOWN_STEP_S = 5                       # с — на остановку одного канала при завершении процесса
 
 log = logging.getLogger("awgbot.main")
+
+
+async def shutdown_steps(steps: Iterable[tuple[str, Callable[[], Awaitable]]], *,
+                         timeout: float | None = None) -> list[str]:
+    """Остановка каналов и задач при завершении процесса — по порядку, каждая
+    с пределом: зависшая или упавшая остановка одного (сокет в снятом
+    пространстве, wait_closed без второй стороны) не оставляет остальные без
+    close, а юнит — висеть до TimeoutStopSec. Возвращает имена шагов, которые
+    не завершились штатно."""
+    timeout = SHUTDOWN_STEP_S if timeout is None else timeout
+    failed: list[str] = []
+    for name, fn in steps:
+        try:
+            await asyncio.wait_for(fn(), timeout)
+        except asyncio.TimeoutError:
+            failed.append(name)
+            log.warning("остановка: %s не завершилась за %s с — иду дальше", name, timeout)
+        except Exception as e:                          # noqa: BLE001 — остальные шаги важнее причины
+            failed.append(name)
+            log.warning("остановка: %s: %s", name, e)
+    return failed
 
 
 class ZonedFormatter(logging.Formatter):
