@@ -190,6 +190,13 @@ class ReserveQuorumProbesMixin:
         if not _probe_conf_ok(conf):
             log.warning("кворум: конфиг зонда линии %s не прошёл проверку — не принят", l)
             return
+        host = _conf_endpoint_host(conf)
+        if host not in self._quorum_peer_hosts():
+            # зонд — только к AWG второй стороны: иначе её слово направило бы мой зонд (ключи, рукопожатия)
+            # на произвольный адрес, а взгляд «вижу/не вижу» относился бы не к её серверу
+            log.warning("кворум: конфиг зонда линии %s ведёт на %s — не адрес «%s», не принят", l, host or "?",
+                        self.reserve_peer_name())
+            return
         with _LOCK:
             probes = self.reserve_probes()
             mine = dict(probes.get("mine") or {})
@@ -201,6 +208,18 @@ class ReserveQuorumProbesMixin:
             self.rsv_put("rsv_probes", probes)
         log.info("кворум: конфиг зонда к линии %s (поколение %s) принят", l, g)
         self.__dict__["_quo_apply_at"] = 0.0                   # применить на ближайшем такте
+
+    def _quorum_peer_hosts(self) -> set[str]:
+        """Адреса второй стороны, куда может вести мой зонд к её AWG: её `self_host` из st,
+        адрес пары и их разрешённый адрес (reserve_peer_ip)."""
+        peer = self.reserve_peer() or {}
+        hosts = {str(self.reserve_peer_state().get("self_host") or ""), str(peer.get("host") or "")}
+        try:
+            hosts.add(str(self.reserve_peer_ip() or ""))
+        except Exception as e:                                # noqa: BLE001
+            log.info("кворум: адрес второй стороны не разрешён: %s", e)
+        hosts.discard("")
+        return hosts
 
     def gwcfg_quorum(self, gw) -> dict | None:
         """Раздел `quorum` документа слота: состав, поколение, порог, порт, конфиги
@@ -302,6 +321,18 @@ def _probe_conf_ok(conf: str) -> bool:
     if str(c.get("Interface", "Table") or "").strip():          # зонд живёт в awg-quo без таблиц маршрутов
         return False
     return probenet.is_probe(allowed) and probenet.is_probe(addr) and bool(c.get("Peer", "Endpoint"))
+
+
+def _conf_endpoint_host(conf: str) -> str:
+    """Адрес из `Endpoint = host:port` конфига зонда (пусто — нет или не разобран)."""
+    import re
+    m = re.search(r"(?m)^\s*Endpoint\s*=\s*(\S+)", conf)
+    if not m:
+        return ""
+    ep = m.group(1).strip()
+    if ep.startswith("["):                                   # [v6]:port
+        return ep[1:].split("]", 1)[0]
+    return ep.rsplit(":", 1)[0] if ":" in ep else ep
 
 
 def _conf_addrs(conf: str, port: int = 0) -> dict:
