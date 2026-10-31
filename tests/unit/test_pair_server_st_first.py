@@ -55,9 +55,14 @@ async def test_a_word_sent_before_st_goes_after_it():
     try:
         await asyncio.sleep(0.05)
         assert not srv.online, "на связи до своего st"
-        assert await srv.send("qview", {"l": "a"}) is True
-        kinds = [gwlink.unpack(KEY, await asyncio.wait_for(r2.readline(), 2), nonce=sess.cn).get("t") for _ in range(2)]
-        assert kinds == ["st", "qview"], f"первым ушло не st: {kinds}"
+        sent = asyncio.create_task(srv.send("qview", {"l": "a"}))
+        st = gwlink.unpack(KEY, await asyncio.wait_for(r2.readline(), 2), nonce=sess.cn)
+        assert st.get("t") == "st", f"первым ушло не st: {st.get('t')}"
+        # клиент отвечает словом, подписанным нонсом сессии, — сессия открыта
+        w2.write(gwlink.pack(KEY, "ping", {"n": "abcdef0123456789"}, seq=1, nonce=gwlink.nonce_from(st["nonce"])))
+        assert await asyncio.wait_for(sent, 2) is True
+        kinds = {gwlink.unpack(KEY, await asyncio.wait_for(r2.readline(), 2), nonce=sess.cn).get("t") for _ in range(2)}
+        assert kinds == {"qview", "pong"}
         assert srv.online
     finally:
         task.cancel()

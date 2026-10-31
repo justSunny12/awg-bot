@@ -61,6 +61,11 @@ class ReserveSessionMixin:
         _acc, inv = pairproto.pair_hosts(self._pair_cidr())
         return (inv, self.reserve_channel_port()) if inv else None
 
+    def reserve_acceptor_address(self) -> str:
+        """Адрес принявшего в /30 линка пары: обычная сессия у слушателя — только с него."""
+        acc, _inv = pairproto.pair_hosts(self._pair_cidr())
+        return acc
+
     def reserve_connect_address(self) -> tuple[str, int] | None:
         _acc, inv = pairproto.pair_hosts(self._pair_cidr())
         return (inv, self.reserve_channel_port()) if inv else None
