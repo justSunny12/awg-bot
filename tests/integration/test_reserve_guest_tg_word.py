@@ -134,6 +134,7 @@ def test_the_guest_saying_foreign_holds_it_and_ours_releases(host):
     _episode(host)
     svc.reserve_guest_webhook_in({"foreign": True})
     assert svc.reserve_guest_tg_view() == {"go": False, "foreign": True}
+    assert "вебхук не здесь" in svc.reserve_guest_webhook_hold_why(), "слово и решение разошлись"
     assert svc.reserve_guest_webhook_in({"ours": True}) == [], "«снова мой» — без уведомления"
     assert svc.reserve_guest_tg_view() == {"go": True, "foreign": False}
 
