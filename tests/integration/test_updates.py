@@ -417,6 +417,21 @@ def test_apply_update_sets_pending(services, monkeypatch):
     assert held[-1] == ("a1b2c3d4", "a" * 64), "шаг набора не передал удержание апдейтеру"
 
 
+def test_apply_update_clears_pending_when_the_updater_refuses(services, monkeypatch):
+    """Апдейтер не запустился — флага update_pending не остаётся: иначе следующий
+    перезапуск по любой причине приносил бы ложное «не обновился до v9.9.9»."""
+    rel = updates.Release("v9.9.9", (9, 9, 9), "", "u", "a" * 64)
+    monkeypatch.setattr(updates, "download_asset", lambda r: b"blob")
+
+    def refuse(blob, hold="", sha256=""):
+        raise updates.UpdateError("юнит апдейтера не стартовал")
+    monkeypatch.setattr(updates, "apply", refuse)
+    with pytest.raises(updates.UpdateError):
+        services.apply_update(rel)
+    assert not services.db.get_state("update_pending"), "флаг ожидания остался после отказа"
+    assert services.confirm_applied_update() is None
+
+
 def test_update_to_notify_respects_never_schedule(services, monkeypatch, tmp_path):
     """poll_schedule=never глушит уведомления и при ручной правке YAML —
     инвариант в самом update_to_notify, не только в UI."""

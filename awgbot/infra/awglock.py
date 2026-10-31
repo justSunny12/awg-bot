@@ -36,7 +36,7 @@ from pathlib import Path
 from typing import Optional
 
 from awgbot.core import config
-from awgbot.util import kvfile
+from awgbot.util import fsatomic, kvfile
 
 log = logging.getLogger("awgbot.awglock")
 
@@ -122,8 +122,9 @@ def write_state(applied: Optional[int] = None, target: Optional[int] = None) -> 
             "# и финал переезда профилей; руками править незачем.\n"
             + "".join(f"{k}={v}\n" for k, v in sorted(st.items())))
     try:
-        Path(STATE_PATH).parent.mkdir(parents=True, exist_ok=True)
-        Path(STATE_PATH).write_text(body, encoding="utf-8")
+        # атомарная подмена: крах посреди write_text оставлял пустой файл, и
+        # установщик читал его как поколение 0 — новый переезд с нуля
+        fsatomic.write_private(STATE_PATH, body, 0o644)
     except OSError as e:
         log.warning("awg.state не записан (%s): %s", STATE_PATH, e)
 
