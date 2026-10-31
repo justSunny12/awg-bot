@@ -335,3 +335,18 @@ async def test_close_before_the_polling_task_got_going_cancels_it(services, rsv)
     await asyncio.wait_for(ctl.close(), 2)
     await asyncio.wait_for(run, 2)                            # выход штатный: finally main исполняется
     assert not ctl.polling()
+
+
+async def test_a_second_release_does_not_confirm_what_nobody_handled(lab, paired):
+    """Подтверждающий getUpdates(limit 1) отдаёт следующее обновление — посредник не берёт его id
+    в последний обработанный: повторный release (сорванная передача и новая) не подтверждает
+    обновление, которое здесь никто не обработал, — иначе оно потеряно и для резерва."""
+    lab.mock.inject(_update("а"))
+    lab.run()
+    assert await lab.until(lambda: lab.handled == ["а"])
+    assert await lab.ctl.release() is True
+    lab.mock.inject(_update("после"))
+    assert await lab.ctl.release() is True
+    assert await lab.ctl.release() is True
+    assert lab.handled == ["а"]
+    assert [u["message"]["text"] for u in lab.mock.updates] == ["после"], "необработанное подтверждено повторным release"

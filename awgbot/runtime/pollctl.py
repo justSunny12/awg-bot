@@ -48,7 +48,10 @@ class _Watch(BaseRequestMiddleware):
             # make_request отдаёт уже разобранный результат (список Update); у
             # прежних выпусков — Response с полем result
             updates = list(getattr(resp, "result", resp) or [])
-            if updates:
+            # подтверждающий запрос release отдаёт следующее обновление (limit 1) — его
+            # здесь никто не обработал: повторный release подтвердил бы его, и оно
+            # потерялось бы и для резерва
+            if updates and not self.ctl._confirming:
                 self.ctl.last_update_id = max(int(u.update_id) for u in updates)
         except Exception:                                    # noqa: BLE001
             pass
@@ -64,6 +67,7 @@ class PollControl:
         self._closing = False
         self._conflict = ""
         self._stopped = False                                # поллинг остановлен нами (release/конфликт), не сам
+        self._confirming = False                             # идёт подтверждающий getUpdates release
         mw = getattr(getattr(bot, "session", None), "middleware", None)
         if mw is not None and hasattr(mw, "register"):
             mw.register(_Watch(self))                     # заглушки тестов сессии не несут
@@ -178,11 +182,14 @@ class PollControl:
         """Остановить поллинг и подтвердить последнюю пачку: обновления до
         `last_update_id` включительно у Telegram закрыты, дублей на резерве нет."""
         await self.stop()
+        self._confirming = True
         try:
             await self.bot.get_updates(offset=self.last_update_id + 1, limit=1, timeout=0)
         except Exception as e:                               # noqa: BLE001
             log.warning("подтверждающий getUpdates не прошёл: %s", e)
             return False
+        finally:
+            self._confirming = False
         return True
 
     async def take(self) -> bool:
