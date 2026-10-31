@@ -167,6 +167,7 @@ class PairServer(InboundMixin):
         # другом слове (задания кворума, ушедшие в это окно, начинали бы сессию)
         sess.hello = True
         sess.ready.set()
+        await self.flush_outbox()
         msg = first
         while True:
             await self.notes(await asyncio.to_thread(self.services.reserve_last_word))

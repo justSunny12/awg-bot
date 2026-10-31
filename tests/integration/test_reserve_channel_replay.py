@@ -81,3 +81,16 @@ async def test_an_ordinary_session_from_another_address_is_refused(services, ser
     await gw.send("hello", HELLO)
     assert await _closed(gw), "обычная сессия с чужого адреса внутри линка"
     assert not server.online
+
+
+async def test_a_dear_word_left_from_the_last_session_follows_the_st(services, server, linked):
+    """Слово, не ушедшее прежней сессии (pairlink.flush_outbox), — новой следом за её открытием."""
+    from awgbot.runtime import pairlink
+    assert await pairlink.send("down", {"reason": "зона не поднялась"}) is False   # сессии нет
+    gw = _Gw(*await asyncio.open_connection(*server._bound), key=linked)
+    await gw.send("hello", HELLO)
+    assert (await gw.recv())["t"] == "st"
+    await gw.send("ping", {"n": "abcdef0123456789"})
+    got = [(await gw.recv())["t"] for _ in range(2)]
+    assert got == ["down", "pong"], f"неушедшее слово не пришло следом за открытием сессии: {got}"
+    await gw.close()

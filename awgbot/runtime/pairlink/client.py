@@ -111,6 +111,7 @@ class PairClient(InboundMixin):
             await self._handle_safe(sess, msg)
             if not await send_line(sess, "st", await asyncio.to_thread(self.services.reserve_st_body_sent)):
                 return
+            await self.flush_outbox()
             while True:
                 line = await reader.readline()
                 if not line:

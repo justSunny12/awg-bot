@@ -234,6 +234,13 @@ class InboundMixin:
     async def _in_pkg_bad(self, sess: _Session, body: dict) -> None:
         await asyncio.to_thread(self.services.reserve_pkg_bad, int(body["gen"]), str(body["reason"]))
 
+    async def flush_outbox(self) -> None:
+        from awgbot.runtime import pairlink as pkg
+        try:
+            await pkg.flush_outbox()
+        except Exception as e:                            # noqa: BLE001
+            log.warning("канал пары: очередь неушедших слов: %s", e)
+
     async def notes(self, notes) -> None:
         if not notes:
             return

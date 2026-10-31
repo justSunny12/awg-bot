@@ -738,6 +738,14 @@ def _no_channel_listener_from_a_neighbour(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _fresh_pair_outbox(monkeypatch):
+    """Очередь неушедших слов канала пары (pairlink._outbox) — модульная: слово,
+    не ушедшее в одном тесте, ушло бы первой сессией соседа. У каждого теста — своя."""
+    from awgbot.runtime import pairlink
+    monkeypatch.setattr(pairlink, "_outbox", {})
+
+
+@pytest.fixture(autouse=True)
 def _routing_package_not_shadowed():
     """Сторож: тест не оставил в пакете awgbot.infra.routing имени его части.
 
