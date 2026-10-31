@@ -38,19 +38,26 @@ def test_real_routers_assemble_into_dispatcher():
     assert len(list(dp.sub_routers)) == len(_HANDLER_MODULES)
 
 
-@pytest.mark.parametrize("mod", _HANDLER_MODULES, ids=lambda m: m.__name__.split(".")[-1])
-def test_no_helper_is_registered_as_a_handler(mod):
+def _all_routers():
+    from awgbot.bot.routers import routers_for
+    return [(role, r) for role in ("client", "guest", "gateway") for r in routers_for(role)]
+
+
+@pytest.mark.parametrize("role,router", _all_routers(), ids=lambda x: x if isinstance(x, str) else x.name)
+def test_no_helper_is_registered_as_a_handler(role, router):
     """Декоратор, вставший над вспомогательной функцией, вешает на кнопку
     помощник с чужой сигнатурой — aiogram зовёт его с cb/services и падает.
     Ровно так «Мои устройства» у пользователя упали в v2.20.0. Помощники — с
     подчёркиванием, обработчики — без; регистрация помощника — брак.
-    Роутер может быть пакетом из подроутеров (admin) — обходим всю цепочку."""
-    handlers = [h.callback for sub in mod.router.chain_tail
+    Обходим все роутеры всех установок из routers_for — и фабричные (листание,
+    общие разделы, устаревшая кнопка), и загородки (fenced, guest), и агент
+    шлюза; роутер может быть пакетом из подроутеров (admin) — всю цепочку."""
+    handlers = [h.callback for sub in router.chain_tail
                 for obs in (sub.message, sub.callback_query)
                 for h in obs.handlers]
     leaked = [h.__name__ for h in handlers if h.__name__.startswith("_")]
-    assert not leaked, leaked
-    assert handlers, "в роутере нет ни одного обработчика"
+    assert not leaked, f"{role}/{router.name}: {leaked}"
+    assert handlers, f"{role}/{router.name}: в роутере нет ни одного обработчика"
 
 
 # ── один источник роутеров роли ──────────────────────────────────────────────
