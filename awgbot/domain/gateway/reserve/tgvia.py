@@ -97,9 +97,10 @@ class ReserveTgViaMixin:
             fresh = self.reserve_section() or cur             # свежий: проба и рукопожатия шли вне замка
             fresh.update(tg_via=True, tg_since=since)
             # очередь уведомления — до записи раздела: Т-К24 не должно теряться, если аплинк мёртв и
-            # отправка не дошла (такт повторит недоставленное из pending_notes)
+            # отправка не дошла (такт повторит недоставленное из pending_notes); повтор — только пока
+            # длится этот эпизод обхода: выключен или начался новый — прежнее не слать
             note = self.reserve_note(fresh, rn.gateway_tg_via(str(fresh.get("name") or ""), str(fresh.get("peer_name") or ""), since),
-                                     silent=True)
+                                     silent=True, cond={"tg_via": since})
             _write(fresh, self._RSV_STORE)
         cur.update(tg_via=True, tg_since=since)
         st = self.__dict__.setdefault("_tgvia", {})

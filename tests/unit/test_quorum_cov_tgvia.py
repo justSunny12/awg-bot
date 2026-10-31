@@ -2,7 +2,8 @@
 записи (domain/gateway/reserve/tgvia.py; поводы — store.reserve_state_in и
 reserve_apply): таблица истинности «аплинк × awgrsv × флаг tg × линк»,
 гистерезис двух ответов пробы, повтор правила метки раз в 10 минут и после
-перезапуска агента, Т-К24 один раз на эпизод, серия перерезолва на номер
+перезапуска агента, Т-К24 один раз на эпизод (повтор недоставленного — только
+в том же эпизоде), серия перерезолва на номер
 переезда с повтором и пределом.
 
 Хост — `_Net`: рукопожатия интерфейсов (`gwguard.handshake_state`), есть ли
@@ -16,7 +17,8 @@ reserve_apply): таблица истинности «аплинк × awgrsv × 
 перезапуска агента — cgroup юнита новая, метки нет, обход только на бумаге;
 перерезолв один раз и сразу — запись у провайдера ещё старая, аплинк смотрит в
 мёртвый адрес до запасного пути по рукопожатию; перерезолв без предела —
-запрос к авторитетному серверу каждые 20 с бессрочно.
+запрос к авторитетному серверу каждые 20 с бессрочно; Т-К24, повторяемое после
+выключения обхода, — сутки ложного «Telegram через резерв» раз в минуту.
 """
 from __future__ import annotations
 
@@ -187,6 +189,34 @@ def test_the_undelivered_bypass_notice_is_retried(agent):
     texts = [n.text for n in _notes(again)]
     assert any(t.startswith("📨 Аплинк до «Alpha»") for t in texts), \
         f"недоставленное Т-К24 не повторяется: очередь {agent.reserve_section().get('pending_notes')}"
+
+
+def _tk24(actions) -> list[str]:
+    return [n.text for n in _notes(actions) if n.text.startswith("📨 Аплинк до «Alpha»")]
+
+
+def test_the_undelivered_bypass_notice_is_not_retried_after_the_bypass_is_off(agent, net):
+    """Обход выключился раньше, чем дошло Т-К24: «молчит, Telegram через резерв»
+    уже неправда — повтор раз в минуту сутки напролёт вводил бы админа в
+    заблуждение; запись из очереди убрана."""
+    _on(agent)
+    net.hs[UP] = FRESH
+    off = _run(agent, T0 + 15, 200)
+    assert ("tg", "off") in [a for _, a in off], "подготовка: обход не выключился"
+    assert _tk24(agent.reserve_notes_retry(T0 + 300)) == [], "Т-К24 повторяется после выключения обхода"
+    assert agent.reserve_section().get("pending_notes") == [], "Т-К24 осталось в очереди"
+
+
+def test_an_old_episode_notice_is_not_retried_in_a_new_episode(agent, net):
+    """Недоставленное Т-К24 прежнего эпизода (с прежним «молчит с …») в новом
+    эпизоде не повторяется: у нового своё уведомление."""
+    _on(agent)
+    first = agent.reserve_section()["tg_since"]
+    sec = agent.reserve_section()
+    sec.update(tg_since="2026-10-31T00:00:00+00:00")         # новый эпизод: обход выключали и включили снова
+    storemod._write(sec, agent._RSV_STORE)
+    assert first != sec["tg_since"]
+    assert _tk24(agent.reserve_notes_retry(T0 + 120)) == [], "Т-К24 прежнего эпизода повторилось в новом"
 
 
 def test_without_a_peer_name_the_notice_says_the_reserve(tmp_path, net):
