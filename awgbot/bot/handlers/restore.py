@@ -211,7 +211,12 @@ async def report_restore_result(bot, services) -> None:
                                                    snap=snap))
         if hasattr(services, "restore_wait_start"):
             try:
-                await call(services.restore_wait_start, report)
+                # шлюзы, вышедшие на связь до отчёта (слушатель поднят тактом раньше), —
+                # «на связи» сразу, их не ждём
+                early = await call(services.restore_wait_start, report)
+                if early:
+                    from awgbot.bot.notifier import send_notifications
+                    await send_notifications(bot, list(early))
             except ServiceError as e:              # сервер в отъезде — ждать шлюзов не ему; меню ниже всё равно
                 import logging
                 logging.getLogger("awgbot.restore").info("ожидание шлюзов после восстановления не начато: %s", e)

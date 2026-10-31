@@ -60,6 +60,32 @@ def test_on_an_empty_server_the_notice_names_the_reconnect_path(services):
     assert all("gw-bundle" not in t and "awg-gw-bundle" not in t for t in texts), texts
 
 
+def test_a_gateway_already_on_link_before_the_report_is_not_waited_for(services):
+    """Слушатель канала поднимает такт живости планировщика, и шлюз может сказать
+    hello раньше отчёта о восстановлении: его сессия в этом процессе уже открыта
+    (запись hello; на старте её снимает gwlink_sessions_reset) — ожидание на него
+    не ставится, «на связи» уходит сразу, а через срок «не вышел» о нём не будет."""
+    services.gwlink_session_opened(2, "3.5.0", 2, caps=["cfg1"])
+    notes = services.restore_wait_start(REPORT)
+    assert [n.text for n in notes] == ["🟢 «Pi4» (дача) на связи после восстановления"] and notes[0].silent
+    assert services.restore_wait_hello(2) == [], "подключённый до отчёта слот всё же ждали"
+    _late(services, 16)
+    late = [n.text for n in services.restore_wait_tick()]
+    assert len(late) == 1 and "NASPi" in late[0] and "Pi4" not in late[0], late
+
+
+def test_a_slot_with_a_session_from_the_previous_process_is_still_waited_for(services, make_active_client):
+    """Запись сессии прежнего процесса — не факт: старт её снимает (gwlink_sessions_reset),
+    и слот ждёт hello как обычно."""
+    admin = make_active_client(name="Админ", tg_id=1, device_limit=0)
+    pi = services.add_device(admin.id, "Pi4")
+    services.db.gateway_add(pi.device_id, "awglink2", 8443, "10.99.99.4/30", slot_id=2)
+    services.gwlink_session_opened(2, "3.5.0", 2, caps=["cfg1"])
+    services.gwlink_sessions_reset()
+    assert services.restore_wait_start(REPORT) == []
+    assert len(services.restore_wait_hello(2)) == 1
+
+
 def test_nothing_to_wait_for_when_no_slot_got_the_copy(services):
     services.restore_wait_start({"slots": [{"slot": 3, "case": "removed", "name": "Pi3"}]})
     assert not services.db.get_state("restore_wait") and services.restore_wait_tick() == []
