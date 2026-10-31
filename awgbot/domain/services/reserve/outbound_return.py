@@ -22,7 +22,8 @@ merge по сроку и после рестарта посреди — снов
 раза в минуту, take_tg — каждый такт, ~5 мин отказов — уведомление,
 record_back без факта 30 мин — `back` всё равно и Т-РУ11 (при «вручную»
 просьба сменить запись — сразу), `back` раз в минуту до `relay`. Возврат и
-пока не перенесён мой хвост (journal/tail) — ждёт, не дольше TAIL_WAIT_S.
+пока не перенесён мой хвост (journal/tail) — ждёт, не дольше TAIL_WAIT_S. Дома,
+а живой резерв в releasing (`back` потерялся) — `back` снова раз в минуту.
 """
 from __future__ import annotations
 
@@ -149,6 +150,23 @@ class ReserveReturnMixin:
             self._out_step("back_req", RELEASED_WAIT_S)
         log.info("резерв: «%s» снова на связи — сливаю его реплику", self.reserve_peer_name())
         return [("send", "back_req", {}), ("live",)]
+
+    def _home_back_resend(self) -> list[tuple]:
+        """Дома, а живой резерв всё ещё в releasing: мой `back` потерялся (шаг relay повторял
+        его RELAY_WAIT_S и сдался) — без него резерв ждёт вечно, держит зону и отвергает
+        новый пакет («зона занята»). Повтор раз в минуту, пока он не скажет иное."""
+        out = self._out()
+        if str(out.get("state") or "home") != "home" or out.get("await_merge"):
+            return []
+        peer = self.reserve_peer_state()
+        if str(peer.get("inn") or "") != "releasing" or not self._peer_alive(peer):
+            return []
+        now = time.monotonic()
+        if not livestep.mono_due(out.get("home_back_at"), now, 60):
+            return []
+        self.rsv_update("rsv_out", home_back_at=now)
+        log.info("резерв: «%s» всё ещё отдаёт моих пользователей — повторяю back", self.reserve_peer_name())
+        return [("send", "back", {})]
 
     def _forced_no_merge(self) -> list[tuple]:
         """Резерв вернулся пустым (перезагрузка — гость жил в памяти): сливать нечего —

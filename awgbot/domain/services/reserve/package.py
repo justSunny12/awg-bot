@@ -38,6 +38,7 @@ from ..gateway_link.common import log
 from .state import HOSTING, _LOCK
 
 PKG_BATCH_SECONDS = 10
+PKG_RETRY_MAX_S = 300     # отвергнутый пакет: отступ повтора от PKG_BATCH_SECONDS, удваивается до этого
 PKG_PART = "vpn"
 
 
@@ -102,6 +103,9 @@ class ReservePackageMixin:
             return None                                       # сеанс мёртвого линка ещё держится — пакет в никуда
         if self.__dict__.get("_rsv_pkg_sending"):
             return None
+        retry_at = self.__dict__.get("_rsv_pkg_retry_at")
+        if retry_at is not None and time.monotonic() < retry_at and not self._pkg_for_move():
+            return None                                       # прошлый отвергнут — повтор после отступа
         due_at = self.__dict__.get("_rsv_pkg_due_at")
         by_event = due_at is not None and time.monotonic() - due_at >= PKG_BATCH_SECONDS
         by_timer = self._pkg_timer_due()
@@ -310,6 +314,7 @@ class ReservePackageMixin:
         with _LOCK:
             sent = self.rsv_get("rsv_pkg_sent")
             self.__dict__.pop("_rsv_pkg_sending", None)
+            self.reserve_pkg_retry_clear()
             if int(sent.get("pending_gen") or 0) != int(gen) or str(sent.get("pending_fp") or "") != str(fp):
                 log.info("резерв: pkg_ok на пакет %s не того поколения — игнорирую", gen)
                 return
@@ -329,9 +334,25 @@ class ReservePackageMixin:
             log.info("резерв: пакет %s подтверждён", gen)
 
     def reserve_pkg_bad(self, gen: int, reason: str) -> None:
+        """Пакет отвергнут (резерв: «зона занята», порча; обрыв сессии на отправке): отметка
+        остаётся, но повтор — с отступом, удвоением до PKG_RETRY_MAX_S, а не каждым тактом
+        (полный снимок базы по каналу и base-<gen>.db на диске без конца)."""
         self.__dict__.pop("_rsv_pkg_sending", None)
         self.reserve_jrn_snap_dropped()
-        log.warning("резерв: пакет %s отвергнут: %s", gen, reason[:120])
+        n = int(self.__dict__.get("_rsv_pkg_bad_n") or 0) + 1
+        pause = min(PKG_RETRY_MAX_S, PKG_BATCH_SECONDS * 2 ** min(n - 1, 16))
+        self.__dict__.update(_rsv_pkg_bad_n=n, _rsv_pkg_retry_at=time.monotonic() + pause, _rsv_pkg_bad_why=str(reason))
+        log.warning("резерв: пакет %s отвергнут: %s — повтор через %d с", gen, reason[:120], pause)
+
+    def reserve_pkg_retry_clear(self) -> None:
+        """Отступ повтора снят: пакет принят, новая сессия, резерв освободил зону."""
+        for k in ("_rsv_pkg_bad_n", "_rsv_pkg_retry_at", "_rsv_pkg_bad_why"):
+            self.__dict__.pop(k, None)
+
+    def reserve_pkg_zone_freed(self, inn: str) -> None:
+        """`st` резерва: зона больше не занята — пакет, отвергнутый «зона занята», не ждёт отступа."""
+        if self.__dict__.get("_rsv_pkg_bad_why") == "зона занята" and inn not in HOSTING:
+            self.reserve_pkg_retry_clear()
 
     def reserve_pkg_resend_if_stale(self) -> None:
         """`st` резерва называет не тот пакет, что подтверждён (или никакого —
