@@ -182,13 +182,14 @@ def test_a_snapshot_of_the_previous_release_without_exp_gets_the_same_term_from_
 
 
 def test_a_snapshot_of_the_previous_release_is_swept_by_the_same_rule_on_the_next_write(db, clock):
-    """Уборка при записи сжимает v1 по сроку из `at`: в 23:59 — не трогает, в полночь — отметка."""
+    """Уборка при записи в том же чате сжимает v1 по сроку из `at`: в 23:59 — не
+    трогает, в полночь — отметка (отбор своего чата в SQL видит и тело 4.1.0)."""
     _put_raw(db, "oldsnap001", _v1(T0))
     clock.t = _dt.datetime(2026, 11, 26, 23, 59, 0, tzinfo=UTC5)
-    db.list_snap_keep(OTHER, "admin", "y", _rows(1))
+    db.list_snap_keep(CHAT, "admin", "y", _rows(1))
     assert not _raw(db, "oldsnap001").get("gone"), "уборка сжала снимок 4.1.0 раньше срока"
     clock.t = DEATH
-    db.list_snap_keep(OTHER, "admin", "z", _rows(1))
+    db.list_snap_keep(CHAT, "admin", "z", _rows(1))
     assert _raw(db, "oldsnap001") == {"chat": CHAT, "at": timeutil.to_iso(T0), "gone": 1, "why": ""}
 
 

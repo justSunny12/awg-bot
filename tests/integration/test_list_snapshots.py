@@ -1,7 +1,7 @@
 """Снимки событий для экрана «весь список» (infra/db/listsnap) и их вид snap
 (bot/lists/kinds/snap) на настоящей базе: запись и чтение, срок — до полуночи
 после 30 дней — на замороженных часах, вытеснение 51-го снимка чата по
-порядковому номеру,
+порядковому номеру, запись разбирает снимки только своего чата,
 отметки «больше не хранится» и их уборка, пределы 2000 строк и 256 КБ со
 строкой «полный список в журнале бота», сбой записи, чужой чат; шапка,
 листание и «⬅️ Назад» / «⬅️ В меню» у каждой роли; пользователь открывает
@@ -11,7 +11,8 @@
 отказов чужого человека; снимок, который не протухает, — база растёт от
 каждого итога; вытеснение «по секунде» — в пачке итогов одной секунды уходит
 случайный, а не самый ранний; без отметки протухший снимок отвечает «списка
-нет», будто ссылку подделали; снимок на мегабайты — запись в server_state
+нет», будто ссылку подделали; разбор всех снимков базы на каждой записи —
+секунды на каждое уведомление при сотнях чатов; снимок на мегабайты — запись в server_state
 на каждом итоге и экран, который не собрать; сбой записи, уронивший итог, —
 человек не узнаёт, что вообще добавилось; «⬅️ В меню» гостя на главную
 пользователя — кнопка, которую гость нажать не может; снимки в бэкапе —
@@ -167,12 +168,47 @@ def test_a_snapshot_lives_thirty_days_until_midnight_and_then_answers_stale(db, 
         f"протухший снимок не сжат в отметку — строки лежат в базе дальше: {raw}"
 
 
-def test_expired_snapshots_of_any_chat_become_marks_on_the_next_write(db, clock):
-    """Уборка ленивая — при создании: протухшие снимки всех чатов сжимаются в отметки."""
-    old = db.list_snap_keep(OTHER, "admin", "x", _rows(50))
+def test_expired_snapshots_of_the_chat_become_marks_on_its_next_write(db, clock):
+    """Уборка ленивая — при создании: протухшие снимки этого чата сжимаются в
+    отметки; соседний чат запись не разбирает и не трогает — его протухшие ждут
+    такта после полуночи (он их и называет к правке сообщений) или открытия по
+    ссылке."""
+    mine = db.list_snap_keep(CHAT, "admin", "x", _rows(50))
+    theirs = db.list_snap_keep(OTHER, "admin", "x", _rows(50))
     clock.advance(31 * DAY)
     db.list_snap_keep(CHAT, "admin", "y", _rows(1))
-    assert _raw(db, old) == {"chat": OTHER, "at": timeutil.to_iso(T0), "gone": 1, "why": ""}, _raw(db, old)
+    assert _raw(db, mine) == {"chat": CHAT, "at": timeutil.to_iso(T0), "gone": 1, "why": ""}, _raw(db, mine)
+    assert not _raw(db, theirs).get("gone"), "запись в одном чате сжала протухший снимок соседнего"
+    assert sorted(db.list_snap_expire_due()) == [(theirs, OTHER)], "такт не назвал протухший снимок соседа"
+
+
+def test_a_write_parses_only_the_snapshots_of_its_own_chat(db, clock, monkeypatch):
+    """Цена записи — снимки своего чата, а не всей базы: у соседей сотни снимков
+    по десяткам килобайт, и разбирать их JSON на каждом итоге — секунды на
+    каждое уведомление. Отбор — в SQL, тела чужих чатов до json.loads не доходят;
+    чат, чей номер — начало номера соседа (55 и 555), и строка снимка с текстом
+    «"chat": N,» внутри (в JSON кавычки экранированы — отбор её не берёт) — не свои."""
+    from awgbot.infra.db.listsnap import snaps as snaps_mod
+    near, prefix = 555000, 55500                       # 55500 — начало 555000
+    for n in range(30):
+        db.list_snap_keep(near, "admin", f"сосед {n}", _rows(300))
+    lure = db.list_snap_keep(OTHER, "admin", "приманка", [f'строка с текстом "chat": {prefix}, внутри'])
+    mine = db.list_snap_keep(prefix, "admin", "свой", _rows(1))
+    parsed: list[dict] = []
+    real_loads = snaps_mod.json.loads
+
+    def counting_loads(raw, *a, **kw):
+        data = real_loads(raw, *a, **kw)
+        parsed.append(data)
+        return data
+    monkeypatch.setattr(snaps_mod.json, "loads", counting_loads)
+    new = db.list_snap_keep(prefix, "admin", "ещё свой", _rows(1))
+    chats = sorted({int(d.get("chat") or 0) for d in parsed if isinstance(d, dict)})
+    assert chats == [prefix], f"запись в чате {prefix} разобрала тела чатов {chats}"
+    assert len(parsed) == 1, f"разобрано {len(parsed)} тел, а снимок свой у чата один"
+    assert db._snaps(prefix) and all(int(d["chat"]) == prefix for _k, d in db._snaps(prefix)), db._snaps(prefix)
+    assert db.list_snap_get(lure, OTHER)["title"] == "приманка" and db.list_snap_get(mine, prefix)["title"] == "свой"
+    assert db.list_snap_get(new, prefix)["title"] == "ещё свой"
 
 
 # ── 50 на чат: вытеснение по порядковому номеру ─────────────────────────────
@@ -217,10 +253,10 @@ def test_marks_older_than_ninety_days_are_dropped(db, clock):
     clock.advance(31 * DAY)
     assert db.list_snap_get(key, CHAT)["stale"]
     clock.advance(58 * DAY)                                 # 89 дней от события
-    db.list_snap_keep(OTHER, "admin", "y", _rows(1))
+    db.list_snap_keep(CHAT, "admin", "y", _rows(1))
     assert db.list_snap_get(key, CHAT) == {"stale": True, "at": timeutil.to_iso(T0), "why": ""}, "отметка ушла раньше 90 дней"
     clock.advance(2 * DAY)                                  # 91 день
-    db.list_snap_keep(OTHER, "admin", "z", _rows(1))
+    db.list_snap_keep(CHAT, "admin", "z", _rows(1))
     assert db.list_snap_get(key, CHAT) is None and _raw(db, key) is None, "отметка старше 90 дней осталась в базе"
 
 
