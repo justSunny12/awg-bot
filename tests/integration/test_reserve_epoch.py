@@ -145,6 +145,37 @@ def test_passing_twice_is_one_epoch(away):
     assert svc.db.jrn_meta()["epoch"] == 1, "повтор факта — новая эпоха"
 
 
+def test_two_threads_passing_the_epoch_at_once_go_one_after_another(mv):
+    """Такт (страховка) и поллинг (слово Telegram) сверяют роль из разных потоков: без
+    замка оба читают «держатель, а надо следовать» и оба идут в jrn_pass — проверка и
+    переход там не одна транзакция, эпоха растёт дважды, хвост и счёт пачек готовятся
+    дважды. Под замком резерва второй поток видит уже сделанный переход."""
+    import threading
+    import time as _time
+    svc = mv.svc
+    rm.st_in(svc, **{"in": "serving"})                    # резерв несёт моих — надо следовать
+    real_pass = svc.db.jrn_pass
+    spans: list[tuple[float, float]] = []
+
+    def slow_pass(**kw):
+        t0 = _time.monotonic()
+        _time.sleep(0.15)                                 # окно между проверкой и переходом
+        out = real_pass(**kw)
+        spans.append((t0, _time.monotonic()))
+        return out
+    svc.db.jrn_pass = slow_pass
+    try:
+        ts = [threading.Thread(target=svc.reserve_epoch_sync) for _ in range(2)]
+        for t in ts:
+            t.start()
+        for t in ts:
+            t.join(3)
+    finally:
+        del svc.db.jrn_pass
+    assert _following(svc) and svc.db.jrn_meta()["epoch"] == 1, svc.db.jrn_meta()
+    assert len(spans) == 1, f"переход эпохи пошёл из двух потоков разом: {spans}"
+
+
 # ── ко мне ──────────────────────────────────────────────────────────────────
 
 def test_the_return_replica_brings_the_epoch_back(away):

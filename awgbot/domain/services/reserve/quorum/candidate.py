@@ -373,8 +373,10 @@ class ReserveQuorumCandidateMixin:
         ex["stage"] = "opened"
         self.rsv_update("rsv_view", moved_by={"quorum": True, "points": sorted(points), "at": timeutil.now_iso()})
         log.warning("кворум: точек %d из %d — процесс открытия «%s» по ящику кворума", len(points), t, self.reserve_peer_name())
-        return self.reserve_open_by_points({"qpoints": [[x, y] for x, y in sorted(points.items())], "qbox": str(peer["qbox"])},
-                                           self._quorum_kind(c), "q")
+        # порог — процессу открытия: точек могло прийти больше t (qshare из потока канала посреди такта),
+        # сборка по t точкам с проверкой ящиком — одна битая точка среди лишних открытие не срывает
+        return self.reserve_open_by_points({"qpoints": [[x, y] for x, y in sorted(points.items())], "qbox": str(peer["qbox"]),
+                                            "thr": t}, self._quorum_kind(c), "q")
 
     def _quorum_exec_tick(self, c: Candidate, now: float) -> list[tuple]:
         """Ход исполнения: просьба без ответа → точки; точек не хватает → окно кода."""

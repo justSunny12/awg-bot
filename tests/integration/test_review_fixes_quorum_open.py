@@ -156,6 +156,26 @@ def test_a_launch_error_drops_the_opened_stage(c):
     assert c.stage() == "", f"отказ запуска, а стадия {c.stage()!r}"
 
 
+def test_a_launch_error_after_the_points_tells_the_gateways_state_idle_with_the_reason(c):
+    """Шлюз отдал точку (qneed/qshare), а процесс открытия не запустился: шлюзам —
+    `state{idle, reason}` в ту же раздачу (у отдавшего точку это Т-РА5 «переезд не
+    состоялся»), и лишь потом qrel; без слова qrel снимал отметку молча — срыв терялся.
+    Отказ по предусловиям (демпфер после срыва) — то же слово с причиной."""
+    _to_points(c)
+    c.b.launch_fail = "юнит не стартовал"
+    acts = c.share(1)
+    words = gw_sent(acts, "state")
+    assert words and all(w[1]["state"] == "idle" and w[1]["reason"] == "юнит не стартовал" for w in words), \
+        f"после отказа запуска шлюзам не ушло state{{idle, reason}}: {acts}"
+    assert {w[0] for w in words} == {1, 2}, words
+    assert not gw_sent(acts, "qrel"), "qrel раньше state{idle, reason} — отметка точки снята молча"
+    # отказ по предусловиям к моменту точек (демпфер, пауза между автопереездами) — то же слово
+    c.s.__dict__["_quo_exec"] = None
+    acts = c.s.reserve_open_by_points({"qpoints": [[1, "ab" * 8], [2, "cd" * 8]], "qbox": "00" * 40}, "dead", "q")
+    refusals = [w for w in gw_sent(acts, "state") if w[1].get("reason")]
+    assert refusals and "пауза две минуты" in refusals[0][1]["reason"], acts
+
+
 # ── qrel после отданного qtake (TQ-2, сторона кандидата) ────────────────────
 
 def test_own_see_after_qtake_sends_qrel_to_the_same_nodes(c):

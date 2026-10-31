@@ -344,6 +344,19 @@ def test_qprobe_with_a_conf_that_does_not_fit_is_refused(quo, over, why):
     assert not (quo.reserve_probes().get("mine") or {}), f"конфиг зонда принят: {why}"
 
 
+def test_qprobe_whose_endpoint_is_not_the_second_server_is_refused(quo):
+    """Endpoint зонда — только адрес второй стороны: иначе её слово направляет мой зонд
+    (его ключи и рукопожатия) на произвольный адрес, а взгляд «вижу» относится не к её
+    серверу. Её `self_host` из st и адрес пары — тоже её адреса."""
+    conf = _other_side_conf().replace(f"Endpoint = {qc.PEER_IP}:45001", "Endpoint = 192.0.2.99:45001")
+    quo.reserve_quorum_pair_in("qprobe", {"l": "b", "g": 2, "conf": conf})
+    assert not (quo.reserve_probes().get("mine") or {}), "зонд на чужой адрес принят"
+    quo.rsv_update("rsv_peer_state", self_host="vpn-b.example.org")
+    conf = _other_side_conf().replace(f"Endpoint = {qc.PEER_IP}:45001", "Endpoint = vpn-b.example.org:45001")
+    quo.reserve_quorum_pair_in("qprobe", {"l": "b", "g": 2, "conf": conf})
+    assert quo.reserve_probes()["mine"]["awgqbh"]["conf"] == conf, "зонд на self_host второй стороны отвергнут"
+
+
 # ── раздел quorum документа шлюза ────────────────────────────────────────────
 
 def test_a_member_gateway_gets_the_quorum_section_and_the_agent_accepts_it(quo):

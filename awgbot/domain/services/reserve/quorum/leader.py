@@ -35,9 +35,10 @@ class ReserveQuorumLeaderMixin:
     def _qleader(self) -> Leader | None:
         return self.__dict__.get("_rsv_qleader")
 
-    def _quorum_leader_setup(self) -> Leader | None:
+    def _quorum_leader_setup(self, cached: bool = False) -> Leader | None:
         """Машина лидера по текущему составу; None — я не лидер своей линии
-        (пары нет, кворум не включён, пользователи у резерва)."""
+        (пары нет, кворум не включён, пользователи у резерва). `cached` — ответчик:
+        включённость кворума по расчёту этого такта, а не заново на каждую датаграмму."""
         q2 = False
         if getattr(self, "guest", False):
             q = self.__dict__.get("_guest_quorum") or {}
@@ -50,7 +51,8 @@ class ReserveQuorumLeaderMixin:
             leader_host = probenet.other_side(l)              # клон живёт у второй стороны
         else:
             m = self.reserve_quorum_mine()
-            if m is None or not self.reserve_quorum_active():
+            active = self.reserve_quorum_active_cached() if cached else self.reserve_quorum_active()
+            if m is None or not active:
                 self.__dict__.pop("_rsv_qleader", None)
                 return None
             q2 = self.reserve_quorum_leader_host() != m.l        # отъезд: ответчик дома считает «да» для Q2
@@ -131,7 +133,7 @@ class ReserveQuorumLeaderMixin:
     def reserve_quorum_probe_in(self, data: bytes, src: str) -> bytes | None:
         """Датаграмма пробы с адреса `src` → ответ (или None: не проба, чужой узел,
         я не лидер)."""
-        ld = self._quorum_leader_setup()
+        ld = self._quorum_leader_setup(cached=True)
         if ld is None:
             return None
         p = Probe.parse(data)

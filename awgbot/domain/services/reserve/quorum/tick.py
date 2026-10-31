@@ -50,6 +50,8 @@ class ReserveQuorumTickMixin:
                 self.__dict__["_quo_qcount_sent"] = body
                 actions.append(("guestctl", "qcount", body))
             return actions
+        if hasattr(self, "reserve_quorum_active_reset"):
+            self.reserve_quorum_active_reset()                # включённость кворума — заново на этот такт (ответчик берёт из кэша)
         if not self.reserve_paired():
             self.__dict__.pop("_rsv_qleader", None)
             self._qvoters.clear()

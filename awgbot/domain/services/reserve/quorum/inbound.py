@@ -134,6 +134,22 @@ class ReserveQuorumInboundMixin:
             if cur.get("via") != "link" or cur.get("w") != w:
                 self._qgwviews[node] = {"w": w, "since": str(quo.get("since") or ""), "e": int(quo.get("e") or 0),
                                         "g": int(quo.get("g") or 0), "l": side, "at": timeutil.now_iso(), "via": "snap"}
+        self._quorum_point_given_in(int(slot), quo.get("pg"))
+
+    def _quorum_point_given_in(self, slot: int, pg) -> None:
+        """`quo.pg` снимка — шлюз отдавал точку кандидату: многочлен текущего `M` (номер не
+        ниже первого многочлена этого поколения) — ключ мог стать известен второму серверу,
+        даже если тот промолчал (`st.exposed`): отметка `compromised`, поколение — по пути
+        домой (reserve_compromised_settle); новое `M` даёт новый многочлен, и прежний
+        сигнал шлюза перестаёт совпадать."""
+        if not isinstance(pg, dict) or not hasattr(self, "reserve_mark_compromised") or not hasattr(self, "reserve_qkeys"):
+            return
+        q_given = int(pg.get("q") or 0)
+        qk = self.reserve_qkeys()
+        floor = int(qk.get("m_q_gen") or qk.get("q_gen") or 0)
+        if not q_given or not floor or q_given < floor or self.reserve_compromised():
+            return
+        self.reserve_mark_compromised(f"шлюз {slot} отдавал точку ключа кворума (многочлен {q_given}, {pg.get('at') or '?'})")
 
     # ── просьба кандидата по каналу пары ────────────────────────────────────
     def reserve_ask_in(self, case: str, since: str, kind: str = "dead") -> list[tuple]:

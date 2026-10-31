@@ -108,7 +108,12 @@ def _p(text: str) -> None:
 
 
 class OpenError(RuntimeError):
-    pass
+    """`pre_m` — отказ до сборки ключа основы `M` (кода не было, не подошёл, точек мало,
+    пакета нет): ключ основы мне не стал известен. Признак — полем итога (open.status
+    `pre_m`), бот резерва по нему решает об отметке `st.exposed`, не по тексту причины."""
+    def __init__(self, reason: str, *, pre_m: bool = False):
+        super().__init__(reason)
+        self.pre_m = pre_m
 
 
 def _step(step: str, **fields) -> None:
@@ -117,11 +122,15 @@ def _step(step: str, **fields) -> None:
     _p(step)
 
 
-def _fail(reason: str) -> int:
+def _fail(reason: str, *, pre_m: bool = False) -> int:
     from awgbot.infra import rsvzone
-    rsvzone.open_status_write("fail", reason=reason)
+    rsvzone.open_status_write("fail", reason=reason, pre_m="1" if pre_m else "")
     _p(f"fail {reason}")
     return 1
+
+
+def _fail_err(e: OpenError) -> int:
+    return _fail(str(e), pre_m=bool(getattr(e, "pre_m", False)))
 
 
 def _read_input() -> dict:
@@ -185,33 +194,42 @@ def _point(item) -> tuple[int, bytes]:
     try:
         x, y = int(item[0]), bytes.fromhex(str(item[1]))
     except (TypeError, ValueError, IndexError) as e:
-        raise OpenError("точка не того вида") from e
+        raise OpenError("точка не того вида", pre_m=True) from e
     if not 1 <= x <= 255:
-        raise OpenError("точка не того вида")
+        raise OpenError("точка не того вида", pre_m=True)
     return x, y
 
 
 def recover_keys(data: dict, blob: bytes) -> tuple[bytes | None, bytes]:
-    """(M или None, K) по входу: точки ключа кворума с ящиком, код с точкой и ящиком, или K."""
+    """(M или None, K) по входу: точки ключа кворума с ящиком, код с точкой и ящиком, или K.
+    Отказы до сборки `M` (точки, код, ящик не открылся) — `pre_m`; ящик открылся, а пакет
+    не снялся — `M` уже известен, признака нет."""
     from awgbot.util import rsvkeys
     from awgbot.util.rsvpkg import seal
     if data.get("k"):
         try:
             k = bytes.fromhex(str(data["k"]))
         except ValueError as e:
-            raise OpenError("ключ пакета не hex") from e
+            raise OpenError("ключ пакета не hex", pre_m=True) from e
         if len(k) != seal.K_LEN:
-            raise OpenError("ключ пакета не той длины")
+            raise OpenError("ключ пакета не той длины", pre_m=True)
         return None, k
     if data.get("qpoints") and data.get("qbox"):
         # кворум: t точек многочлена ключа кворума → Mq → ящик → M
         pts = [_point(p) for p in list(data["qpoints"])]
         if len(pts) < 2 or len({x for x, _ in pts}) != len(pts):
-            raise OpenError("точек ключа кворума мало или они одной точки")
+            raise OpenError("точек ключа кворума мало или они одной точки", pre_m=True)
+        odd: list[int] = []
         try:
-            m = rsvkeys.recover_m_quorum(pts, bytes.fromhex(str(data["qbox"])))
+            # порог известен (поле thr) и точек больше — сборка по t точкам с проверкой ящиком:
+            # одна битая точка среди лишних открытие не срывает
+            m = rsvkeys.recover_m_quorum(pts, bytes.fromhex(str(data["qbox"])), int(data.get("thr") or 0), odd)
         except ValueError as e:
-            raise OpenError(f"ключ кворума не собрался: {e}") from e
+            raise OpenError(f"ключ кворума не собрался: {e}", pre_m=True) from e
+        for x in odd:
+            # x точки шлюза — слот + 1 (rsvkeys.gateway_x); точка x = 1 — второго сервера; stderr — в rsvopen.err
+            who = f"шлюза {x - 1}" if x != rsvkeys.RESERVE_X else "второго сервера"
+            print(f"точка {who} не сходится с многочленом ключа кворума — ключ собран без неё", file=sys.stderr, flush=True)
         try:
             return m, seal.open_k(blob, m)
         except seal.PackageError as e:
@@ -221,12 +239,12 @@ def recover_keys(data: dict, blob: bytes) -> tuple[bytes | None, bytes]:
         try:
             m = rsvkeys.recover_m_code(str(data["code"]), _point(data["cpoint"]), bytes.fromhex(str(data["cbox"])))
         except ValueError as e:
-            raise OpenError(f"аварийный код: {e}") from e
+            raise OpenError(f"аварийный код: {e}", pre_m=True) from e
         try:
             return m, seal.open_k(blob, m)
         except seal.PackageError as e:
             raise OpenError(f"ключ пакета: {e}") from e
-    raise OpenError("нет ни точек ключа кворума, ни кода с ящиком, ни ключа пакета")
+    raise OpenError("нет ни точек ключа кворума, ни кода с ящиком, ни ключа пакета", pre_m=True)
 
 
 def _db_from_snapshot(k: bytes, pkg_gen: int) -> tuple[bytes | None, str]:
@@ -397,17 +415,17 @@ def run(data: dict) -> int:
     try:
         blob = open(pkg_path, "rb").read()
     except OSError as e:
-        return _fail(f"пакета нет: {e}")
+        return _fail(f"пакета нет: {e}", pre_m=True)
     try:
         head = seal.header(blob)
     except seal.PackageError as e:
-        return _fail(f"пакет: {e}")
+        return _fail(f"пакет: {e}", pre_m=True)
     sealed_path = bool(data.get("await_k"))
     if sealed_path:
         try:
             data["k"] = await_sealed_k(head.pkg_gen).hex()
         except OpenError as e:
-            return _fail(str(e))
+            return _fail(str(e), pre_m=True)
     try:
         m, k = recover_keys(data, blob)
         _step("m" if m else ("k_sealed" if sealed_path else "k_given"), pkg_gen=head.pkg_gen, m_gen=head.m_gen)
@@ -424,7 +442,9 @@ def run(data: dict) -> int:
         by_m = bool(m)                                        # по точкам или коду: запись меняю я — без провайдера нельзя
         m = None                                              # M нужен был только для K и конверта DNS
         data["_ttl"] = int((dns or {}).get("ttl") or 0)      # TTL записи — гостю: пауза перед «переподключи VPN»
-    except (OpenError, seal.PackageError, pkgvpn.VpnPartError) as e:
+    except OpenError as e:
+        return _fail_err(e)
+    except (seal.PackageError, pkgvpn.VpnPartError) as e:
         return _fail(str(e))
     iface = vpn["ifaces"][0]
     extra = [i for i in vpn["ifaces"][1:] if i.get("name") and i.get("addr")]   # окно переезда профилей
@@ -484,7 +504,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         data = _read_input()
     except OpenError as e:
-        return _fail(str(e))
+        return _fail(str(e), pre_m=True)
     try:
         return run(data)
     except Exception as e:                                     # noqa: BLE001 — любой сбой: отказ строкой, не трассой

@@ -234,6 +234,10 @@ def sanitize(raw: dict) -> dict:
                       "g": int(quo.get("g") or 0) if str(quo.get("g") or "0").isdigit() else 0,
                       "e": int(quo.get("e") or 0) if str(quo.get("e") or "0").isdigit() else 0,
                       "q": int(quo.get("q") or 0) if str(quo.get("q") or "0").isdigit() else 0}
+        pg = quo.get("pg")
+        if isinstance(pg, dict) and str(pg.get("q") or "0").isdigit() and int(pg.get("q") or 0):
+            # точка отдана кандидату: какого многочлена и когда — сигнал основе о возможно известном ключе
+            out["quo"]["pg"] = {"q": int(pg["q"]), "at": _clean_str(pg.get("at", ""))[:40]}
     elif "quo" in src and src["quo"] is None:
         out["quo"] = None
     return out

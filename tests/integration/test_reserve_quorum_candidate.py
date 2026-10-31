@@ -149,6 +149,7 @@ def test_a_gateway_point_and_my_own_open_by_the_quorum_box(c):
     assert p["kind"] == "dead", p
     assert p["qpoints"] == [[rsvkeys.RESERVE_X, RSV_Y], [rsvkeys.gateway_x(1), GW1_Y]], p
     assert p["qbox"] == QBOX
+    assert p["thr"] == 2, "порог многочлена процессу открытия не передан — лишняя битая точка срывала бы сборку"
     assert c.s.reserve_in() == "taking"
     assert c.s.rsv_get("rsv_view").get("moved_by", {}).get("quorum") is True
 
@@ -257,6 +258,26 @@ def test_no_points_for_twice_need_retry_opens_the_code_window(c):
     c.run(5)
     assert c.s.reserve_code_window()["open"], "точек нет, свой «не вижу» — окно аварийного кода не открылось"
     assert c.stage() == "code"
+
+
+def test_a_gateway_reconnecting_during_the_attempt_gets_qtake_again_after_state_idle(c):
+    """Новая сессия шлюза посреди «забираю» (стадия code: rsv_in пока idle): первым словом
+    идёт `state{idle}` — шлюз откатывает поднятую по qtake эпоху (страховка на потерянный
+    qrel), а попытка ещё идёт; следом ему повторяется `qtake{e}`, и эпоха у него снова e + 1.
+    Вне попытки и шлюзу, которому qtake не уходил, повтора нет."""
+    _points_stage(c)
+    c.run(NEED2)
+    assert c.stage() == "code"
+    acts = c.b.hello(1)
+    kinds = [a[2] for a in acts if a[0] == "gw" and a[1] == 1]
+    assert "state" in kinds and "qtake" in kinds, f"после state{{idle}} на hello qtake не повторён: {acts}"
+    assert kinds.index("state") < kinds.index("qtake"), "qtake раньше state{idle} — откат затёр бы повтор"
+    assert gw_sent(acts, "qtake") == [(1, {"l": LINE, "e": 7})], gw_sent(acts, "qtake")
+    assert not gw_sent(c.b.hello(3), "qtake"), "qtake шлюзу, которому «забираю» не уходило"
+    c.view(1, "see")
+    c.view(2, "see")
+    c.tick()                                                  # шлюзы снова видят — попытка снята, qrel ушёл
+    assert not gw_sent(c.b.hello(1), "qtake"), "«забираю» снято, а на hello идёт qtake"
 
 
 # ── снятие ──────────────────────────────────────────────────────────────────

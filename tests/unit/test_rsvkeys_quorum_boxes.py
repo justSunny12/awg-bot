@@ -64,6 +64,37 @@ def test_points_of_another_quorum_generation_do_not_open_the_box():
         rsvkeys.recover_m_quorum([new.reserve_point(), old.gateway_point(1)], new_box)
 
 
+def test_one_damaged_point_among_more_than_t_does_not_block_the_opening():
+    """Порог 3, точек 4, одна испорчена: сборка по ровно t точкам с проверкой ящиком
+    находит сочетание без битой и называет её x; без порога Лагранж по всем четырём
+    даёт чужой ключ — ящик не открывается."""
+    qg = rsvkeys.QuorumGen.new(1, 3)
+    box = qg.qbox(M)
+    pts = _holders(qg, [1, 2, 3])
+    bad_x, bad_y = pts[2]
+    pts[2] = (bad_x, bytes(b ^ 0x5A for b in bad_y))
+    with pytest.raises(ValueError):
+        rsvkeys.recover_m_quorum(pts, box)
+    odd: list[int] = []
+    assert rsvkeys.recover_m_quorum(pts, box, 3, odd) == M
+    assert odd == [bad_x], "битая точка не названа"
+    # лишняя точка целая — не названа; ровно t точек — прежний путь, порог ничего не меняет
+    good_odd: list[int] = []
+    assert rsvkeys.recover_m_quorum(_holders(qg, [1, 2, 3]), box, 3, good_odd) == M and good_odd == []
+    assert rsvkeys.recover_m_quorum(_holders(qg, [1, 2]), box, 3) == M
+
+
+def test_more_than_t_points_with_two_damaged_are_still_refused():
+    """Целых точек меньше t — ни одно сочетание ящик не открывает: ValueError, не чужой ключ."""
+    qg = rsvkeys.QuorumGen.new(1, 3)
+    box = qg.qbox(M)
+    pts = _holders(qg, [1, 2, 3])
+    pts[1] = (pts[1][0], b"\x01" * 16)
+    pts[3] = (pts[3][0], b"\x02" * 16)
+    with pytest.raises(ValueError):
+        rsvkeys.recover_m_quorum(pts, box, 3)
+
+
 def test_points_of_the_wrong_length_are_refused():
     qg = rsvkeys.QuorumGen.new(1, 2)
     box = qg.qbox(M)

@@ -86,7 +86,8 @@ class ReserveOpeningMixin:
         if why:
             log.warning("резерв: процесс открытия (%s) не запущен: %s", kind, why)
             return [("notify", [Notification(tg_id=int(config.ADMIN_ID),
-                                             text=_fail_text(self.reserve_peer_name(), f"{why} — аварийный переезд невозможен"))])]
+                                             text=_fail_text(self.reserve_peer_name(), f"{why} — аварийный переезд невозможен"))])] \
+                + self._gw_refusal_word(why)
         pkg_in = self.rsv_get("rsv_pkg_in")
         self.reserve_zone_shell_ensure()
         payload = self._open_payload(kind)
@@ -109,10 +110,19 @@ class ReserveOpeningMixin:
             # срыв открытия: отметка автоматического переезда прочь, пауза — короткий демпфер (fail_at)
             self.reserve_set_in("idle", step="", reason=str(e), ended_auto=False, fail_at=timeutil.now_iso())
             self._relay_restore()                             # пересылка хвоста, уступившая открытию, — обратно
-            return [("notify", [Notification(tg_id=int(config.ADMIN_ID), text=_fail_text(self.reserve_peer_name(), str(e)))])]
+            return [("notify", [Notification(tg_id=int(config.ADMIN_ID), text=_fail_text(self.reserve_peer_name(), str(e)))])] \
+                + self._gw_refusal_word(str(e))
         log.warning("резерв: процесс открытия по %s запущен (%s, пакет %s)", "коду" if kind == "code" else "точкам",
                     case, pkg_in.get("gen"))
         return [("fw",)] + self.reserve_gw_state_actions()
+
+    def _gw_refusal_word(self, why: str) -> list[tuple]:
+        """Отказ запуска после отданных точек — шлюзам `state{idle, reason}`: у отдавшего точку
+        это Т-РА5 (переезд не состоялся); `qrel` следом снимает отметку молча, и без этого
+        слова срыв терялся."""
+        if not hasattr(self, "reserve_gw_state_actions"):
+            return []
+        return self.reserve_gw_state_actions(force=True, reason=why)
 
     def _open_wait_s(self) -> int:
         from .inbound import OPEN_WAIT_S

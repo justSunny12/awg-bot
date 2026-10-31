@@ -302,7 +302,7 @@ class ReserveStoreMixin:
     # ── состояние резерва и пересылка ───────────────────────────────────────
     def reserve_state_in(self, state: str, move: int, reason: str = "", e: int = 0) -> list[tuple]:
         """`state{state, move[, reason]}` от резерва по гостевому каналу. `idle` с
-        причиной после отданной этим шлюзом доли — переезд не состоялся: Т-РА5."""
+        причиной после отданной этим шлюзом точки — переезд не состоялся: Т-РА5."""
         if not self.reserve_section() or state not in ("serving", "idle"):
             return []
         if int(e or 0) and hasattr(self, "_quorum_epoch_in"):
@@ -446,7 +446,7 @@ class ReserveStoreMixin:
     # ── панель (Т-РА1) ──────────────────────────────────────────────────────
     def reserve_panel_view(self) -> dict:
         """Строка панели и здоровье: имя резерва, связь по awgrsv (ok | suspect |
-        down | absent, с какого момента), пересылка, счётчики линка, доля.
+        down | absent, с какого момента), пересылка, счётчики линка, точка ключа кворума.
         Пусто — раздела нет."""
         cur = self.reserve_section()
         if not cur:
@@ -461,7 +461,7 @@ class ReserveStoreMixin:
                 "uplink_ip": self._uplink_conf_ip(), "primary": str(cur.get("self") or "")}    # Т-К27
 
     def _quorum_point_present(self) -> bool:
-        """Под кворумом доля прямой в раздел reserve не едет — точка ключа кворума лежит в разделе quorum."""
+        """Точка ключа кворума лежит в разделе quorum документа, в разделе reserve её нет."""
         sec = self.quorum_section() if hasattr(self, "quorum_section") else {}
         return bool((sec.get("point") or {}).get("y"))
 

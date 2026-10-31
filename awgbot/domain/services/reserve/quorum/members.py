@@ -220,7 +220,19 @@ class ReserveQuorumMembersMixin:
                               big_slots=big, keys_ok=keys_ok)
 
     def reserve_quorum_active(self) -> bool:
-        return not self.reserve_quorum_off_reasons()
+        on = not self.reserve_quorum_off_reasons()
+        self.__dict__["_quo_active_cache"] = on                # ответчику — без пересчёта на каждую датаграмму
+        return on
+
+    def reserve_quorum_active_cached(self) -> bool:
+        """Включён ли кворум — по последнему расчёту этого такта (quorum_tick сбрасывает): ответчик
+        получает датаграммы проб каждую секунду от каждого голосующего, а причины выключения —
+        это ключи, состав, цифры, пересечения, снимки шлюзов — несколько чтений базы."""
+        cached = self.__dict__.get("_quo_active_cache")
+        return self.reserve_quorum_active() if cached is None else bool(cached)
+
+    def reserve_quorum_active_reset(self) -> None:
+        self.__dict__.pop("_quo_active_cache", None)
 
     def reserve_quorum_act_leftover(self) -> None:
         """Ключ `app.reserve.quorum.act` снят: оставшийся в app.yaml не читается — строка журнала один раз."""

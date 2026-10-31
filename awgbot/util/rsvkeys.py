@@ -33,6 +33,7 @@ rsvkeys.py — главный ключ переезда `M`, его поколе
 from __future__ import annotations
 
 import hashlib
+import itertools
 import secrets
 from dataclasses import dataclass
 
@@ -170,14 +171,38 @@ class CodeGen:
         return seal_box(cbox_key(self.mc), m)
 
 
-def recover_m_quorum(points: list[shamir.Point], qbox: bytes) -> bytes:
+def recover_m_quorum(points: list[shamir.Point], qbox: bytes, t: int | None = None,
+                     odd: list[int] | None = None) -> bytes:
     """`M` по t точкам многочлена `Mq` и ящику кворума; мало точек или чужие —
-    ValueError (ящик не откроется)."""
+    ValueError (ящик не откроется). Порог `t` известен и точек больше — сборка по
+    ровно t точкам, проверка открытием ящика (MAC), не открылся — следующее
+    сочетание: одна битая точка среди лишних не срывает открытие (n ≤ 9 —
+    сочетаний мало). `odd` — сюда x точек, не сошедшихся с найденным многочленом."""
     pts = [(int(x), bytes(y)) for x, y in points]
     if any(len(y) != M_LEN for _, y in pts):
         raise ValueError("точки не той длины")
-    mq = shamir.recover(pts)
-    return open_box(qbox_key(mq), qbox)
+    t = int(t or 0)
+    if t < 2 or len(pts) <= t:
+        return open_box(qbox_key(shamir.recover(pts)), qbox)
+    for combo in itertools.combinations(pts, t):
+        try:
+            mq = shamir.recover(list(combo))
+            m = open_box(qbox_key(mq), qbox)
+        except ValueError:
+            continue
+        if odd is not None:
+            base = list(combo)[1:]                           # t − 1 точек найденного многочлена + проверяемая
+            for p in pts:
+                if p in combo:
+                    continue
+                try:
+                    fits = shamir.recover(base + [p]) == mq
+                except ValueError:
+                    fits = False
+                if not fits:
+                    odd.append(p[0])
+        return m
+    raise ValueError(f"ящик не открылся ни одним сочетанием из {t} точек")
 
 
 def recover_m_code(code: str, cpoint: shamir.Point, cbox: bytes) -> bytes:
