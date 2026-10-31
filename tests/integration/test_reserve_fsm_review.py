@@ -198,6 +198,28 @@ def test_a_successful_return_forgets_the_merge_marks(merge_world):
 
 # ── сторона резерва ─────────────────────────────────────────────────────────
 
+@pytest.mark.xfail(strict=True, reason="Q4-04: после сорванного слияния у основы резерв не возобновляет гостя")
+def test_a_failed_merge_at_the_primary_makes_the_reserve_resume_the_guest(host):
+    """Реплика ушла (`released`, гость остановлен), а слияние у основы сорвалось —
+    она в away и больше не просит back: бот нем с обеих сторон. Резерв по сроку
+    видит `st.out = away` второй стороны и возобновляет гостя сам: юнит гостя
+    стартует, состояние serving, своему админу — уведомление (при правке Q4-04
+    снять отметку xfail)."""
+    from tests.integration.test_reserve_hosting import _serving
+    svc = host.svc
+    _serving(host)
+    svc.reserve_back_req_in()
+    assert svc.reserve_guest_replica_in(b"\x01\x02") == [("send_released", {"gen": 7, "blob": "0102"})]
+    assert svc.reserve_in() == "releasing" and svc._inn().get("released_at")
+    host.spawn.runs.clear()
+    rm.st_in(svc, out="away")                                  # слияние сорвалось: основа осталась в away
+    host.clock.advance(2 * 3600)
+    acts = svc.reserve_in_tick()
+    assert svc.reserve_in() == "serving", f"возврат не состоялся, а резерв держит releasing: {svc._inn()}"
+    assert ["systemctl", "start", rsvzone.GUEST_UNIT] in host.spawn.runs, "гость не возобновлён — бот нем с обеих сторон"
+    assert notices(acts), "админу резерва не сказано, что бот основы снова у него"
+
+
 @pytest.mark.parametrize("state", ["idle", ""])
 def test_back_with_an_empty_zone_answers_wiped(host, state):
     host.svc.reserve_set_in(state or "idle")
