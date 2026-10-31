@@ -229,9 +229,11 @@ class ReserveReturnMixin:
                 log.warning("резерв: «%s» на связи без моего гостя — возврат без реплики", self.reserve_peer_name())
                 return self._return_without_replica()
             if self._expired(out):
-                # реплика не пришла: повторить просьбу (резерв мог лечь) — не чаще раза в срок
-                self._out_step("back_req", RELEASED_WAIT_S)
-                return [("send", "back_req", {})]
+                # реплика не пришла: повторить просьбу (резерв мог лечь) — не чаще раза в срок; под замком
+                # и только с шага back_req: реплика из потока канала за это время могла начать слияние —
+                # повтор лёг бы поверх шага merge/restart и привёл вторую реплику
+                if self._out_step_cas("returning", ("back_req",), "back_req", RELEASED_WAIT_S):
+                    return [("send", "back_req", {})]
             return []
         if step == "restart":
             if livestep.mono_due(out.get("restart_at"), now, 60):   # один перезапуск, повтор не раньше минуты
@@ -266,8 +268,14 @@ class ReserveReturnMixin:
                 return [("send", "back", {})]                # резерв не ответил relay — повторить
             return []
         if step == "merge" and self._expired(out):
-            # слияние не завершилось (рестарт посреди): реплику попросить снова
-            self._out_step("back_req", RELEASED_WAIT_S)
+            # слияние не завершилось (рестарт посреди): реплику попросить снова — но не пока оно
+            # идёт в этом процессе (большая база, медленный диск — дольше срока): вторая реплика
+            # легла бы вторым слиянием поверх первого; итог идущего решит сам обработчик
+            with _LOCK:
+                if self.__dict__.get("_merge_running"):
+                    return []
+                if not self._out_step_cas("returning", ("merge",), "back_req", RELEASED_WAIT_S):
+                    return []
             return [("send", "back_req", {})]
         return []
 
@@ -298,22 +306,36 @@ class ReserveReturnMixin:
         Пустая реплика — возврат без слияния. Та же реплика второй раз (повтор
         back_req после рестарта посреди слияния) не сливается дважды."""
         import hashlib
-        out = self._out()
-        if out.get("state") != "returning" or out.get("step") not in ("back_req", "merge"):
-            log.info("резерв: released вне возврата — пропущен")
-            return []
-        # бот основы на резерве остановлен и больше не пишет (guest_stopped); право записи —
-        # здесь после слияния: пока оно пишет сырым соединением, задания решений не идут
-        self.rsv_update("rsv_out", guest_stopped=True)
-        if not blob:
-            log.warning("резерв: «%s» отдал пустую реплику — возврат без слияния", self.reserve_peer_name())
-            return self._return_without_replica()
-        fp = hashlib.sha256(blob).hexdigest()
-        if fp == str(out.get("merged_fp") or ""):
-            log.info("резерв: реплика уже слита — к перезапуску")
-            self._out_step("restart")
-            return [("restart",)]
-        self._out_step("merge", RELEASED_WAIT_S)
+        with _LOCK:                                           # проверка и шаг merge — одним замком с тактом (сроки шагов)
+            out = self._out()
+            if out.get("state") != "returning" or out.get("step") not in ("back_req", "merge"):
+                log.info("резерв: released вне возврата — пропущен")
+                return []
+            if self.__dict__.get("_merge_running"):
+                # слияние прежней реплики ещё идёт (резерв повторил released на мой повтор back_req):
+                # второе поверх первого — нет; итог первого решит шаг
+                log.info("резерв: released при идущем слиянии — пропущен")
+                return []
+            # бот основы на резерве остановлен и больше не пишет (guest_stopped); право записи —
+            # здесь после слияния: пока оно пишет сырым соединением, задания решений не идут
+            self.rsv_update("rsv_out", guest_stopped=True)
+            if not blob:
+                log.warning("резерв: «%s» отдал пустую реплику — возврат без слияния", self.reserve_peer_name())
+                return self._return_without_replica()
+            fp = hashlib.sha256(blob).hexdigest()
+            if fp == str(out.get("merged_fp") or ""):
+                log.info("резерв: реплика уже слита — к перезапуску")
+                self._out_step("restart")
+                return [("restart",)]
+            self._out_step("merge", RELEASED_WAIT_S)
+            self.__dict__["_merge_running"] = True            # в памяти: такт по сроку merge его не перезапрашивает
+        try:
+            return self._merge_replica(out, blob, fp)
+        finally:
+            self.__dict__.pop("_merge_running", None)
+
+    def _merge_replica(self, out: dict, blob: bytes, fp: str) -> list[tuple]:
+        """Слияние реплики на шаге merge: restart — или away с причиной (отказ)."""
         try:
             report = self._return_merge(blob, int(out.get("gen") or 0))
         except ReplicaMerged as e:

@@ -93,6 +93,16 @@ class ReserveOutboundMixin:
         self.reserve_epoch_sync()                         # шаг меняет право записи (released, merge, …)
         return out
 
+    def _out_step_cas(self, state: str, steps, step: str, wait_s: int = 0, **fields) -> bool:
+        """`_out_step`, только если автомат всё ещё в `state` на одном из `steps` (под замком,
+        как `_out_cas`): повтор шага по сроку из такта не ложится поверх перехода, который
+        за это время сделал обработчик слова канала."""
+        with _LOCK:
+            if not self._out_is(state, steps):
+                return False
+            self._out_step(step, wait_s, **fields)
+            return True
+
     @staticmethod
     def _expired(out: dict) -> bool:
         """Срок шага вышел. Отметка из прежней загрузки хоста (monotonic начался
@@ -159,13 +169,21 @@ class ReserveOutboundMixin:
         log.info("резерв: переезд кнопкой на «%s» начат", self.reserve_peer_name())
         return out
 
-    def _move_fail(self, reason: str, released: bool = False) -> list[tuple]:
+    def _move_fail(self, reason: str, released: bool = False, steps=()) -> list[tuple]:
         """Переезд не состоялся: домой, резерву — `back` (снять зону, если он
         её поднял или ещё поднимает), запись — обратно на себя, если успела
-        смениться, итог админу."""
+        смениться, итог админу. Переход home — под замком и только из leaving (на
+        одном из `steps`, если даны): срыв по сроку из такта и `taken` из потока
+        канала в одном окне — переход один; кто опоздал, тот ничего не делает."""
         from awgbot.domain.notices import reserve as rn
         name = self.reserve_peer_name()
-        out = self._out()
+        with _LOCK:
+            out = self._out()
+            if not self._out_is("leaving", steps):
+                log.info("резерв: срыв переезда (%s) опоздал — автомат уже %s/%s", reason,
+                         out.get("state") or "home", out.get("step") or "")
+                return []
+            self.reserve_set_out("home", reason=reason, failed_at=timeutil.now_iso(), step="")
         if out.get("go_sent"):
             # K ушёл резерву — он его знает: новый K и свежий пакет под ним (после `back` резерв
             # сносит прежний пакет, досылка — по отметке)
@@ -181,7 +199,6 @@ class ReserveOutboundMixin:
                 record_back = str(e)
         elif out.get("record_set_at"):
             record_back = "переезд не состоялся, запись меняется вручную"   # Т-РУ11: вернуть её — дело человека
-        self.reserve_set_out("home", reason=reason, failed_at=timeutil.now_iso(), step="")
         log.warning("резерв: переезд на «%s» не состоялся: %s", name, reason)
         notes = [Notification(tg_id=int(config.ADMIN_ID), text=rn.move_failed(name, reason, released=released))]
         if record_back:
@@ -282,8 +299,9 @@ class ReserveOutboundMixin:
             why = {"pkg": "данные для переезда не подтверждены резервом", "eph": f"разовый ключ от «{self.reserve_peer_name()}» не пришёл",
                    "up": f"«{self.reserve_peer_name()}» не поднял профили",
                    "record": "запись не изменена за 30 минут", "release": "передача бота не завершилась"}.get(step, "срок шага вышел")
-            # резерву — `back` и на шагах ключа и подъёма: его процесс открытия ждёт или мог кончиться позже срока
-            return self._move_fail(why, released=step in ("eph", "up", "record", "release"))
+            # резерву — `back` и на шагах ключа и подъёма: его процесс открытия ждёт или мог кончиться позже срока;
+            # срыв — только с того же шага: слово канала (taken, up) за это время могло шаг сменить
+            return self._move_fail(why, released=step in ("eph", "up", "record", "release"), steps=(step,))
         if step == "pkg":
             sent = self.rsv_get("rsv_pkg_sent")
             fresh = str(sent.get("at") or "") >= str(out.get("started_at") or "")
@@ -298,7 +316,7 @@ class ReserveOutboundMixin:
             return self._tick_record(out, str(out.get("target_ip") or ""), "release")
         if step == "release":
             if out.get("release_error"):
-                return self._move_fail(str(out["release_error"]), released=True)   # реплика не уложится в канал
+                return self._move_fail(str(out["release_error"]), released=True, steps=("release",))   # реплика не уложится в канал
             # передача бота: действие выдаётся снова, пока не прошло (сбой подтверждения пачки,
             # реплики или отправки — не повод срывать переезд через 5 минут)
             now = time.monotonic()
@@ -314,20 +332,24 @@ class ReserveOutboundMixin:
             fresh = str(poll.get("since") or "") >= str(out.get("released_at") or "")
             verdict = str(poll.get("why") or "") if fresh else ""
             if verdict in ("webhook", "webhook_info"):          # Telegram: вебхук стоит — пользователи у резерва
-                self.reserve_set_out("away", kind=str(out.get("kind") or "button"), step="", taken_at=timeutil.now_iso(),
-                                     last_switch=timeutil.now_iso(), healthy_since="")
+                # под замком и только с шага released: `taken` из потока канала мог уже увести в away —
+                # второй переход был бы вторым уведомлением о переезде
+                if not self._out_cas("leaving", ("released",), to="away", kind=str(out.get("kind") or "button"), step="",
+                                     taken_at=timeutil.now_iso(), last_switch=timeutil.now_iso(), healthy_since=""):
+                    return []
                 log.info("резерв: `taken` не пришёл, но вебхук у «%s» стоит — away", self.reserve_peer_name())
                 return [("live",), ("notify", [Notification(tg_id=int(config.ADMIN_ID), text=rn.moved_to_reserve(
                     self.reserve_peer_name(), str(out.get("kind") or "button"), timeutil.now_iso(),
                     dead_since=str(out.get("dead_since") or ""), reserve_ip=str(out.get("target_ip") or "")))])]
             if fresh and poll.get("state") == "mine":           # Telegram: вебхука нет — переезд не состоялся
-                return self._move_fail("резерв не взял право отвечать — вебхук не поставлен", released=True)
+                return self._move_fail("резерв не взял право отвечать — вебхук не поставлен", released=True, steps=("released",))
             woken = int(out.get("poll_woken") or 0)
             if woken < 3:                                       # слова Telegram ещё нет — разбудить и подождать
-                self.rsv_update("rsv_out", poll_woken=woken + 1)
-                self._out_step("released", 120, released_at=str(out.get("released_at") or ""))
+                if not self._out_step_cas("leaving", ("released",), "released", 120, poll_woken=woken + 1,
+                                          released_at=str(out.get("released_at") or "")):
+                    return []                                   # `taken` успел: шаг переезда в запись away не дописывать
                 return [("wake_poll",)]
-            return self._move_fail("право отвечать не проверено — Telegram не ответил", released=True)
+            return self._move_fail("право отвечать не проверено — Telegram не ответил", released=True, steps=("released",))
         return []
 
     def _tick_record(self, out: dict, target: str, next_step: str) -> list[tuple]:
@@ -459,17 +481,18 @@ class ReserveOutboundMixin:
         передачи бота (release/released): запоздалое `taken` прошлого эпизода на шаге pkg/eph/up/record
         переводило бы в away с `poll=away`, пока запись DNS ещё на мне."""
         from awgbot.domain.notices import reserve as rn
-        out = self._out()
-        if out.get("state") != "leaving":
-            return []
-        if str(out.get("step") or "") not in ("release", "released"):
-            log.warning("резерв: «taken» на шаге %s — вне передачи бота, пропущено", out.get("step") or "pkg")
-            return []
-        if self._word_foreign(out, "taken", oid):
-            return []
-        self.reserve_set_out("away", kind=str(out.get("kind") or "button"), step="", taken_at=timeutil.now_iso(),
-                             last_switch=timeutil.now_iso(), healthy_since="")
-        self.reserve_set_poll("away")
+        with _LOCK:                                           # проверка и переход — одним замком с тактом (срыв по сроку)
+            out = self._out()
+            if out.get("state") != "leaving":
+                return []
+            if str(out.get("step") or "") not in ("release", "released"):
+                log.warning("резерв: «taken» на шаге %s — вне передачи бота, пропущено", out.get("step") or "pkg")
+                return []
+            if self._word_foreign(out, "taken", oid):
+                return []
+            self.reserve_set_out("away", kind=str(out.get("kind") or "button"), step="", taken_at=timeutil.now_iso(),
+                                 last_switch=timeutil.now_iso(), healthy_since="")
+            self.reserve_set_poll("away")
         log.info("резерв: пользователи и бот — на «%s»", self.reserve_peer_name())
         return [("live",), ("notify", [Notification(tg_id=int(config.ADMIN_ID), text=rn.moved_to_reserve(
             self.reserve_peer_name(), str(out.get("kind") or "button"), timeutil.now_iso(),
