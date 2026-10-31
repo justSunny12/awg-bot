@@ -19,7 +19,9 @@ away` в документе) или по `state{serving}` от резерва в
 состояния скрипта, не вызовом скрипта. Состояние переживает перезагрузку (файл).
 `state{idle, reason}` после отданной этим шлюзом точки (`qshare`) — переезд не
 состоялся: админу шлюза одно уведомление (Т-РА5, со звуком), отметка
-снимается. Т-РА3 — при любом открытии пересылки (по слову и по такту), один
+снимается. Отметку связывает с попыткой первый `serving` после точки (номер
+пакета); исход попытки без срыва (`idle` без причины), срыв другого пакета и
+`qrel` до начала попытки снимают её молча. Т-РА3 — при любом открытии пересылки (по слову и по такту), один
 раз на номер переезда.
 
 Уведомления агента о резерве (Т-РА3, Т-РА5, обход Telegram) не теряются: Telegram
@@ -65,7 +67,7 @@ def _write(data: dict, path: Path = STORE_PATH) -> None:
 
 
 # своё о ходе дел в reserve.json — переживает каждый новый документ
-_KEEP_KEYS = ("open_at", "share_given_at", "reserve_state_at", "moved_told",
+_KEEP_KEYS = ("open_at", "share_given_at", "share_move", "reserve_state_at", "moved_told",
               "pending_notes", "link_pending", "link_retry_mono", "reserve_down_last",
               "tg_via", "tg_since", "reresolve_pending", "reresolved")
 NOTE_TTL_S = 24 * 3600            # уведомление без доставки дольше — устарело
@@ -314,12 +316,8 @@ class ReserveStoreMixin:
         if not cur:
             return None
         actions: list[tuple] = []
-        if state == "idle" and reason and cur.get("share_given_at"):
-            from awgbot.domain.notices import reserve as rn
-            _w, since = self.quorum_own_view() if hasattr(self, "quorum_own_view") else ("", "")
-            actions.append(("notify", [self.reserve_note(cur, rn.gateway_move_failed(
-                str(cur.get("name") or ""), since or str(cur.get("share_given_at") or ""), reason), sound=True)]))
-            cur["share_given_at"] = ""
+        if cur.get("share_given_at"):
+            actions += self._share_mark_state(cur, state, int(move), reason)
         done = dict(cur.get("reresolved") or {})
         if state == "serving" and int(move) > int(done.get("away") or 0) and cur.get("peer_host") and cur.get("record"):
             # переезд: аплинк — на адрес второго сервера по записи сразу (§4.12); серия попыток на номер переезда —
@@ -330,6 +328,40 @@ class ReserveStoreMixin:
         cur["reserve_state_at"] = timeutil.now_iso()
         _write(cur, self._RSV_STORE)
         return actions
+
+    def _share_mark_state(self, cur: dict, state: str, move: int, reason: str) -> list[tuple]:
+        """Отметка отданной точки и слово `state` резерва. Попытка, взявшая точку, — первый
+        `serving` после неё (номер пакета — `share_move`); её срыв — `idle` с причиной: Т-РА5.
+        Попытка кончилась без срыва (возврат, пересылка хвоста — `idle` без причины после
+        `serving`) или сорвалась другая — отметка снимается молча: чужой срыв позже — не мой."""
+        sm = cur.get("share_move")
+        bound = sm not in (None, "")
+        if state == "serving":
+            if not bound:
+                cur["share_move"] = int(move)
+            return []
+        if not reason:
+            if bound:
+                cur["share_given_at"], cur["share_move"] = "", None
+            return []
+        out: list[tuple] = []
+        if not bound or int(sm) == int(move):
+            from awgbot.domain.notices import reserve as rn
+            _w, since = self.quorum_own_view() if hasattr(self, "quorum_own_view") else ("", "")
+            out.append(("notify", [self.reserve_note(cur, rn.gateway_move_failed(
+                str(cur.get("name") or ""), since or str(cur.get("share_given_at") or ""), reason), sound=True)]))
+        cur["share_given_at"], cur["share_move"] = "", None
+        return out
+
+    def reserve_share_released(self) -> None:
+        """`qrel` кандидата: «не забираю». Попытка с моей точкой ещё не началась (`serving` не
+        было) — и не начнётся: отметка снимается; началась — её исход скажет `state`."""
+        with STORE_LOCK:
+            cur = self.reserve_section()
+            if cur.get("share_given_at") and cur.get("share_move") in (None, ""):
+                cur["share_given_at"], cur["share_move"] = "", None
+                _write(cur, self._RSV_STORE)
+                log.info("reserve: кандидат не забирает — отметка отданной точки снята")
 
     def reserve_forward_decide(self) -> list[tuple]:
         """Открыть или закрыть пересылку с `awgrsv` по правилу раздела; действия

@@ -331,6 +331,8 @@ class GatewayQuorumMixin:
             if v.release(int(body.get("e") or 0)):
                 self._pledge_store(name, None)
                 log.info("quorum: обязательство «нет» под эпохой %s снято (qrel)", body.get("e"))
+            if hasattr(self, "reserve_share_released"):
+                self.reserve_share_released()                 # «не забираю» до начала попытки — точка не понадобится
             return []
         if kind == "qneed":
             return self._quorum_need_in(sec, v, int(body.get("q_gen") or 0), str(body.get("since") or ""))
@@ -382,7 +384,7 @@ class GatewayQuorumMixin:
         from .store import _write as _write_rsv
         with STORE_LOCK:
             rs = self.reserve_section()                       # отметку читает слово state{idle, reason} — Т-РА5
-            rs["share_given_at"] = timeutil.now_iso()
+            rs["share_given_at"], rs["share_move"] = timeutil.now_iso(), None   # попытку свяжет первый serving
             _write_rsv(rs, self._RSV_STORE)
         return [("guest", "qshare", {"l": str(sec.get("l") or ""), "q_gen": int(q_gen), "x": int(point.get("x") or 0),
                                      "y": str(point.get("y"))})]
