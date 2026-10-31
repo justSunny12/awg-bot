@@ -273,6 +273,11 @@ class GatewayQuorumMixin:
             if act == "see":
                 rec = self.quorum_probe_ifaces().get(name) or {"l": v.l, "target": name[-1:]}
                 actions += self._quorum_view_changed(name, rec, v, "see")
+            elif act.startswith("adopt:"):
+                # эпоха из ответа (клона у резерва — E после взятия) — факт линии: всем голосующим
+                # и на диск; иначе пробы к основе дома шли бы с прежней и она набрала бы «да»
+                self._quorum_epoch_in(int(v.epoch))
+                log.info("quorum: ответ %s несёт эпоху %s — принята", "клона" if name.endswith("r") else "сервера AWG", v.epoch)
         return actions
 
     def _quorum_view_changed(self, name: str, rec: dict, v: Voter, w: str) -> list[tuple]:

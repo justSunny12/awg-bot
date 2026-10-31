@@ -61,3 +61,25 @@ def test_a_gateway_without_quorum_gets_no_question(box):
     c.view(1, "uns")
     acts = box.hello(1, caps=["rsv1"])
     assert not gw_sent(acts, "qask") and "b1" not in box.s.reserve_quorum_gw_views(LINE)
+
+
+# ── эпоха гостя — шлюзам и своим пробам, пока её пользователи у меня ─────────
+
+def test_while_hosting_the_gateways_and_my_probes_get_the_epoch_of_the_guest(box, monkeypatch):
+    c = Cand(box, hello=False)
+    box.s.reserve_set_in("serving")
+    box.s.reserve_guest_jrn_seen({"e": 9, "fork": 0, "last": 3})   # гость взял под 8 + 1
+    assert box.s._state_body()["e"] == 9, "state шлюзам несёт эпоху основы, а не гостя"
+    acts = box.hello(1)
+    q = gw_sent(acts, "qstate")
+    assert q and q[0][1]["e"] == 9 and q[0][1]["holder"] == "self", f"qstate новой сессии без эпохи гостя: {q}"
+    monkeypatch.setattr(box.s, "reserve_quorum_probe_ifaces",
+                        lambda: {f"awgq{LINE}h": {"l": LINE, "target": "h", "resp": "169.254.88.1", "port": 8789}})
+    box.s.reserve_quorum_voter_tick(box.clock.t)
+    assert c.v.epoch == 9, "мои пробы к её дому — с прежней эпохой: вернувшаяся основа сочтёт моё «да»"
+
+
+def test_without_hosting_the_guest_epoch_is_not_taken(box):
+    Cand(box, hello=False)
+    box.s.reserve_guest_jrn_seen({"e": 9})
+    assert box.s._state_body().get("e") == 7, "эпоха гостя без приёма пользователей — не факт"

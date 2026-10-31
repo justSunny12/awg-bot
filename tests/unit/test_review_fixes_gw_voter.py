@@ -44,3 +44,28 @@ def test_a_session_number_seen_while_offline_is_said_once_online(gw, clock):
     gw._quo_reserve_online = True
     assert len(_said(_tick(gw, clock))) == 1
     assert gw._gw_qvoters[NAME].view == "see"
+
+
+# ── эпоха из ответа клона — всем голосующим линии ───────────────────────────
+
+def test_the_epoch_of_the_clone_reply_goes_to_the_probe_of_the_home_server(gw, clock):
+    """Пользователи основы у резерва: клон отвечает эпохой E (после взятия). Пробы к основе
+    дома несут E — вернувшаяся основа следует, а не набирает «да» под прежней."""
+    import json as _json
+
+    from awgbot.util.quorum.probe import Probe
+    from tests.unit.test_gw_quorum import _sec
+    from tests.unit.test_quorum_cov_gw_agent import _answer, _probes
+    gw.quorum_apply(_sec())
+    gw.set_reserve(state="away")
+    _answer(gw, clock, "awgqar", e=13)
+    assert gw._gw_qvoters["awgqar"].epoch == 13, "подготовка: голосующий клона не принял эпоху ответа"
+    assert gw._gw_qvoters[NAME].epoch == 13, "эпоха клона не дошла до голосующего о сервере дома"
+    assert _json.loads(gw._QUO_STORE.read_text(encoding="utf-8")).get("e_known") == 13, \
+        "эпоха из ответа клона не на диске — после перезапуска агента пробы с прежней"
+    ps: list[Probe] = []
+    for _ in range(10):
+        ps += _probes(_tick(gw, clock), NAME)
+        if ps:
+            break
+    assert ps and ps[-1].e == 13, f"проба к серверу дома с прежней эпохой: {[p.e for p in ps]}"
