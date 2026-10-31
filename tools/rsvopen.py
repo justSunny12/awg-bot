@@ -185,9 +185,9 @@ def _point(item) -> tuple[int, bytes]:
     try:
         x, y = int(item[0]), bytes.fromhex(str(item[1]))
     except (TypeError, ValueError, IndexError) as e:
-        raise OpenError("доля не того вида") from e
+        raise OpenError("точка не того вида") from e
     if not 1 <= x <= 255:
-        raise OpenError("доля не того вида")
+        raise OpenError("точка не того вида")
     return x, y
 
 
@@ -421,7 +421,7 @@ def run(data: dict) -> int:
         dns = dict(data.get("dns") or {})
         if m and not dns:
             dns = seal.open_dns(blob, m) or {}
-        by_m = bool(m)                                        # по долям или коду: запись меняю я — без провайдера нельзя
+        by_m = bool(m)                                        # по точкам или коду: запись меняю я — без провайдера нельзя
         m = None                                              # M нужен был только для K и конверта DNS
         data["_ttl"] = int((dns or {}).get("ttl") or 0)      # TTL записи — гостю: пауза перед «переподключи VPN»
     except (OpenError, seal.PackageError, pkgvpn.VpnPartError) as e:

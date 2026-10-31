@@ -57,11 +57,10 @@ class ReserveKeysMixin:
         self.rsv_update("rsv_keys", code_notify_why="ящик аварийного кода создан заново — прежний код не действует")
         log.warning("резерв: ключи переведены на ящик кода — новое поколение M и новый код")
 
-    def reserve_new_generation(self, reason: str, *, code: bool = True, notify: bool = True) -> dict:
+    def reserve_new_generation(self, reason: str, *, code: bool = True) -> dict:
         """Новое поколение `M` — новый `K`, оба ящика заново (quorum/keys); новая прямая
         кода и код — только с `code` (снятие шлюза и возврат после переезда по точкам
-        код не меняют); `notify` — слать ли код тактом (у включения — своё слово)."""
-        del notify
+        код не меняют). Код админу тактом — отметка `code_notify_why` у вызывающего."""
         with _LOCK:
             keys = self.reserve_keys()
             keys.pop("a", None)                                   # прямой «2 из n» больше нет
