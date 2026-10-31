@@ -159,6 +159,26 @@ def test_a_point_of_another_generation_is_refused(c):
     assert not c.b.launched, "точка прежнего многочлена пошла в сбор"
 
 
+def test_quiet_ticks_of_the_candidate_write_nothing(c):
+    """Все видят, ничего не меняется: такты кандидата и гостевого канала не
+    пишут в базу (раньше — запись взгляда на каждом такте: коммит раз в 5 с,
+    журнал держателя рос без событий)."""
+    c.own("see")
+    c.view(1, "see")
+    c.view(2, "see")
+    for _ in range(3):
+        c.b.advance(5)
+        c.tick()
+        c.b.tick()
+    n0 = c.s.db.commits
+    for _ in range(4):
+        c.b.advance(5)
+        c.b.keepalive()
+        assert c.tick() == []
+        c.b.tick()
+    assert c.s.db.commits == n0, f"спокойные такты записали в базу {c.s.db.commits - n0} раз"
+
+
 def test_a_point_of_the_previous_generation_does_not_break_the_collection(c):
     """Поколение сменилось между qneed и qshare: шлюз отдал точку прошлого
     многочлена — отвергнута, сбор не сорван: точка текущего поколения

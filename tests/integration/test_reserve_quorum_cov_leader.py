@@ -336,6 +336,17 @@ def test_the_pause_from_sync_code_without_the_quorum_sends_nothing(q, monkeypatc
     assert got == []
 
 
+def test_quiet_ticks_of_the_leader_write_nothing(q):
+    """Лидер с большинством «да», ничего не меняется: четыре такта (с пробами
+    голосующих) — ни одного коммита базы."""
+    _lead(q)
+    q.run(30, yes=("b", "a1"))
+    n0 = q.s.db.commits
+    acts = q.run(20, yes=("b", "a1"))
+    assert q.s.db.commits == n0, f"спокойные такты лидера записали в базу {q.s.db.commits - n0} раз: {acts}"
+    assert q.meta()[:2] == ("self", "holder")
+
+
 def test_a_broken_loop_does_not_break_the_update_step(q, monkeypatch, caplog):
     from awgbot.runtime import rsvactions
 
