@@ -433,10 +433,6 @@ def run(data: dict) -> int:
             _step("k", pkg_gen=head.pkg_gen)
         parts = seal.open_parts(blob, k)
         vpn = pkgvpn.check(parts.get("vpn"))
-        if vpn.get("v6_dropped"):
-            # зона IPv4-only: пакет прежнего выпуска мог нести адрес IPv6 — он прочь, в журнал (stderr — rsvopen.err)
-            print("адреса IPv6 в пакете отброшены (зона только IPv4): " + ", ".join(map(str, vpn["v6_dropped"]))[:300],
-                  file=sys.stderr, flush=True)
         if not isinstance(parts.get("bot"), dict):
             raise OpenError("в пакете нет части бота")
         _step("parts", ifaces=",".join(i["name"] for i in vpn["ifaces"]))
