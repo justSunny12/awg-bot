@@ -273,3 +273,59 @@ def test_the_guest_gets_the_kind_of_the_move_as_its_reason(c, kind, case, word):
     v = c.s.reserve_guest_state_view()
     assert v["reason"] == kind, f"гостю причина {v['reason']!r} вместо вида переезда {kind!r}"
     assert word in gt.main_line(v), f"главная строка гостя без причины: {gt.main_line(v)!r}"
+
+
+# ── просьба кандидата лидеру с большинством «да» (Q8-5) ─────────────────────
+
+SINCE = "2026-10-30T10:05:00+03:00"
+
+
+def _lead(svc, yes: int, *, fenced: bool = False):
+    """Машина лидера своей линии a: голосующие b, a1, a2 (v = 3), «да» — первые yes свежими пробами."""
+    import time as _t
+    from awgbot.util.quorum.leader import Leader, Seen
+    ld = Leader("a", 3, 7, "b", voters=("b", "a1", "a2"))
+    ld.fenced, ld.starting = fenced, False
+    now = _t.monotonic()
+    for n in ("b", "a1", "a2")[:yes]:
+        ld.seen[n] = Seen("see", 7, 0, now)
+    svc.__dict__["_rsv_qleader"] = ld
+    return ld
+
+
+@pytest.fixture()
+def lead_world(services, rsv, monkeypatch):
+    rc.pair_row(services)
+    moves: list[dict] = []
+    monkeypatch.setattr(services, "reserve_move_check", lambda: "")
+    monkeypatch.setattr(services, "reserve_move_start", lambda **kw: moves.append(kw) or {})
+    return services, moves
+
+
+def test_a_leader_with_a_yes_majority_refuses_the_quorum_ask(lead_world):
+    svc, moves = lead_world
+    ld = _lead(svc, yes=2)
+    assert ld.yes_count(__import__("time").monotonic()) == 2, "подготовка: «да» не два"
+    acts = svc.reserve_ask_in("q", SINCE)
+    assert acts == [("send", "ask_no", {"reason": "quorum"})], f"лидер с большинством «да» согласился: {acts}"
+    assert moves == [], "лидер с большинством «да» отдал пользователей по одному слову канала пары"
+
+
+@pytest.mark.parametrize("yes,fenced", [(1, False), (0, False), (3, True)], ids=["minority", "none", "fenced"])
+def test_a_leader_without_a_yes_majority_or_fenced_hands_over(lead_world, yes, fenced):
+    svc, moves = lead_world
+    _lead(svc, yes=yes, fenced=fenced)
+    acts = svc.reserve_ask_in("q", SINCE)
+    assert acts == [("live",)] and moves == [{"kind": "dead", "dead_since": SINCE}], f"лидер без кворума не отдал: {acts}"
+
+
+def test_the_candidate_refused_with_quorum_goes_by_points_after_ask_seconds(c):
+    """Отказ «у лидера кворум» — не «занят»: просьба не повторяется, через ask_seconds — точки
+    (их дадут только шлюзы, которые сами лидера не видят); цикла просьб нет."""
+    from tests.integration._reserve_vote_common import sent
+    acts = _majority(c) + c.run(T_UP)
+    assert len(sent(acts, "ask")) == 1, "подготовка: просьба лидеру не ушла"
+    assert c.s.reserve_ask_no_in("quorum") == []
+    acts = c.run(ASK + 5)
+    assert not sent(acts, "ask"), "после отказа «у лидера кворум» просьба повторена"
+    assert sorted({s for s, _ in gw_sent(acts, "qneed")}) == [1, 2] and c.stage() == "points"
