@@ -15,6 +15,13 @@ livestep.py — живость постоянного линка AWG по про
 после «недоступна» ставит `pending_up`: «снова на связи» отдаёт ближайший
 такт (один путь для счётчика и для слова).
 
+Такт (`step`) и слова (`word`, `pong`) приходят из разных потоков (такт
+планировщика и обработчики слов канала — оба через to_thread): у объекта свой
+замок, шаг и слово исполняются целиком. Без него слово, пришедшее посреди
+шага «подозрение → недоступна», затирало бы `state` на `ok` после того, как
+шаг уже вернул «down»: уведомление ушло, отметка на диске стоит, а «снова на
+связи» не наступит — `alive` отдаёт «up» только из `down`.
+
 Внизу — помощники для отметок `time.monotonic()`, записанных в базу (сроки
 шагов переезда и возврата, пробы, демпфер, повторы просьб): после
 перезагрузки хоста monotonic начинается заново, и отметка прежней загрузки
@@ -27,6 +34,7 @@ livestep.py — живость постоянного линка AWG по про
 from __future__ import annotations
 
 import secrets
+import threading
 from dataclasses import dataclass, field
 
 PROBE_EVERY = 5
@@ -46,10 +54,17 @@ class Liveness:
     told: bool = False              # уведомление «недоступен» ушло
     pending_up: bool = False        # слово по каналу после «недоступен»: «снова на связи» отдаст такт
     events: list = field(default_factory=list)
+    # замок объекта: такт и слова — из разных потоков; RLock — alive/ping зовутся и изнутри step
+    lock: threading.RLock = field(default_factory=threading.RLock, repr=False, compare=False)
 
 
 def step(lv: Liveness, now: float, rx: int | None, *, suspect_s: int, probe_s: int) -> str:
     """Один такт. Возвращает действие: "" / "ping" / "down" / "up"."""
+    with lv.lock:
+        return _step(lv, now, rx, suspect_s=suspect_s, probe_s=probe_s)
+
+
+def _step(lv: Liveness, now: float, rx: int | None, *, suspect_s: int, probe_s: int) -> str:
     if lv.last_life == 0.0:
         lv.last_life = now
     if lv.pending_up:
@@ -79,36 +94,40 @@ def step(lv: Liveness, now: float, rx: int | None, *, suspect_s: int, probe_s: i
 
 
 def ping(lv: Liveness, now: float) -> str:
-    lv.pings += 1
-    lv.last_ping = now
-    lv.nonce = secrets.token_hex(8)
-    return "ping"
+    with lv.lock:
+        lv.pings += 1
+        lv.last_ping = now
+        lv.nonce = secrets.token_hex(8)
+        return "ping"
 
 
 def alive(lv: Liveness, now: float) -> str:
-    lv.last_life = now
-    was = lv.state
-    lv.state, lv.pings = "ok", 0
-    return "up" if was == "down" else ""
+    with lv.lock:
+        lv.last_life = now
+        was = lv.state
+        lv.state, lv.pings = "ok", 0
+        return "up" if was == "down" else ""
 
 
 def word(lv: Liveness, now: float) -> None:
     """Слово по каналу (hello, любое сообщение, pong): жизнь. После «недоступен»
     состояние не меняем здесь — «снова на связи» со всеми отметками отдаст
     ближайший такт."""
-    lv.last_life = now
-    if lv.state == "down":
-        lv.pending_up = True
-    else:
-        lv.state, lv.pings = "ok", 0
+    with lv.lock:
+        lv.last_life = now
+        if lv.state == "down":
+            lv.pending_up = True
+        else:
+            lv.state, lv.pings = "ok", 0
 
 
 def pong(lv: Liveness, now: float, nonce: str) -> bool:
     """Ответ на пробу с нашим нонсом — слово; чужой нонс — нет."""
-    if nonce and nonce == lv.nonce:
-        word(lv, now)
-        return True
-    return False
+    with lv.lock:
+        if nonce and nonce == lv.nonce:
+            word(lv, now)
+            return True
+        return False
 
 
 # ── монотонные отметки в базе и перезагрузка хоста ───────────────────────────

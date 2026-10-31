@@ -30,7 +30,7 @@ from ..gateway_link.common import log
 
 # машина живости — util/livestep (общая с агентом шлюза); имена оставлены для тестов
 from awgbot.util.livestep import (Liveness, step, PROBE_EVERY, PROBE_COUNT,  # noqa: E402,F401
-                                  ping as _ping, alive as _alive, word as _word)
+                                  ping as _ping, alive as _alive, word as _word, pong as _pong)
 
 __all__ = ["Liveness", "step", "PROBE_EVERY", "PROBE_COUNT", "_ping", "_alive", "_word", "ReserveLivenessMixin"]
 
@@ -109,9 +109,7 @@ class ReserveLivenessMixin:
         return []
 
     def reserve_pong_in(self, nonce: str) -> list[Notification]:
-        lv = self._lv
-        if nonce == lv.nonce:
-            _word(lv, time.monotonic())
+        _pong(self._lv, time.monotonic(), str(nonce or ""))   # сверка нонса и слово — под замком объекта
         return []
 
     def reserve_ping_nonce(self) -> str:
