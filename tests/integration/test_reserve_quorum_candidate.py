@@ -159,6 +159,84 @@ def test_a_point_of_another_generation_is_refused(c):
     assert not c.b.launched, "точка прежнего многочлена пошла в сбор"
 
 
+def test_quiet_ticks_of_the_candidate_write_nothing(c):
+    """Все видят, ничего не меняется: такты кандидата и гостевого канала не
+    пишут в базу (раньше — запись взгляда на каждом такте: коммит раз в 5 с,
+    журнал держателя рос без событий)."""
+    c.own("see")
+    c.view(1, "see")
+    c.view(2, "see")
+    for _ in range(3):
+        c.b.advance(5)
+        c.tick()
+        c.b.tick()
+    n0 = c.s.db.commits
+    for _ in range(4):
+        c.b.advance(5)
+        c.b.keepalive()
+        assert c.tick() == []
+        c.b.tick()
+    assert c.s.db.commits == n0, f"спокойные такты записали в базу {c.s.db.commits - n0} раз"
+
+
+def test_a_point_of_the_previous_generation_does_not_break_the_collection(c):
+    """Поколение сменилось между qneed и qshare: шлюз отдал точку прошлого
+    многочлена — отвергнута, сбор не сорван: точка текущего поколения
+    открывает, как будто прежней не было."""
+    _points_stage(c)
+    c.share(1, q_gen=Q_GEN - 1)
+    assert c.stage() == "points" and not c.b.launched
+    c.share(1)
+    assert len(c.b.launched) == 1 and c.b.launched[0]["qpoints"] == [[rsvkeys.RESERVE_X, RSV_Y],
+                                                                     [rsvkeys.gateway_x(1), GW1_Y]]
+
+
+def test_points_arriving_from_the_channel_thread_while_the_tick_collects_them(c):
+    """qshare вставляет точку из потока гостевого канала, пока такт кандидата
+    собирает их (_quorum_try_open): ни RuntimeError «dictionary changed size
+    during iteration». Барьер выравнивает старт потоков; поток канала
+    вставляет и снимает точки, пока такт собирает их сотни раз, а переключение
+    потоков учащено — без копии словаря при сборе тест краснеет."""
+    import sys
+    import threading
+    _points_stage(c)
+    ex = c.s.__dict__["_quo_exec"]
+    cand = c.s._qcand
+    real_open, real_update = c.s.reserve_open_by_points, c.s.rsv_update
+    c.s.reserve_open_by_points = lambda *a, **k: []          # сбор без запуска: стадия не уходит из points
+    c.s.rsv_update = lambda *a, **k: None                    # отметка moved_by — мимо базы: тест о словаре
+    for i in range(300):
+        ex["points"][str(1000 + i)] = "ab"
+    gate, stop = threading.Barrier(2), threading.Event()
+    errors: list[BaseException] = []
+
+    def channel():
+        gate.wait(5)
+        i = 0
+        while not stop.is_set():
+            ex["points"][str(5000 + i)] = "ab"
+            ex["points"].pop(str(5000 + i - 50), None)
+            i += 1
+
+    t = threading.Thread(target=channel)
+    old = sys.getswitchinterval()
+    sys.setswitchinterval(1e-6)
+    t.start()
+    gate.wait(5)
+    try:
+        for _ in range(500):
+            ex["stage"] = "points"
+            c.s._quorum_try_open(cand)
+    except BaseException as e:                                # noqa: BLE001
+        errors.append(e)
+    finally:
+        stop.set()
+        t.join(5)
+        sys.setswitchinterval(old)
+        c.s.reserve_open_by_points, c.s.rsv_update = real_open, real_update
+    assert errors == [], errors
+
+
 def test_a_point_with_a_wrong_x_or_length_is_refused(c):
     _points_stage(c)
     c.s.reserve_guest_in(1, "qshare", {"l": LINE, "q_gen": Q_GEN, "x": rsvkeys.gateway_x(2), "y": GW1_Y})

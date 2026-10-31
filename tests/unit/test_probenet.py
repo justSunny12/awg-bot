@@ -43,7 +43,7 @@ def test_is_probe_never_raises_on_odd_input():
     """Вызывают на каждом пире каждой сверки: исключение из разбора адреса
     уронило бы сверку целиком, а не один пир."""
     for v in (0, 123, b"169.254.88.5", object()):
-        probenet.is_probe(v)
+        assert probenet.is_probe(v) is False, repr(v)
 
 
 def test_the_block_is_exactly_a_slash_24():

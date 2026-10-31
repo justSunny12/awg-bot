@@ -1,7 +1,9 @@
 """E2E: слой доставки уведомлений (bot.notifier.send_notifications / notify_one).
 
 Проверяем контракт доставки: пропуск пустого адресата, тихие часы vs force_sound,
-проброс/дефолт клавиатуры, устойчивость к ошибке отправки одному из адресатов.
+проброс/дефолт клавиатуры, устойчивость к ошибке отправки одному из адресатов,
+429 (RetryAfter): пауза ровно retry_after и один повтор, on_sent только при
+доставке, письмо критичного алерта после сетевого отказа, окно пачки при паузе.
 """
 import pytest
 
@@ -86,7 +88,8 @@ async def test_default_markup_is_hide_only_else_passthrough():
         Notification(111, "default"),
         Notification(222, "custom", reply_markup=custom)])
     by_id = {c["chat_id"]: c for c in bot.calls}
-    assert by_id[111]["reply_markup"] is not None          # дефолт — «Скрыть»
+    # дефолт — ровно одна «Скрыть» (а не «какая-то клавиатура»)
+    assert by_id[111]["reply_markup"].model_dump() == kb.hide_only().model_dump()
     assert by_id[222]["reply_markup"] is custom            # своя клавиатура сохранена
 
 
@@ -139,3 +142,160 @@ async def test_email_fallback_counts_as_delivery():
     finally:
         notifier.set_email_fallback(None)
     assert done == ["mail"], "почта — доставка только для критичного"
+
+
+# ── 429 (RetryAfter): пауза, один повтор, подтверждение и окно пачки ─────────
+# Цена ошибки: повтор без паузы или второй повтор — бот глубже уходит во
+# флуд-контроль; on_sent при недоставке — монитор считает алерт показанным;
+# окно шире _PARALLEL при паузе посреди пачки — рассылка сама вызывает 429.
+
+import asyncio                                                   # noqa: E402
+import logging                                                   # noqa: E402
+import types                                                     # noqa: E402
+
+from aiogram.exceptions import TelegramNetworkError, TelegramRetryAfter  # noqa: E402
+from aiogram.methods import SendMessage                          # noqa: E402
+
+import awgbot.core.config as _cfg                                # noqa: E402
+
+
+def _ra(sec: int) -> TelegramRetryAfter:
+    return TelegramRetryAfter(method=SendMessage(chat_id=1, text="x"),
+                              message="Too Many Requests", retry_after=sec)
+
+
+def _net() -> TelegramNetworkError:
+    return TelegramNetworkError(method=SendMessage(chat_id=1, text="x"), message="network down")
+
+
+class ScriptedBot:
+    """send_message по сценарию адресата: очередь исключений, исчерпана — доставлено.
+    Считает попытки и одновременно летящие отправки."""
+    def __init__(self, script=None, delay=0.0):
+        self.script = {k: list(v) for k, v in (script or {}).items()}
+        self.attempts, self.delivered = [], []
+        self.inflight = self.peak = 0
+        self.delay = delay
+
+    async def send_message(self, chat_id, text, reply_markup=None, disable_notification=False, **kw):
+        self.attempts.append(chat_id)
+        self.inflight += 1
+        self.peak = max(self.peak, self.inflight)
+        try:
+            if self.delay:
+                await asyncio.sleep(self.delay)
+            queue = self.script.get(chat_id) or []
+            if queue:
+                raise queue.pop(0)
+            self.delivered.append(chat_id)
+            return types.SimpleNamespace(message_id=100 + len(self.delivered), chat_id=chat_id)
+        finally:
+            self.inflight -= 1
+
+
+@pytest.fixture
+def sleeps(monkeypatch):
+    """Сон внутри notifier записывается, а не идёт: пауза 429 видна числом, тест
+    её не ждёт. Подменён модуль asyncio только у notifier — заглушка бота и
+    цикл событий спят по-настоящему."""
+    seen = []
+    real = asyncio.sleep
+    fake = types.ModuleType("asyncio")
+    fake.__dict__.update(vars(asyncio))
+
+    async def sleep(sec, *a, **k):
+        seen.append(sec)
+        await real(0)
+    fake.sleep = sleep
+    monkeypatch.setattr(notifier, "asyncio", fake)
+    return seen
+
+
+@pytest.fixture
+def mails():
+    sent = []
+
+    async def fb(text):
+        sent.append(text)
+    notifier.set_email_fallback(fb)
+    yield sent
+    notifier.set_email_fallback(None)
+
+
+async def test_retry_after_waits_the_given_time_and_retries_once(sleeps):
+    bot = ScriptedBot({111: [_ra(3)]})
+    done = []
+    await notifier.send_notifications(bot, [Notification(111, "x", on_sent=lambda: done.append(1))])
+    assert bot.attempts == [111, 111] and bot.delivered == [111]
+    assert sleeps == [3], "пауза — ровно retry_after"
+    assert done == [1], "доставка после повтора не подтверждена (или подтверждена дважды)"
+
+
+async def test_a_second_retry_after_is_not_retried_and_not_confirmed(sleeps, caplog):
+    bot = ScriptedBot({111: [_ra(3), _ra(3)]})
+    done = []
+    with caplog.at_level(logging.WARNING, logger="awgbot.notifier"):
+        await notifier.send_notifications(bot, [Notification(111, "x", on_sent=lambda: done.append(1))])
+    assert bot.attempts == [111, 111], "второй повтор после второго 429"
+    assert bot.delivered == [] and done == [], "on_sent при недоставке"
+    assert sleeps == [3]
+    assert any("после retry" in r.getMessage() for r in caplog.records)
+
+
+async def test_a_network_failure_after_retry_after_sends_the_critical_alert_by_mail(sleeps, mails):
+    bot = ScriptedBot({_cfg.ADMIN_ID: [_ra(2), _net(), _ra(2), _net()]})
+    done = []
+    # по одному: оба адресованы админу, сценарий у адресата общий
+    await notifier.send_notifications(bot, [
+        Notification(_cfg.ADMIN_ID, "🚨 крит", critical=True, on_sent=lambda: done.append("crit"))])
+    await notifier.send_notifications(bot, [
+        Notification(_cfg.ADMIN_ID, "обычное", on_sent=lambda: done.append("plain"))])
+    assert len(mails) == 1 and "🚨 крит" in mails[0], mails
+    assert done == ["crit"], "почта засчитана не критичному"
+    assert bot.attempts.count(_cfg.ADMIN_ID) == 4
+
+
+async def test_a_non_network_failure_after_retry_after_is_not_mailed(sleeps, mails):
+    """Отказ по существу (заблокировал бота) после повтора — не повод для письма."""
+    bot = ScriptedBot({_cfg.ADMIN_ID: [_ra(2), RuntimeError("Forbidden: bot was blocked")]})
+    done = []
+    await notifier.send_notifications(bot, [
+        Notification(_cfg.ADMIN_ID, "🚨 крит", critical=True, on_sent=lambda: done.append(1))])
+    assert mails == [] and done == []
+
+
+@pytest.mark.xfail(strict=True, reason="BC-2: пауза 429 без предела, критичный алерт письмом не уходит")
+async def test_a_long_retry_after_on_a_critical_alert_goes_to_mail_without_waiting(sleeps, mails):
+    """RetryAfter(300) на критичном алерте админу: письмо сразу, пятиминутного
+    ожидания нет (при правке BC-2 тест станет зелёным — снять отметку xfail)."""
+    bot = ScriptedBot({_cfg.ADMIN_ID: [_ra(300)]})
+    await notifier.send_notifications(bot, [Notification(_cfg.ADMIN_ID, "🚨 крит", critical=True)])
+    assert max(sleeps, default=0) <= 30, f"ждали {max(sleeps)} с"
+    assert len(mails) == 1
+
+
+async def test_notify_one_returns_the_message_sent_by_the_retry(sleeps):
+    settings.set_value("quiet_hours.quiet_hours_enabled", False)
+    bot = ScriptedBot({555: [_ra(1)]})
+    sent = await notifier.notify_one(bot, 555, "hi")
+    assert sent is not None and sent.message_id == 101 and bot.attempts == [555, 555]
+
+
+async def test_retry_after_mid_batch_keeps_the_window_and_delivers_all(sleeps):
+    """12 адресатов, 429 у двоих посреди пачки: одновременно летящих отправок
+    не больше окна (пауза держит свой слот, а не открывает лишний), окно
+    действительно параллельно, все доставлены, у двоих — по повтору."""
+    ids = list(range(1, 13))
+    bot = ScriptedBot({4: [_ra(1)], 8: [_ra(1)]}, delay=0.01)
+    await notifier.send_notifications(bot, [Notification(i, "x") for i in ids])
+    assert sorted(bot.delivered) == ids
+    assert len(bot.attempts) == 14 and bot.attempts.count(4) == bot.attempts.count(8) == 2
+    assert 1 < bot.peak <= notifier._PARALLEL, bot.peak
+    assert sleeps.count(1) == 2, sleeps
+
+
+async def test_broadcast_retries_once_after_retry_after(sleeps):
+    bot = ScriptedBot({5: [_ra(1)], 6: [_ra(1), _ra(1)]})
+    ok, failed = await notifier.broadcast(bot, [5, 6, 7], "t", [])
+    assert (ok, failed) == (2, [6])
+    assert bot.attempts.count(5) == bot.attempts.count(6) == 2 and bot.attempts.count(7) == 1

@@ -56,11 +56,20 @@ def test_trigger_debounces_to_on_change():
     w.stop()
 
 
-def test_fire_swallows_callback_error():
+def test_fire_swallows_callback_error(caplog):
+    """Колбэк упал — в журнал, а следующее событие снова доходит до колбэка."""
+    calls = []
+
     def boom():
-        raise RuntimeError("x")
+        calls.append(1)
+        if len(calls) == 1:
+            raise RuntimeError("x")
     w = AwgWatcher(on_change=boom, debounce=0.01)
-    w._fire()                                               # не должно поднять исключение
+    with caplog.at_level("WARNING"):
+        w._fire()                                           # не должно поднять исключение
+    assert "on_change: x" in caplog.text
+    w._fire()
+    assert calls == [1, 1]
     w.stop()
 
 

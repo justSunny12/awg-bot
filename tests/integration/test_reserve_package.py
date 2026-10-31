@@ -663,5 +663,10 @@ def test_stripping_the_share_tolerates_a_missing_empty_or_foreign_value(value):
 
 
 def test_stripping_the_share_tolerates_a_base_without_server_state():
+    """База без server_state (бэкап до таблицы): снятие доли не падает и не
+    заводит таблиц — архив уходит таким, каким был."""
     from awgbot.domain.backup import archive
-    archive._strip_foreign_share(sqlite3.connect(":memory:"))
+    con = sqlite3.connect(":memory:")
+    con.execute("CREATE TABLE clients (id INTEGER PRIMARY KEY)")
+    archive._strip_foreign_share(con)
+    assert [r[0] for r in con.execute("SELECT name FROM sqlite_master")] == ["clients"]

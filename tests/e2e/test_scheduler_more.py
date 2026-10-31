@@ -41,10 +41,12 @@ async def test_monitor_tunnel_status_transition_and_rebind(services, fake_bot, m
     assert any(r[0] == "send_message" for r in fake_bot.records)   # уведомление о падении
 
 
-async def test_monitor_swallows_errors(services, fake_bot, monkeypatch):
+async def test_monitor_swallows_errors(services, fake_bot, monkeypatch, caplog):
     monkeypatch.setattr(services, "detect_and_handle_restart",
                         lambda: (_ for _ in ()).throw(RuntimeError("boom")))
-    await _jobs(services, fake_bot)["monitor"]()           # не должно поднять исключение
+    with caplog.at_level("WARNING"):
+        await _jobs(services, fake_bot)["monitor"]()       # не должно поднять исключение
+    assert "boom" in caplog.text, "отказ монитора проглочен молча"
 
 
 # ── job_backup: реальная отправка файлов ─────────────────────────────────────
@@ -73,7 +75,10 @@ async def test_job_purge_history_runs(services, fake_bot, monkeypatch):
     assert called["n"] == 1
 
 
-async def test_job_purge_history_swallows(services, fake_bot, monkeypatch):
+async def test_job_purge_history_swallows(services, fake_bot, monkeypatch, caplog):
     monkeypatch.setattr(services, "purge_old_history",
                         lambda: (_ for _ in ()).throw(RuntimeError("db locked")))
-    await _jobs(services, fake_bot)["purge_history"]()      # не поднимает
+    with caplog.at_level("WARNING"):
+        await _jobs(services, fake_bot)["purge_history"]()  # не поднимает
+    assert "db locked" in caplog.text, "отказ чистки истории проглочен молча"
+    assert fake_bot.records == []

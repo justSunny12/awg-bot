@@ -101,3 +101,89 @@ async def test_group_and_channel_events_are_dropped(db):
         assert await mw(handler, _msg(), {"event_from_user": user, "event_chat": chat}) is None, kind
     chat = Chat.model_construct(id=config.ADMIN_ID, type="private")
     assert await mw(handler, _msg(), {"event_from_user": user, "event_chat": chat}) == "HANDLED"
+
+
+# ── недостающие ветки охраны ─────────────────────────────────────────────────
+# Цена ошибки: не активированный профиль или служебная строка с совпавшим
+# tg_id получают экраны пользователя; посторонний колбэк получает ответ (бот
+# подтверждает своё существование) или стоит запросов в БД на каждый апдейт.
+
+from awgbot.core import access_cache                              # noqa: E402
+from tests.conftest import FakeCallback                           # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _fresh_cache():
+    access_cache.invalidate_all()
+    yield
+    access_cache.invalidate_all()
+
+
+def _set_row(db, cid, **cols):
+    sets = ", ".join(f"{k} = ?" for k in cols)
+    with db._tx() as cur:
+        cur.execute(f"UPDATE clients SET {sets} WHERE id = ?", (*cols.values(), cid))
+
+
+async def _cb(mw, uid, data="menu"):
+    seen = {}
+
+    async def handler(event, d):
+        seen.update(d)
+        return "HANDLED"
+    cb = FakeCallback(data=data, user_id=uid)
+    user = User.model_construct(id=uid, is_bot=False, first_name="U")
+    out = await mw(handler, cb, {"event_from_user": user})
+    return out, cb, (seen if out == "HANDLED" else None)
+
+
+async def test_a_pending_profile_with_the_tg_id_is_a_stranger(services, make_active_client):
+    """Строка с tg_id, но не ACTIVE: текст — молчание, кнопка — молча, /start —
+    активация (а не меню пользователя)."""
+    c = make_active_client(tg_id=5100)
+    _set_row(services.db, c.id, activation_status="pending")
+    mw = AccessMiddleware(services.db)
+    assert await _run(mw, uid=5100, text="меню") == (None, None)
+    out, cb, _ = await _cb(mw, 5100)
+    assert out is None and cb.answers == [], "посторонний колбэк получил ответ"
+    result, data = await _run(mw, uid=5100, text="/start")
+    assert result == "HANDLED" and data["role"] == "activation" and data["client"] is None
+
+
+async def test_a_service_row_with_the_tg_id_is_a_stranger(services, make_active_client):
+    c = make_active_client(tg_id=5101)
+    _set_row(services.db, c.id, is_service=1)
+    mw = AccessMiddleware(services.db)
+    assert await _run(mw, uid=5101, text="меню") == (None, None)
+    out, cb, _ = await _cb(mw, 5101)
+    assert out is None and cb.answers == []
+    result, data = await _run(mw, uid=5101, text="/start")
+    assert data["role"] == "activation"
+
+
+async def test_a_stranger_callback_is_silent_and_negatively_cached(db, monkeypatch):
+    """Колбэк постороннего: None, всплывашки нет; второй апдейт — без SQL."""
+    calls = []
+    orig = db.get_client_by_tg
+    monkeypatch.setattr(db, "get_client_by_tg", lambda uid: (calls.append(uid), orig(uid))[1])
+    mw = AccessMiddleware(db)
+    for _ in range(2):
+        out, cb, _ = await _cb(mw, 8889)
+        assert out is None and cb.answers == []
+    assert calls == [8889], "второй колбэк постороннего снова пошёл в БД"
+
+
+async def test_start_with_the_bot_name_and_code_from_a_stranger_is_activation(db):
+    mw = AccessMiddleware(db)
+    for text in ("/start@AwgTestBot", "/start@AwgTestBot CabcABC12345", "/code CabcABC12345",
+                 "/code@AwgTestBot CabcABC12345"):
+        result, data = await _run(mw, uid=8890, text=text)
+        assert result == "HANDLED" and data["role"] == "activation", text
+    for text in ("/startx", "/menu", "start", "/codes 1"):
+        assert await _run(mw, uid=8890, text=text) == (None, None), text
+
+
+async def test_a_stranger_message_without_text_is_dropped(db):
+    """Фото/стикер без подписи от постороннего: event.text пуст — молчание."""
+    mw = AccessMiddleware(db)
+    assert await _run(mw, uid=8891, text=None) == (None, None)

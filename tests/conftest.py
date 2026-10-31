@@ -320,8 +320,14 @@ def fake_routing(monkeypatch, tmp_path):
     # Сигнатуры двойников повторяют настоящие ВКЛЮЧАЯ iface: интерфейсов на
     # время переезда два, и двойник без этого параметра молча разошёлся бы с
     # боевым кодом ровно на той правке, ради которой параметр и появился.
-    # контракт настоящей: (тело, ошибка) — ровно одно из двух непусто
-    _set("fetch", lambda url, timeout=15: (None, "заглушка: источник не настроен", 0))
+    # контракт настоящей: (тело, ошибка) — ровно одно из двух непусто; умолчание
+    # таймаута — как у настоящей (10 с), больше — провал теста (правило «наружу
+    # ≤ 10 с»): pytest.fail — BaseException, широкий except вызывающего его не глотает
+    def _fetch(url, timeout=10):
+        if timeout > 10:
+            pytest.fail(f"routing.fetch({url!r}) с таймаутом {timeout} с — больше 10 с", pytrace=False)
+        return None, "заглушка: источник не настроен", 0
+    _set("fetch", _fetch)
     _set("destroy_set", lambda name: state.sets.pop(name, None))
     _set("list_sets", lambda: sorted(state.sets))
     _set("snapshot_sets", lambda only=None: {k: set(v) for k, v in state.sets.items()})

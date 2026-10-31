@@ -32,7 +32,12 @@ def test_import_every_awgbot_module():
 
 
 def test_import_entrypoint_and_tools():
-    importlib.import_module("awgbot.__main__")
-    importlib.import_module("tools.restore_backup")
+    """Точка входа и утилита восстановления импортируются и несут то, что
+    зовут `python -m awgbot` и скрипт восстановления."""
+    import inspect
+    entry = importlib.import_module("awgbot.__main__")
+    assert inspect.iscoroutinefunction(entry.main), "python -m awgbot: main — не корутина"
+    tool = importlib.import_module("tools.restore_backup")
+    assert callable(tool.main)
 
 

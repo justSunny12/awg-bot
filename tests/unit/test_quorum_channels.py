@@ -145,9 +145,25 @@ async def test_the_guestctl_action_goes_to_the_reserve_bot_over_the_local_channe
     assert sent == [("qcount", {"y": 1, "v": 3, "r": "lead"})]
 
 
-async def test_the_guestctl_action_without_a_channel_is_dropped_quietly(monkeypatch):
+async def test_the_guestctl_action_without_a_channel_is_dropped_quietly(monkeypatch, caplog):
+    """Канала нет: строка в журнале уровня info («не ушло»), не предупреждение
+    об отказе действия, и следующие действия списка выполняются."""
     monkeypatch.setattr(guestctl, "client", lambda: None)
-    await rsvactions.run([("guestctl", "qcount", {"y": 1})])
+    ran = []
+
+    async def one(act):
+        if act[0] == "notify":
+            ran.append(act)
+            return
+        return await real_one(act)
+    real_one = rsvactions._one
+    monkeypatch.setattr(rsvactions, "_one", one)
+    with caplog.at_level("INFO", logger=rsvactions.log.name):
+        await rsvactions.run([("guestctl", "qcount", {"y": 1}), ("notify", [])])
+    msgs = [(r.levelname, r.getMessage()) for r in caplog.records]
+    assert ("INFO", "резерв: боту резерва «qcount» не ушло — канала нет") in msgs, msgs
+    assert not [m for lvl, m in msgs if lvl == "WARNING"], msgs
+    assert ran == [("notify", [])]
 
 
 async def test_the_link_action_of_the_agent_goes_over_the_config_channel(monkeypatch):

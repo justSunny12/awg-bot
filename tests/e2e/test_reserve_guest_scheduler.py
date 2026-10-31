@@ -97,8 +97,10 @@ async def test_the_channel_tick_runs_the_callback_and_swallows_its_failure(servi
         restore_settings()
 
 
-async def test_the_channel_tick_without_a_callback_does_nothing(guest_sched):
-    await guest_sched.get_job("guest_ctl").func()
+async def test_the_channel_tick_without_a_callback_does_nothing(guest_sched, fake_bot, caplog):
+    with caplog.at_level("WARNING"):
+        assert await guest_sched.get_job("guest_ctl").func() is None
+    assert fake_bot.records == [] and not caplog.records
 
 
 async def test_the_snapshot_job_writes_through_the_service_and_swallows_failures(guest_sched, services, monkeypatch):
@@ -155,11 +157,16 @@ async def test_the_routing_job_reconciles_and_sends_the_infra_alerts(guest_sched
     assert [r for r in fake_bot.records if r[0] == "send_message" and "списки РФ-доступа" in r[2]], fake_bot.records
 
 
-async def test_a_failing_routing_job_does_not_raise_into_the_scheduler(guest_sched, services, monkeypatch):
+async def test_a_failing_routing_job_does_not_raise_into_the_scheduler(guest_sched, services, fake_bot,
+                                                                       monkeypatch, caplog):
     monkeypatch.setattr(services, "reconcile_routing", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("nft")))
-    await guest_sched.get_job("guest_routing").func()
     monkeypatch.setattr(services, "routing_liveness_tick", lambda: (_ for _ in ()).throw(RuntimeError("зонд")))
-    await guest_sched.get_job("routing_liveness").func()
+    with caplog.at_level("WARNING"):
+        await guest_sched.get_job("guest_routing").func()
+        await guest_sched.get_job("routing_liveness").func()
+    warned = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+    assert any("nft" in w for w in warned) and any("зонд" in w for w in warned), warned
+    assert [r for r in fake_bot.records if r[0] == "send_message"] == []
 
 
 async def test_the_liveness_job_ticks_the_slots_and_sends_its_notes(guest_sched, services, fake_bot, monkeypatch):

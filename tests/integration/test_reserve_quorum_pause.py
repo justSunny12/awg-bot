@@ -133,8 +133,17 @@ async def test_run_threadsafe_puts_the_actions_on_the_bot_loop(monkeypatch):
 
 
 def test_run_threadsafe_without_a_loop_is_silent(monkeypatch):
+    """Цикла нет или он закрыт (остановка бота): ничего не ставится, не падает."""
+    scheduled = []
+    monkeypatch.setattr(rsvactions.asyncio, "run_coroutine_threadsafe",
+                        lambda coro, loop: (scheduled.append(loop), coro.close()))
     monkeypatch.setitem(rsvactions._ctx, "loop", None)
-    rsvactions.run_threadsafe([("gwlink", 1, "qpause", {})])          # не падает
+    assert rsvactions.run_threadsafe([("gwlink", 1, "qpause", {})]) is None
+    closed = asyncio.new_event_loop()
+    closed.close()
+    monkeypatch.setitem(rsvactions._ctx, "loop", closed)
+    assert rsvactions.run_threadsafe([("gwlink", 1, "qpause", {})]) is None
+    assert scheduled == [], "действие поставлено на мёртвый цикл"
 
 
 # ── кто зовёт ───────────────────────────────────────────────────────────────
