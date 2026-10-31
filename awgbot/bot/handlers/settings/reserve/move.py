@@ -118,10 +118,9 @@ async def _webhook_info(bot) -> dict | None:
     import asyncio
     try:
         info = await asyncio.wait_for(bot.get_webhook_info(), 10)
-        err = getattr(info, "last_error_date", None)
-        err_ts = err.timestamp() if hasattr(err, "timestamp") else float(err or 0)   # aiogram 3 — datetime
+        from awgbot.util import timeutil
         return {"url": str(info.url or ""), "pending_update_count": int(info.pending_update_count or 0),
-                "last_error_date": err_ts}
+                "last_error_date": timeutil.epoch_seconds(getattr(info, "last_error_date", None))}
     except Exception as e:                                   # noqa: BLE001
         log.warning("резерв: рычаг «вернуть без резерва»: getWebhookInfo не прошёл: %s", e)
         return None

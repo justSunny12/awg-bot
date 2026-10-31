@@ -189,7 +189,7 @@ class WebhookServer:
         self.url_ours = info.url == self.conf.url
         if not self.url_ours:
             return {"foreign": True, "url": info.url or ""}
-        err_at = int(getattr(info, "last_error_date", None) or 0)
+        err_at = timeutil.epoch_seconds(getattr(info, "last_error_date", None))   # aiogram 3 — datetime
         fresh = err_at and time.time() - err_at < STALL_FRESH_SECONDS
         pending = int(getattr(info, "pending_update_count", 0) or 0)
         stalled = bool(fresh and pending > 0)

@@ -113,6 +113,34 @@ async def test_a_stall_is_reported_once_and_the_recovery_once(srv):
     assert again and again["stalled"] is True, "новый застой после восстановления сообщается снова"
 
 
+@pytest.mark.parametrize("err_age, stalled", [(60, True), (3600, False)])
+async def test_a_real_aiogram_webhook_info_with_a_datetime_error_is_read(srv, err_age, stalled):
+    """Настоящий ответ aiogram 3: last_error_date — datetime, не число. Надзор
+    его читает: свежая ошибка с очередью — застой, старая — нет. Прежде int()
+    от datetime падал TypeError на первой же ошибке доставки — и застой (Т-РУ19)
+    не определялся никогда (заглушки отдавали число и этого не видели)."""
+    from aiogram.types import WebhookInfo
+
+    class _Real:
+        async def get_webhook_info(self):
+            return WebhookInfo.model_validate({"url": srv.conf.url, "has_custom_certificate": True,
+                                               "pending_update_count": 5,
+                                               "last_error_date": int(time.time()) - err_age,
+                                               "last_error_message": "Connection timed out"})
+    got = await srv.watch(_Real())
+    assert bool(got and got.get("stalled")) is stalled, got
+
+
+def test_epoch_seconds_reads_datetime_numbers_and_nothing():
+    from datetime import datetime, timezone
+    from awgbot.util import timeutil
+    at = datetime(2026, 10, 31, 12, 0, tzinfo=timezone.utc)
+    assert timeutil.epoch_seconds(at) == at.timestamp()
+    assert timeutil.epoch_seconds(1_800_000_000) == 1_800_000_000.0
+    assert timeutil.epoch_seconds("1800000000") == 1_800_000_000.0
+    assert timeutil.epoch_seconds(None) == timeutil.epoch_seconds("мусор") == 0.0
+
+
 @pytest.mark.parametrize("kw", [dict(pending=0, err_age=60), dict(pending=5, err_age=3600), dict(pending=5, err_age=None)])
 async def test_an_old_error_or_an_empty_queue_is_not_a_stall(srv, kw):
     assert await srv.watch(_Bot(srv.conf.url, **kw)) is None

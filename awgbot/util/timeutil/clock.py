@@ -117,3 +117,17 @@ def remaining_seconds(end: datetime, ref: Optional[datetime] = None) -> int:
 def ceil_days(delta_seconds: float) -> int:
     """Секунды → целые дни, округление ВВЕРХ (ceil). 0 сек → 0 дней, 1 сек → 1."""
     return int(math.ceil(delta_seconds / 86400.0))
+
+
+def epoch_seconds(value) -> float:
+    """Метка времени Bot API → секунды Unix: aiogram 3 отдаёт поля дат
+    (last_error_date и т.п.) объектом datetime, сырой ответ и заглушки — числом;
+    пусто или не разобрать — 0."""
+    if value is None:
+        return 0.0
+    if hasattr(value, "timestamp"):
+        return float(value.timestamp())
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
