@@ -6,11 +6,18 @@ keys.py — часть пакета quorum (см. __init__): ключи вокр
 документа (util/rsvkeys).
 
 У основы: `{"on", "c_gen", "mc", "ma", "q_gen", "t", "poly": [hex…], "acked":
-{m_gen, q_gen, c_gen}, "holders": {m_gen, nodes}}` — коэффициенты многочлена и
+{m_gen, q_gen, c_gen, mf}, "holders": {m_gen, nodes}}` — коэффициенты многочлена и
 прямая кода живут только здесь; `holders` — шлюзы, получавшие точку при этом
-поколении `M`. У второго сервера: `{"peer": {l, m_gen, c_gen, cy, cbox, q_gen, t, x, y,
+поколении `M`. У второго сервера: `{"peer": {l, m_gen, mf, c_gen, cy, cbox, q_gen, t, x, y,
 qbox, at}}` — его точки и ящики рядом с пакетом (`rsv_pkg_in`); часть
 многочлена пуста, пока кворум линии не решает.
+
+Поколение `M` — номер `m_gen` и отпечаток `mf` (rsvkeys.m_print): после
+восстановления основы из копии номера идут заново и совпадают с прежними, и
+сверка по одному номеру приняла бы ящики чужого `M` за ящики пакета (или
+подтверждение прежних ключей за подтверждение новых). Совпал номер, а
+отпечаток другой — это другое поколение. Прежняя сторона отпечатка не шлёт и
+не возвращает — тогда сверка по номеру, как раньше.
 
 Включение кворума (шлюз `quo1` в составе) — только новый многочлен и ящик
 кворума: `M`, `K`, пакет, прямая кода и код прежние (Т-К12 без звука).
@@ -224,17 +231,17 @@ class ReserveQuorumKeysMixin:
         if line is None or not side or not keys.get("m"):
             return None
         q = self.reserve_qkeys()
+        m = bytes.fromhex(keys["m"])
         want = {"m_gen": int(keys.get("m_gen") or 0), "q_gen": int(q.get("q_gen") or 0) if poly is not None else 0,
-                "c_gen": int(q.get("c_gen") or 0)}
-        if dict(q.get("acked") or {}) == want:
+                "c_gen": int(q.get("c_gen") or 0), "mf": rsvkeys.m_print(m)}
+        if _acked_is(q.get("acked"), want):
             return None
         now = time.monotonic()
         if now - float(self.__dict__.get("_qkeys_sent_at") or 0.0) < RESEND_S and self.__dict__.get("_qkeys_sent") == want:
             return None
         self.__dict__["_qkeys_sent_at"], self.__dict__["_qkeys_sent"] = now, want
-        m = bytes.fromhex(keys["m"])
         cg = rsvkeys.CodeGen(want["c_gen"], line)
-        body = {"l": side, "m_gen": want["m_gen"], "x": rsvkeys.RESERVE_X, "c_gen": want["c_gen"],
+        body = {"l": side, "m_gen": want["m_gen"], "mf": want["mf"], "x": rsvkeys.RESERVE_X, "c_gen": want["c_gen"],
                 "cy": cg.reserve_point()[1].hex(), "cbox": cg.cbox(m).hex()}
         if poly is not None:                                  # ящик кворума — пока кворум линии решает
             qg = rsvkeys.QuorumGen(want["q_gen"], poly)
@@ -262,24 +269,41 @@ class ReserveQuorumKeysMixin:
         except (ValueError, TypeError) as e:
             log.warning("кворум: qkeys линии %s не приняты: %s", l, e)
             return []
-        rec = {"l": l, "m_gen": int(body.get("m_gen") or 0), "x": x, "c_gen": int(body.get("c_gen") or 0),
+        rec = {"l": l, "m_gen": int(body.get("m_gen") or 0), "mf": rsvkeys.m_print_of(body.get("mf")), "x": x,
+               "c_gen": int(body.get("c_gen") or 0),
                "cy": str(body["cy"]), "cbox": str(body["cbox"]), "at": timeutil.now_iso(),
                "q_gen": int(body.get("q_gen") or 0) if poly_part else 0, "t": int(body.get("thr") or 0) if poly_part else 0,
                "y": str(body.get("y") or "") if poly_part else "", "qbox": str(body.get("qbox") or "") if poly_part else ""}
         with _LOCK:
             old = dict(self.reserve_qkeys().get("peer") or {})
-            if old and int(old.get("m_gen") or 0) != rec["m_gen"]:
-                self.rsv_update("rsv_qkeys", peer=rec, peer_prev=old)   # прежнее поколение — пока пакет его
+            if old and not rsvkeys.same_m(old, rec):
+                # прежнее поколение — пока пакет его; тот же номер с другим отпечатком (основа
+                # восстановлена из копии) — тоже другое поколение, не замена ящиков на месте
+                self.rsv_update("rsv_qkeys", peer=rec, peer_prev=old)
             else:
                 self.rsv_update("rsv_qkeys", peer=rec)
         log.info("кворум: точки и ящики линии %s приняты (M %s, многочлен %s, прямая кода %s, порог %s)", l, rec["m_gen"],
                  rec["q_gen"], rec["c_gen"], rec["t"])
-        return [("send", "qkeys_ok", {"l": l, "m_gen": rec["m_gen"], "q_gen": rec["q_gen"], "c_gen": rec["c_gen"]})]
+        ok = {"l": l, "m_gen": rec["m_gen"], "q_gen": rec["q_gen"], "c_gen": rec["c_gen"]}
+        if rec["mf"]:
+            ok["mf"] = rec["mf"]                              # подтверждаю именно это `M`, не номер
+        return [("send", "qkeys_ok", ok)]
 
     def reserve_qkeys_ok_in(self, body: dict) -> list[tuple]:
         if str(body.get("l") or "") != self.reserve_quorum_side():
             return []
         acked = {"m_gen": int(body.get("m_gen") or 0), "q_gen": int(body.get("q_gen") or 0), "c_gen": int(body.get("c_gen") or 0)}
+        mf = rsvkeys.m_print_of(body.get("mf"))
+        if mf:
+            acked["mf"] = mf
+            keys = self.reserve_keys()
+            if int(keys.get("m_gen") or 0) == acked["m_gen"] and keys.get("m") and \
+                    mf != rsvkeys.m_print(bytes.fromhex(keys["m"])):
+                # номер мой, а `M` чужое (подтверждение ключей до восстановления из копии): не моё
+                # поколение — подтверждения нет, `qkeys` уйдут заново
+                log.warning("кворум: «%s» подтвердил поколение %s с чужим отпечатком ключа — не моё, шлю ключи заново",
+                            self.reserve_peer_name(), acked["m_gen"])
+                return []
         with _LOCK:
             self.rsv_update("rsv_qkeys", acked=acked)
         log.info("кворум: «%s» подтвердил ключи кворума (M %s, многочлен %s, прямая кода %s)", self.reserve_peer_name(),
@@ -299,8 +323,8 @@ class ReserveQuorumKeysMixin:
         пакетом не оставляет резерв без ящиков)."""
         q = self.reserve_qkeys()
         peer, prev = dict(q.get("peer") or {}), dict(q.get("peer_prev") or {})
-        pkg_m = int(self.rsv_get("rsv_pkg_in").get("m_gen") or 0)
-        if peer and prev and int(peer.get("m_gen") or 0) != pkg_m and int(prev.get("m_gen") or 0) == pkg_m:
+        pkg_in = self.rsv_get("rsv_pkg_in")
+        if peer and prev and not rsvkeys.same_m(peer, pkg_in) and rsvkeys.same_m(prev, pkg_in):
             return prev
         return peer
 
@@ -326,8 +350,8 @@ class ReserveQuorumKeysMixin:
         keys = self.reserve_keys()
         poly_on = self.reserve_quorum_poly_on()
         want = {"m_gen": int(keys.get("m_gen") or 0), "q_gen": int(q.get("q_gen") or 0) if poly_on else 0,
-                "c_gen": int(q.get("c_gen") or 0)}
-        if dict(q.get("acked") or {}) != want:
+                "c_gen": int(q.get("c_gen") or 0), "mf": rsvkeys.m_print(bytes.fromhex(keys["m"])) if keys.get("m") else ""}
+        if not _acked_is(q.get("acked"), want):
             return False
         if not poly_on:
             return not m.enabled                              # без шлюзов многочлен не нужен; с шлюзами — ещё не создан
@@ -348,7 +372,17 @@ class ReserveQuorumKeysMixin:
         (поколение `M` — как у пакета); None — ящика кода текущего `M` нет."""
         peer = self.reserve_quorum_peer_keys()
         pkg_in = self.rsv_get("rsv_pkg_in")
-        if not peer.get("cbox") or int(peer.get("m_gen") or 0) != int(pkg_in.get("m_gen") or 0):
+        if not peer.get("cbox") or not rsvkeys.same_m(peer, pkg_in):
             return None
         return {"code": code, "cpoint": [int(peer.get("x") or rsvkeys.RESERVE_X), str(peer.get("cy") or "")],
                 "cbox": str(peer.get("cbox") or "")}
+
+
+def _acked_is(acked, want: dict) -> bool:
+    """Подтверждение второго сервера — о текущих поколениях: номера совпали, и отпечаток
+    `M`, если сторона его вернула; прежняя сторона отпечатка не возвращает — по номерам."""
+    a = dict(acked or {})
+    if any(int(a.get(k) or 0) != int(want.get(k) or 0) for k in ("m_gen", "q_gen", "c_gen")):
+        return False
+    mf = rsvkeys.m_print_of(a.get("mf"))
+    return not mf or mf == want.get("mf")

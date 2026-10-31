@@ -11,7 +11,7 @@ from __future__ import annotations
 import time
 
 from awgbot.core import config, settings
-from awgbot.util import timeutil
+from awgbot.util import rsvkeys, timeutil
 
 from ..types import Notification
 from ..gateway_link.common import log
@@ -43,7 +43,7 @@ class ReserveOpeningMixin:
             return "данных для переезда нет"
         if need_box:
             peer = self.reserve_quorum_peer_keys() if hasattr(self, "reserve_quorum_peer_keys") else {}
-            if not peer.get("cbox") or int(peer.get("m_gen") or 0) != int(pkg_in.get("m_gen") or 0):
+            if not peer.get("cbox") or not rsvkeys.same_m(peer, pkg_in):
                 return "данных для переезда нет"              # ящика кода текущего поколения ключа нет
         if need_box and pkg_in.get("has_dns") is False:
             # запись меняет процесс открытия на резерве — без конверта DNS (провайдер «вручную») ему нечем;

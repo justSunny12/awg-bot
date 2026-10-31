@@ -31,7 +31,7 @@ import random
 import time
 
 from awgbot.core import config, settings
-from awgbot.util import pairproto, rsvjrn, timeutil
+from awgbot.util import pairproto, rsvjrn, rsvkeys, timeutil
 from awgbot.util.rsvpkg import bot as pkgbot, seal, vpn as pkgvpn
 
 from ..gateway_link.common import log
@@ -259,7 +259,8 @@ class ReservePackageMixin:
                             pending_at=timeutil.now_iso(), pending_jrn=jrn)
             log.info("резерв: %s %s собран (%d КБ%s)", "снимок" if journal else "пакет", gen, len(blob) // 1024,
                      f", журнал по {marks['i']}" if journal else "")
-            built = {"gen": gen, "fp": fp, "blob": blob.hex()}
+            # отпечаток `M` пакета — рядом с поколением: резерв сверяет с ним ящики (`qkeys`)
+            built = {"gen": gen, "fp": fp, "blob": blob.hex(), "mf": rsvkeys.m_print(bytes.fromhex(keys["m"]))}
             if jrn:
                 # открыто — только то, что резерву нужно для снятия учтённого (номер строки счётчиков
                 # cs — внутри: по нему видно, сколько раз устройства были активны)
@@ -399,9 +400,10 @@ class ReservePackageMixin:
 
     # ── приём (резерв) ──────────────────────────────────────────────────────
 
-    def reserve_pkg_in(self, gen: int, fp: str, blob: bytes, jrn: dict | None = None) -> tuple[str, str]:
-        """Целый пакет от основы: проверка, запись на диск; поколение `M` — из заголовка
-        (с ним сверяется ящик кода, `qkeys`). Возвращает (ответ: pkg_ok | pkg_bad, причина)."""
+    def reserve_pkg_in(self, gen: int, fp: str, blob: bytes, jrn: dict | None = None, mf: str = "") -> tuple[str, str]:
+        """Целый пакет от основы: проверка, запись на диск; поколение `M` — из заголовка, его
+        отпечаток `mf` — из слова `pkg` (у прежней основы его нет: сверка по номеру); с ними
+        сверяется ящик кода, `qkeys`. Возвращает (ответ: pkg_ok | pkg_bad, причина)."""
         if self.reserve_in() in HOSTING:
             return "pkg_bad", "зона занята"                  # гость стартовал с прежнего пакета — новый сбил бы поколение слияния
         try:
@@ -420,7 +422,7 @@ class ReservePackageMixin:
             os.fsync(f.fileno())                              # пакет — опора переезда после смерти основы: на диск
         os.replace(tmp, path)
         self.rsv_put("rsv_pkg_in", {"gen": int(gen), "fp": str(fp), "size": len(blob), "at": timeutil.now_iso(),
-                                    "m_gen": int(head.m_gen), "has_dns": head.has_dns})
+                                    "m_gen": int(head.m_gen), "mf": rsvkeys.m_print_of(mf), "has_dns": head.has_dns})
         if jrn:
             self.reserve_keep_snapshot_in(dict(jrn))          # учтённое снимком — из сегментов прочь
         elif self.reserve_keep_line():

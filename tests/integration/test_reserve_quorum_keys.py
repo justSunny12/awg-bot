@@ -453,7 +453,7 @@ def test_qkeys_goes_from_pairing_without_a_polynomial_and_stops_after_qkeys_ok(l
     sent = [a[2] for a in acts if a[:2] == ("send", "qkeys")]
     assert len(sent) == 1, f"qkeys после сопряжения не ушёл тактом: {[a[:2] for a in acts]}"
     body = sent[0]
-    assert set(body) == {"l", "m_gen", "x", "c_gen", "cy", "cbox"}, f"qkeys без многочлена: {sorted(body)}"
+    assert set(body) == {"l", "m_gen", "mf", "x", "c_gen", "cy", "cbox"}, f"qkeys без многочлена: {sorted(body)}"
     pairproto.check(pairproto.PAIR_PROTO, "qkeys", dict(body), pairproto.INVITER)
     assert _code_opens(line.s, line.s.reserve_code(), body, _blob(line.s)).hex() == _keys(line.s)["m"], \
         "код с сопряжения не открывает ящик кода"
