@@ -174,9 +174,18 @@ class RoutingLivenessMixin:
         # прежнему активному устарело: этим тактом автомат не переключает,
         # следующий замерит новые роли.
         with routing.switch_lock:
-            hand_moved = str(self.db.get_state(self._RT_ACTIVE_KEY) or "") != raw_active
+            raw_now = str(self.db.get_state(self._RT_ACTIVE_KEY) or "")
+            hand_moved = raw_now != raw_active
             if hand_moved:
                 log.info("routing: активный слот сменили рукой во время замера — автомат этим тактом не переключает")
+                # Решение, рубильник и объявления — по активному ПОСЛЕ зондов (по
+                # факту смены): прежний активный уже резерв, и добранный этим
+                # тактом порог его окна дал бы «шлюз недоступен» об аварии, которую
+                # админ только что обошёл, и погасил бы маркировку живого
+                raw_active = raw_now
+                active = self.active_gateway(slots)
+                akey = prev_akey = active.id if active is not None else None
+                verdict = results.get(akey, routing.PROBE_DOWN) if engaged else routing.PROBE_DOWN
             switched_to, refused, ok = self._rt_decide(slots, engaged, results, akey, verdict, ups, was_on,
                                                        hand_moved)
             if switched_to is not None:
