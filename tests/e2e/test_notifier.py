@@ -4,7 +4,8 @@
 проброс/дефолт клавиатуры, устойчивость к ошибке отправки одному из адресатов,
 429 (RetryAfter): пауза ровно retry_after и один повтор, пауза дольше предела —
 критичный алерт письмом сразу, прочее отложенным повтором фоном, on_sent только при
-доставке, письмо критичного алерта после сетевого отказа, окно пачки при паузе.
+доставке, письмо критичного алерта после сетевого отказа, окно пачки при паузе;
+рассылка объявления: пауза дольше предела — адресат в конец, один повтор, отчёт по итогу.
 """
 import pytest
 
@@ -339,3 +340,74 @@ async def test_broadcast_retries_once_after_retry_after(sleeps):
     ok, failed = await notifier.broadcast(bot, [5, 6, 7], "t", [])
     assert (ok, failed) == (2, [6])
     assert bot.attempts.count(5) == bot.attempts.count(6) == 2 and bot.attempts.count(7) == 1
+
+
+# Пауза 429 дольше предела в рассылке объявления: ждать её на месте значит
+# держать слот окна (и всю рассылку за ним) минутами — адресат уходит в конец,
+# там после своей паузы один повтор; отчёт админу считает его по итогу повтора.
+
+async def test_broadcast_long_retry_after_goes_to_the_end_and_is_counted(sleeps):
+    ids = list(range(1, 9))
+    bot = ScriptedBot({3: [_ra(300)]})
+    ok, failed = await notifier.broadcast(bot, ids, "t", [])
+    assert (ok, failed) == (8, []), "доставленный повтором не засчитан"
+    assert bot.attempts.count(3) == 2 and bot.attempts[-1] == 3, f"повтор не в конце: {bot.attempts}"
+    assert sorted(bot.delivered[:-1]) == [i for i in ids if i != 3], "прочие ждали паузу чужого адресата"
+    long = [s for s in sleeps if s > notifier._RETRY_AFTER_CAP]
+    assert len(long) == 1 and 299 < long[0] <= 300, f"остаток паузы перед повтором: {sleeps}"
+
+
+async def test_broadcast_long_retry_after_is_retried_once_and_reported_failed(sleeps):
+    bot = ScriptedBot({2: [_ra(120), _ra(120)], 4: [_ra(90), RuntimeError("bot was blocked")]})
+    ok, failed = await notifier.broadcast(bot, [1, 2, 3, 4, 5], "t", [])
+    assert (ok, failed) == (3, [2, 4]), "порядок отчёта — как у адресатов, отказ повтора — в недоставленных"
+    assert bot.attempts.count(2) == bot.attempts.count(4) == 2, "второй повтор после второго 429"
+    assert bot.attempts[-2:] == [4, 2], "конец рассылки — по сроку паузы, раньше истёкшая первой"
+
+
+async def test_broadcast_retry_after_at_the_cap_still_waits_in_place(sleeps):
+    bot = ScriptedBot({2: [_ra(notifier._RETRY_AFTER_CAP)]})
+    ok, failed = await notifier.broadcast(bot, [1, 2, 3], "t", [])
+    assert (ok, failed) == (3, []) and sleeps.count(notifier._RETRY_AFTER_CAP) == 1
+    assert all(s <= notifier._RETRY_AFTER_CAP for s in sleeps), sleeps
+
+
+# on_message: кому нужно само сообщение (финишер self-update — его id), тот
+# получает его и после отложенного повтора, когда notify_one уже вернул None.
+
+async def test_notify_one_hands_the_message_of_a_deferred_retry_to_on_message(sleeps):
+    settings.set_value("quiet_hours.quiet_hours_enabled", False)
+    got = []
+
+    async def on_message(m):
+        got.append(m.message_id)
+    bot = ScriptedBot({555: [_ra(300)]})
+    sent = await notifier.notify_one(bot, 555, "hi", on_message=on_message)
+    assert sent is None and got == [], "ждали паузу на месте"
+    await _drain_deferred()
+    assert got == [101], "сообщение отложенного повтора не отдано вызывающему"
+
+
+async def test_notify_one_on_message_once_on_direct_and_short_retry(sleeps):
+    settings.set_value("quiet_hours.quiet_hours_enabled", False)
+    got = []
+
+    async def on_message(m):
+        got.append(m.message_id)
+    bot = ScriptedBot({556: [_ra(2)]})
+    s1 = await notifier.notify_one(bot, 555, "a", on_message=on_message)
+    s2 = await notifier.notify_one(bot, 556, "b", on_message=on_message)
+    assert got == [s1.message_id, s2.message_id], got
+
+
+async def test_notify_one_on_message_not_called_when_undelivered_and_its_error_is_swallowed(sleeps):
+    settings.set_value("quiet_hours.quiet_hours_enabled", False)
+    calls = []
+
+    async def broken(m):
+        calls.append(m)
+        raise RuntimeError("база недоступна")
+    bot = ScriptedBot({555: [RuntimeError("bot was blocked")]})
+    assert await notifier.notify_one(bot, 555, "x", on_message=broken) is None and calls == []
+    sent = await notifier.notify_one(bot, 555, "y", on_message=broken)
+    assert sent is not None and len(calls) == 1, "сбой обработчика сорвал доставку"

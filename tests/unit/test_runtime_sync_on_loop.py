@@ -33,26 +33,19 @@ RUNTIME = REPO / "awgbot" / "runtime"
 BASES = {"services", "svc", "self.services", "self._services", "_services"}
 MARKERS = ("self.db.", "rsv_update", "rsv_put", "self.rsv_get", "subprocess", "settings.", "open(")
 
-# (файл относительно awgbot/runtime, async-функция, метод) → почему вызов прямой
+# (файл относительно awgbot/runtime, async-функция, метод) → почему вызов прямой.
+# Остался только старт основного бота до создания Bot: в цикле событий ещё нет
+# ни одной задачи (ни поллинга, ни планировщика, ни каналов), отвечать некому,
+# и поток ничего бы не дал. Остальное — через поток: стартовая задача основы,
+# имена ботов шлюзов, уведомление об обновлении и приём сессии линка идут, когда
+# цикл уже обслуживает поллинг и каналы; старт гостя — тоже, хоть и до вебхука:
+# слияние снимка и записи базы зоны — самые тяжёлые вызовы его старта.
 ALLOWED: dict[tuple[str, str, str], str] = {
-    ("main/client.py", "main", "ensure_admin_client"): "старт процесса до поднятия поллинга — цикл ещё никому не отвечает",
-    ("main/client.py", "main", "normalize_update_schedule"): "старт процесса до поднятия поллинга",
-    ("main/client.py", "main", "gwlink_sessions_reset"): "старт процесса до поднятия поллинга",
-    ("main/client.py", "main", "reserve_session_reset"): "старт процесса до поднятия поллинга",
-    ("main/client.py", "main", "reserve_quorum_leader_start"): "старт процесса до поднятия поллинга",
-    ("main/client.py", "_after_start", "reserve_pkg_hook_install"): "стартовая задача, один раз; крючок коммита — память",
-    ("main/client.py", "_after_start", "reserve_paired"): "стартовая задача, один раз",
-    ("main/guest.py", "run_guest", "guest_adopt_snapshot"): "старт гостя до поднятия вебхука",
-    ("main/guest.py", "run_guest", "guest_snapshot_hook_install"): "старт гостя до поднятия вебхука",
-    ("main/guest.py", "run_guest", "ensure_admin_client"): "старт гостя до поднятия вебхука",
-    ("main/guest.py", "run_guest", "gwlink_sessions_reset"): "старт гостя до поднятия вебхука",
-    ("main/guest.py", "run_guest", "reserve_quorum_guest_start"): "старт гостя до поднятия вебхука",
-    ("main/guest.py", "run_guest", "guest_jrn_on"): "старт и остановка гостя; чтение одной строки меты журнала в памяти",
-    ("gwbotme.py", "refresh", "gw_bot_token"): "чтение токена слота — одна строка настроек; на старте и по смене токена",
-    ("gwbotme.py", "refresh", "set_gw_bot_identity"): "запись имени бота слота — после getMe, редко",
-    ("gwbotme.py", "ensure_all", "gw_bot_identity_missing"): "один запрос на старте",
-    ("linkserver/session.py", "_serve", "gwjoin_for_addr"): "приём сессии шлюза: чтение раздела сопряжения",
-    ("scheduler/common.py", "notify_update_available", "fleet_release"): "одна строка настроек при уведомлении об обновлении",
+    ("main/client.py", "main", "ensure_admin_client"): "старт процесса до создания Bot — в цикле ещё нет задач",
+    ("main/client.py", "main", "normalize_update_schedule"): "старт процесса до создания Bot — в цикле ещё нет задач",
+    ("main/client.py", "main", "gwlink_sessions_reset"): "старт процесса до создания Bot — в цикле ещё нет задач",
+    ("main/client.py", "main", "reserve_session_reset"): "старт процесса до создания Bot — в цикле ещё нет задач",
+    ("main/client.py", "main", "reserve_quorum_leader_start"): "старт процесса до создания Bot — в цикле ещё нет задач",
 }
 
 
@@ -109,6 +102,13 @@ def test_heavy_service_calls_in_runtime_coroutines_go_through_a_thread():
     bad = [f"awgbot/runtime/{rel}:{line}: {fn}() зовёт services.{m}() в цикле событий"
            for rel, fn, m, line in _hits() if (rel, fn, m) not in ALLOWED]
     assert not bad, "тяжёлый вызов сервисов в цикле событий — оберни asyncio.to_thread:\n" + "\n".join(bad)
+
+
+def test_only_the_main_bot_start_before_bot_creation_is_allowed():
+    """Перечень пропусков — только старт основного бота до создания Bot: новый
+    пропуск в стартовой задаче, у гостя или в такте — то же зависание цикла,
+    которое переводом в поток и закрыли."""
+    assert {(rel, fn) for rel, fn, _ in ALLOWED} == {("main/client.py", "main")}
 
 
 def test_every_exception_still_covers_a_real_call():
