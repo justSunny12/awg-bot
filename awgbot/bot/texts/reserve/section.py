@@ -6,6 +6,7 @@ from awgbot.util import timeutil
 from awgbot.util.textfmt.base import details, plural_ru
 
 from ..fmt import _e
+from .c9wait import card_line as c9_card_line
 
 
 LOW_MEM_MB = 400                     # меньше — строка «мало свободной памяти» (решение по в. 56)
@@ -160,8 +161,9 @@ def section_text(d: dict) -> str:
     return "\n".join(lines)
 
 
-def card_text(d: dict) -> str:
-    """Карточка резерва (этап пары: статус, готовность, направления, итог трафика)."""
+def card_text(d: dict, bot_username: str = "") -> str:
+    """Карточка резерва (этап пары: статус, готовность, направления, итог трафика);
+    bot_username — для ссылок на экраны (плашка С9 «не ждать?»)."""
     peer = d.get("peer") or {}
     name = peer.get("name") or "резерв"
     ver = (d.get("peer_state") or {}).get("version") or ""
@@ -215,6 +217,8 @@ def card_text(d: dict) -> str:
                 lines.append(f"└ ⚠️ данные для переезда не собираются: {_e(d['pkg_error'])}")
         else:
             lines.append("└ ⚠️ " + _e(out_why))
+        if d.get("c9_wait"):                                  # правки бота на резерве после передачи ещё ждём
+            lines.append(c9_card_line(d["c9_wait"], name, bot_username))
         for g in d.get("gw_links") or []:
             if not g.get("rsv1"):
                 continue

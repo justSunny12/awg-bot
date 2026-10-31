@@ -20,6 +20,7 @@ from __future__ import annotations
 import re
 
 from awgbot.bot import texts
+from awgbot.bot.texts.reserve.c9wait import C9_PAYLOAD
 from awgbot.util import listlink
 
 NEW = "-n"
@@ -55,6 +56,8 @@ def parse_admin(payload: str) -> tuple[str, int] | None:
         return "migration", 0
     if payload == texts.RSV_PAYLOAD:
         return "set_rsv", 0
+    if payload == C9_PAYLOAD:
+        return "set_rsv_c9", 0
     for head, kind in ((texts.TRAFFIC_PAYLOAD, "traffic_dev"), (texts.RF_PAYLOAD, "traffic_dev"),
                        ("extend", "extend"), (texts.GW_CARD_PAYLOAD, "gw"), ("cl", "cl"), ("dev", "dev"),
                        (texts.MIGRATION_PAYLOAD, "migration_cl")):

@@ -118,6 +118,13 @@ class ReserveHandoverMixin:
             # «вернуть без резерва» (С9): эпоха и так здесь, правки бота на резерве — хвостом при
             # получении; не всё перенесено — ждать (jneed), по сроку — без недостающего
             c9 = self.rsv_get("rsv_c9")
+            if c9 and int(c9.get("e") or -1) != int(epoch):
+                # отметка другой эпохи (прошлый эпизод, не снятый фактом): её upto — не о номерах
+                # этого released, jneed по ней просил бы хвост, которого у гостя нет
+                log.warning("резерв: отметка С9 эпохи %s при released эпохи %s от «%s» — устарела, снята",
+                            c9.get("e"), epoch, self.reserve_peer_name())
+                self.rsv_put("rsv_c9", None)
+                c9 = {}
             if c9 and int(c9.get("upto") or 0) < int(last):
                 self.rsv_update("rsv_out", jrn_back={"epoch": int(epoch), "last": int(last), "mono": time.monotonic(),
                                                      "need": time.monotonic(), "c9": True})

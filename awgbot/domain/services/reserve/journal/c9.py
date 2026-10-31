@@ -31,9 +31,10 @@ class ReserveC9Mixin:
         журнал данных гостя с диска резерва) и перебазируются здесь при получении."""
         fork = int(self.db.jrn_meta()["fork_i"])
         # записи гостя запечатаны прежним K — он здесь ещё сменится (снятый вебхук, новый пакет): открывать ими;
-        # at — для ручной диагностики (sqlite3), код его не читает
+        # at_ts — момент заведения для срока «не ждать?» карточки (c9wait), at — то же строкой для диагностики
+        now = timeutil.now()
         self.rsv_put("rsv_c9", {"e": int(guest_e), "F": fork, "upto": fork, "moved": 0, "disputed": [], "total": 0,
-                                "at": timeutil.now_iso(), "k": self.reserve_k().hex()})
+                                "at": timeutil.to_iso(now), "at_ts": now.timestamp(), "k": self.reserve_k().hex()})
         log.warning("резерв: правки бота на «%s» эпохи %s после %s — хвостом при встрече", self.reserve_peer_name(),
                     guest_e, fork)
 
@@ -45,6 +46,7 @@ class ReserveC9Mixin:
         одной лишь смене состояния — нет: гость за мёртвым линком мог жить и писать."""
         if getattr(self, "guest", False) or not self.rsv_get("rsv_c9"):
             return
+        self.reserve_c9_stamp()                               # отметка прежней версии без момента — отсчёт отсюда
         out = self._out()
         if str(out.get("state") or "home") != "home" or out.get("await_merge"):
             return                                            # рычаг: ждёт _tick_await_merge (или _forced_no_merge)
