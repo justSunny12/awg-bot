@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import hashlib
+import http.client
 import json
 import os
 import tempfile
@@ -53,7 +54,9 @@ def _request(url: str, accept: str) -> bytes:
                 return resp.read()
         except urllib.error.HTTPError as e:
             raise UpdateError(_http_error(e, host))
-        except (urllib.error.URLError, TimeoutError, OSError) as e:
+        except (urllib.error.URLError, TimeoutError, OSError, http.client.HTTPException) as e:
+            # HTTPException — обрыв посреди тела (IncompleteRead) и битый ответ:
+            # не OSError, а сетевой сбой ровно того же рода
             last = e
             if attempt < _ATTEMPTS:
                 time.sleep(_RETRY_PAUSE)

@@ -157,3 +157,32 @@ def test_an_http_error_on_the_asset_names_the_asset_host(monkeypatch):
         gh._request(_ASSET_URL, "application/octet-stream")
     assert str(ei.value) == "GitHub HTTP 403 (objects.githubusercontent.com): Forbidden", str(ei.value)
     assert len(calls) == 1
+
+
+class _BrokenBody(_Resp):
+    """Соединение есть, заголовки пришли, тело оборвалось посреди ассета."""
+
+    def read(self):
+        import http.client
+        raise http.client.IncompleteRead(b"half", 1000)
+
+
+def test_a_body_cut_mid_asset_is_retried_like_any_network_failure(monkeypatch):
+    """Обрыв посреди тела (http.client.IncompleteRead — HTTPException, не
+    OSError) — тот же сетевой сбой: повтор, а не ступень набора «не
+    запустилась» с сырым текстом исключения человеку."""
+    calls = []
+    queue = [_BrokenBody(b""), _Resp(b"whole")]
+
+    def fake(req, timeout=None, data=None):
+        calls.append(req)
+        return queue.pop(0)
+    monkeypatch.setattr(gh.net4, "urlopen", fake)
+    monkeypatch.setattr(gh, "_RETRY_PAUSE", 0)
+    assert gh._request(_ASSET_URL, "application/octet-stream") == b"whole"
+    assert len(calls) == 2
+
+    monkeypatch.setattr(gh.net4, "urlopen", lambda req, timeout=None, data=None: _BrokenBody(b""))
+    with pytest.raises(updates.UpdateError) as ei:
+        gh._request(_ASSET_URL, "application/octet-stream")
+    assert str(ei.value).startswith("сеть недоступна (objects.githubusercontent.com): "), str(ei.value)
