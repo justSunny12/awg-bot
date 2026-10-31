@@ -131,23 +131,29 @@ class DatabaseCore:
         self.__dict__["_commit_hook"] = fn
 
     @contextmanager
-    def _tx(self) -> Iterator[sqlite3.Cursor]:
+    def _tx(self, immediate: bool = False) -> Iterator[sqlite3.Cursor]:
         """Транзакция с поддержкой вложенности: commit/rollback делает только
         внешний уровень. Внутри db.transaction() все операции — один атомарный
-        commit (и один fsync вместо десятков)."""
+        commit (и один fsync вместо десятков). immediate — см. transaction()."""
         conn = self._connection()
         depth = getattr(self._txl, "depth", 0)
         self._txl.depth = depth + 1
+        quiet = -1                                     # total_changes на BEGIN IMMEDIATE
         if depth == 0:
             self._txl.conn = conn
             self._txl.kind = None
             self._txl.counters_changes = -1
+            if immediate and not conn.in_transaction:
+                conn.execute("BEGIN IMMEDIATE")
+                quiet = conn.total_changes
         cur = conn.cursor()
         try:
             yield cur
+            if depth == 0 and conn.in_transaction and conn.total_changes == quiet:
+                conn.commit()                          # замок взят, писать не пришлось — только отпустить
             # Коммитим только если что-то писали: пустая транзакция (тик без
             # изменений) не должна стоить ни fsync, ни сброса кэша доступа.
-            if depth == 0 and conn.in_transaction:
+            elif depth == 0 and conn.in_transaction:
                 conn.commit()
                 self.__dict__["_commits"] = self.__dict__.get("_commits", 0) + 1
                 self._hot_state_drop()
@@ -178,10 +184,18 @@ class DatabaseCore:
                         pass
 
     @contextmanager
-    def transaction(self) -> Iterator[None]:
+    def transaction(self, immediate: bool = False) -> Iterator[None]:
         """Групповая транзакция: всё внутри — атомарно, один commit.
-        Используется опросчиком трафика (целостность дельт + меньше fsync)."""
-        with self._tx():
+        Используется опросчиком трафика (целостность дельт + меньше fsync).
+
+        immediate — замок записи с первой строки (BEGIN IMMEDIATE), а не с
+        первой записи: для «прочитал — решил — записал», где решение по
+        прочитанному до замка затёрло бы параллельную правку (сроки против
+        продления, лимиты против месячного сброса, паузы, перепривязка). Не по
+        умолчанию: длинная транзакция опросчика держала бы замок все свои
+        чтения. Внутри уже идущей транзакции — без эффекта (её вид решил
+        внешний уровень)."""
+        with self._tx(immediate):
             yield
 
 

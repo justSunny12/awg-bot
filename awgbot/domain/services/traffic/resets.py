@@ -33,7 +33,9 @@ class ResetsMixin:
         friend_devs: dict[int, list] = {}     # friend_tg → [device rows] для их уведомлений
         # Одной транзакцией: и один fsync вместо ~5N+4NM, и атомарность —
         # падение посередине не оставит половину пользователей сброшенной.
-        with self.db.transaction():
+        # замок записи с первого чтения: блок лимита по счётчикам, прочитанным до
+        # сброса, не ляжет после него
+        with self.db.transaction(immediate=True):
           self.db.snapshot_monthly_traffic(_prev_month)
           rf = self.rf_month_total()
           self.db.snapshot_server_rf(_prev_month, rf["rx"], rf["tx"])

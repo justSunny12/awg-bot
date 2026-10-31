@@ -32,7 +32,9 @@ class LimitsMixin:
         admin_id = config.ADMIN_ID
         twins = self.db.twins_by_origin()             # один раз на проход, не на устройство
 
-        with self.db.transaction():                   # один коммит вместо десятков
+        # один коммит вместо десятков; замок записи с первого чтения — месячный
+        # сброс между чтением счётчиков и записью блока не оставит блок после себя
+        with self.db.transaction(immediate=True):
           for client in self.db.list_clients(include_service=False):
               if client.activation_status != ActivationStatus.ACTIVE:
                   continue

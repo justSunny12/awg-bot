@@ -406,7 +406,10 @@ class DevicesMixin:
 
     def _reassign_tx(self, dev, client, new_client_id: int, add_slot: bool) -> tuple[int, bool]:
         """Перепривязка одной транзакцией; возвращает (лимит получателя, поднят ли слот)."""
-        with self.db.transaction():
+        with self.db.transaction(immediate=True):
+            # лимит получателя — под замком: правка лимита между показом кнопки и
+            # привязкой иначе затиралась бы прочитанным раньше значением
+            client = self.db.get_client(new_client_id) or client
             new_limit = client.device_limit
             # add_slot поднимает лимит, НО безлимит (0) не трогаем: протухшая
             # кнопка «добавить слот» не должна превращать безлимит в лимит-1

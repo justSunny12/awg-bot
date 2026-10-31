@@ -66,7 +66,9 @@ class ExpiryMixin:
     def check_expiry(self) -> list[Notification]:
         now = timeutil.now()
         notifications: list[Notification] = []
-        with self.db.transaction():
+        # замок записи с первого чтения: продление, пришедшее между чтением списка
+        # и записью «истекла», ждёт конца такта, а не затирается им
+        with self.db.transaction(immediate=True):
           for client in self.db.list_clients(include_service=False, active_finite_only=True):
               end = timeutil.parse_iso(client.period_end)
               start = timeutil.parse_iso(client.period_start)
@@ -75,6 +77,10 @@ class ExpiryMixin:
 
               # истёк
               if secs <= 0:
+                  fresh = self.db.get_client(client.id)  # список мог быть прочитан до продления
+                  if fresh is None or not fresh.period_end or \
+                          timeutil.remaining_seconds(timeutil.parse_iso(fresh.period_end), now) > 0:
+                      continue
                   if client.status != SubStatus.EXPIRED:
                       friend_notes = self._block_client(client)
                       self.db.update_client_fields(client.id, status=SubStatus.EXPIRED)
