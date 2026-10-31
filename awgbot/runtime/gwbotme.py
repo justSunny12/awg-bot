@@ -13,6 +13,7 @@ gwbotme.py — кто такой бот шлюза: username и имя проф�
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 
@@ -33,7 +34,7 @@ def forget(slot_id: int) -> None:
 async def refresh(services, slot_id: int) -> bool:
     """Спросить Telegram о боте слота и запомнить. False — токена нет или
     Telegram не ответил (ошибка в журнал, не наружу)."""
-    token = services.gw_bot_token(slot_id)
+    token = await asyncio.to_thread(services.gw_bot_token, slot_id)
     if not token:
         return False
     _next_try.pop(int(slot_id), None)             # явный вызов — без паузы
@@ -59,7 +60,8 @@ async def refresh(services, slot_id: int) -> bool:
             await bot.session.close()
         except Exception:                                 # noqa: BLE001
             pass
-    services.set_gw_bot_identity(slot_id, me.username or "", me.first_name or me.username or "")
+    await asyncio.to_thread(services.set_gw_bot_identity, slot_id, me.username or "",
+                            me.first_name or me.username or "")
     return True
 
 
@@ -67,7 +69,7 @@ async def ensure_all(services) -> None:
     """Дозаполнить то, чего нет: слоты с токеном, но без ответа Telegram;
     после неудачи слот ждёт RETRY_SECONDS."""
     now = time.monotonic()
-    for slot_id in services.gw_bot_identity_missing():
+    for slot_id in await asyncio.to_thread(services.gw_bot_identity_missing):
         if _next_try.get(int(slot_id), 0.0) > now:
             continue
         await refresh(services, slot_id)

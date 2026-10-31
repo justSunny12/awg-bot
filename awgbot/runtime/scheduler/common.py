@@ -31,9 +31,10 @@ async def notify_update_available(bot, services, nxt) -> None:
     from awgbot.bot.handlers.common import dismiss_update_reports
     from awgbot.domain.services import Notification
     await dismiss_update_reports(bot, services)
+    installed = (await asyncio.to_thread(services.fleet_release) or None
+                 if hasattr(services, "fleet_release") else None)
     await send_notifications(bot, [Notification(
-        config.ADMIN_ID, texts.update_available(nxt.tag, nxt.body, installed=services.fleet_release() or None)
-        if hasattr(services, "fleet_release") else texts.update_available(nxt.tag, nxt.body),
+        config.ADMIN_ID, texts.update_available(nxt.tag, nxt.body, installed=installed),
         reply_markup=kb.update_notify(nxt.tag))])
 
 

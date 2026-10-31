@@ -47,7 +47,9 @@ async def run_guest() -> None:
     db = pkg.Database(config.DB_PATH)
     db.init_schema()
     services = pkg.Services(db)
-    if services.guest_adopt_snapshot():
+    # Тяжёлое на старте — в потоке, как всё тяжёлое в корутинах runtime: слияние
+    # снимка и записи базы зоны не держат цикл событий
+    if await asyncio.to_thread(services.guest_adopt_snapshot):
         # база подменена под открытым соединением — открыть заново
         db.close()
         db = pkg.Database(config.DB_PATH)
@@ -56,11 +58,11 @@ async def run_guest() -> None:
     missing = services.guest_install_refusals()
     if missing:
         log.warning("гость: отказы не поставлены на %s", ", ".join(missing))
-    services.guest_snapshot_hook_install()
-    services.ensure_admin_client()
-    services.gwlink_sessions_reset()
+    await asyncio.to_thread(services.guest_snapshot_hook_install)
+    await asyncio.to_thread(services.ensure_admin_client)
+    await asyncio.to_thread(services.gwlink_sessions_reset)
     try:
-        services.reserve_quorum_guest_start()            # без права записи, пока бот резерва не прислал состав
+        await asyncio.to_thread(services.reserve_quorum_guest_start)   # без права записи, пока бот резерва не прислал состав
     except Exception as e:                               # noqa: BLE001
         log.warning("гость: кворум на старте: %s", e)
     from awgbot.runtime import tgsession
@@ -151,7 +153,8 @@ async def run_guest() -> None:
             except Exception as e:                       # noqa: BLE001
                 log.warning("гость: такт журнала: %s", e)
 
-    jrn_task = asyncio.get_running_loop().create_task(jrn_loop()) if services.guest_jrn_on() else None
+    jrn_task = (asyncio.get_running_loop().create_task(jrn_loop())
+                if await asyncio.to_thread(services.guest_jrn_on) else None)
     scheduler = setup_guest_scheduler(services, bot, db, on_ctl_tick=ctl_tick)
     if wh is not None:
         try:
@@ -171,7 +174,7 @@ async def run_guest() -> None:
                     await wh.stop()                      # правки после снимка в rep.bin не попали бы
                 wh = None
             return
-        journal = services.guest_jrn_on()
+        journal = await asyncio.to_thread(services.guest_jrn_on)
         log.info("гость: команда возврата — %s", "последние записи журнала основе" if journal
                  else "финальный снимок и реплика боту резерва")
         try:
@@ -195,7 +198,7 @@ async def run_guest() -> None:
         log.info("гость: останавливаюсь…")
         if jrn_task is not None:
             jrn_task.cancel()
-        if not ctl.stop_req.is_set() and not services.guest_jrn_on():
+        if not ctl.stop_req.is_set() and not await asyncio.to_thread(services.guest_jrn_on):
             # остановка не по команде (сигнал юнита, перезапуск): последние правки — в rep.bin
             try:
                 await asyncio.to_thread(services.guest_snapshot_tick, True)
