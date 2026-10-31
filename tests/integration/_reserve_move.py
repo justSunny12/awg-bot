@@ -18,7 +18,8 @@ import types
 import pytest
 
 from awgbot.core import config
-from awgbot.domain.services.reserve import compat, dns as dnsmod, inbound, inbound_back, outbound, outbound_return, package
+from awgbot.domain.services.reserve import compat, dns as dnsmod, inbound, inbound_back, inbound_tgwait, outbound, \
+    outbound_forced, outbound_return, package
 from awgbot.infra import awg
 from awgbot.util import dnsapi, timeutil
 from awgbot.util.rsvpkg import bot as pkgbot, seal
@@ -130,7 +131,7 @@ def mv(services, rsv, tmp_path, monkeypatch):
     monkeypatch.setattr(dnsapi, "read_authoritative_ttl", world.read_authoritative_ttl, raising=False)
     clock = Clock()
     stub = types.SimpleNamespace(monotonic=clock.monotonic)
-    for mod in (outbound, outbound_return, inbound, inbound_back, dnsmod, package):      # часы одни на все части автомата
+    for mod in (outbound, outbound_return, outbound_forced, inbound, inbound_back, inbound_tgwait, dnsmod, package):   # часы одни на все части автомата
         monkeypatch.setattr(mod, "time", stub)
     rc.pair_row(services)
     services.reserve_keys_init()

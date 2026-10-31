@@ -259,11 +259,14 @@ def test_up_is_repeated_every_30_seconds_until_the_hosting_moves_on(host):
 
 @pytest.mark.parametrize("active, why", [(False, "не поднялся"), (True, "не взял право отвечать")])
 def test_an_emergency_hosting_that_did_not_take_telegram_fails_after_ten_minutes(host, monkeypatch, active, why):
+    """Запись процесс открытия не менял (`record=skipped`) — пользователи на клон не шли:
+    срыв по Telegram снимает зону, как прежде. Запись сменена — зона остаётся
+    (test_reserve_vpn_without_bot)."""
     svc = host.svc
     monkeypatch.setattr(rsvzone, "guest_unit_active", lambda: active)
     _taking(host, "dead")
     svc.rsv_update("rsv_in", by="share")                  # аварийный путь — открытие по точкам: запись меняет процесс
-    host.zone.status = {"step": "done"}
+    host.zone.status = {"step": "done", "record": "skipped"}
     svc.reserve_in_tick()
     svc.reserve_in_tick()
     host.clock.advance(inbound.TAKEN_WAIT_S - 5)

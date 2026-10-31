@@ -177,7 +177,8 @@ class ReserveInboundBackMixin:
         return [("fw",), ("notify", [Notification(tg_id=int(config.ADMIN_ID), text=rn.return_resumed(name))])]
 
     def reserve_back_in(self) -> list[tuple]:
-        """`back` основы: пересылка хвоста, учёт, `relay{until}`, снятие, `wiped`, Т-РУ5."""
+        """`back` основы: пересылка хвоста, учёт, `relay{until}`, снятие, `wiped`, Т-РУ5. Бот основы
+        у меня по принудительному захвату (`tg_take_forced`, вебхук у гостя) — `taken`, а не снятие."""
         from awgbot.infra import rsvzone
         from awgbot.domain.notices import reserve as rn
         inn = self._inn()
@@ -191,6 +192,13 @@ class ReserveInboundBackMixin:
             except OSError as e:
                 log.info("резерв: остатки гостя на диске не сняты: %s", e)
             return [("send", "wiped", {})]
+        if str(inn.get("state") or "") == "serving" and inn.get("tg_take_forced") and inn.get("tg_taken"):
+            # основа не отдала бота и пропала — гость забрал Telegram сам и с тех пор правит её данные;
+            # `back` ожившей основы по сроку шага переезда (её срыв, не узнавший об этом) снёс бы их:
+            # ответ — «несу» (`taken`), зона и гость остаются; возврат — обычным путём (back_req, реплика)
+            log.warning("резерв: back от «%s», а её бот у меня по принудительному захвату — отвечаю taken, гостя не снимаю",
+                        self.reserve_peer_name())
+            return [("send", "taken", self._word_oid(inn))]
         name = self.reserve_peer_name()
         # пересылка хвоста нужна, только если пользователи могли прийти на клон: зона обслуживала
         # или клон уже поднят — запись по кнопке меняет основа сразу после `up`, и пользователи

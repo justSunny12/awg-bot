@@ -117,6 +117,7 @@ class ReserveSessionMixin:
                 "admin_id": int(config.ADMIN_ID), "admin_opened": bool(peer_admin.get("opened")),
                 "mem_free": self.reserve_mem_free_mb(), "online": int(self.__dict__.get("_rsv_guest_online") or 0),
                 "in_by": str(self.rsv_get("rsv_in").get("by") or ""), "zone": str(self._my_side().get("zone") or ""),
+                **({"in_tg": tg} if (tg := self.reserve_in_tg()) else {}),   # бот основы у меня: forced | wait
                 **({"jrn": jrn} if (jrn := self._jrn_st_part()) else {}),
                 **({"quo": quo} if (quo := self._quo_st_part()) else {}),
                 **({"rfp": rfp} if (rfp := self._rfp_st_part()) else {}),
@@ -242,7 +243,7 @@ class ReserveSessionMixin:
                         healthy=bool(body.get("healthy")), can_return=bool(body.get("can_return")),
                         in_kind=str(body.get("in_kind") or ""),
                         mem_free=int(body.get("mem_free") or 0), there=int(body.get("online") or 0),
-                        in_by=str(body.get("in_by") or ""), st_stale=False)
+                        in_by=str(body.get("in_by") or ""), in_tg=str(body.get("in_tg") or ""), st_stale=False)
             # своё о сессии и связи (session, session_at, down_since, linked_msg …) — не из st, не стирать
             self.rsv_put("rsv_peer_state", {**prev, **peer})
             self.reserve_pkg_zone_freed(peer["inn"])         # «зона занята» прошла — пакет без отступа

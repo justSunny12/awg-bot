@@ -296,6 +296,10 @@ class ReserveOutboundMixin:
     def _tick_leaving(self, out: dict) -> list[tuple]:
         step = str(out.get("step") or "pkg")
         if self._expired(out) and step not in ("released",):
+            if hasattr(self, "_leaving_forced"):
+                forced = self._leaving_forced(out, step)      # гость забрал бота сам, пока я лежал (outbound_forced)
+                if forced is not None:
+                    return forced
             why = {"pkg": "данные для переезда не подтверждены резервом", "eph": f"разовый ключ от «{self.reserve_peer_name()}» не пришёл",
                    "up": f"«{self.reserve_peer_name()}» не поднял профили",
                    "record": "запись не изменена за 30 минут", "release": "передача бота не завершилась"}.get(step, "срок шага вышел")
