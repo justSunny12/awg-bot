@@ -125,6 +125,7 @@ async def _receive_text(message: Message, state: FSMContext, services, hooks: Ho
             return
     old = str(settings.get(key, "") or "")
     shown_new = raw
+    dns2 = None                                           # (новое значение, прежнее) — для отката
     if key == "app.client_config.dns1":
         # В конфиге два поля, в UI одна строка. Второй адрес обязан
         # быть тем же, если назван один: стеки опрашивают список не
@@ -133,8 +134,7 @@ async def _receive_text(message: Message, state: FSMContext, services, hooks: Ho
         parts = [x for x in raw.replace(",", " ").split() if x]
         old2 = str(settings.get("app.client_config.dns2", "") or "")
         old = f"{old}, {old2}" if old2 and old2 != old else old
-        await call(settings.set_value, "app.client_config.dns2",
-                   parts[1] if len(parts) > 1 else parts[0])
+        dns2 = (parts[1] if len(parts) > 1 else parts[0], old2)
         raw = parts[0]
         shown_new = ", ".join(parts)
     elif key == "email.resume_address":
@@ -142,7 +142,16 @@ async def _receive_text(message: Message, state: FSMContext, services, hooks: Ho
         old = old or mailbox
         shown_new = raw or mailbox
     try:
-        await call(settings.set_value, key, raw)
+        # обе записи DNS — в одном try: отказ второй откатывает первую, пара
+        # dns1/dns2 не остаётся разнородной
+        if dns2 is not None:
+            await call(settings.set_value, "app.client_config.dns2", dns2[0])
+        try:
+            await call(settings.set_value, key, raw)
+        except settings.SettingsWriteError:
+            if dns2 is not None:
+                await call(settings.set_value, "app.client_config.dns2", dns2[1])
+            raise
     except settings.SettingsWriteError as e:
         await state.clear()
         await after_input(message, services, hooks, sec, ui.fail("Не сохранено", str(e)))
