@@ -214,30 +214,54 @@ update_rescue() {  # ловушка первой половины обновле
 restore_prev_code() {  # restore_prev_code DIR — прежний код из DIR на место нового (окружение не трогает); 1 — неполон
     # Единая точка всех откатов кода (ловушка второй половины, сторож, откат
     # набора, несостоявшийся переход на выпуск копии)
-    local prev="$1" _rc=0
+    local prev="$1" _rc=0 _kernel=0
     # текущий код удаляется только под полный прежний: иначе хост остался бы без кода
     if [[ ! -f "$prev/awg-bot.sh" || ! -f "$prev/awgbot/__main__.py" ]]; then
         warn "прежний код в $prev неполон — текущий оставлен на месте"
         return 1
     fi
+    # Ядро AmneziaWG и утилиты awg собраны по поставке новой версии до подмены
+    # кода, и откат их не трогает — об этом строкой, а не молча
+    if [[ -f "$prev/install/awg.lock" && -f "$INSTALL_DIR/install/awg.lock" ]] \
+       && ! cmp -s "$prev/install/awg.lock" "$INSTALL_DIR/install/awg.lock"; then
+        _kernel=1
+    fi
     find "$INSTALL_DIR" -mindepth 1 -maxdepth 1 ! -name venv ! -name .venvs ! -name .prev-code ! -name .hold-code \
         -exec rm -rf {} + 2>/dev/null || true
     ( shopt -s dotglob; mv "$prev"/* "$INSTALL_DIR"/ 2>/dev/null ) || true
     rm -rf "$prev"
-    # Копия обвязки шлюза — тоже код: ensure_host_autostart уже могла положить
-    # скрипт новой версии, и прежний агент остался бы при чужой обвязке
-    gw_plumbing_sync || _rc=$?
-    [[ "$_rc" -eq 1 ]] && warn "не удалось вернуть прежнюю копию обвязки в /usr/local/sbin/routing-gw-setup.sh"
+    [[ "$_kernel" -eq 1 ]] && warn "ядро AmneziaWG и утилиты awg не откатываются — остаются версии новой поставки"
+    # Копии скриптов в /usr/local/sbin — тоже код: ensure_host_autostart уже
+    # могла положить скрипты новой версии, и прежний бот остался бы при чужой
+    # обвязке (её выполняют юниты при загрузке)
+    local _n
+    for _n in $(sbin_copies); do
+        _rc=0; sbin_copy_sync "$_n" || _rc=$?
+        [[ "$_rc" -eq 1 ]] && warn "не удалось вернуть прежнюю копию /usr/local/sbin/$_n"
+    done
     return 0
 }
-# Копия routing-gw-setup.sh в /usr/local/sbin — по поставке в $INSTALL_DIR,
-# если копия уже есть (нет — обвязку тут не разворачивали, класть нечего).
+# Копии скриптов поставки в /usr/local/sbin, которые выполняют юниты при
+# загрузке и режимы --reassert, — по ролям; тот же набор снимают хвост
+# uninstall и снос установщиком (wipe_previous). Кладут их сами скрипты при
+# развёртывании (--apply, --up, --adopt…), здесь — освежение на обновлении и
+# возврат прежних на откате. Скрипты списков шлюза (awg-lan-*) раскладывает
+# обвязка шлюза сама.
+sbin_copies() {  # имена копий этой роли (роль — из app.yaml), по строке
+    if [[ "$(yaml_get "$CONF_DIR/app.yaml" role)" == "gateway" ]]; then
+        printf '%s\n' routing-gw-setup.sh reserve-gw-setup.sh
+    else
+        printf '%s\n' routing-host-setup.sh routing-link-setup.sh reserve-pair-setup.sh
+    fi
+}
+# Копия /usr/local/sbin/ИМЯ — по поставке в $INSTALL_DIR/install, если копия
+# уже есть (нет — тут её не разворачивали, класть нечего).
 # 0 — копия переписана, 1 — не удалось, 2 — менять нечего.
-gw_plumbing_sync() {
-    local _rgs="/usr/local/sbin/routing-gw-setup.sh" _src="$INSTALL_DIR/install/routing-gw-setup.sh"
-    [[ -f "$_rgs" && -f "$_src" ]] || return 2
-    cmp -s "$_src" "$_rgs" && return 2
-    install -m 0755 "$_src" "$_rgs" || return 1
+sbin_copy_sync() {  # sbin_copy_sync ИМЯ
+    local _dst="/usr/local/sbin/$1" _src="$INSTALL_DIR/install/$1"
+    [[ -f "$_dst" && -f "$_src" ]] || return 2
+    cmp -s "$_src" "$_dst" && return 2
+    install -m 0755 "$_src" "$_dst" || return 1
 }
 
 post_update_rescue() {  # ловушка второй половины обновления
@@ -560,13 +584,16 @@ update_env_steps() {  # окружение новой версии: вторая
     ensure_ping
     build_venv
     install_unit
-    ensure_host_autostart
     ensure_awg_module_loaded
     ensure_awg_generation
     adopt_resolver                         # dns1 уже приватный — резолвер под опеку бота
     seed_conf                              # досеять НОВЫЕ conf-файлы этой версии
                                            # (существующие не трогаем — idempotent)
     validate_config
+    # Автозагрузка и копии скриптов в /usr/local/sbin — после проверки
+    # конфигурации: её отказ откатывает код, и копии новой версии раньше
+    # отказа были бы лишней работой отката
+    ensure_host_autostart
 }
 
 cmd_post_update() {
