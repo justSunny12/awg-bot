@@ -51,7 +51,7 @@ class GuardSpec:
     ssh_port: int
     ssh_allow4: list[str] = field(default_factory=list)   # IP/CIDR v4 (вайтлист)
     ssh_allow6: list[str] = field(default_factory=list)
-    ssh_open: bool = False            # вайтлист пуст → SSH открыт всем (осознанно)
+    ssh_open: bool = False            # адресов нет (список пуст или ни одно имя не разрешилось) → SSH открыт всем
     tunnel_nets4: list[str] = field(default_factory=list)  # подсети туннеля
     tunnel_admin4: list[str] = field(default_factory=list) # устройства админа
     tunnel_ifs: list[str] = field(default_factory=list)    # интерфейсы AWG сервера
@@ -60,6 +60,8 @@ class GuardSpec:
     open_udp: list[int] = field(default_factory=list)
     own_forward: bool = True          # своя цепочка FORWARD (policy drop)
     unresolved: list[str] = field(default_factory=list)    # имена, которые не резолвятся
+    ssh_hosts: dict = field(default_factory=dict)          # имя вайтлиста → его адреса (строки в файле таблицы)
+    ssh_held: list[str] = field(default_factory=list)      # не резолвятся, адреса — прежние из файла таблицы
     nat: bool = True                  # MASQUERADE подсетей туннеля наружу
     nat_exclude_ifs: list[str] = field(default_factory=list)  # куда НЕ маскарадить: awg-интерфейсы, линк
     filter: bool = True               # False — NAT-only форма (файервол выключен)

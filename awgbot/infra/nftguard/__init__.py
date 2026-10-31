@@ -1,6 +1,7 @@
 """
 nftguard/ — файервол ВПС таблицей nftables `inet awg_bot_guard` (части: common —
-константы, спецификация и ошибка; collect — вайтлист, порты, подсети и линки с
+константы, спецификация и ошибка; allow — вайтлист SSH с удержанием прежних
+адресов имён и наборы без пересечений; collect — вайтлист, порты, подсети и линки с
 живого хоста и conf; render — текст таблицы; apply — применение, чтение, сверка
 по тику, персистентность, откат и снятие).
 
@@ -46,8 +47,9 @@ set — одним `nft -j list set`.
 from __future__ import annotations
 
 from .common import log, TABLE_FAMILY, TABLE_NAME, TABLE, RULES_DIR, RULES_FILE, MAIN_CONF, ROLLBACK_UNIT, ROLLBACK_SECONDS, SET_ALLOW4, SET_ALLOW6, SET_TUNNEL_NETS, SET_TUNNEL_ADMIN, SET_LINK_PEERS, SET_TG_POOL, SET_TG_SEEN, SET_TG_OUT, TG_OUT4, DEFAULT_TG_POOL, PRIVATE4, GuardError, GuardSpec, enabled
+from .allow import HOST_MARK, noverlap, file_hosts, resolve_entries, ssh_allow, host_lines
 from .collect import _resolve_cache, _RESOLVE_TTL, _RESOLVE_TIMEOUT, _getaddrinfo_timed, classify, _resolve, resolve_allow, _ports_from_conf, listen_ports, tunnel_nets, build_spec, _peer_link_ifs, _tunnel_ifs, wan_ifaces, link_ifaces, link_peer_addrs, link_channel_port, _nat_exclude_ifs, _is_v4, quarantine_ifaces, guest_zone, tg_pool
 from .render import _set_block, _ports, render
 from .apply import _nft, read_file, write_file, check_text, apply_text, nat_covers, table_present, live_set, live_set_counters, relay_packets, reconcile, ensure_persistence, rollback_armed, arm_rollback, disarm_rollback, remove, ufw_active, firewalld_active, status
 
-__all__ = ["log", "TABLE_FAMILY", "TABLE_NAME", "TABLE", "RULES_DIR", "RULES_FILE", "MAIN_CONF", "ROLLBACK_UNIT", "ROLLBACK_SECONDS", "SET_ALLOW4", "SET_ALLOW6", "SET_TUNNEL_NETS", "SET_TUNNEL_ADMIN", "SET_LINK_PEERS", "SET_TG_POOL", "SET_TG_SEEN", "SET_TG_OUT", "TG_OUT4", "DEFAULT_TG_POOL", "PRIVATE4", "GuardError", "GuardSpec", "enabled", "_resolve_cache", "_RESOLVE_TTL", "_RESOLVE_TIMEOUT", "_getaddrinfo_timed", "classify", "_resolve", "resolve_allow", "_ports_from_conf", "listen_ports", "tunnel_nets", "build_spec", "_peer_link_ifs", "_tunnel_ifs", "wan_ifaces", "link_ifaces", "link_peer_addrs", "link_channel_port", "_nat_exclude_ifs", "_is_v4", "quarantine_ifaces", "guest_zone", "tg_pool", "_set_block", "_ports", "render", "_nft", "read_file", "write_file", "check_text", "apply_text", "nat_covers", "table_present", "live_set", "live_set_counters", "relay_packets", "reconcile", "ensure_persistence", "rollback_armed", "arm_rollback", "disarm_rollback", "remove", "ufw_active", "firewalld_active", "status"]
+__all__ = ["log", "TABLE_FAMILY", "TABLE_NAME", "TABLE", "RULES_DIR", "RULES_FILE", "MAIN_CONF", "ROLLBACK_UNIT", "ROLLBACK_SECONDS", "SET_ALLOW4", "SET_ALLOW6", "SET_TUNNEL_NETS", "SET_TUNNEL_ADMIN", "SET_LINK_PEERS", "SET_TG_POOL", "SET_TG_SEEN", "SET_TG_OUT", "TG_OUT4", "DEFAULT_TG_POOL", "PRIVATE4", "GuardError", "GuardSpec", "enabled", "HOST_MARK", "noverlap", "file_hosts", "resolve_entries", "ssh_allow", "host_lines", "_resolve_cache", "_RESOLVE_TTL", "_RESOLVE_TIMEOUT", "_getaddrinfo_timed", "classify", "_resolve", "resolve_allow", "_ports_from_conf", "listen_ports", "tunnel_nets", "build_spec", "_peer_link_ifs", "_tunnel_ifs", "wan_ifaces", "link_ifaces", "link_peer_addrs", "link_channel_port", "_nat_exclude_ifs", "_is_v4", "quarantine_ifaces", "guest_zone", "tg_pool", "_set_block", "_ports", "render", "_nft", "read_file", "write_file", "check_text", "apply_text", "nat_covers", "table_present", "live_set", "live_set_counters", "relay_packets", "reconcile", "ensure_persistence", "rollback_armed", "arm_rollback", "disarm_rollback", "remove", "ufw_active", "firewalld_active", "status"]

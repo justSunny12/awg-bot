@@ -62,29 +62,7 @@ def _resolve(host: str) -> list[str]:
 
 def resolve_allow(entries) -> tuple[list[str], list[str], list[str]]:
     """Вайтлист из conf → (v4, v6, нерезолвящиеся имена). Порядок стабильный."""
-    v4: list[str] = []
-    v6: list[str] = []
-    bad: list[str] = []
-    for raw in entries or []:
-        try:
-            kind, val = pkg.classify(raw)
-        except ValueError as e:
-            pkg.log.warning("firewall.ssh_allow: %s — пропущено", e)
-            continue
-        if kind == "4":
-            v4.append(val)
-        elif kind == "6":
-            v6.append(val)
-        else:
-            ips = pkg._resolve(val)
-            if not ips:
-                bad.append(val)
-            for ip in ips:
-                try:
-                    net = str(ipaddress.ip_network(ip))    # 203.0.113.9 → …/32, как CIDR
-                except ValueError:
-                    continue
-                (v4 if ":" not in ip else v6).append(net)
+    v4, v6, bad, _hosts = pkg.resolve_entries(entries)
     return sorted(set(v4), key=ipaddress.ip_network), sorted(set(v6), key=ipaddress.ip_network), bad
 
 
@@ -140,7 +118,8 @@ def build_spec(admin_ips, channel_extra=(), transit_links=()) -> pkg.GuardSpec:
     оба списка — из БД вызывающего; без БД (CLI до старта бота) — пусто, то
     есть транзит между линками закрыт."""
     links = pkg.link_ifaces()
-    v4, v6, bad = pkg.resolve_allow(settings.get("app.firewall.ssh_allow", []) or [])
+    allow = pkg.ssh_allow(settings.get("app.firewall.ssh_allow", []) or [])
+    v4, v6, bad = allow["v4"], allow["v6"], allow["bad"]
     ssh_open = not v4 and not v6
     admin = sorted({str(ipaddress.ip_address(a)) for a in (admin_ips or [])
                     if pkg._is_v4(a)}, key=ipaddress.ip_address)
@@ -152,7 +131,7 @@ def build_spec(admin_ips, channel_extra=(), transit_links=()) -> pkg.GuardSpec:
         udp_ports=pkg.listen_ports() + zone_link_ports(),
         open_tcp=pkg._ports_from_conf(settings.get("app.firewall.open_tcp", [])),
         open_udp=pkg._ports_from_conf(settings.get("app.firewall.open_udp", [])),
-        unresolved=bad,
+        unresolved=bad, ssh_hosts=allow["hosts"], ssh_held=allow["held"],
         nat_exclude_ifs=pkg._nat_exclude_ifs(),
         filter=pkg.enabled(),
         peer_link_ifs=pkg._peer_link_ifs(links, transit_links),
@@ -300,7 +279,8 @@ def tg_pool() -> list[str]:
             continue
         if n not in out:
             out.append(n)
-    return out
+    # выученный анонс бывает шире сети ядра или прежней выученной — набор без пересечений
+    return pkg.noverlap(out)
 
 
 PAIR_IF = "awgpair"

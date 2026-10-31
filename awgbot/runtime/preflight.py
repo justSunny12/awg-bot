@@ -151,7 +151,11 @@ def _firewall_warnings(services) -> list[str]:
     out: list[str] = []
     spec = nftguard.build_spec(services.db.admin_device_addresses(config.ADMIN_ID),
                                transit_links=services.gateway_transit_links())
-    if spec.ssh_open:
+    if spec.ssh_open and spec.unresolved:
+        out.append("ни одно имя из списка адресов для SSH не резолвится, прежних адресов нет — "
+                   "хост открыт для всех адресов (вход только по ключам). Проверь DNS или добавь "
+                   "адрес — ⚙️ Настройки → 🛡 SSH-доступ → «➕ Адрес»")
+    elif spec.ssh_open:
         out.append("список адресов для SSH пуст — хост открыт для всех адресов "
                    "(вход только по ключам). Добавить свои — ⚙️ Настройки → "
                    "🛡 SSH-доступ → «➕ Адрес»")
