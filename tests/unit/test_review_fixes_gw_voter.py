@@ -1,13 +1,25 @@
 """Правки по ревью — голосующий кворума на шлюзе (domain/gateway/reserve/quorum.py и
-соседи): первое слово новой сессии гостевого канала по номеру сессии, а не только по
-флагу online раз в такт.
+соседи):
 
-Хост и часы — как в tests/unit/test_gw_quorum.py (`_Host`, `_Clock`), quorum.json и
-reserve.json — во временном каталоге, ответы лидера — настоящие датаграммы.
+- первое слово новой сессии гостевого канала — по номеру сессии, а не только по флагу
+  online раз в такт;
+- эпоха из ответа клона — всем голосующим линии и на диск;
+- `qpause` с длительностью `dur` — пауза не зависит от расхода часов;
+- `qtake`/`qrel` до создания голосующего (первый такт после перезапуска) — на диск;
+- восстановленное обязательство — не дольше pledge_s от старта при часах позади отметки;
+  эпоха из слова или ответа — не дальше известной на EPOCH_STEP_MAX.
 
-Цена ошибки: гостевой канал оборвался и поднялся между тактами — шлюз не замечает новой
-сессии и молчит о своём взгляде; у резерва взгляды только в памяти, прежнее «нет» залипает
-на живом канале голосом в счёте кандидата — ложное большинство и переезд при живой основе.
+Хост и часы — как в tests/unit/test_gw_quorum.py (`_Host`, `_Clock`) и
+tests/unit/test_gw_quorum_decision.py (`ag`), quorum.json и reserve.json — во временном
+каталоге, ответы лидера — настоящие датаграммы.
+
+Цена ошибки: гостевой канал оборвался и поднялся между тактами — шлюз молчит о взгляде,
+у резерва прежнее «нет» залипает голосом в счёте кандидата — ложное большинство; пробы к
+основе дома с эпохой до взятия — вернувшаяся основа набирает «да» при живом госте (два
+писателя); пауза 0 по чужим часам — переезд во время обновления лидера; потерянный `qtake`
+— пробы прежнему лидеру под старой эпохой; потерянный `qrel` — живой лидер без голоса до
+срока; обязательство, продлённое часами, — голос потерян надолго; мусорная эпоха — линия
+под эпохой, которой никто не держит.
 """
 from __future__ import annotations
 
@@ -112,3 +124,72 @@ def test_pause_seconds_prefers_the_duration():
     assert pause_seconds({"until": soon, "dur": 200}) == 200.0
     assert 55 <= pause_seconds({"until": soon}) <= 60, "без длительности — срок по своим часам, как прежде"
     assert pause_seconds({"until": "мусор", "dur": True}) == 0.0
+
+
+# ── слово кандидата до создания голосующего (перезапуск агента) ──────────────
+
+def _restart_before_tick(ag) -> None:
+    ag.svc = ag.new()                                         # голосующего ещё нет: такта не было
+
+
+def test_qtake_before_the_first_tick_is_kept_on_disk(ag):
+    from tests.unit.test_gw_quorum_decision import E
+    ag.see()
+    ag.uns()
+    _restart_before_tick(ag)
+    assert NAME not in ag.svc._gw_qvoters
+    ag.word("qtake", e=E)
+    assert ag.section().get("e_known") == E + 1, "qtake до первого такта потерян — эпоха не поднята"
+    assert NAME not in ag.pledges(), "qtake до первого такта не снял обязательство"
+    ag.tick()
+    assert ag.v.epoch == E + 1 and ag.v.pledge is None, "голосующий не взял с диска эпоху qtake"
+
+
+def test_qrel_before_the_first_tick_lifts_the_pledge(ag):
+    from tests.unit.test_gw_quorum_decision import E
+    ag.see()
+    ag.uns()
+    _restart_before_tick(ag)
+    ag.word("qrel", e=E + 1)
+    assert NAME in ag.pledges(), "qrel чужой эпохи снял обязательство"
+    ag.word("qrel", e=E)
+    assert NAME not in ag.pledges(), "qrel до первого такта потерян — живой лидер без голоса до срока"
+    ag.tick()
+    assert ag.v.pledge is None
+
+
+# ── обязательство и стенные часы; эпоха — недалеко от известной ─────────────
+
+def test_a_pledge_stamped_in_the_future_lasts_no_longer_than_its_term(ag):
+    """Часы без батарейки после перезагрузки — позади отметки: обязательство — не дольше
+    pledge_s от старта агента, а не pledge_s плюс расход часов."""
+    import json as _json
+
+    from awgbot.util import timeutil
+    from tests.unit.test_gw_quorum_decision import E
+    sec = ag.section()
+    sec["pledges"] = {NAME: {"e": E, "at": timeutil.to_iso(timeutil.shift(timeutil.now(), 3600))}}
+    ag.store.write_text(_json.dumps(sec), encoding="utf-8")
+    ag.svc = ag.new()
+    ag.tick()
+    assert ag.v.pledge is not None, "подготовка: обязательство не восстановлено"
+    ag.run(ag.v.timing.pledge_s + 10, answer=True, step=5)  # лидер отвечает — нового «нет» нет
+    assert ag.v.pledge is None and NAME not in ag.pledges(), "обязательство продлено расходом стенных часов"
+
+
+def test_a_far_epoch_from_a_word_is_not_taken(ag):
+    from tests.unit.test_gw_quorum_decision import E
+    ag.word("qstate", e=E + 5000)
+    assert ag.v.epoch == E and ag.section().get("e_known", 0) < E + 5000, "мусорная эпоха из qstate принята"
+    ag.word("qstate", e=E + 3)
+    assert ag.v.epoch == E + 3, "соседняя эпоха не принята"
+
+
+def test_a_far_epoch_in_a_reply_keeps_the_view_but_not_the_epoch(ag):
+    from tests.unit.test_gw_quorum_decision import E
+    from awgbot.util.quorum.probe import Probe
+    ag.run(60, answer=True, e=E + 5000)
+    assert ag.v.view == "see", "ответ лидера с кривой эпохой не засчитан как жизнь"
+    assert ag.v.epoch == E, "эпоха далеко впереди из ответа принята"
+    ps = [Probe.parse(a[2]) for a in ag.run(30, answer=False) if a[0] == "probe"]
+    assert ps and all(p.e == E for p in ps)

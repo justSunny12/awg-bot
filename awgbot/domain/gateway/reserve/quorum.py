@@ -32,6 +32,7 @@ from .store import STORE_LOCK                                 # один зам�
 STORE_PATH = Path("/var/lib/awg-gw/quorum.json")
 _KEEP_KEYS = ("views", "pledges", "told", "apply_mono", "share_given_at", "e_known")
 APPLY_EVERY_S = 300
+EPOCH_STEP_MAX = 1000          # эпоха из слова или ответа — не дальше известной на столько (мусор, поломка)
 
 
 def _read(path: Path = STORE_PATH) -> dict:
@@ -186,7 +187,20 @@ class GatewayQuorumMixin:
             return str(v.view or ""), str(stored.get("since") or "")
         return str(stored.get("w") or ""), str(stored.get("since") or "")
 
+    def _quorum_epoch_known(self) -> int:
+        sec = self.quorum_section()
+        return max([int(sec.get("e") or 0), int(sec.get("e_known") or 0)] + [int(v.epoch) for v in self._gw_qvoters.values()])
+
+    def _quorum_epoch_sane(self, e: int) -> bool:
+        """Эпоха годится: известной нет (первый документ) или она недалеко впереди — скачок на тысячи
+        принятым завёл бы линию под эпоху, которой никто не держит (пробы несут её, лидер следует)."""
+        known = self._quorum_epoch_known()
+        return 0 <= int(e) < 2 ** 62 and (known <= 0 or int(e) <= known + EPOCH_STEP_MAX)
+
     def _quorum_epoch_in(self, e: int) -> None:
+        if not self._quorum_epoch_sane(int(e)):
+            log.warning("quorum: эпоха %s далеко впереди известной (%s) — не принята", e, self._quorum_epoch_known())
+            return
         for v in self._gw_qvoters.values():
             v.epoch_in(int(e))
         self._quorum_epoch_persist(int(e))
@@ -264,6 +278,10 @@ class GatewayQuorumMixin:
         r = Reply.parse(data)
         if r is None:
             return []
+        if int(r.e) > int(v.epoch) and not self._quorum_epoch_sane(int(r.e)):
+            import dataclasses
+            log.warning("quorum: ответ %s несёт эпоху %s далеко впереди известной — эпоха не принята", name, r.e)
+            r = dataclasses.replace(r, e=int(v.epoch))       # ответ — жизнь лидера, эпоха — нет
         now = time.monotonic()
         actions: list[tuple] = []
         for act in v.reply_in(r, now):
@@ -318,7 +336,7 @@ class GatewayQuorumMixin:
                 self._quorum_epoch_in(e)
             return []
         if v is None:
-            return []
+            return self._quorum_word_without_voter(name, kind, body)
         if kind == "qask":
             return self._quorum_asked(name, v, now)
         if kind == "qtake":
@@ -341,6 +359,24 @@ class GatewayQuorumMixin:
             v.pause(now, pause_seconds(body))                 # dur — длительность, until — по своим часам
             log.info("quorum: сервер AWG просит паузу до %s", body.get("until"))
             return []
+        return []
+
+    def _quorum_word_without_voter(self, name: str, kind: str, body: dict) -> list[tuple]:
+        """Слово кандидата до создания голосующего (первый такт после перезапуска агента):
+        `qtake{e}` — эпоха e + 1 на диск (e_known), обязательство на диске снято; `qrel{e}` —
+        обязательство под той эпохой снято. Голосующий при создании берёт всё с диска."""
+        e = int(body.get("e") or 0)
+        if kind == "qtake" and self._quorum_epoch_sane(e + 1):
+            self._quorum_epoch_persist(e + 1)
+            self._pledge_store(name, None)
+            log.warning("quorum: кандидат забирает основу под эпоху %s (голосующего ещё нет) — записано, обязательство снято", e + 1)
+        elif kind == "qrel":
+            pledge = (self.quorum_section().get("pledges") or {}).get(name)
+            if isinstance(pledge, dict) and int(pledge.get("e") or -1) == e:
+                self._pledge_store(name, None)
+                log.info("quorum: обязательство «нет» под эпохой %s снято (qrel, голосующего ещё нет)", e)
+            if hasattr(self, "reserve_share_released"):
+                self.reserve_share_released()
         return []
 
     def _quorum_asked(self, name: str, v: Voter, now: float) -> list[tuple]:
@@ -406,6 +442,9 @@ class GatewayQuorumMixin:
             age = timeutil.elapsed(timeutil.parse_iso(str(pledge.get("at") or "")))
         except (ValueError, TypeError):
             age = v.timing.pledge_s + 1
+        # стенные часы после перезагрузки могут стоять позади отметки (часы без батарейки до NTP):
+        # отрицательный возраст продлил бы обязательство без предела — не дольше pledge_s от старта
+        age = max(0.0, float(age))
         if age < v.timing.pledge_s:
             v.pledge = {"e": int(pledge.get("e") or 0), "at": now - age}
             if int(pledge.get("e") or 0) > v.epoch:
