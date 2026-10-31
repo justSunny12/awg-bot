@@ -185,7 +185,10 @@ def _ns_of(name: str, timeout: float) -> list[str]:
                 recs = query(srv, zone, 2, timeout)
             except DnsError:
                 continue
-            names = [_read_name(msg, at)[0] for nm, t, rdata, msg, at, _ttl in recs if t == 2]
+            try:
+                names = [_read_name(msg, at)[0] for nm, t, rdata, msg, at, _ttl in recs if t == 2]
+            except (IndexError, struct.error):   # имя в rdata NS оборвано или указатель за концом
+                continue
             if names:
                 return names
             break

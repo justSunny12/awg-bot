@@ -192,6 +192,18 @@ def test_a_truncated_answer_is_a_dns_error_not_a_crash(dns, cut):
         dnsapi.read_authoritative("vpn.example.net")
 
 
+def test_a_broken_ns_name_is_a_dns_error_not_a_crash(dns):
+    """Ответ про NS цел, а имя сервера в его rdata — указатель за конец
+    сообщения: разбор имени идёт уже после query, и IndexError уронил бы
+    задачу надзора записи. Такой ответ — как неответивший резолвер."""
+    def bad_ns(server, name, qtype, query):
+        if server == "192.0.2.53" and qtype == 2 and name == "example.net":
+            return _answer(query, [(2, b"\x03ns1\xc3\xff")])
+    dns.override = bad_ns
+    with pytest.raises(dnsapi.DnsError):
+        dnsapi.read_authoritative("vpn.example.net")
+
+
 def test_a_query_carries_the_name_and_type_asked(dns):
     recs = common.query("203.0.113.53", "vpn.example.net", 1)
     assert [(t, rdata) for _n, t, rdata, _m, _o, _ttl in recs] == [(1, socket.inet_aton("198.51.100.7"))]
