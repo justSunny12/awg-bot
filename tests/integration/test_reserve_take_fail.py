@@ -26,11 +26,12 @@ from awgbot.util import timeutil
 
 from tests.integration import _reserve_common as rc
 from tests.integration import _reserve_move as rm
-from tests.integration.test_reserve_hosting import host  # noqa: F401 — фикстура
+from tests.integration.test_reserve_hosting import host
 
 pytestmark = pytest.mark.integration
 rsv = rc.rsv
 mv = rm.mv
+__all__ = ["host"]
 
 TAIL = "203.0.113.9:45877"
 
