@@ -160,6 +160,8 @@ def test_the_optional_fields_are_only_the_listed_ones_of_st_and_state():
                            "qkeys": frozenset({"q_gen", "thr", "y", "qbox"}),
                            # точка расхождения в jstale — у выпуска с хвостом старой эпохи
                            "jstale": frozenset({"F"}),
+                           # длительность паузы лидера — у отправителя, знающего расход часов сторон
+                           "qpause": frozenset({"dur"}),
                            "hello": frozenset({"pair", "eph", "name", "version", "caps", "gen", "ports", "seen",
                                                "bot", "gw"})}
     body = _st()
