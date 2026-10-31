@@ -406,6 +406,20 @@ class ReserveQuorumCandidateMixin:
             log.info("кворум: пауза автоматического переезда кончилась — исполняю решение о «%s»", self.reserve_peer_name())
             return self._quorum_take(c, now)
         ask_s = settings.get_int("app.reserve.ask_seconds", 60)
+        if stage == "ask" and ex.get("asked"):
+            leaving = str(self.reserve_peer_state().get("out") or "") == "leaving"
+            if leaving and not ex.get("agreed_at"):
+                # ответа на ask нет, но лидер уже отдаёт пользователей путём кнопки (st.out = leaving): согласие —
+                # ждать его go_req (свежий пакет и разовый ключ), а не идти по точкам параллельно
+                ex["agreed_at"] = now
+                log.info("кворум: «%s» отдаёт пользователей по просьбе — жду его go_req", self.reserve_peer_name())
+            if ex.get("agreed_at"):
+                from ..outbound import EPH_WAIT_S, PKG_WAIT_S
+                if leaving and now - float(ex["agreed_at"]) < PKG_WAIT_S + EPH_WAIT_S:
+                    return []
+                ex["stage"] = "points"
+                log.warning("кворум: «%s» согласился, но переезд кнопкой не дошёл до меня — по точкам", self.reserve_peer_name())
+                return self._quorum_need(c, str(ex.get("since") or ""))
         if stage == "ask" and now - float(ex.get("at") or now) >= ask_s:
             if 0 < int(ex.get("busy") or 0) < 3 and self._quorum_peer_reachable():
                 # лидер ответил «занят» (плановая пауза) — повторить просьбу (§3.6), не сразу по точкам

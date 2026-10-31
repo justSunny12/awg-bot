@@ -364,3 +364,28 @@ def test_diverging_digits_switch_the_candidate_off_and_leave_the_link_signal(c):
     assert c.s.reserve_code_window()["open"], "цифры расходятся — запасного окна кода по линку пары нет"
     texts = [n.text for n in notes(acts)]
     assert any("цифры времени не сходятся" in t for t in texts), f"в Т-К21д нет причины: {texts}"
+
+
+# ── согласие лидера на просьбу — по st.out (Q8-7) ───────────────────────────
+
+def test_a_leader_leaving_after_the_ask_is_an_agreement_and_the_candidate_waits(c):
+    from awgbot.domain.services.reserve.outbound import EPH_WAIT_S, PKG_WAIT_S
+    from tests.integration._reserve_vote_common import sent
+    acts = _majority(c) + c.run(T_UP)
+    assert len(sent(acts, "ask")) == 1 and c.stage() == "ask", "подготовка: просьба лидеру не ушла"
+    c.s.rsv_update("rsv_peer_state", out="leaving")         # st второй стороны: отдаёт пользователей кнопкой
+    acts = c.run(ASK + 30)
+    assert c.stage() == "ask" and not gw_sent(acts, "qneed"), "согласие лидера не увидено — по точкам параллельно"
+    acts = c.run(PKG_WAIT_S + EPH_WAIT_S)
+    assert c.stage() in ("points", "code") and gw_sent(acts, "qneed"), "согласие без go_req дольше срока — точки не попрошены"
+
+
+def test_a_leader_back_home_after_agreeing_sends_the_candidate_to_points_at_once(c):
+    _majority(c)
+    c.run(T_UP)
+    c.s.rsv_update("rsv_peer_state", out="leaving")
+    c.run(10)
+    assert c.stage() == "ask", "подготовка: согласие не увидено"
+    c.s.rsv_update("rsv_peer_state", out="home")            # переезд кнопкой у лидера сорвался
+    acts = c.run(5)
+    assert c.stage() == "points" and gw_sent(acts, "qneed"), "лидер вернулся домой — кандидат всё ждёт"
