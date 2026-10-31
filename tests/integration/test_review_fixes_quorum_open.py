@@ -178,3 +178,37 @@ def test_a_successful_move_keeps_the_raised_epoch(c):
     c.s.reserve_set_in("idle")
     acts += c.run(10)
     assert not gw_sent(acts, "qrel"), f"переезд состоялся, а шлюзам ушёл откат эпохи: {gw_sent(acts, 'qrel')}"
+
+
+# ── окно кода вне решения — только когда код что-то откроет (Q1-10) ─────────
+
+@pytest.mark.parametrize("what", ["ready_off", "no_pkg", "no_box"])
+def test_the_code_window_outside_a_decision_needs_the_open_preconditions(c, what):
+    c.b.peer_admin_opened()
+    if what == "ready_off":
+        settings.set_value("app.reserve.ready", False)
+    elif what == "no_pkg":
+        c.s.rsv_put("rsv_pkg_in", {})
+    else:
+        q = c.s.rsv_get("rsv_qkeys")
+        q.pop("peer", None)
+        c.s.rsv_put("rsv_qkeys", q)
+    assert c.s.reserve_open_block(), "подготовка: предусловия открытия выполнены"
+    for slot in (1, 2):
+        c.b.gone(slot)
+    c.own("uns")
+    acts = c.tick() + c.run(30)
+    assert not c.s.reserve_code_window()["open"], f"{what}: окно кода открыто, а код ничего не откроет"
+    assert not notes(acts), f"{what}: «введите код» при невыполнимых предусловиях: {[n.text[:60] for n in notes(acts)]}"
+
+
+def test_the_code_window_outside_a_decision_opens_once_the_block_is_gone(c):
+    settings.set_value("app.reserve.ready", False)
+    for slot in (1, 2):
+        c.b.gone(slot)
+    c.own("uns")
+    c.tick()
+    assert not c.s.reserve_code_window()["open"], "подготовка: окно открыто при выключенной готовности"
+    settings.set_value("app.reserve.ready", True)
+    c.run(5)
+    assert c.s.reserve_code_window()["open"], "готовность включили — окно кода не открылось"

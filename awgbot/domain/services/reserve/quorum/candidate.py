@@ -167,6 +167,15 @@ class ReserveQuorumCandidateMixin:
         maj = qm.majority(len(c.no_nodes()), c.v) if c.v >= 2 else False   # при v = 1 большинства как решения нет
         want = c.own == "uns" and not c.see_nodes() and not maj and self.reserve_zone_free()   # relay — зона свободна
         if want and not cw.get("open"):
+            why = self.reserve_open_block()
+            if why:
+                # код ничего не откроет (готовность, пакет, ящик кода, DNS вручную) — окна и «введите код» нет;
+                # причину карточка показывает своими строками (готовность, направление «к себе»)
+                if self.__dict__.get("_quo_watch_block") != why:
+                    self.__dict__["_quo_watch_block"] = why
+                    log.warning("кворум: «%s» не вижу, голосов не хватает, а приём кода не открыт: %s", self.reserve_peer_name(), why)
+                return []
+            self.__dict__.pop("_quo_watch_block", None)
             return self.reserve_code_window_set(True, since=self._quorum_no_since(c), n=len(c.no_nodes()), v=c.v, t=qm.threshold(c.v))
         if not want and cw.get("open") and cw.get("by") == "quorum":
             # голосов хватило — переезд идёт сам; при v = 1 — второй сервер снова видит; иначе — большинство
