@@ -99,7 +99,9 @@ class ReserveReturnMixin:
         from awgbot.domain.notices import reserve as rn
         actions: list[tuple] = []
         own = self.reserve_own_ip()
-        if own and self.reserve_dns_automatic():
+        if not own and self.reserve_dns_name():
+            actions.append(("notify", [self._own_unknown_note()]))   # запись на себя не сменить — не молча
+        elif own and self.reserve_dns_automatic():
             try:
                 self.reserve_dns_switch(own)
             except ServiceError as e:
@@ -256,9 +258,10 @@ class ReserveReturnMixin:
                 from awgbot.domain.notices import reserve as rn
                 own = self.reserve_own_ip()
                 self._out_step("relay", RELAY_WAIT_S, back_at=timeutil.now_iso(), record_timeout=True, back_resent=time.monotonic())
-                return [("send", "back", {}), ("live",),
-                        ("notify", [Notification(tg_id=int(config.ADMIN_ID), force_sound=True,
-                                                 text=rn.record_not_changed(self.reserve_dns_name(), "факт записи не наступил за 30 минут", own))])]
+                note = (Notification(tg_id=int(config.ADMIN_ID), force_sound=True,
+                                     text=rn.record_not_changed(self.reserve_dns_name(), "факт записи не наступил за 30 минут", own))
+                        if own else None if out.get("record_noip_told") else self._own_unknown_note())   # без адреса — уже сказано
+                return [("send", "back", {}), ("live",)] + ([("notify", [note])] if note else [])
             return self._tick_record(out, self.reserve_own_ip(), "back")
         if step == "relay":
             if self._expired(out):

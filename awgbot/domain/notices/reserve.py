@@ -178,6 +178,13 @@ def record_not_changed(name: str, reason: str, ip: str) -> str:
             f"<code>{_e(ip)}</code>")
 
 
+def record_own_unknown(name: str, host: str = "") -> str:
+    """Т-РУ11: свой адрес не определился — запись на себя бот не сменит."""
+    why = f" (<code>{_e(host)}</code> не разрешается)" if host else ""
+    return (f"⚠️ Запись <code>{_e(name)}</code> не изменена: свой адрес не определился{why} — поправь её у провайдера "
+            "вручную на адрес этого сервера")
+
+
 def record_manual_needed(name: str, ip: str, back: bool = False) -> str:
     """Запись меняет человек: просьба сменить её — при возврате и при переезде без живого сообщения."""
     what = "пользователи возвращаются" if back else "пользователи переезжают"

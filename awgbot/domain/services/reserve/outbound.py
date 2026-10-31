@@ -68,6 +68,7 @@ PKG_WAIT_S = 120          # свежий пакет до `go_req`
 EPH_WAIT_S = 60           # разовый ключ процесса открытия (`open_eph`) после `go_req`
 UP_WAIT_S = 300           # резерв поднял клон
 RECORD_WAIT_S = 1800      # факт записи
+RECORD_NOIP_TELL_S = 2 * 60       # шаг записи без адреса дольше — Т-РУ11 «свой адрес не определился»
 RELEASED_WAIT_S = 300     # `taken` после `released`; возврат: `released` после `back_req`
 FORCE_OFFLINE_S = 10 * 60        # «вернуть без резерва» — не раньше, чем он не на связи столько
 STUCK_IDLE_S = 10 * 60           # столько подряд запись на мне, а резерв пользователей не несёт — вебхук зависший
@@ -189,19 +190,23 @@ class ReserveOutboundMixin:
             # сносит прежний пакет, досылка — по отметке)
             self.reserve_new_k()
             self.reserve_pkg_mark()
-        record_back = ""
+        record_back, own_unknown = "", False
         if out.get("record_set_at") and self.reserve_dns_automatic():
             own = self.reserve_own_ip()
             try:
                 if own:
                     self.reserve_dns_switch(own)
+                else:
+                    own_unknown = True                        # запись на резерве, а свой адрес не определился
             except ServiceError as e:
                 record_back = str(e)
         elif out.get("record_set_at"):
             record_back = "переезд не состоялся, запись меняется вручную"   # Т-РУ11: вернуть её — дело человека
         log.warning("резерв: переезд на «%s» не состоялся: %s", name, reason)
         notes = [Notification(tg_id=int(config.ADMIN_ID), text=rn.move_failed(name, reason, released=released))]
-        if record_back:
+        if own_unknown or (record_back and not self.reserve_own_ip()):
+            notes.append(self._own_unknown_note())
+        elif record_back:
             notes.append(Notification(tg_id=int(config.ADMIN_ID), force_sound=True,
                                       text=rn.record_not_changed(self.reserve_dns_name(), record_back, self.reserve_own_ip())))
         actions: list[tuple] = [("live",), ("notify", notes)]
@@ -358,6 +363,8 @@ class ReserveOutboundMixin:
         """Шаг записи: сменить (API) один раз, дальше ждать факта у авторитетного сервера."""
         from awgbot.domain.notices import reserve as rn
         actions: list[tuple] = []
+        if not out.get("record_set_at") and not target:
+            return self._record_no_target(out)                # адрес не определился: смена — на следующем такте
         if not out.get("record_set_at"):
             if self.reserve_dns_automatic():
                 try:
@@ -388,6 +395,29 @@ class ReserveOutboundMixin:
                                back_resent=time.monotonic())
                 actions += [("live",), ("send", "back", {})]
         return actions
+
+    def _record_no_target(self, out: dict) -> list[tuple]:
+        """Шаг записи без адреса (свой не определился, прежнего нет): `record_set_at` не
+        ставится — повтор на следующем такте; дольше RECORD_NOIP_TELL_S — Т-РУ11 один раз."""
+        if not out.get("record_noip_at"):
+            self.rsv_update("rsv_out", record_noip_at=timeutil.now_iso(), record_noip_told=False)
+            log.warning("резерв: адрес для записи %s не определился — смена на следующем такте", self.reserve_dns_name())
+            return []
+        try:
+            long = timeutil.elapsed(timeutil.parse_iso(str(out["record_noip_at"]))) >= RECORD_NOIP_TELL_S
+        except ValueError:
+            long = True
+        if not long or out.get("record_noip_told") or out.get("state") != "returning":
+            return []                                         # переезд: адрес резерва известен до старта (move_check)
+        self.rsv_update("rsv_out", record_noip_told=True)
+        return [("notify", [self._own_unknown_note()])]
+
+    def _own_unknown_note(self) -> Notification:
+        """Т-РУ11: свой адрес не определился — запись на себя бот не сменит."""
+        from awgbot.domain.notices import reserve as rn
+        from ..selfhost import own_host
+        return Notification(tg_id=int(config.ADMIN_ID), force_sound=True,
+                            text=rn.record_own_unknown(self.reserve_dns_name(), own_host()))
 
     # ── события канала (переезд) ────────────────────────────────────────────
     def reserve_open_eph_in(self, gen: int, eph_hex: str, oid: str) -> list[tuple]:

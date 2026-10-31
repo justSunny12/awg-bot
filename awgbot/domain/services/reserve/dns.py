@@ -27,6 +27,7 @@ PROVIDER_LABELS = {"manual": "вручную", "cloudflare": "Cloudflare", "duck
 RECORD_WATCH_SECONDS = 120
 TTL_WARN_S = 300                  # TTL записи выше — предупреждение: пользователи переходят медленно
 _OWN_IP_TTL = 600
+_OWN_IP_RETRY_S = 20              # свой адрес не определился и прежнего нет — резолв снова не чаще
 
 
 def _ttl_known(ttl: int) -> dict:
@@ -164,7 +165,10 @@ class ReserveDnsMixin:
 
     def reserve_own_ip(self) -> str:
         """Собственный публичный адрес: `self_host` (или адрес для пользователей)
-        через системный резолвер; IP как есть. Кэш 10 мин."""
+        через системный резолвер; IP как есть. Кэш 10 мин; последний успешный адрес
+        имени — в `rsv_dns.own_last` (свой адрес меняется редко): резолв не удался —
+        он, а не пусто (смена записи на себя иначе молча пропускалась бы). Неудача без
+        прежнего адреса — повтор резолва не чаще раза в _OWN_IP_RETRY_S."""
         from ..selfhost import own_host
         host = own_host()
         if not host:
@@ -174,11 +178,23 @@ class ReserveDnsMixin:
         except ValueError:
             pass
         cache = self.__dict__.get("_rsv_own_ip") or {}
-        if cache.get("host") == host and time.monotonic() - cache.get("at", 0) < _OWN_IP_TTL and cache.get("ip"):
-            return cache["ip"]
+        now = time.monotonic()
+        if cache.get("host") == host and now - cache.get("at", 0) < (_OWN_IP_TTL if cache.get("ip") else _OWN_IP_RETRY_S):
+            return str(cache.get("ip") or "")
         addrs = dnsapi.read_system(host)
-        ip = addrs[0] if addrs else str(cache.get("ip") or "")
-        self.__dict__["_rsv_own_ip"] = {"host": host, "ip": ip, "at": time.monotonic()}
+        ip = addrs[0] if addrs else ""
+        if ip:
+            d = self.rsv_get("rsv_dns")
+            if d.get("own_last") != ip or d.get("own_last_host") != host:
+                self.rsv_update("rsv_dns", own_last=ip, own_last_host=host)
+        else:
+            d = self.rsv_get("rsv_dns")
+            ip = str(cache.get("ip") or "") if cache.get("host") == host else ""
+            if not ip and str(d.get("own_last_host") or "") == host:
+                ip = str(d.get("own_last") or "")
+            if ip:
+                log.warning("резерв: %s не разрешается — свой адрес по кэшу: %s", host, ip)
+        self.__dict__["_rsv_own_ip"] = {"host": host, "ip": ip, "at": now}
         return ip
 
     def reserve_peer_ip(self) -> str:
