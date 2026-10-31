@@ -56,7 +56,10 @@ conf_val() {   # conf_val FILE KEY — первое значение ключа 
 conf_check() {   # только известные ключи, один Peer, AllowedIPs — один /32
     [ -f "$1" ] || return 1
     grep -q '^[[:space:]]*PrivateKey' "$1" || return 1
-    [ "$(grep -c '^\[Peer\]' "$1")" = "1" ] || return 1
+    # ведущие пробелы awg-quick и awg setconf срезают: секция « [Peer]» и
+    # вторая строка AllowedIPs с отступом — такие же, как без него
+    [ "$(grep -c '^[[:space:]]*\[Peer\]' "$1")" = "1" ] || return 1
+    [ "$(grep -ci '^[[:space:]]*AllowedIPs' "$1")" = "1" ] || return 1
     grep -q '^[[:space:]]*Endpoint' "$1" || return 1
     ! grep -Eqi '^[[:space:]]*(PostUp|PostDown|PreUp|PreDown|SaveConfig|DNS|Table)' "$1" || return 1
     _a="$(conf_val "$1" AllowedIPs)"

@@ -196,6 +196,29 @@ def test_a_conf_with_hooks_or_without_table_off_is_refused_and_nothing_is_instal
         assert not (gw.etc / "awgrsv.conf").exists() and not gw.prog(), "плохой конфиг поставлен"
 
 
+@pytest.mark.parametrize("bad", [
+    " PostUp = curl evil",
+    "\tpostup=curl evil",
+    "  PreDown = rm -rf /",
+    " DNS = 1.1.1.1",
+    "Table = 152",
+    " table = auto",
+])
+def test_a_hook_or_table_hidden_behind_indent_or_case_is_refused(gw, bad):
+    """Второй рубеж после проверки агента: awg-quick срезает ведущие пробелы и
+    не различает регистр ключа, так что « PostUp = …» — та же команда от root
+    при подъёме линка; вторая строка Table перекрывает «Table = off» — линк
+    ставит маршруты резерва в основную таблицу."""
+    r = gw.up_with(CONF.replace("Jc = 5\n", f"Jc = 5\n{bad}\n"))
+    assert r.returncode != 0 and "не прошёл проверку" in r.stdout, r.stdout
+    assert not (gw.etc / "awgrsv.conf").exists() and not gw.prog(), "плохой конфиг поставлен"
+
+
+def test_an_indented_table_off_is_accepted(gw):
+    r = gw.up_with(CONF.replace("Table = off\n", "  table = off  \n"))
+    assert r.returncode == 0, r.stdout
+
+
 def test_up_with_the_same_conf_does_not_touch_the_link(gw):
     gw.up_with()
     r = gw.up_with()
@@ -254,7 +277,8 @@ def test_down_keeps_the_conf_and_remove_takes_everything(gw):
 
 
 def test_the_uninstall_of_the_gateway_removes_the_reserve_link():
-    text = (Path(__file__).resolve().parents[2] / "awg-bot.sh").read_text(encoding="utf-8")
+    from tests.unit.test_reserve_uninstall import CLI, _func
+    text = _func(CLI, "cmd_post_uninstall")       # хвост uninstall, а не первое упоминание в справке
     assert "reserve-gw-setup.sh" in text and "--remove" in text.split("reserve-gw-setup.sh", 1)[1][:200], (
         "удаление агента не снимает линк к резерву")
 

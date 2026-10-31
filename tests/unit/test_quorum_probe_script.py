@@ -158,6 +158,10 @@ BAD_CONFS = [
     (probe_conf(addr="169.254.88.5/26"), "адрес зонда не /32"),
     (probe_conf(endpoint=False), "нет Endpoint"),
     (probe_conf().replace(f"PrivateKey = {PRIV}\n", ""), "нет закрытого ключа"),
+    # второй рубеж: awg-quick и awg setconf срезают ведущие пробелы
+    (probe_conf(extra_if=" PostUp = /bin/sh -c id\n"), "хук PostUp с отступом"),
+    (probe_conf() + "  [Peer]\nPublicKey = DUMMY-SECOND=\nAllowedIPs = 0.0.0.0/0\n", "второй пир с отступом"),
+    (probe_conf() + "\tAllowedIPs = 0.0.0.0/0\n", "вторая строка AllowedIPs с отступом"),
 ]
 
 
