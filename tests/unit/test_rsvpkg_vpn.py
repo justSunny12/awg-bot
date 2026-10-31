@@ -183,6 +183,31 @@ def test_garbage_in_the_zone_lists_is_a_vpn_part_error(key, value):
         vpn.check(part)
 
 
+# ── адреса зоны — только IPv4 ────────────────────────────────────────────────
+# Гостевая зона резерва IPv4-only: скрипт зоны кладёт admin/dns/upstreams в наборы …4
+# с «2>/dev/null || true» — адрес IPv6 пропадал молча (устройство админа без доступа к
+# устройствам, резолвер зоны без вышестоящего).
+
+def test_the_build_drops_ipv6_zone_addresses_with_a_log_line(caplog):
+    with caplog.at_level("WARNING"):
+        part = vpn.build([("awg0", LIVE)], admin=["10.8.1.2", "fd00::2"], dns=["10.8.1.1", "2001:db8::53"],
+                         upstreams=["2606:4700:4700::1111", "198.51.100.53"], tz="")
+    assert (part["admin"], part["dns"], part["upstreams"]) == (["10.8.1.2"], ["10.8.1.1"], ["198.51.100.53"])
+    assert "2001:db8::53" in caplog.text and "не IPv4" in caplog.text, "адрес отброшен без строки в журнале"
+
+
+def test_the_reserve_check_drops_ipv6_from_an_older_package_and_says_so():
+    """Пакет прежнего выпуска с адресом IPv6: часть не отвергается целиком (клон в аварию
+    важнее лишнего адреса) — адрес прочь, отброшенное — полем для журнала процесса открытия."""
+    part = _part()
+    part["dns"] = ["10.8.1.1", "2001:db8::53"]
+    part["upstreams"] = ["2606:4700:4700::1111"]
+    got = vpn.check(part)
+    assert got["dns"] == ["10.8.1.1"] and got["upstreams"] == [] and got["admin"] == ["10.8.1.2"]
+    assert got["v6_dropped"] == ["dns 2001:db8::53", "upstreams 2606:4700:4700::1111"]
+    assert "v6_dropped" not in vpn.check(_part()), "поле без отброшенного"
+
+
 # ── пиры-зонды кворума и второй адрес интерфейса ─────────────────────────────
 # Выпуск с кворумом кладёт на интерфейс пользователей пиры-зонды голосующих
 # (169.254.88.0/24) и второй Address из того же блока; после отката они так и

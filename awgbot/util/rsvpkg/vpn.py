@@ -12,11 +12,16 @@ util/probenet в AllowedIPs) едут отдельным полем `probes` (о
 адрес) и ставятся на клон (его ответчик слушает на втором адресе клона —
 `probe_resp`, второй адрес интерфейса основы из блока с номером хоста на один
 больше); адрес интерфейса из блока не берётся (`probenet.primary_addr`).
-Прежний разбор незнакомые поля пропускает.
+Адреса зоны (`admin`, `dns`, `upstreams`) — только IPv4: гостевая зона резерва
+IPv4-only. Сборка адрес IPv6 не кладёт (строка в журнал), проверка резерва его
+отбрасывает (поле `v6_dropped` — процессу открытия в журнал), а не отвергает
+часть целиком: клон в аварию важнее лишнего адреса. Прежний разбор незнакомые
+поля пропускает.
 """
 from __future__ import annotations
 
 import ipaddress
+import logging
 import re
 
 from awgbot.util import probenet
@@ -28,6 +33,8 @@ _OBF_VALUE = re.compile(r"[0-9]{1,10}(-[0-9]{1,10})?\Z")       # число ил
 _EXCLUDED_OBF = ("I1", "I2", "I3", "I4", "I5")
 MAX_PEERS = 4096
 MAX_PROBES = 64
+
+log = logging.getLogger(__name__)
 
 
 class VpnPartError(ValueError):
@@ -115,14 +122,30 @@ def iface_part(name: str, conf_text: str) -> dict:
     return out
 
 
+def _ipv4_only(what: str, addrs: list[str]) -> list[str]:
+    """Только IPv4: гостевая зона резерва IPv4-only — адрес IPv6 там некуда положить
+    (скрипт зоны молча терял его в наборах …4). Отброшенное — строкой в журнал."""
+    out = []
+    for a in addrs:
+        try:
+            ok = ipaddress.ip_address(str(a).strip()).version == 4
+        except ValueError:
+            ok = True                                      # не адрес — пусть скажет проверка резерва, как прежде
+        if ok:
+            out.append(str(a))
+        else:
+            log.warning("пакет переезда: %s %s — не IPv4, зона резерва его не примет — не кладу", what, a)
+    return out
+
+
 def build(ifaces: list[tuple[str, str]], *, admin: list[str], dns: list[str], upstreams: list[str],
           tz: str) -> dict:
-    """Часть VPN целиком: интерфейсы (имя, текст конфига) и поля зоны."""
+    """Часть VPN целиком: интерфейсы (имя, текст конфига) и поля зоны (адреса — только IPv4)."""
     return {
         "ifaces": [iface_part(n, t) for n, t in ifaces],
-        "admin": [str(a) for a in admin][:64],
-        "dns": [str(d) for d in dns][:8],
-        "upstreams": [str(u) for u in upstreams][:8],
+        "admin": _ipv4_only("адрес админа", [str(a) for a in admin])[:64],
+        "dns": _ipv4_only("DNS", [str(d) for d in dns])[:8],
+        "upstreams": _ipv4_only("вышестоящий DNS", [str(u) for u in upstreams])[:8],
         "tz": str(tz or ""),
     }
 
@@ -184,11 +207,22 @@ def _check(part: dict) -> dict:
                     _key(p["psk"], "PresharedKey")
                 if not probenet.is_probe(str(p.get("ip", ""))) or "/" in str(p.get("ip", "")):
                     raise VpnPartError("адрес пира-зонда вне блока зондов")
+    dropped: list[str] = []
     for k in ("admin", "dns", "upstreams"):
         if not isinstance(part.get(k, []), list):
             raise VpnPartError(f"{k}: не список")
+        keep = []
         for a in part.get(k, []):
-            ipaddress.ip_address(str(a))
+            if ipaddress.ip_address(str(a)).version != 4:   # не адрес вовсе — ValueError, это VpnPartError
+                dropped.append(f"{k} {a}")
+                continue
+            keep.append(str(a))
+        if k in part:
+            part[k] = keep
+    if dropped:
+        # зона IPv4-only: скрипт зоны кладёт адреса в наборы …4 и v6 молча терял; отказ всей части
+        # ради лишнего адреса не дал бы клону встать в аварию — адрес прочь, открытие скажет о нём
+        part["v6_dropped"] = dropped
     if not isinstance(part.get("tz", ""), str) or "\n" in part.get("tz", ""):
         raise VpnPartError("пояс не того вида")
     return part
