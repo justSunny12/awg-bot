@@ -9,6 +9,7 @@ merge_ops.py — часть пакета reserve (см. __init__): слияни�
 """
 from __future__ import annotations
 
+import contextlib
 import html
 import json
 import os
@@ -20,8 +21,15 @@ from ..types import ServiceError
 from ..gateway_link.common import log
 
 
+MERGED_KEY = "rsv_merged_gen"      # server_state: поколение пакета, чья реплика уже слита (той же транзакцией)
+
+
 def _e(s) -> str:
     return html.escape(str(s or ""), quote=False)
+
+
+class ReplicaMerged(Exception):
+    """Реплика этого эпизода (поколения пакета) уже слита — второй раз не сливать."""
 
 
 class ReserveMergeOpsMixin:
@@ -33,6 +41,11 @@ class ReserveMergeOpsMixin:
             raise ServiceError("реплика не того вида")
         base_dir = os.path.join(str(config.DATA_DIR), "reserve", "out")
         snap_gen = int(snap.get("pkg_gen") or 0)             # поколение пакета, с которого стартовал гость
+        # признак «эпизод слит» — поколение пакета, а не отпечаток шифротекста: повторный back_req
+        # после COMMIT отдаёт rep.bin с диска под другим nonce — отпечаток другой, слияние шло бы дважды
+        episode = snap_gen or int(gen or 0)
+        if episode and str(self.db.get_state(MERGED_KEY) or "") == str(episode):
+            raise ReplicaMerged(episode)
         if snap_gen and (not gen or not os.path.exists(os.path.join(base_dir, f"base-{gen}.db"))):
             gen = snap_gen
         base = os.path.join(base_dir, f"base-{gen}.db")
@@ -45,13 +58,16 @@ class ReserveMergeOpsMixin:
             base = os.path.join(base_dir, f"base-{gen}.fallback.db")
             self._copy_db(self._db_path(), base)
         rep = os.path.join(base_dir, f"rep-{gen}.db")
-        with open(rep, "wb") as f:
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(rep)                                    # остаток прерванного слияния — свой файл заново
+        fd = os.open(rep, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)   # права с рождения, без окна по umask
+        with os.fdopen(fd, "wb") as f:
             f.write(bytes.fromhex(str(snap["db"])))
-        os.chmod(rep, 0o600)
         try:
             removed = [] if no_base else self._pubkeys_removed(base, rep)
             before = self._merge_watch_snapshot(base)
-            rpt = merge_mod.merge(self._db_path(), base, rep, admin_tg=int(config.ADMIN_ID), no_delete=no_base)
+            rpt = merge_mod.merge(self._db_path(), base, rep, admin_tg=int(config.ADMIN_ID), no_delete=no_base,
+                                  mark=(MERGED_KEY, str(episode)) if episode else None)
             warnings = self._merge_watch_lines(before)
             if no_base:
                 warnings.insert(0, "снимка для слияния не было — удалённое на резерве не выводилось")
@@ -165,6 +181,8 @@ class ReserveMergeOpsMixin:
 
     def _lost_line(self, lost: dict) -> str:
         from awgbot.domain.notices import reserve as rn
+        if lost.get("kind") == "orphan":
+            return rn.lost_orphan(str(lost.get("name") or "?"), str(lost.get("owner") or "?"), self.reserve_peer_name())
         return rn.lost_device(str(lost.get("name") or "?"), str(lost.get("owner") or "?"), str(lost.get("taken_by") or "?"),
                               str(lost.get("taken_owner") or "?"), self.reserve_peer_name())
 

@@ -93,6 +93,12 @@ def hosting_failed(primary: str, reason: str) -> str:
     return f"⚠️ Пользователей {_n(primary)} принять не удалось: {_e(reason)}"
 
 
+def return_resumed(primary: str) -> str:
+    """Возврат сорвался у основы (слияние не прошло): бот основы снова работает здесь."""
+    return (f"⚠️ Возврат пользователей {_n(primary)} не состоялся: слияние данных у {_n(primary)} не прошло — "
+            f"пользователи и бот {_n(primary)} снова у тебя; возврат повторит админ {_n(primary)}")
+
+
 # ── админу основы (из бота основы на резерве) ───────────────────────────────
 
 def moved_to_reserve(reserve: str, kind: str, since: str, dead_since: str = "", reserve_ip: str = "") -> str:
@@ -139,6 +145,12 @@ def lost_device(name: str, owner: str, taken_by: str, taken_owner: str, reserve:
     """Строка конфликта для Т-РУ5б."""
     return (f"⚠️ Не встало устройство «{_e(name)}» профиля {_e(owner)} — его адрес занял «{_e(taken_by)}» профиля "
             f"{_e(taken_owner)}, заведённый на {_n(reserve)}. Выдай «{_e(name)}» конфигурацию заново")
+
+
+def lost_orphan(name: str, owner: str, reserve: str) -> str:
+    """Строка Т-РУ5б: устройство, заведённое на резерве для профиля, который основа удалила после снимка."""
+    return (f"⚠️ Устройство «{_e(name)}» профиля {_e(owner)}, заведённое на {_n(reserve)}, не перенесено: "
+            f"профиль удалён здесь после переезда")
 
 
 def primary_back(auto: bool) -> str:

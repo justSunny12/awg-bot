@@ -462,6 +462,38 @@ def test_another_k_does_not_open_the_replica(mv):
         seal.snapshot_open(b"\x01" * 32, blob)
 
 
+def test_a_replica_too_big_for_the_channel_is_known_before_the_step_changes_and_fails_the_move(mv, monkeypatch):
+    """Нарезка частей (`pairproto.chunks`) бросала бы ProtocolError уже после шага released и
+    `poll=away`: поллинга нет, реплики у резерва нет — бот нем. Предел проверяется до смены
+    шага; такт шага release срывает переезд сразу (`back` резерву, запись обратно, поллинг),
+    а не повторяет передачу каждые 30 с до срока."""
+    svc = mv.svc
+    monkeypatch.setattr(pairproto, "MAX_CHUNKS", 1)
+    monkeypatch.setattr(pairproto, "MAX_BLOB", 2048)        # потолок 1 КБ: база не уложится
+    rm.to_step(svc, "release", gen=9)
+    assert svc.reserve_release_build() is None
+    out = svc.rsv_get("rsv_out")
+    assert out["step"] == "release" and svc.reserve_poll() == "mine", "шаг сменился до проверки предела"
+    assert "предела передачи" in out["release_error"]
+    acts = svc.reserve_out_tick()
+    assert svc.reserve_out() == "home" and "back" in sent(acts) and ("wake_poll",) in acts
+    assert any("предела передачи" in n.text for n in notices(acts))
+    svc.reserve_move_start()
+    assert not svc.rsv_get("rsv_out").get("release_error"), "новый переезд унаследовал отметку"
+
+
+def test_a_package_too_big_for_the_channel_is_a_card_line_not_a_failed_move(mv, monkeypatch):
+    """О потолке — при подготовке (строка pkg_error в карточке), а не на переезде."""
+    svc = mv.svc
+    monkeypatch.setattr(pairproto, "MAX_CHUNKS", 1)
+    monkeypatch.setattr(pairproto, "MAX_BLOB", 2048)
+    svc.reserve_pkg_mark()
+    mv.clock.advance(11)
+    assert svc.reserve_pkg_tick() is None
+    assert "предела передачи" in svc.rsv_get("rsv_view")["pkg_error"]
+    assert not svc.rsv_get("rsv_pkg_sent").get("pending_gen"), "пакет, который не уйдёт, отмечен как отправляемый"
+
+
 # ── taken ───────────────────────────────────────────────────────────────────
 
 def test_taken_makes_the_clients_away_and_tells_the_admin_once(mv):
@@ -482,16 +514,38 @@ def test_taken_outside_a_move_changes_nothing(mv):
     assert mv.svc.reserve_taken_in() == [] and mv.svc.reserve_out() == "home" and mv.svc.reserve_poll() == "mine"
 
 
-@pytest.mark.xfail(strict=True, reason="Q4-07: taken принимается на любом шаге leaving")
 @pytest.mark.parametrize("step", ["pkg", "eph", "up", "record"])
 def test_taken_before_the_handover_changes_nothing(mv, step):
     """Запоздалое `taken` прошлого эпизода на шаге до передачи (запись DNS ещё
-    на мне): ни away, ни poll=away (при правке Q4-07 снять отметку xfail)."""
+    на мне): ни away, ни poll=away."""
     svc = mv.svc
     rm.to_step(svc, step)
     assert svc.reserve_taken_in() == []
     assert svc.reserve_out() == "leaving" and svc.rsv_get("rsv_out")["step"] == step
     assert svc.reserve_poll() == "mine"
+
+
+def test_taken_and_up_of_another_opening_are_words_of_a_past_episode(mv):
+    """`oid` (ret1) в `up`/`taken` сверяется с моим открытием; без поля — как прежде."""
+    svc = mv.svc
+    rm.to_step(svc, "up")
+    svc.rsv_update("rsv_out", oid="abcd1234")
+    assert svc.reserve_up_in("ffff0000") == [] and svc.rsv_get("rsv_out")["step"] == "up"
+    assert svc.reserve_up_in("abcd1234") == [("live",)] and svc.rsv_get("rsv_out")["step"] == "record"
+    rm.to_step(svc, "released")
+    svc.rsv_update("rsv_out", oid="abcd1234")
+    assert svc.reserve_taken_in("ffff0000") == [] and svc.reserve_out() == "leaving" and svc.reserve_poll() == "mine"
+    assert svc.reserve_taken_in("") != [] and svc.reserve_out() == "away", "без поля — как у стороны прежнего выпуска"
+
+
+def test_the_reserve_puts_its_opening_id_into_up_and_taken_only_for_a_primary_that_knows_it(mv):
+    from awgbot.domain.services.reserve import inbound
+    svc = mv.svc
+    rm.st_in(svc, caps=list(compat.CAPS))
+    assert inbound.ReserveInboundMixin._word_oid(svc, {"oid": "abcd1234"}) == {"oid": "abcd1234"}
+    assert inbound.ReserveInboundMixin._word_oid(svc, {}) == {}, "аварийный путь: ключа от основы не было — oid нет"
+    rm.st_in(svc, caps=[c for c in compat.CAPS if c != "ret1"])
+    assert inbound.ReserveInboundMixin._word_oid(svc, {"oid": "abcd1234"}) == {}
 
 
 # ── пользователи у резерва мимо меня ────────────────────────────────────────

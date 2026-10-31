@@ -399,6 +399,7 @@ class ReserveSessionMixin:
             # отметка здоровья по monotonic прежней загрузки: меньше нынешнего времени она сошла бы за
             # пять минут здоровья подряд (автовозврат «сразу» без пяти минут) — счёт заново
             self.rsv_update("rsv_out", healthy_mono=0, healthy_since="")
+        self._pkg_prune_reps()                                # расшифрованная реплика после краха посреди слияния
 
     def reserve_last_word(self) -> list[Notification]:
         return self.reserve_liveness_word()

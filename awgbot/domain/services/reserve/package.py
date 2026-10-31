@@ -35,6 +35,7 @@ from awgbot.util import pairproto, rsvjrn, timeutil
 from awgbot.util.rsvpkg import bot as pkgbot, seal, vpn as pkgvpn
 
 from ..gateway_link.common import log
+from ..types import ServiceError
 from .state import HOSTING, _LOCK
 
 PKG_BATCH_SECONDS = 10
@@ -245,6 +246,12 @@ class ReservePackageMixin:
                 parts["jrn"] = jrn
             blob = seal.seal(parts, k=bytes.fromhex(keys["k"]), m=bytes.fromhex(keys["m"]),
                              pkg_gen=gen, m_gen=int(keys.get("m_gen") or 0), dns=dns)
+            # потолок канала (MAX_CHUNKS частей) — узнать при подготовке, а не на переезде: строка в
+            # карточке (pkg_error), а не сорванная отправка; снимок и отметка pending — после проверки
+            too_big = self.pkg_too_big(blob)
+            if too_big:
+                self.reserve_jrn_snap_dropped()
+                raise ServiceError(too_big)
             if not journal:
                 self._pkg_store_base(gen, db_bytes)           # база слияния — только прежнему пути
             fp = seal.digest(blob)
@@ -291,7 +298,24 @@ class ReservePackageMixin:
         except OSError:
             pass
 
+    def _pkg_prune_reps(self) -> None:
+        """Расшифрованные реплики `rep-<gen>.db` — только на время слияния; остались (процесс
+        убит посреди слияния) — прочь: открытая база пользователей на диске."""
+        out = os.path.join(reserve_dir(), "out")
+        try:
+            names = os.listdir(out)
+        except OSError:
+            return
+        for n in names:
+            if n.startswith("rep-") and n.endswith(".db"):
+                try:
+                    os.unlink(os.path.join(out, n))
+                    log.info("резерв: снята расшифрованная реплика %s, оставшаяся от прерванного слияния", n)
+                except OSError:
+                    pass
+
     def _pkg_prune_bases(self, keep: list[int]) -> None:
+        self._pkg_prune_reps()
         out = os.path.join(reserve_dir(), "out")
         try:
             names = os.listdir(out)
@@ -416,3 +440,14 @@ class ReservePackageMixin:
     @staticmethod
     def pkg_chunks(blob_hex: str) -> list[str]:
         return pairproto.chunks(blob_hex)
+
+    @staticmethod
+    def pkg_too_big(blob: bytes) -> str:
+        """Шифротекст не уложится в MAX_CHUNKS частей канала пары — текст причины, иначе ''."""
+        try:
+            pairproto.chunks(blob.hex())
+        except pairproto.ProtocolError:
+            limit = pairproto.MAX_CHUNKS * pairproto.MAX_BLOB // 2
+            return (f"база больше предела передачи ({len(blob) / 1048576:.1f} МБ из {limit // 1048576}) — "
+                    f"сожми базу (архивы, истории) или уменьши число профилей")
+        return ""

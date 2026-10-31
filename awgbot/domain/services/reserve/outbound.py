@@ -152,7 +152,8 @@ class ReserveOutboundMixin:
                                        msg=[int(chat_id), int(message_id)] if chat_id else [],
                                        target_ip=target_ip, record=self.reserve_dns_name(), go_sent=False,
                                        pkg_at="", up_at="", record_set_at="", record_fact_at="", released_at="",
-                                       taken_at="", reason="", gen=0, guest_stopped=False, await_merge=False)
+                                       taken_at="", reason="", gen=0, guest_stopped=False, await_merge=False,
+                                       release_error="")
             self._out_step("pkg", PKG_WAIT_S, pkg_unchanged=False)
             self.reserve_pkg_mark()                           # журнал: такт соберёт снимок, только если изменилось вне базы
         log.info("резерв: переезд кнопкой на «%s» начат", self.reserve_peer_name())
@@ -296,6 +297,8 @@ class ReserveOutboundMixin:
         if step == "record":
             return self._tick_record(out, str(out.get("target_ip") or ""), "release")
         if step == "release":
+            if out.get("release_error"):
+                return self._move_fail(str(out["release_error"]), released=True)   # реплика не уложится в канал
             # передача бота: действие выдаётся снова, пока не прошло (сбой подтверждения пачки,
             # реплики или отправки — не повод срывать переезд через 5 минут)
             now = time.monotonic()
@@ -392,12 +395,22 @@ class ReserveOutboundMixin:
                                 "ttl": int(self.rsv_get("rsv_dns").get("ttl") or 0),
                                 "sealed": sealed.hex(), "oid": str(oid)}), ("live",)]
 
-    def reserve_up_in(self) -> list[tuple]:
+    def reserve_up_in(self, oid: str = "") -> list[tuple]:
         out = self._out()
         if out.get("state") != "leaving" or out.get("step") != "up":
             return []
+        if self._word_foreign(out, "up", oid):
+            return []
         self._out_step("record", RECORD_WAIT_S, up_at=timeutil.now_iso())
         return [("live",)]
+
+    @staticmethod
+    def _word_foreign(out: dict, word: str, oid: str) -> bool:
+        """`up`/`taken` с id открытия (ret1) не моего — слово прошлого эпизода; без поля — как прежде."""
+        if oid and out.get("oid") and str(oid) != str(out.get("oid")):
+            log.warning("резерв: «%s» открытия %s, а моё — %s: слово прошлого эпизода — пропущено", word, oid, out.get("oid"))
+            return True
+        return False
 
     def reserve_down_in(self, reason: str) -> list[tuple]:
         """`down` резерва на переезде: срыв; `back` не нужен — резерв зону снял сам
@@ -423,6 +436,14 @@ class ReserveOutboundMixin:
             return None
         blob = seal.snapshot_seal(self.reserve_k(), {"pkg_gen": int(out.get("gen") or 0), "at": timeutil.now_iso(),
                                                      "db": db_bytes.hex()})
+        too_big = self.pkg_too_big(blob)
+        if too_big:
+            # до смены шага: иначе ProtocolError при нарезке частей оставил бы шаг released без поллинга
+            # и без реплики у резерва; «не собралась» — поллинг обратно, такт шага release срывает
+            # переезд по отметке сразу (Т-РУ), а не повторяет передачу каждые 30 с до срока
+            log.warning("резерв: финальная реплика не уложится в канал: %s", too_big)
+            self.rsv_update("rsv_out", release_error=too_big)
+            return None
         # снимок для слияния при возврате — именно эта реплика: с неё стартует гость, и всё,
         # что было записано здесь между пакетом и передачей, не удвоится и не станет «чужим»
         try:
@@ -433,11 +454,18 @@ class ReserveOutboundMixin:
         self.reserve_set_poll("away", why="released")           # своя отметка; слово Telegram — webhook/webhook_info
         return {"gen": int(out.get("gen") or 0), "blob": blob.hex()}
 
-    def reserve_taken_in(self) -> list[tuple]:
-        """`taken` от резерва: бот основы на резерве отвечает в Telegram."""
+    def reserve_taken_in(self, oid: str = "") -> list[tuple]:
+        """`taken` от резерва: бот основы на резерве отвечает в Telegram. Только на шагах
+        передачи бота (release/released): запоздалое `taken` прошлого эпизода на шаге pkg/eph/up/record
+        переводило бы в away с `poll=away`, пока запись DNS ещё на мне."""
         from awgbot.domain.notices import reserve as rn
         out = self._out()
         if out.get("state") != "leaving":
+            return []
+        if str(out.get("step") or "") not in ("release", "released"):
+            log.warning("резерв: «taken» на шаге %s — вне передачи бота, пропущено", out.get("step") or "pkg")
+            return []
+        if self._word_foreign(out, "taken", oid):
             return []
         self.reserve_set_out("away", kind=str(out.get("kind") or "button"), step="", taken_at=timeutil.now_iso(),
                              last_switch=timeutil.now_iso(), healthy_since="")

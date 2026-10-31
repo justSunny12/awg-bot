@@ -237,10 +237,10 @@ class ReserveInboundMixin:
                 log.warning("резерв: NETMAP не на все клоны — без блока: %s (подсеть не влезает в пул "
                             "reserve.zone_pool или свободного блока нет); их устройства выходят одним адресом зоны, "
                             "CAKE делит загрузку по назначению", zst["netmap_miss"])
-            actions += [("send", "up", {}), ("fw",)]
+            actions += [("send", "up", self._word_oid(inn)), ("fw",)]
         elif step in ("clone_up", "record_set", "record_fact", "done") and livestep.mono_due(inn.get("up_resent"), now, 30):
             self.rsv_update("rsv_in", up_resent=now)          # сессия могла оборваться в секунду clone_up — повтор, основа дубли не берёт
-            actions.append(("send", "up", {}))
+            actions.append(("send", "up", self._word_oid(inn)))
         if step == "done" and not inn.get("served"):
             # факт записи (аварийный путь) или открытие без записи (кнопка: запись меняет основа)
             try:
@@ -360,6 +360,13 @@ class ReserveInboundMixin:
         self.rsv_update("rsv_in", replica_at=timeutil.now_iso())
         return []
 
+    def _word_oid(self, inn: dict) -> dict:
+        """Тело `up`/`taken`: id открытия (ret1) — основа сверит его со своим и не примет
+        запоздалое слово прошлого эпизода; без ключа от основы (аварийный путь) оid нет."""
+        from . import compat
+        oid = str(inn.get("oid") or "")
+        return {"oid": oid} if oid and compat.peer_can(self.reserve_peer_state(), "ret1") else {}
+
     def reserve_guest_tg_taken(self) -> list[tuple]:
         """Гость поставил вебхук: `taken` основе, serving, Т-РУ4."""
         from awgbot.domain.notices import reserve as rn
@@ -371,7 +378,7 @@ class ReserveInboundMixin:
                                 tg_taken=True, served=True, taken_at=timeutil.now_iso(), step="")
         name = self.reserve_peer_name()
         log.info("резерв: пользователи и бот «%s» у меня", name)
-        return [("send", "taken", {}), ("fw",),
+        return [("send", "taken", self._word_oid(inn)), ("fw",),
                 ("notify", [Notification(tg_id=int(config.ADMIN_ID), text=rn.hosting_started(
                     name, str(inn.get("kind") or "button"), str(inn.get("dead_since") or inn.get("open_started") or ""),
                     str(inn.get("extra") or "")))])]
