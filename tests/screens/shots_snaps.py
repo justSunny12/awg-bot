@@ -93,11 +93,13 @@ def _bc_thirty(services, mp):
 def _mig50(services, mp):
     """Переезд идёт, 50 недавно активных устройств не переехали; смена интерфейса на
     хосте — заглушками: завершение уронит всех пятьдесят."""
+    from awgbot.bot.handlers.settings import actions
     from awgbot.infra import awglock
     who = _mig(50)(services, mp)
     services._retire_interface = lambda *a, **k: None
     mp.setattr(awglock, "write_state", lambda **k: None)
     mp.setattr(awglock, "needs_migration", lambda: False)
+    mp.setattr(actions, "_keep", lambda t: t.cancel())      # отложенный перезапуск — не в снимках
     return who
 
 

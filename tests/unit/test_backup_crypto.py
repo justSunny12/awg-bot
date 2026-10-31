@@ -200,4 +200,4 @@ def test_drop_after_restore_goes_through_the_bots_single_entry(monkeypatch, tmp_
             self.stdout = self.stderr = b""
     monkeypatch.setattr(awg, "_run", lambda args, **kw: runs.append(list(args)) or P(args))
     assert restore_merge.main(["--apply-blocks", str(report)]) == 0
-    assert ["iptables", "-I", "FORWARD", "1", "-s", "10.8.1.5/32", "-j", "DROP"] in runs, runs
+    assert ["iptables", "-w", "5", "-I", "FORWARD", "1", "-s", "10.8.1.5/32", "-j", "DROP"] in runs, runs

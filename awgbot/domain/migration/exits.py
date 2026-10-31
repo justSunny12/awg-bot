@@ -8,7 +8,7 @@ from awgbot.core import config
 from awgbot.core.enums import FriendStatus
 from awgbot.infra import awg
 
-from .common import log, _STATE_KEY, STATE_OFF
+from .common import log, _STATE_KEY, STATE_OFF, LEVER
 
 
 class MigrationExitsMixin:
@@ -27,8 +27,16 @@ class MigrationExitsMixin:
 
         Выключение обязано быть безопасным в ЛЮБОЙ момент: это путь отката всей
         затеи, и он же страховка первого включения, когда админ проверяет
-        переезд на себе.
+        переезд на себе. Но не поверх идущего включения или завершения (замок
+        рычага) и не пока пользователи на резерве: отмена переписала бы базу,
+        которой сейчас не верят.
         """
+        if hasattr(self, "reserve_refuse_if_away"):
+            self.reserve_refuse_if_away()
+        with LEVER("отменяется"):
+            return self._migration_cancel_locked()
+
+    def _migration_cancel_locked(self) -> int:
         devices = {d.id: d for d in self.db.list_all_devices()}
         moved = 0
         for d in devices.values():
@@ -57,33 +65,53 @@ class MigrationExitsMixin:
         return [d for d in self.db.list_all_devices()
                 if d.twin_of is not None and d.last_handshake]
 
-    def migration_finish_preview(self) -> tuple[int, list[str]]:
-        """Что будет при завершении: (сколько пар закроется, кого уронит).
+    def migration_finish_preview(self) -> tuple[int, list[str], list[str]]:
+        """Что будет при завершении: (сколько пар закроется, кого уронит, кому
+        двойник только предстоит родиться на завершении).
 
         Отдельно от самого завершения, потому что подтверждение обязано
         называть уронённых ДО нажатия, а не после: между решением и нажатием
         легко забыть, о ком речь, а отказ необратим.
         """
-        pairs, dropped = self._finish_plan()
-        return len(pairs), dropped
+        pairs, dropped, twinless = self._finish_plan()
+        return len(pairs), dropped, [self._owned_name(d) for d in twinless]
 
-    def _finish_plan(self) -> tuple[list[tuple], list[str]]:
-        """Пары к закрытию и имена тех, кто ещё не переехал. Общий расчёт для
-        предпросмотра и самого завершения — чтобы подтверждение не могло
-        разойтись с тем, что произойдёт."""
+    def _owned_name(self, dev, owners: dict | None = None) -> str:
+        """«профиль — устройство»; owners — кэш имён профилей на один проход."""
+        if owners is None:
+            owners = {}
+        if dev.client_id not in owners:
+            owner = self.db.get_client(dev.client_id)
+            owners[dev.client_id] = owner.name if owner else "?"
+        return f"{owners[dev.client_id]} — {dev.name}"
+
+    def _finish_plan(self) -> tuple[list[tuple], list[str], list]:
+        """Пары к закрытию, имена тех, кто ещё не переехал, и исходные
+        устройства БЕЗ двойника (рождение сорвалось при включении — адреса
+        кончились, сервер моргнул). Общий расчёт для предпросмотра и самого
+        завершения — чтобы подтверждение не могло разойтись с тем, что
+        произойдёт.
+
+        Без третьего списка устройство без пары финал не видел вовсе: «все на
+        новом интерфейсе», старый гасится, его пир остаётся на погашенном, а
+        сверка потом удаляет строку — устройство пропадает у человека. Его
+        двойник ещё не рождён, значит и на новом интерфейсе его нет: в
+        уронённых оно названо, как любое без рукопожатия на двойнике."""
         twins = self.db.twins_by_origin()
         by_id = {d.id: d for d in self.db.list_all_devices()}
         pairs: list[tuple] = []
         dropped: list[str] = []
+        owners: dict[int, str] = {}
         for old_id, twin_id in twins.items():
             old, twin = by_id.get(old_id), by_id.get(twin_id)
             if old is None or twin is None:
                 continue
             pairs.append((old, twin))
             if not twin.last_handshake:
-                client = self.db.get_client(old.client_id)
-                dropped.append(f"{client.name if client else '?'} — {old.name}")
-        return pairs, dropped
+                dropped.append(self._owned_name(old, owners))
+        twinless = [d for d in self._migratable() if d.id not in twins]
+        dropped += [self._owned_name(d, owners) for d in twinless]
+        return pairs, dropped, twinless
 
     def migration_orphan_twins(self) -> list:
         """Двойники, пережившие отмену, — те, на которых успели подключиться.
@@ -118,11 +146,35 @@ class MigrationExitsMixin:
 
         Строки уходят в архив с явной причиной, а не удаляются тихо: иначе потом
         не восстановить, кто отвалился и почему.
+
+        Под замком рычага (второе нажатие поверх идущего — отказ) и не пока
+        пользователи на резерве: снятые пиры и слитая история разошлись бы с
+        базой гостя.
         """
-        pairs, dropped = self._finish_plan()
+        if hasattr(self, "reserve_refuse_if_away"):
+            self.reserve_refuse_if_away()
+        with LEVER("завершается"):
+            return self._migration_finish_locked()
+
+    def _migration_finish_locked(self) -> tuple[int, list[str], list[str]]:
+        pairs, dropped, twinless = self._finish_plan()
         removed = 0
         failed: list[str] = []
         owners: dict[int, str] = {}                       # имя профиля — один запрос на профиль
+
+        # Устройствам без двойника — родить его СЕЙЧАС, до снятия пар: иначе
+        # промоушен погасит интерфейс, на котором они живут, а на новом их нет.
+        # Не вышло — в failed: рычаг не гасится, промоушена нет, повтор
+        # завершения попробует снова.
+        for dev in twinless:
+            try:
+                self._birth_twin(dev)
+            except Exception as e:                        # noqa: BLE001
+                log.warning("migration_finish: двойник для %s (id=%s) не создан, завершение "
+                            "без промоушена: %s", dev.name, dev.id, e)
+                failed.append(self._owned_name(dev, owners))
+        if twinless:
+            pairs, dropped, _ = self._finish_plan()       # рождённые — тоже пары к закрытию
 
         for old, twin in pairs:
             try:
@@ -130,27 +182,29 @@ class MigrationExitsMixin:
             except awg.AwgError as e:
                 log.warning("migration_finish: пир %s не снят, пара оставлена: %s",
                             old.name, e)
-                if old.client_id not in owners:
-                    owner = self.db.get_client(old.client_id)
-                    owners[old.client_id] = owner.name if owner else "?"
-                failed.append(f"{owners[old.client_id]} — {old.name}")
+                failed.append(self._owned_name(old, owners))
                 continue
             removed += 1
-            self.db.merge_traffic(old.id, twin.id)
             if int(old.block_reason) != 0:
                 try:
                     awg.unblock_ip(old.address)           # осиротевший DROP снять
                 except awg.AwgError:
                     pass
-            # слот шлюза указывает на исходную строку пары; на финале он
-            # переезжает к двойнику вместе с остальным
-            _slot = self.db.gateway_by_device(old.id)
-            if _slot is not None and _slot.device_id == old.id:
-                self.db.gateway_update(_slot.id, device_id=twin.id)
-                if hasattr(self, "gwkeep_device_moved"):
-                    self.gwkeep_device_moved(_slot.id, old.public_key, twin.public_key)
-            self.db.delete_device(old.id, archive_reason="миграция")
-            self.db.update_device_fields(twin.id, twin_of=None)
+            # Всё по базе для пары — одной транзакцией: шаги отдельными
+            # записями давали окно, где крах между слиянием и удалением строки
+            # заставлял повторное завершение сложить трафик второй раз.
+            # remove_peer уже снятого пира идемпотентен, повтор безопасен.
+            with self.db.transaction():
+                self.db.merge_traffic(old.id, twin.id)
+                # слот шлюза указывает на исходную строку пары; на финале он
+                # переезжает к двойнику вместе с остальным
+                _slot = self.db.gateway_by_device(old.id)
+                if _slot is not None and _slot.device_id == old.id:
+                    self.db.gateway_update(_slot.id, device_id=twin.id)
+                    if hasattr(self, "gwkeep_device_moved"):
+                        self.gwkeep_device_moved(_slot.id, old.public_key, twin.public_key)
+                self.db.delete_device(old.id, archive_reason="миграция")
+                self.db.update_device_fields(twin.id, twin_of=None)
 
         # Висячие ссылки расцепляем ЗДЕСЬ же: старую строку пары могла удалить
         # сверка ещё в окне, и _finish_plan такую пару не видит. Оставь twin_of —
@@ -230,8 +284,24 @@ class MigrationExitsMixin:
             # Теперь она мусор в /usr/src и в DKMS.
             self._prune_old_kernel_builds()
         self.db.set_state(self._PROMOTED_KEY, new_if)
+        # Отметка «ждёт перезапуска» живёт до старта нового процесса: config.*
+        # прочитаны прежним, и до перезапуска бот считает основным погашенный
+        # интерфейс — монитор по ней молчит, выдача устройств отказывает.
+        self.db.set_state(self._RESTART_KEY, new_if)
         log.info("переезд: основным интерфейсом стал %s (поколение %s)", new_if, target)
         return new_if
+
+    _RESTART_KEY = "awg_restart_needed"
+
+    def migration_restart_pending(self) -> str:
+        """Имя интерфейса, ставшего основным на финале, пока бот не перезапущен
+        (константы config ещё от погашенного интерфейса); пусто — ждать нечего."""
+        return self.db.get_state(self._RESTART_KEY) or ""
+
+    def migration_restart_done(self) -> None:
+        """Старт нового процесса: деплой-значения перечитаны — отметка снимается."""
+        if self.db.get_state(self._RESTART_KEY):
+            self.db.set_state(self._RESTART_KEY, "")
 
     @staticmethod
     def _prune_old_kernel_builds() -> None:

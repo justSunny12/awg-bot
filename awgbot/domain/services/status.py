@@ -434,7 +434,12 @@ class StatusMixin:
                 "age_seconds": age_seconds}
 
     def server_ok(self) -> bool:
-        """Живая проверка: awg отвечает — сервис жив (один exec)."""
+        """Живая проверка: awg отвечает — сервис жив (один exec). Между финалом
+        переезда и перезапуском бота проверка шла бы по погашенному интерфейсу
+        (config.AWG_INTERFACE прежний) — ложная тревога «сервер лежит»; в это
+        окно считаем сервер живым, перезапуск уже назначен."""
+        if hasattr(self, "migration_restart_pending") and self.migration_restart_pending():
+            return True
         return awg.awg_responding()
 
     def server_ok_cached(self) -> bool:

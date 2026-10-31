@@ -150,3 +150,92 @@ def test_finish_archives_rather_than_deletes_silently(services, mig, make_active
     rows = services.db._connection().execute(
         "SELECT close_reason FROM devices_histories").fetchall()
     assert any(r["close_reason"] == "миграция" for r in rows)
+
+
+# ── устройства без двойника на финале ────────────────────────────────────────
+
+def test_finish_births_twins_to_the_twinless_and_names_them_before(services, mig,
+                                                                    make_active_client):
+    """Устройство, которому двойник при включении не родился, финал прежде не
+    видел вовсе: «все на новом интерфейсе», старый гасится, пир остаётся на
+    погашенном, сверка удаляет строку — устройство пропадает у человека.
+    Теперь предпросмотр называет его поимённо, а завершение рожает ему
+    двойника до снятия пар."""
+    c = make_active_client(name="Ксюша", tg_id=7016)
+    a = services.add_device(c.id, "A")
+    b = services.add_device(c.id, "B")
+    _seen(services, a.device_id, ago_days=1)
+    _seen(services, b.device_id, ago_days=1)
+    services.migration_start()
+    _seen(services, _twin(services, a.device_id).id, ago_days=0)
+    services.db.delete_device(services.db.twins_by_origin()[b.device_id], archive_reason=None)   # рождение сорвалось
+
+    n, dropped, twinless = services.migration_finish_preview()
+    assert twinless == ["Ксюша — B"], "без двойника не назван"
+    assert "Ксюша — B" in dropped, "на новом интерфейсе его нет — потеряет связь"
+
+    removed, dropped, failed = services.migration_finish()
+    assert failed == [] and removed == 2
+    assert services.db.get_device(b.device_id) is None, "исходное без двойника осталось на погашенном интерфейсе"
+    kept = [d for d in services.db.list_devices(c.id) if d.name == "B"]
+    assert len(kept) == 1 and kept[0].iface == "awg1", "двойник B не рождён на финале"
+    assert not services.migration_running()
+
+
+def test_finish_without_a_twin_for_someone_does_not_promote(services, mig, make_active_client,
+                                                            monkeypatch):
+    """Когорта из двух, одному рождение падает: промоушена нет, старый
+    интерфейс жив, имя в «не закрыты», рычаг включён — повтор доберёт."""
+    c = make_active_client(name="Ксюша", tg_id=7017)
+    a = services.add_device(c.id, "A")
+    b = services.add_device(c.id, "B")
+    services.migration_start()
+    _seen(services, _twin(services, a.device_id).id, ago_days=0)
+    services.db.delete_device(services.db.twins_by_origin()[b.device_id], archive_reason=None)
+    promoted: list = []
+    monkeypatch.setattr(services, "_promote_migration_interface", lambda: promoted.append(1) or "")
+    from awgbot.infra import awg as infra_awg
+
+    def add_peer(pub, psk, ip, iface=None):
+        raise infra_awg.AwgError("адреса кончились")
+    monkeypatch.setattr(infra_awg, "add_peer", add_peer)
+
+    removed, dropped, failed = services.migration_finish()
+    assert failed == ["Ксюша — B"]
+    assert promoted == [], "промоушен при устройстве без двойника"
+    assert services.migration_running(), "рычаг погашен при незакрытом устройстве"
+    assert services.db.get_device(b.device_id) is not None
+    assert services.db.twins_by_origin() == {}, "строка двойника без пира осталась"
+
+
+# ── одна транзакция на пару ──────────────────────────────────────────────────
+
+def test_pair_steps_are_one_transaction(services, mig, make_active_client, monkeypatch):
+    """Крах между слиянием истории и удалением строки: слияние откатано, пара
+    цела — повтор завершения не сложит трафик второй раз."""
+    c = make_active_client(name="c", tg_id=7018)
+    dc = services.add_device(c.id, "Тел")
+    _seen(services, dc.device_id, ago_days=1)
+    services.db.add_traffic_bulk([(dc.device_id, 700, 300)])
+    services.migration_start()
+    twin = _twin(services, dc.device_id)
+    _seen(services, twin.id, ago_days=0)
+    services.db.add_traffic_bulk([(twin.id, 100, 50)])
+
+    real_delete = services.db.delete_device
+
+    def crash(device_id, archive_reason="deleted"):
+        if archive_reason == "миграция":
+            raise RuntimeError("крах посреди пары")
+        return real_delete(device_id, archive_reason=archive_reason)
+    monkeypatch.setattr(services.db, "delete_device", crash)
+    with pytest.raises(RuntimeError):
+        services.migration_finish()
+    assert services.db.get_device(twin.id).traffic_rx_month == 100, "слияние не откатано"
+    assert services.db.get_device(twin.id).twin_of == dc.device_id
+    assert services.db.get_device(dc.device_id) is not None
+
+    monkeypatch.setattr(services.db, "delete_device", real_delete)
+    removed, dropped, failed = services.migration_finish()       # пир уже снят — повтор идемпотентен
+    assert removed == 1 and failed == []
+    assert services.db.get_device(twin.id).traffic_rx_month == 800, "трафик сложен дважды или потерян"

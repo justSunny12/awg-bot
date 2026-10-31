@@ -280,7 +280,14 @@ class SelfUpdateCoreMixin:
         self.db.set_state("update_pending", release.tag)
         # sha256 ассета — апдейтеру: совпал с архивом — версия и digest в
         # installed-digest, бот на старте перенесёт их в базу (marks.py)
-        updates.apply(blob, hold=hold, sha256=str(getattr(release, "sha256", "") or ""))
+        try:
+            updates.apply(blob, hold=hold, sha256=str(getattr(release, "sha256", "") or ""))
+        except BaseException:
+            # апдейтер не запустился (нет архива, sha256, отказ юнита) — флаг
+            # снять: иначе следующий перезапуск по любой причине принёс бы
+            # админу ложное «не обновился до X»
+            self.clear_update_pending()
+            raise
 
     def set_update_wait(self, chat_id: int, message_id: int) -> None:
         """Запомнить «дождись завершения»-сообщение: после рестарта новый процесс

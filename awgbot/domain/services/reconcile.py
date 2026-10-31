@@ -206,19 +206,34 @@ class ReconcileMixin:
         block_reason != 0 в БД (любая причина). Один `iptables -S` вместо -C
         на каждое устройство; block_ip сам идемпотентен. С prune — и обратно:
         DROP у устройства без причины снимается (разовый отказ iptables при
-        разблокировке иначе держал бы продлённого до рестарта). Чужие DROP
-        (карантин неизвестных пиров, не наши адреса) не трогаем. Возвращает
-        число исправлений."""
+        разблокировке иначе держал бы продлённого до рестарта). Дубли DROP у
+        наших адресов (гонки прежних выпусков, ручной iptables) сводятся к
+        одному всегда: снятие убирало бы один из двух, и адрес оставался
+        заблокированным. Чужие DROP (карантин неизвестных пиров, не наши
+        адреса) не трогаем. Возвращает число исправлений."""
         try:
             present = awg.blocked_ips()
         except awg.AwgError:
             present = set()
             prune = False                          # не с чем сверять — только наложить
+        try:
+            counts = awg.blocked_ip_counts()
+        except awg.AwgError:
+            counts = {}
         fixed = 0
         holder = self.reserve_holder_blocks() if hasattr(self, "reserve_holder_blocks") else None
         # в следовании — блокировки держателя (бот основы на резерве), а не устаревшей базы
         wanted = list(holder) if holder is not None else list(self.db.blocked_addresses())
         for address in wanted:
+            if counts.get(address, 0) > 1:
+                try:                               # снять все экземпляры и наложить один
+                    awg.unblock_ip(address)
+                    awg.block_ip(address)
+                    fixed += 1
+                    log.warning("reconcile_blocks: дубли DROP %s (%d) сведены к одному", address, counts[address])
+                except awg.AwgError as e:
+                    log.warning("reconcile_blocks: дубли DROP %s не сведены: %s", address, e)
+                continue
             if address in present:
                 continue
             try:

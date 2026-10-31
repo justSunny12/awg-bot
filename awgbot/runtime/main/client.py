@@ -145,6 +145,20 @@ async def main() -> None:
             log.info("миграция: нормализовано устройств: %d (iface → дефолт)", n)
     except Exception as e:                               # noqa: BLE001
         log.warning("normalize_default_iface: %s", e)
+    # Финал переезда ждал перезапуска — он случился: деплой-значения перечитаны
+    try:
+        await asyncio.to_thread(services.migration_restart_done)
+    except Exception as e:                               # noqa: BLE001
+        log.warning("migration_restart_done: %s", e)
+    # Дубли двойников прежних выпусков (параллельные включения рычага): база на
+    # init_schema их видела и отложила уникальный индекс — здесь есть awg,
+    # чтобы снять лишних пиров, после чего индекс встаёт.
+    try:
+        n = await asyncio.to_thread(services.migration_dedup_twins)
+        if n:
+            log.info("переезд: лишних двойников убрано или отцеплено: %d", n)
+    except Exception as e:                               # noqa: BLE001
+        log.warning("migration_dedup_twins: %s", e)
     startup_ok: bool | None = None
     try:
         startup_ok = await asyncio.to_thread(services.server_ok)

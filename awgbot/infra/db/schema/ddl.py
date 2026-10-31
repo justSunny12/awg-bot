@@ -201,8 +201,9 @@ CREATE INDEX IF NOT EXISTS idx_devices_holder   ON devices(holder_client_id) WHE
 -- public_key и tg_id уже UNIQUE — у них есть автоиндекс, отдельные дублировали бы его
 CREATE INDEX IF NOT EXISTS idx_clients_invite   ON clients(invite_code);
 -- пары переезда: twins_by_origin и подзапрос видимости ходят по twin_of;
--- частичный индекс пуст вне окна переезда
-CREATE INDEX IF NOT EXISTS idx_devices_twin     ON devices(twin_of) WHERE twin_of IS NOT NULL;
+-- частичный УНИКАЛЬНЫЙ индекс idx_devices_twin_uniq (один двойник на исходное)
+-- ставит SchemaMixin.ensure_twin_unique: на базе с дублями прежних выпусков
+-- его сначала надо расчистить, и CREATE здесь уронил бы весь init_schema
 -- прежний индекс единственности шлюза; колонка пуста с v2.24.0, индекс безвреден
 CREATE UNIQUE INDEX IF NOT EXISTS idx_devices_gateway ON devices(is_gateway) WHERE is_gateway = 1;
 

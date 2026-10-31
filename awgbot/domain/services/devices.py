@@ -32,6 +32,11 @@ class DevicesMixin:
         client = self.db.get_client(client_id)
         if client is None:
             raise ServiceError("Пользователь не найден")
+        if hasattr(self, "migration_restart_pending") and self.migration_restart_pending():
+            # до перезапуска config.* — от погашенного интерфейса: устройство
+            # родилось бы на нём и не работало бы ни секунды
+            raise ServiceError("Бот ждёт перезапуска после переезда профилей — "
+                               "перезапусти его в «🔧 Сервис» и повтори")
         if not client.is_service:
             limit = client.device_limit
             if limit != 0 and self.db.count_devices(client_id) >= limit:  # 0 = безлимит

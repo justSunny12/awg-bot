@@ -24,6 +24,13 @@ def restart_now_or_later() -> InlineKeyboardMarkup:
                    ("⬅️ Позже", Menu(action="main")))
 
 
+def restart_now() -> InlineKeyboardMarkup:
+    """Под итогом финала переезда: без «Позже» — перезапуск назначен и
+    произойдёт сам, кнопка лишь ускоряет; окно «бот считает основным
+    погашенный интерфейс» не оставляем на усмотрение."""
+    return ui.rows(("🔁 Перезапустить сейчас", SetCB(sec="svc", act="do", key="bot!")))
+
+
 def settings_back(sec_to: str = "root") -> InlineKeyboardMarkup:
     """Одна кнопка «Назад» — для экранов-отбивок внутри настроек."""
     return ui.rows(_back(sec_to))

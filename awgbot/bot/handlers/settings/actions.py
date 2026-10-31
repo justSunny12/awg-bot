@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from aiogram import F
 from aiogram.fsm.context import FSMContext
@@ -15,11 +16,48 @@ from awgbot.bot.callbacks import SetCB
 from awgbot.bot.handlers import settingscore as core
 from awgbot.bot.handlers.common import call, edit, send_menu
 from awgbot.domain.migration import ServiceErrorMigration
+from awgbot.domain.services import ServiceError
 
 log = logging.getLogger("awgbot.handlers.settings")
 from ._router import router
 from .inputs import _firewall_action, _migration_prepare, _routing_provision
 from .render import _record, _shared
+
+PROMOTED_RESTART_DELAY_S = 60                 # финал переезда: перезапуск сам, если кнопку не нажали
+_BG: set = set()                               # ссылки на фоновые задачи — иначе сборщик снимет их на полпути
+
+
+def _keep(task) -> None:
+    _BG.add(task)
+    task.add_done_callback(_BG.discard)
+
+
+async def _restart_after_promotion(bot, services, chat_id: int) -> None:
+    """Отложенный перезапуск после финала переезда — то же, что кнопка
+    «🔁 Перезапустить сейчас» (bot!): обещание на месте активного меню,
+    отметка для нового процесса, плановая пауза кворума, рестарт вне cgroup.
+    Админ успел нажать кнопку — обещание уже стоит, второй раз не дёргаем."""
+    from awgbot.bot.sections.svc import BOT_RESTARTING
+    await asyncio.sleep(PROMOTED_RESTART_DELAY_S)
+    try:
+        if not await call(services.migration_restart_pending):
+            return                                        # отметку снял старт нового процесса
+        if await call(services.db.get_state, "restart_wait"):
+            return                                        # кнопка нажата — перезапуск уже в пути
+        nav = await call(services.db.get_nav_message_id, chat_id)
+        if nav:
+            try:
+                await bot.edit_message_text(BOT_RESTARTING, chat_id=chat_id, message_id=nav, reply_markup=None)
+            except Exception:                             # noqa: BLE001 — сообщение могли удалить
+                pass
+            await call(services.set_restart_wait, chat_id, nav)
+        if hasattr(services, "reserve_quorum_pause_actions"):
+            from awgbot.runtime import rsvactions
+            await rsvactions.run(await call(services.reserve_quorum_pause_actions))
+        await call(services.restart_bot)
+    except Exception as e:                                # noqa: BLE001
+        log.warning("перезапуск после финала переезда не выполнен: %s", e)
+
 
 # ── действия (бэкап сейчас, рестарты, проверка обновлений) ────────────────────
 # ── переезд профилей (docs/ROADMAP.md, п.3) ──────────────────────────────────
@@ -65,8 +103,9 @@ async def migration_action(cb: CallbackQuery, callback_data: SetCB, services):
         await cb.answer("Создаю новые конфигурации…")
         try:
             res = await call(services.migration_start)
-        except ServiceErrorMigration as e:
-            # отказ механики — не «не начали молча»: колбэк уже отвечен, итог — следом в чате
+        except (ServiceErrorMigration, ServiceError) as e:
+            # отказ механики (и отказ при пользователях на резерве) — не «не
+            # начали молча»: колбэк уже отвечен, итог — следом в чате
             await _record(cb, texts.migration.migration_start_refused(str(e)), services)
             return
         cap = texts.migration.STARTED_FAILED_SHOWN if not res.started else texts.migration.LIST_CAP
@@ -89,9 +128,10 @@ async def migration_action(cb: CallbackQuery, callback_data: SetCB, services):
         return
 
     if key == "finish":
-        _, dropped = await call(services.migration_finish_preview)
+        _, dropped, twinless = await call(services.migration_finish_preview)
         old_uplink = await call(services.gwcfg_old_uplink)
-        await edit(cb, texts.migration_finish_confirm(dropped, old_uplink, getattr(services, "bot_username", "") or ""),
+        await edit(cb, texts.migration_finish_confirm(dropped, old_uplink, getattr(services, "bot_username", "") or "",
+                                                     twinless=twinless),
                    kb.migration_confirm("finish"))
         await cb.answer()
         return
@@ -105,7 +145,13 @@ async def migration_action(cb: CallbackQuery, callback_data: SetCB, services):
 
     if key == "finish!":
         await cb.answer("Завершаю…")
-        removed, dropped, failed = await call(services.migration_finish)
+        try:
+            removed, dropped, failed = await call(services.migration_finish)
+        except (ServiceErrorMigration, ServiceError) as e:
+            # второе нажатие поверх идущего завершения, пользователи на резерве:
+            # колбэк уже отвечен — отказ словами в чат, рычаг как был
+            await _record(cb, texts.migration.migration_finish_refused(str(e)), services)
+            return
         cap = texts.migration.LIST_CAP
         more_f = await _snap_more(cb, services, texts.migration.NOT_REMOVED_TITLE, failed, cap)
         more_d = await _snap_more(cb, services, texts.migration.DROPPED_TITLE, dropped, cap) if not failed else ""
@@ -122,14 +168,21 @@ async def migration_action(cb: CallbackQuery, callback_data: SetCB, services):
             # Новый интерфейс стал основным. Деплой-значения читаются при старте,
             # поэтому рестарт здесь не косметика: без него бот продолжит считать
             # основным погашенный интерфейс и родит следующее устройство на нём.
+            # Кнопка ускоряет, но не решает: не нажал — перезапуск сам через
+            # минуту; «Позже» здесь открывало бы это окно на неопределённый срок.
             dns = (await call(services.private_dns_info))
             await send_menu(cb.message, services, texts.migration_promoted(
-                promoted, dns["dns1"] if dns["mode"] == "private" else ""), kb.restart_now_or_later())
+                promoted, dns["dns1"] if dns["mode"] == "private" else ""), kb.restart_now())
+            _keep(asyncio.create_task(_restart_after_promotion(cb.message.bot, services, cb.message.chat.id)))
         return
 
     if key == "cancel!":
         await cb.answer("Отменяю…")
-        moved = await call(services.migration_cancel)
+        try:
+            moved = await call(services.migration_cancel)
+        except (ServiceErrorMigration, ServiceError) as e:
+            await _record(cb, texts.migration.migration_cancel_refused(str(e)), services)
+            return
         await _record(cb, texts.migration_cancelled(moved), services)
         return
 

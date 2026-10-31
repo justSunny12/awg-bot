@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import threading
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 
 log = logging.getLogger("awgbot.migration")
@@ -58,5 +60,31 @@ class ServiceErrorMigration(Exception):
     молча продолжать нельзя."""
 
 
-__all__ = ["log", "_STATE_KEY", "STATE_RUNNING", "STATE_OFF", "LIVE_DAYS",
+class _Lever:
+    """Рычаг переезда — одно действие за раз. Включение, завершение и отмена
+    идут из пула потоков обработчиков: двойное нажатие или кнопка со старого
+    экрана запускали второе включение параллельно первому, и каждое исходное
+    устройство получало по два двойника. Захват неблокирующий: второму —
+    отказ словами о том, что идёт, а не ожидание и повтор того же."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self.busy = ""                                    # что идёт: «включается», «завершается», «отменяется»
+
+    @contextmanager
+    def __call__(self, verb: str):
+        if not self._lock.acquire(blocking=False):
+            raise ServiceErrorMigration(f"переезд уже {self.busy or 'меняется'} — дождись итога")
+        self.busy = verb
+        try:
+            yield
+        finally:
+            self.busy = ""
+            self._lock.release()
+
+
+LEVER = _Lever()
+
+
+__all__ = ["log", "_STATE_KEY", "STATE_RUNNING", "STATE_OFF", "LIVE_DAYS", "LEVER",
            "MigrationStart", "MigrationProgress", "ServiceErrorMigration"]

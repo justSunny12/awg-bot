@@ -4,6 +4,7 @@
 import pytest
 
 from awgbot.core import config
+from awgbot.infra import awg as infra_awg
 
 from tests.integration._migration_common import _seen, _twin
 
@@ -89,17 +90,12 @@ def test_promotion_is_skipped_when_the_new_port_cannot_be_read(services, mig,
     assert not failed and written == {} and services.pop_promoted_iface() == ""
 
 
-async def test_promotion_ui_tells_and_restarts(services, mig, fake_bot,
-                                              make_active_client, monkeypatch):
-    """Вторая половина промоушена: сказать и предложить перезапуск кнопками
-    «сейчас / позже». Без рестарта бот продолжит считать основным погашенный
-    интерфейс, и каждое НОВОЕ устройство родится на мёртвом — поэтому кнопка
-    стоит прямо под итогом, а сам бот не перезапускается без спроса."""
+async def _finish_through_the_handler(services, fake_bot, make_active_client, monkeypatch, tg_id):
     from awgbot.bot.callbacks import SetCB
     from awgbot.bot.handlers import settings as sh
     from awgbot.core import settings
     from tests.conftest import FakeCallback, FakeMessage
-    c = make_active_client(name="c", tg_id=7110)
+    c = make_active_client(name="c", tg_id=tg_id)
     dc = services.add_device(c.id, "Тел")
     services.migration_start()
     _seen(services, _twin(services, dc.device_id).id, ago_days=0)
@@ -110,16 +106,66 @@ async def test_promotion_ui_tells_and_restarts(services, mig, fake_bot,
     calls: list = []
     monkeypatch.setattr(services, "set_restart_wait", lambda c_, m: calls.append(("wait", c_, m)))
     monkeypatch.setattr(services, "restart_bot", lambda: calls.append(("restart",)))
-
     nav = FakeMessage(chat_id=config.ADMIN_ID, user_id=config.ADMIN_ID, bot=fake_bot)
     cb = FakeCallback(message=nav, user_id=config.ADMIN_ID, bot=fake_bot)
     await sh.migration_action(cb, SetCB(sec="mig", act="do", key="finish!"), services)
+    return c, nav, calls
+
+
+async def test_promotion_ui_tells_and_restarts(services, mig, fake_bot,
+                                              make_active_client, monkeypatch):
+    """Вторая половина промоушена: сказать и перезапустить. Без рестарта бот
+    продолжит считать основным погашенный интерфейс, и каждое НОВОЕ устройство
+    родится на мёртвом — поэтому под итогом одна кнопка «сейчас» без «Позже»,
+    а не нажал — перезапуск назначен сам: окно не оставляем на усмотрение."""
+    import asyncio
+    from awgbot.bot.handlers.settings import actions
+    monkeypatch.setattr(actions, "PROMOTED_RESTART_DELAY_S", 0.05)
+    c, nav, calls = await _finish_through_the_handler(services, fake_bot, make_active_client, monkeypatch, 7110)
 
     said = [s for s in nav.sent if s[0] == "answer"]
     assert any("Основным интерфейсом стал" in s[1] for s in said), said
-    assert calls == [], "перезапуск — только по кнопке"
+    assert calls == [], "перезапуск раньше срока"
     last = [s for s in said if "Основным интерфейсом стал" in s[1]][-1]
-    assert [[b.text for b in row] for row in last[2].inline_keyboard] == [["🔁 Перезапустить сейчас"], ["⬅️ Позже"]]
+    assert "через минуту" in last[1]
+    assert [[b.text for b in row] for row in last[2].inline_keyboard] == [["🔁 Перезапустить сейчас"]]
+    await asyncio.sleep(0.3)
+    assert calls and calls[-1] == ("restart",), "срок вышел, а перезапуск не назначен"
+    assert calls[0][0] == "wait", "новому процессу нечего подменить панелью"
+
+
+async def test_auto_restart_yields_to_the_button(services, mig, fake_bot, make_active_client, monkeypatch):
+    """Админ нажал «сейчас» до срока — обещание уже стоит, отложенный перезапуск
+    второй раз не дёргает systemctl."""
+    import asyncio
+    from awgbot.bot.handlers.settings import actions
+    monkeypatch.setattr(actions, "PROMOTED_RESTART_DELAY_S", 0.05)
+    c, nav, calls = await _finish_through_the_handler(services, fake_bot, make_active_client, monkeypatch, 7111)
+    services.db.set_state("restart_wait", f"{config.ADMIN_ID}:1")        # кнопка: обещание уже стоит
+    await asyncio.sleep(0.3)
+    assert calls == []
+
+
+async def test_until_the_restart_the_monitor_is_quiet_and_devices_are_refused(
+        services, mig, fake_bot, make_active_client, monkeypatch):
+    """Между финалом и перезапуском config.* — от погашенного интерфейса:
+    проверка «сервер жив» шла бы по нему (ложная тревога), новое устройство
+    родилось бы на нём. Отметка «ждёт перезапуска» глушит первое и отказывает
+    во втором; старт нового процесса её снимает."""
+    from awgbot.bot.handlers.settings import actions
+    from awgbot.domain.services import ServiceError
+    monkeypatch.setattr(actions, "PROMOTED_RESTART_DELAY_S", 600)
+    c, nav, calls = await _finish_through_the_handler(services, fake_bot, make_active_client, monkeypatch, 7112)
+    assert services.migration_restart_pending() == config.MIGRATION_INTERFACE
+    monkeypatch.setattr(infra_awg, "awg_responding", lambda: False)      # погашенный интерфейс не отвечает
+    assert services.server_ok() is True, "тревога по погашенному интерфейсу"
+    with pytest.raises(ServiceError, match="перезапуска"):
+        services.add_device(c.id, "Ещё")
+    services.migration_restart_done()                                     # старт нового процесса
+    assert services.migration_restart_pending() == ""
+    assert services.server_ok() is False
+    for t in list(actions._BG):
+        t.cancel()
 
 
 def test_write_state_failure_does_not_pretend_it_worked(tmp_path, monkeypatch, caplog):

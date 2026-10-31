@@ -10,11 +10,13 @@ from tests.screens.shots_admin_common import ADM, _mig_ready, _mig_running, _mig
 def _mig_finishing(services, mp):
     """Переезд идёт, и его можно завершить: смена основного интерфейса на
     хосте (гашение старого, файл поколения) — заглушками."""
+    from awgbot.bot.handlers.settings import actions
     from awgbot.infra import awglock
     who = _mig_running(services, mp)
     services._retire_interface = lambda *a, **k: None
     mp.setattr(awglock, "write_state", lambda **k: None)
     mp.setattr(awglock, "needs_migration", lambda: False)
+    mp.setattr(actions, "_keep", lambda t: t.cancel())      # отложенный перезапуск — не в снимках
     return who
 
 

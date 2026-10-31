@@ -101,6 +101,44 @@ def test_failed_interface_leaves_the_config_untouched(services, monkeypatch, tmp
     assert written == {}
 
 
+def test_failed_settings_write_takes_the_raised_interface_down(services, monkeypatch, tmp_path):
+    """Интерфейс поднят, запись ключей в app.yaml упала: интерфейс опускается и
+    конфиг убирается. Иначе следующая попытка сочла бы awg1 занятым и подняла
+    awg2, а первый висел бы поднятым без хозяина."""
+    import subprocess
+    from awgbot.core import settings
+    from awgbot.domain.migration import ServiceErrorMigration
+    monkeypatch.setattr(config, "MIGRATION_INTERFACE", "")
+    monkeypatch.setattr(config, "MIGRATION_SUBNET_PREFIX", "")
+    monkeypatch.setattr(config, "AWG_DIR", str(tmp_path))
+    monkeypatch.setattr(config, "AWG_INTERFACE", "awg0")
+    monkeypatch.setattr(config, "SUBNET_PREFIX", "10.8.1")
+    (tmp_path / "awg0.conf").write_text("Address = 10.8.1.1/24\n", encoding="utf-8")
+    calls: list[list[str]] = []
+
+    def fake_run(argv, **kw):
+        calls.append(list(argv))
+        if argv[0] == "bash":                                   # скрипт установщика поднял интерфейс
+            (tmp_path / "awg1.conf").write_text("Address = 10.9.1.1/24\n", encoding="utf-8")
+            return subprocess.CompletedProcess(argv, 0, b"LISTEN_PORT=443\nCREATED=1\n", b"")
+        return subprocess.CompletedProcess(argv, 0, b"", b"")
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    def refuse(k, v):
+        raise OSError("app.yaml: только чтение")
+    monkeypatch.setattr(settings, "set_value", refuse)
+    with pytest.raises(ServiceErrorMigration, match="не записаны"):
+        services.migration_prepare(port=443)
+    assert ["awg-quick", "down", "awg1"] in calls, "поднятый интерфейс не опущен"
+    assert ["systemctl", "disable", "awg-quick@awg1"] in calls
+    assert not (tmp_path / "awg1.conf").exists(), "конфиг сиротой остался — имя занято"
+    assert (tmp_path / "awg0.conf").exists()
+
+    # повтор берёт то же имя, а не следующее
+    monkeypatch.setattr(settings, "set_value", lambda k, v: [k])
+    assert services.migration_prepare(port=443)["iface"] == "awg1"
+
+
 def test_finish_prunes_old_kernel_builds_only_after_a_generation_change(services, mig,
                                                                         make_active_client, monkeypatch):
     """Прежняя сборка ядра держится до финала переезда по поколению — и
@@ -122,6 +160,7 @@ def test_finish_prunes_old_kernel_builds_only_after_a_generation_change(services
     assert pruned == [1], "на финале смены поколения прежняя сборка должна уйти"
 
     pruned.clear()
+    services.migration_restart_done()                     # бот перезапущен после первого переезда
     c2 = make_active_client(name="c2", tg_id=7131)
     dc2 = services.add_device(c2.id, "Тел")
     services.migration_start()

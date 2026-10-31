@@ -26,7 +26,7 @@ async def migdrop(services, ref: int, key: str, chat_id: int) -> View | None:
     from awgbot.bot.texts.fmt import _e
     if not await call(services.migration_running):
         return View(title="", empty=tl.MIGRATION_NOT_RUNNING, back=ui.back(SetCB(sec="svc")))
-    _pairs, dropped = await call(services.migration_finish_preview)
+    _pairs, dropped, _twinless = await call(services.migration_finish_preview)
     return View(title=tl.MIGDROP_TITLE, rows=[_e(x) for x in dropped], count=str(len(dropped)) if dropped else "",
                 empty=tl.MIGDROP_EMPTY, back=ui.back(SetCB(sec="mig", act="do", key="finish")))
 

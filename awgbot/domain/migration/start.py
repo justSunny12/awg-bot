@@ -9,7 +9,7 @@ from awgbot.core.enums import FriendStatus
 from awgbot.infra import awg
 from awgbot.util import timeutil
 
-from .common import log, _STATE_KEY, STATE_RUNNING, LIVE_DAYS, MigrationStart, ServiceErrorMigration
+from .common import log, _STATE_KEY, STATE_RUNNING, LIVE_DAYS, LEVER, MigrationStart, ServiceErrorMigration
 
 
 class MigrationStartMixin:
@@ -70,7 +70,18 @@ class MigrationStartMixin:
         Сбой на середине (сервер моргнул, адреса кончились) обязан лечиться
         повторным включением: докидываем тех, у кого двойника ещё нет, по
         twin_of, ничего не задваивая.
+
+        Параллельный вызов (двойное нажатие) — отказ, не второй заход: оба
+        читали бы один и тот же список «без двойника» и рожали бы каждому по
+        два. Пока пользователи на резерве — тоже отказ: двойники родились бы
+        в базе, которой сейчас не верят.
         """
+        if hasattr(self, "reserve_refuse_if_away"):
+            self.reserve_refuse_if_away()
+        with LEVER("включается"):
+            return self._migration_start_locked()
+
+    def _migration_start_locked(self) -> MigrationStart:
         if not self.migration_available():
             raise ServiceErrorMigration("Переезд не настроен: пустые ключи в app.yaml")
         # Свой DNS двойников — ДО рождения: конфиг двойника рождается с этим
@@ -138,6 +149,15 @@ class MigrationStartMixin:
         """
         iface = config.MIGRATION_INTERFACE
         with awg.mutation_lock:
+            # Под тем же замком, что и запись: список «без двойника» читался до
+            # него, и второй поток (заведение устройства в окне, повторное
+            # включение) мог родить двойника первым. Уникальный индекс по
+            # twin_of отказал бы в create_device — но уже после выделения адреса
+            # и ключей, и с IntegrityError вместо ответа «двойник уже есть».
+            have = self.db.twins_by_origin().get(dev.id)
+            if have is not None:
+                log.info("migration: двойник для %s (id=%s) уже есть (id=%s)", dev.name, dev.id, have)
+                return have
             occupied_live = awg.read_occupied_ips(iface)
             # Второй интерфейс ставит awg-server-init.sh: сервер на .1 всегда,
             # даже если у первого (прежняя раскладка) он на .0 и ip_host_start=1
@@ -164,10 +184,12 @@ class MigrationStartMixin:
                 if refused is not None:                    # следование: решения пишет бот на резерве
                     raise refused from e
                 raise ServiceErrorMigration(f"конфликт адресов: {e}")
-            self.db.update_device_fields(new_id, routing_on=int(dev.routing_on))
             try:
+                # флаг маршрутизации — внутри блока отката: отказ записи оставлял
+                # строку двойника без пира, и повторное включение считало её «есть»
+                self.db.update_device_fields(new_id, routing_on=int(dev.routing_on))
                 awg.add_peer(pub, psk, ip, iface=iface)
-            except awg.AwgError:
+            except Exception:                             # noqa: BLE001
                 self.db.delete_device(new_id, archive_reason=None)   # откат, не архив
                 raise
             # Инвайт-код переносится ПОСЛЕ пира: раньше он стирался у оригинала
@@ -179,6 +201,55 @@ class MigrationStartMixin:
             except awg.AwgError:
                 pass                                      # доберёт reconcile_blocks
         return new_id
+
+    def migration_dedup_twins(self) -> int:
+        """Старт: у исходного устройства больше одного двойника (параллельные
+        включения рычага прежних выпусков) — оставить одного, остальных убрать,
+        после чего база ставит уникальный индекс по twin_of.
+
+        Остаётся двойник с самым свежим рукопожатием, при равенстве — старший.
+        Лишний без рукопожатия — на нём никого не было: пир снимается, строка
+        удаляется (не архив — это не устройство человека, а след гонки). Лишний
+        С рукопожатием — на нём кто-то сидит: его не роняем и не прячем, а
+        отцепляем от пары (twin_of пусто): он остаётся обычным устройством на
+        новом интерфейсе, виден в списках, и человек решает, какой из двух
+        оставить; в журнал — поимённо. Возвращает число убранных и отцепленных."""
+        groups = self.db.twin_duplicates()
+        if not groups:
+            return 0
+        fixed = 0
+        for origin_id, twin_ids in groups.items():
+            twins = [t for t in (self.db.get_device(i) for i in twin_ids) if t is not None]
+            if len(twins) < 2:
+                continue
+            keep = max(twins, key=lambda t: (int(t.last_handshake or 0), -t.id))
+            for extra in twins:
+                if extra.id == keep.id:
+                    continue
+                if extra.last_handshake:
+                    self.db.update_device_fields(extra.id, twin_of=None)
+                    log.warning("переезд: лишний двойник %s (id=%s) исходного id=%s с рукопожатием — "
+                                "отцеплен от пары, остался устройством на %s; двойник пары — id=%s",
+                                extra.name, extra.id, origin_id, awg.iface_of(extra.iface), keep.id)
+                    fixed += 1
+                    continue
+                try:
+                    awg.remove_peer(extra.public_key, iface=awg.iface_of(extra.iface))
+                except awg.AwgError as e:
+                    log.warning("переезд: лишний двойник %s (id=%s) не снят с сервера, оставлен до "
+                                "следующего старта: %s", extra.name, extra.id, e)
+                    continue
+                if int(extra.block_reason) != 0:
+                    try:
+                        awg.unblock_ip(extra.address)
+                    except awg.AwgError:
+                        pass                              # доберёт reconcile_blocks(prune)
+                self.db.delete_device(extra.id, archive_reason=None)
+                log.warning("переезд: лишний двойник %s (id=%s) исходного id=%s без рукопожатия убран; "
+                            "двойник пары — id=%s", extra.name, extra.id, origin_id, keep.id)
+                fixed += 1
+        self.db.ensure_twin_unique()
+        return fixed
 
     def _inherit_friend(self, dev, new_id: int) -> None:
         """Гостевой доступ у двойника.

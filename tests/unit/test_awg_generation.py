@@ -47,6 +47,27 @@ def test_needs_migration_when_delivery_moves_ahead(lockdir):
     assert awglock.target_generation() == 2
 
 
+def test_state_is_written_by_atomic_replace(lockdir, monkeypatch):
+    """Файл поколения пишется подменой имени, а не write_text: крах посреди
+    записи оставлял пустой файл, и установщик читал «поколение 0» — новый
+    переезд с нуля. Крах до подмены — прежнее содержимое цело, права 0644:
+    файл читает установщик от своего пользователя."""
+    import os
+    from awgbot.util import fsatomic
+    awglock.write_state(applied=1, target=2)
+    path = lockdir / "awg.state"
+    assert oct(os.stat(path).st_mode & 0o777) == "0o644"
+    real_replace = os.replace
+
+    def crash(src, dst):
+        raise OSError("диск пропал")
+    monkeypatch.setattr(fsatomic.os, "replace", crash)
+    awglock.write_state(applied=2, target=0)                 # отказ — в журнал, не наружу
+    monkeypatch.setattr(fsatomic.os, "replace", real_replace)
+    assert awglock.applied_generation() == 1 and awglock.target_generation() == 2, "прежний файл испорчен"
+    assert [p.name for p in lockdir.iterdir() if p.name.endswith(".tmp")] == [], "временный файл не убран"
+
+
 def test_finishing_migration_clears_the_target(lockdir):
     awglock.write_state(applied=1, target=2)
     awglock.write_state(applied=2, target=0)
