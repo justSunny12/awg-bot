@@ -61,6 +61,11 @@ class ReserveVoteMixin:
         «вижу» — 🟡 без звука (Т-РА3б: так решило большинство)."""
         if not any(a and a[0] == "open" for a in actions):
             return []
+        from .store import STORE_LOCK
+        with STORE_LOCK:
+            return self._moved_notice_locked()
+
+    def _moved_notice_locked(self) -> list[tuple]:
         from awgbot.domain.notices import reserve as rn
         cur = self.reserve_section()
         move = int(cur.get("reserve_move") or 0)

@@ -11,11 +11,13 @@ from pathlib import Path
 
 
 def write_private(path, text: str, mode: int = 0o600) -> None:
-    """Записать text в path атомарно (tmp + replace), с правами mode."""
+    """Записать text в path атомарно (свой tmp рядом + replace), с правами mode."""
+    import tempfile
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
-    tmp = p.with_name(f".{p.name}.{os.getpid()}.tmp")
-    fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
+    # своё имя временного файла на каждый вызов (mkstemp: O_EXCL, 0600): два потока одного
+    # процесса с общим именем писали бы в один файл — подмена отдала бы смесь двух записей
+    fd, tmp = tempfile.mkstemp(prefix=f".{p.name}.", suffix=".tmp", dir=str(p.parent))
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(text)

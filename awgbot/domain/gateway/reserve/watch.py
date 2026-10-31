@@ -46,10 +46,11 @@ class ReserveWatchMixin:
         elif act == "down":
             self.__dict__["_rsv_reserve_since"] = timeutil.now_iso()
             try:
-                cur = self.reserve_section()
-                cur["reserve_down_last"] = self.__dict__["_rsv_reserve_since"]   # для Т-РА3 (Н3) после возврата связи
-                from .store import _write
-                _write(cur, self._RSV_STORE)
+                from .store import STORE_LOCK, _write
+                with STORE_LOCK:
+                    cur = self.reserve_section()
+                    cur["reserve_down_last"] = self.__dict__["_rsv_reserve_since"]   # для Т-РА3 (Н3) после возврата связи
+                    _write(cur, self._RSV_STORE)
             except Exception as e:                            # noqa: BLE001
                 log.info("reserve: момент потери резерва не записан: %s", e)
             log.warning("reserve: резерв не отвечает по awgrsv")

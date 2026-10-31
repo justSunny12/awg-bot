@@ -20,13 +20,14 @@ import os
 import time
 from pathlib import Path
 
-from awgbot.util import livestep, timeutil
+from awgbot.util import fsatomic, livestep, timeutil
 from awgbot.util.quorum import timing as qt
 from awgbot.util.quorum.probe import Probe, Reply
 from awgbot.util.quorum.timing import Timing
 from awgbot.util.quorum.voter import Voter
 
 from ..base import log
+from .store import STORE_LOCK                                 # один замок на reserve.json и quorum.json
 
 STORE_PATH = Path("/var/lib/awg-gw/quorum.json")
 _KEEP_KEYS = ("views", "pledges", "told", "apply_mono", "share_given_at", "e_known")
@@ -42,13 +43,7 @@ def _read(path: Path = STORE_PATH) -> dict:
 
 
 def _write(data: dict, path: Path = STORE_PATH) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False)
-    os.chmod(str(tmp), 0o600)
-    os.replace(str(tmp), str(path))
+    fsatomic.write_private(path, json.dumps(data, ensure_ascii=False))
 
 
 class GatewayQuorumMixin:
@@ -68,9 +63,8 @@ class GatewayQuorumMixin:
 
     def quorum_apply(self, checked: dict | None) -> dict:
         """Раздел из документа (проверенный) или None — у сервера раздела нет."""
-        cur = self.quorum_section()
         if checked is None:
-            if not cur:
+            if not self.quorum_section():
                 return {"changed": False, "note": ""}
             self.quorum_remove()
             return {"changed": True, "note": "🗳 Голосование о сервере AWG снято — зонды опущены"}
@@ -79,11 +73,13 @@ class GatewayQuorumMixin:
                "port": int(checked.get("port") or 0), "probes": dict(checked.get("probes") or {}),
                "point": dict(checked.get("point") or {}), "e": int(checked.get("e") or 0),
                "timing": dict(checked.get("timing") or {}), "applied_at": timeutil.now_iso()}
-        for k in _KEEP_KEYS:
-            if k in cur:
-                new[k] = cur[k]
-        changed = any(cur.get(k) != new[k] for k in ("l", "g", "members", "t", "port", "probes", "point"))
-        _write(new, self._QUO_STORE)
+        with STORE_LOCK:
+            cur = self.quorum_section()
+            for k in _KEEP_KEYS:
+                if k in cur:
+                    new[k] = cur[k]
+            changed = any(cur.get(k) != new[k] for k in ("l", "g", "members", "t", "port", "probes", "point"))
+            _write(new, self._QUO_STORE)
         if int(cur.get("e") or 0) < new["e"]:
             self._quorum_epoch_in(new["e"])
         note = ""
@@ -199,10 +195,11 @@ class GatewayQuorumMixin:
         """Известная эпоха — на диск (`e_known`): после перезапуска агента пробы идут с ней,
         а не с эпохой документа (после `qtake` прежний лидер иначе снова набирал бы «да» под
         старой эпохой до `qstate` резерва)."""
-        sec = self.quorum_section()
-        if sec.get("l") and int(sec.get("e_known") or 0) < int(e):
-            sec["e_known"] = int(e)
-            _write(sec, self._QUO_STORE)
+        with STORE_LOCK:
+            sec = self.quorum_section()
+            if sec.get("l") and int(sec.get("e_known") or 0) < int(e):
+                sec["e_known"] = int(e)
+                _write(sec, self._QUO_STORE)
 
     def quorum_runtime_plan(self) -> dict:
         return {"responder": None, "probes": self.quorum_probe_ifaces()}
@@ -283,11 +280,12 @@ class GatewayQuorumMixin:
     def _quorum_view_changed(self, name: str, rec: dict, v: Voter, w: str) -> list[tuple]:
         target = "клон" if rec.get("target") == "r" else "сервер AWG"
         log.info("quorum: %s — %s", target, {"see": "вижу", "sus": "ответ пропущен", "uns": "не вижу"}[w])
-        cur = self.quorum_section()
-        views = dict(cur.get("views") or {})
-        views[name] = {"w": w, "since": timeutil.now_iso(), "target": str(rec.get("target") or "")}
-        cur["views"] = views
-        _write(cur, self._QUO_STORE)
+        with STORE_LOCK:
+            cur = self.quorum_section()
+            views = dict(cur.get("views") or {})
+            views[name] = {"w": w, "since": timeutil.now_iso(), "target": str(rec.get("target") or "")}
+            cur["views"] = views
+            _write(cur, self._QUO_STORE)
         if w == "sus":
             return []
         body = {"l": str(rec.get("l") or ""), "g": int(cur.get("g") or 0), "w": w, "since": views[name]["since"], "e": int(v.epoch),
@@ -381,22 +379,24 @@ class GatewayQuorumMixin:
             log.warning("quorum: кандидат просит точку поколения %s, у меня %s — отказ", q_gen, point.get("q_gen"))
             return []
         log.warning("quorum: отдаю точку ключа кворума кандидату (сервер AWG не отвечает с %s)", since)
-        rs = self.reserve_section()                           # отметку читает слово state{idle, reason} — Т-РА5
-        rs["share_given_at"] = timeutil.now_iso()
         from .store import _write as _write_rsv
-        _write_rsv(rs, self._RSV_STORE)
+        with STORE_LOCK:
+            rs = self.reserve_section()                       # отметку читает слово state{idle, reason} — Т-РА5
+            rs["share_given_at"] = timeutil.now_iso()
+            _write_rsv(rs, self._RSV_STORE)
         return [("guest", "qshare", {"l": str(sec.get("l") or ""), "q_gen": int(q_gen), "x": int(point.get("x") or 0),
                                      "y": str(point.get("y"))})]
 
     def _pledge_store(self, name: str, pledge: dict | None) -> None:
-        cur = self.quorum_section()
-        pledges = dict(cur.get("pledges") or {})
-        if pledge is None:
-            pledges.pop(name, None)
-        else:
-            pledges[name] = pledge
-        cur["pledges"] = pledges
-        _write(cur, self._QUO_STORE)
+        with STORE_LOCK:
+            cur = self.quorum_section()
+            pledges = dict(cur.get("pledges") or {})
+            if pledge is None:
+                pledges.pop(name, None)
+            else:
+                pledges[name] = pledge
+            cur["pledges"] = pledges
+            _write(cur, self._QUO_STORE)
 
     def _pledge_restore(self, name: str, v: Voter, now: float) -> None:
         """Обязательство «нет» переживает перезапуск агента (срок — по отметке)."""

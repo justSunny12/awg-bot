@@ -34,7 +34,7 @@ from awgbot.core import config
 from awgbot.util import timeutil
 
 from ..base import log
-from .store import _write
+from .store import STORE_LOCK, _write
 
 CHECK_EVERY_S = 15            # рукопожатия аплинка и awgrsv — не чаще
 ASSERT_EVERY_S = 600          # пока обход включён — --tg on заново (cgroup юнита после перезапуска новый)
@@ -93,19 +93,26 @@ class ReserveTgViaMixin:
     def _tgvia_on(self, cur: dict, now: float) -> list[tuple]:
         from awgbot.domain.notices import reserve as rn
         since = timeutil.now_iso()
+        with STORE_LOCK:
+            fresh = self.reserve_section() or cur             # свежий: проба и рукопожатия шли вне замка
+            fresh.update(tg_via=True, tg_since=since)
+            # очередь уведомления — до записи раздела: Т-К24 не должно теряться, если аплинк мёртв и
+            # отправка не дошла (такт повторит недоставленное из pending_notes)
+            note = self.reserve_note(fresh, rn.gateway_tg_via(str(fresh.get("name") or ""), str(fresh.get("peer_name") or ""), since),
+                                     silent=True)
+            _write(fresh, self._RSV_STORE)
         cur.update(tg_via=True, tg_since=since)
-        # очередь уведомления — до записи раздела: Т-К24 не должно теряться, если аплинк мёртв и
-        # отправка не дошла (такт повторит недоставленное из pending_notes)
-        note = self.reserve_note(cur, rn.gateway_tg_via(str(cur.get("name") or ""), str(cur.get("peer_name") or ""), since), silent=True)
-        _write(cur, self._RSV_STORE)
         st = self.__dict__.setdefault("_tgvia", {})
         st.update(probe_at=now + PROBE_EVERY_S * random.uniform(0.6, 1.4), streak=0)
         log.warning("обход: аплинк молчит с %s, Telegram — через awgrsv", since)
         return [("tg", "on"), ("notify", [note]), ("push",)]
 
     def _tgvia_off(self, cur: dict, why: str) -> list[tuple]:
+        with STORE_LOCK:
+            fresh = self.reserve_section() or cur             # свежий: проба шла вне замка
+            fresh.update(tg_via=False, tg_since="")
+            _write(fresh, self._RSV_STORE)
         cur.update(tg_via=False, tg_since="")
-        _write(cur, self._RSV_STORE)
         st = self.__dict__.setdefault("_tgvia", {})
         st.update(streak=0)
         log.info("обход: %s — Telegram через аплинк", why)
@@ -187,8 +194,12 @@ class ReserveTgViaMixin:
         if st["key"] != key:
             st.update(key=key, since=now, next=now)
         if now - float(st["since"]) > RERESOLVE_MAX_S:
+            with STORE_LOCK:
+                fresh = self.reserve_section()
+                if fresh:
+                    fresh["reresolve_pending"] = None
+                    _write(fresh, self._RSV_STORE)
             cur["reresolve_pending"] = None
-            _write(cur, self._RSV_STORE)
             log.info("аплинк: перерезолв по записи (%s, move %s) не удался за %d с — запасной путь по рукопожатию",
                      key[0], key[1], RERESOLVE_MAX_S)
             return []
@@ -201,12 +212,13 @@ class ReserveTgViaMixin:
         """Исход `uplink.reresolve_now`: адрес встал или уже тот — повод закрыт."""
         if result not in ("set", "same", "skip:ip", "skip:no-uplink", "skip:no-endpoint", "skip:other-name"):
             return
-        cur = self.reserve_section()
-        cur_p = cur.get("reresolve_pending")
-        if isinstance(cur_p, dict) and (str(cur_p.get("why")), int(cur_p.get("move") or 0)) == \
-                (str(pending.get("why")), int(pending.get("move") or 0)):
-            cur["reresolve_pending"] = None
-            _write(cur, self._RSV_STORE)
+        with STORE_LOCK:
+            cur = self.reserve_section()
+            cur_p = cur.get("reresolve_pending")
+            if isinstance(cur_p, dict) and (str(cur_p.get("why")), int(cur_p.get("move") or 0)) == \
+                    (str(pending.get("why")), int(pending.get("move") or 0)):
+                cur["reresolve_pending"] = None
+                _write(cur, self._RSV_STORE)
 
     @staticmethod
     def _tgvia_stale(iface: str) -> bool:

@@ -28,21 +28,28 @@ away` в документе) или по `state{serving}` от резерва в
 такт повторяет недоставленное раз в минуту (первая попытка — сразу, повтор —
 не раньше минуты), пока оно ещё верно (`cond`: пересылка открыта — проверяется
 в момент повтора) и не старше суток; Т-РА3 со звуком — ещё и
-почтой (`critical`). Такт и слова резерва правят reserve.json по очереди
-(замок в runtime/guestlink.py).
+почтой (`critical`). Чтение-изменение-запись reserve.json и quorum.json —
+под одним замком `STORE_LOCK` (такт, ответы зондов, слова резерва, документ —
+разные потоки), скрипты и сеть — вне его; запись — своим временным файлом
+(util/fsatomic).
 """
 from __future__ import annotations
 
 import json
 import os
+import threading
 from pathlib import Path
 
 from awgbot.infra.gwguard import rsv as rsvlink
-from awgbot.util import livestep, timeutil
+from awgbot.util import fsatomic, livestep, timeutil
 
 from ..base import log
 
 STORE_PATH = Path("/var/lib/awg-gw/reserve.json")
+# reserve.json и quorum.json правят четыре потока (такт, ответы зондов, слова резерва, документ):
+# чтение-изменение-запись — под одним замком (один на оба файла — без порядка захвата);
+# под ним — только файлы, скрипты и сеть — вне его
+STORE_LOCK = threading.RLock()
 
 
 def _read(path: Path = STORE_PATH) -> dict:
@@ -54,13 +61,7 @@ def _read(path: Path = STORE_PATH) -> dict:
 
 
 def _write(data: dict, path: Path = STORE_PATH) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False)
-    os.chmod(str(tmp), 0o600)
-    os.replace(str(tmp), str(path))
+    fsatomic.write_private(path, json.dumps(data, ensure_ascii=False))
 
 
 # своё о ходе дел в reserve.json — переживает каждый новый документ
@@ -96,22 +97,26 @@ class ReserveStoreMixin:
                             on_sent=lambda nid=nid: self.reserve_note_sent(nid))
 
     def reserve_note_sent(self, nid: str) -> None:
-        cur = self.reserve_section()
-        notes = [n for n in (cur.get("pending_notes") or []) if isinstance(n, dict) and n.get("id") != nid]
-        if len(notes) != len(cur.get("pending_notes") or []):
-            cur["pending_notes"] = notes
-            _write(cur, self._RSV_STORE)
+        with STORE_LOCK:
+            cur = self.reserve_section()
+            notes = [n for n in (cur.get("pending_notes") or []) if isinstance(n, dict) and n.get("id") != nid]
+            if len(notes) != len(cur.get("pending_notes") or []):
+                cur["pending_notes"] = notes
+                _write(cur, self._RSV_STORE)
 
     def reserve_notes_retry(self, now: float | None = None) -> list[tuple]:
         """Недоставленные уведомления — снова, раз в минуту, пока верны."""
         import time as _t
         from awgbot.core import config
         from awgbot.domain.services import Notification
+        with STORE_LOCK:
+            return self._notes_retry(_t.monotonic() if now is None else now, config, Notification)
+
+    def _notes_retry(self, now: float, config, Notification) -> list[tuple]:
         cur = self.reserve_section()
         notes = [n for n in (cur.get("pending_notes") or []) if isinstance(n, dict)]
         if not notes:
             return []
-        now = _t.monotonic() if now is None else now
         keep, out, changed = [], [], False
         for n in notes:
             try:
@@ -174,44 +179,51 @@ class ReserveStoreMixin:
                 return {"changed": False, "note": ""}
             self.reserve_remove()
             return {"changed": True, "note": "🛟 Резерв у сервера AWG снят — линк к резерву опущен"}
-        new = {"conf": str(checked.get("conf_text") or ""),
-               "state": str(checked.get("state") or "idle"), "move": int(checked.get("move") or 0),
-               "self": str(checked.get("self") or ""), "name": str(checked.get("name") or ""),
-               "peer_name": str(checked.get("peer_name") or ""),
-               "slot": int(checked.get("slot") or cur.get("slot") or 0),
-               "record": str(checked.get("record") or ""), "peer_host": str(checked.get("peer_host") or ""),
-               "chan": int(checked.get("chan") or 0), "tg": bool(checked.get("tg")), "admins": list(self._reserve_admin_ips()),
-               "peer_addr": _peer_addr(str(checked.get("conf_text") or "")),
-               "reserve_state": cur.get("reserve_state") or "idle", "reserve_move": int(cur.get("reserve_move") or 0),
-               "applied_at": timeutil.now_iso()}
-        for k in _KEEP_KEYS:                                  # своё о ходе дел — не из документа, не стирать
-            if k in cur:
-                new[k] = cur[k]
-        changed = any(cur.get(k) != new[k] for k in ("conf", "state", "move", "self", "chan", "tg"))
-        # слово возврата: основа вернула пользователей (idle, номер не меньше номера резерва) — аплинк
-        # на адрес основы по записи сразу, не через 180 с рукопожатия (концепт «кворум» §4.12, решение 17)
-        done = dict(new.get("reresolved") or {})
-        if new["state"] == "idle" and cur.get("state") == "away" and new["move"] >= int(new["reserve_move"] or 0) \
-                and new.get("self") and int(done.get("back") or 0) < new["move"]:
-            new["reresolve_pending"] = {"name": new["record"], "expect": new["self"], "why": "возврат", "move": new["move"]}
-            new["reresolved"] = {**done, "back": new["move"]}
+        conf = str(checked.get("conf_text") or "")
+        admins = list(self._reserve_admin_ips())
         # адреса админов сменились — тоже повод переподнять: набор rsv_admin4 заполняет только --up
-        link_changed = cur.get("conf") != new["conf"] or not rsvlink.present() or cur.get("admins") != new["admins"]
-        note = ""
+        link_changed = cur.get("conf") != conf or not rsvlink.present() or cur.get("admins") != admins
+        note, up_err = "", None
         if link_changed:
             try:
-                rsvlink.up(new["conf"], self._reserve_admin_ips())
-                new.pop("link_pending", None)
+                rsvlink.up(conf, self._reserve_admin_ips())     # скрипт — вне замка: до 120 с
                 note = "🛟 Линк к резерву поднят" if not cur.get("conf") else "🛟 Линк к резерву переподнят на новых ключах"
                 log.info("reserve: линк к резерву %s", "поднят" if not cur.get("conf") else "переподнят")
             except rsvlink.RsvError as e:
                 # временный отказ (имя резерва не резолвится, модуль ещё не собран): раздел принят,
                 # подъём повторит такт — иначе сервер считал бы раздел отвергнутым до смены отпечатка
-                new["link_pending"] = str(e)[:200]
-                new["link_retry_mono"] = 0.0
+                up_err = str(e)
                 note = f"⚠️ Линк к резерву не поднялся: {str(e)[:120]} — повторю"
                 log.warning("reserve: линк к резерву не поднялся: %s — повтор тактом", e)
-        _write(new, self._RSV_STORE)
+        with STORE_LOCK:
+            cur = self.reserve_section()                      # свежий: пока поднимался линк, такт и слова писали своё
+            new = {"conf": conf,
+                   "state": str(checked.get("state") or "idle"), "move": int(checked.get("move") or 0),
+                   "self": str(checked.get("self") or ""), "name": str(checked.get("name") or ""),
+                   "peer_name": str(checked.get("peer_name") or ""),
+                   "slot": int(checked.get("slot") or cur.get("slot") or 0),
+                   "record": str(checked.get("record") or ""), "peer_host": str(checked.get("peer_host") or ""),
+                   "chan": int(checked.get("chan") or 0), "tg": bool(checked.get("tg")), "admins": admins,
+                   "peer_addr": _peer_addr(conf),
+                   "reserve_state": cur.get("reserve_state") or "idle", "reserve_move": int(cur.get("reserve_move") or 0),
+                   "applied_at": timeutil.now_iso()}
+            for k in _KEEP_KEYS:                              # своё о ходе дел — не из документа, не стирать
+                if k in cur:
+                    new[k] = cur[k]
+            changed = any(cur.get(k) != new[k] for k in ("conf", "state", "move", "self", "chan", "tg"))
+            # слово возврата: основа вернула пользователей (idle, номер не меньше номера резерва) — аплинк
+            # на адрес основы по записи сразу, не через 180 с рукопожатия (концепт «кворум» §4.12, решение 17)
+            done = dict(new.get("reresolved") or {})
+            if new["state"] == "idle" and cur.get("state") == "away" and new["move"] >= int(new["reserve_move"] or 0) \
+                    and new.get("self") and int(done.get("back") or 0) < new["move"]:
+                new["reresolve_pending"] = {"name": new["record"], "expect": new["self"], "why": "возврат", "move": new["move"]}
+                new["reresolved"] = {**done, "back": new["move"]}
+            if link_changed and up_err is None:
+                new.pop("link_pending", None)
+            elif link_changed:
+                new["link_pending"] = up_err[:200]
+                new["link_retry_mono"] = 0.0
+            _write(new, self._RSV_STORE)
         # пересылку по новому разделу решает такт (≤ 5 с): здесь её действия исполнить некому —
         # решение отсюда записало бы «открыта» и «Т-РА3 объявлено» без открытия и без уведомления
         return {"changed": changed, "note": note}
@@ -228,16 +240,27 @@ class ReserveStoreMixin:
         now = _t.monotonic() if now is None else now
         if not livestep.mono_due(cur.get("link_retry_mono"), now, 60):
             return []
-        cur["link_retry_mono"] = now
+        with STORE_LOCK:
+            fresh = self.reserve_section()
+            fresh["link_retry_mono"] = now
+            _write(fresh, self._RSV_STORE)
+        err = ""
         try:
-            rsvlink.up(str(cur["conf"]), self._reserve_admin_ips())
+            rsvlink.up(str(cur["conf"]), self._reserve_admin_ips())    # скрипт — вне замка
         except rsvlink.RsvError as e:
-            cur["link_pending"] = str(e)[:200]
-            _write(cur, self._RSV_STORE)
-            log.info("reserve: линк к резерву всё ещё не поднимается: %s", e)
+            err = str(e)
+        with STORE_LOCK:
+            fresh = self.reserve_section()
+            if not fresh.get("conf"):
+                return []                                     # раздел сняли, пока поднимался линк
+            if err:
+                fresh["link_pending"] = err[:200]
+            else:
+                fresh.pop("link_pending", None)
+            _write(fresh, self._RSV_STORE)
+        if err:
+            log.info("reserve: линк к резерву всё ещё не поднимается: %s", err)
             return []
-        cur.pop("link_pending", None)
-        _write(cur, self._RSV_STORE)
         log.info("reserve: линк к резерву поднят повтором")
         return [("push",)]
 
@@ -276,14 +299,21 @@ class ReserveStoreMixin:
     def reserve_state_in(self, state: str, move: int, reason: str = "", e: int = 0) -> list[tuple]:
         """`state{state, move[, reason]}` от резерва по гостевому каналу. `idle` с
         причиной после отданной этим шлюзом доли — переезд не состоялся: Т-РА5."""
-        cur = self.reserve_section()
-        if not cur:
+        if not self.reserve_section() or state not in ("serving", "idle"):
             return []
-        if state not in ("serving", "idle"):
-            return []
-        actions: list[tuple] = []
         if int(e or 0) and hasattr(self, "_quorum_epoch_in"):
             self._quorum_epoch_in(int(e))                     # эпоха линии от резерва (кворум) — голосующим
+        with STORE_LOCK:
+            actions = self._state_in_locked(state, move, reason)
+            if actions is None:
+                return []
+        return actions + self.reserve_forward_decide()
+
+    def _state_in_locked(self, state: str, move: int, reason: str) -> list[tuple] | None:
+        cur = self.reserve_section()
+        if not cur:
+            return None
+        actions: list[tuple] = []
         if state == "idle" and reason and cur.get("share_given_at"):
             from awgbot.domain.notices import reserve as rn
             _w, since = self.quorum_own_view() if hasattr(self, "quorum_own_view") else ("", "")
@@ -299,11 +329,20 @@ class ReserveStoreMixin:
         cur["reserve_state"], cur["reserve_move"] = state, int(move)
         cur["reserve_state_at"] = timeutil.now_iso()
         _write(cur, self._RSV_STORE)
-        return actions + self.reserve_forward_decide()
+        return actions
 
     def reserve_forward_decide(self) -> list[tuple]:
         """Открыть или закрыть пересылку с `awgrsv` по правилу раздела; действия
         для runtime: [("open", [подсети])] / [("close",)] / [] — без смены ничего."""
+        cur = self.reserve_section()
+        if not cur:
+            return []
+        fact = self.reserve_record_fact() if cur.get("state") != "away" and cur.get("reserve_state") == "serving" \
+            else None                                         # запрос к авторитетному серверу — вне замка
+        with STORE_LOCK:
+            return self._forward_decide_locked(fact)
+
+    def _forward_decide_locked(self, fact: bool | None) -> list[tuple]:
         cur = self.reserve_section()
         if not cur:
             return []
@@ -314,7 +353,6 @@ class ReserveStoreMixin:
         if primary_away:
             want_open = True
         elif reserve_serving:
-            fact = self.reserve_record_fact()
             if fact is None:
                 want_open = is_open                           # факт не прочитался и кэша нет — ничего не менять
             else:
