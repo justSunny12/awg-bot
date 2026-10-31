@@ -245,14 +245,19 @@ class ReserveOutboundMixin:
             return False
         adopted = dict(self.rsv_get("rsv_qlog").get("adopted") or {})
         at = str(adopted.get("at") or "")
-        if not at or at <= str(out.get("since") or ""):
-            return False                                      # принято до перехода домой — остаток
+        if not at:
+            return False
+        if adopted.get("at_ts") is not None and out.get("at_ts") is not None:
+            if float(adopted["at_ts"]) <= float(out["at_ts"]):
+                return False                                  # принято до перехода домой — остаток
+        elif at <= str(out.get("since") or ""):
+            return False
         try:
             if self.db.jrn_meta()["holder"] != "peer":
                 return False
         except Exception:                                     # noqa: BLE001
             return False
-        return not self._quorum_peer_idle_fact(at)
+        return not self._quorum_adopted_idle_fact(adopted)
 
     def _webhook_away_past_me(self, out: dict, peer: dict) -> bool:
         """Поллинг дома получил 409 — вебхук у резерва: его ставит только гость после открытия, значит
@@ -462,8 +467,38 @@ class ReserveOutboundMixin:
         cache.update(at=now, ok=ok)
         return ok
 
+    def _share_remainder(self, out: dict) -> bool:
+        """В away по принятой эпохе кворума (кандидат сказал голосующим «забираю»), а живая вторая
+        сторона после принятия говорит, что моих не несёт: «забираю» сорвалось (своё «вижу»
+        вернулось, открытие не пошло) — пользователи никуда не уезжали."""
+        if str(out.get("by") or "") != "share" or not hasattr(self, "_quorum_adopted_idle_fact"):
+            return False
+        adopted = dict(self.rsv_get("rsv_qlog").get("adopted") or {})
+        if adopted:
+            return self._quorum_adopted_idle_fact(adopted)
+        return self._quorum_peer_idle_fact(str(out.get("since") or ""), out.get("at_ts"))   # эпоха уже вернулась рычагом
+
     def _tick_away(self, out: dict) -> list[tuple]:
         now = time.monotonic()
+        if self._share_remainder(out):
+            # домой с прежними отметками home (как остаток вебхука ниже); эпоху, если её ещё держит вторая
+            # сторона, вернёт правило лидера — факт «моих у неё нет» запоминается в отметке принятия
+            with _LOCK:
+                cur = dict(self.rsv_get("rsv_out"))
+                cur.update(state="home", kind="", step="", by="", await_merge=False, since=str(cur.get("home_since") or ""))
+                cur.pop("at_ts", None)
+                if cur.get("home_at_ts") is not None:
+                    cur["at_ts"] = cur["home_at_ts"]
+                cur.pop("home_since", None)
+                cur.pop("home_at_ts", None)
+                self.rsv_put("rsv_out", cur)
+                adopted = dict(self.rsv_get("rsv_qlog").get("adopted") or {})
+                if adopted:
+                    self.rsv_update("rsv_qlog", adopted={**adopted, "idle_seen": True})
+            self.reserve_set_poll("mine")
+            self.reserve_epoch_sync()
+            log.warning("резерв: «%s» на связи без моих пользователей — «забираю» сорвалось, я дома", self.reserve_peer_name())
+            return [("live",), ("wake_poll",)]
         if str(out.get("by") or "") == "webhook" and self._webhook_remainder(out, self.reserve_peer_state()):
             # в away по одному слову Telegram, а живой резерв после перехода говорит, что моих не несёт:
             # остаток вебхука — домой, запись здесь; сам вебхук снимет проверка зависшего (outbound_stuck)

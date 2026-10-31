@@ -195,6 +195,25 @@ class GatewayQuorumMixin:
             v.epoch_in(int(e))
         self._quorum_epoch_persist(int(e))
 
+    def _quorum_epoch_settle(self) -> None:
+        """Резерв сказал `state{idle}`: пользователей основы у него нет — эпоха, поднятая у
+        голосующих по `qtake` без факта, назад к факту (сорванное «забираю» иначе держало бы
+        шлюзы под e + 1 бессрочно, а живая основа принимала бы эту эпоху по первой пробе)."""
+        top = 0
+        for v in self._gw_qvoters.values():
+            if v.rollback():
+                log.warning("quorum: пользователей основы у резерва нет — эпоха снова %s (поднятую по qtake снял)", v.epoch)
+            top = max(top, int(v.epoch))
+        if self._gw_qvoters:
+            self._quorum_epoch_unpersist(top)
+
+    def _quorum_epoch_unpersist(self, e: int) -> None:
+        """Известная эпоха на диске — не выше `e` (откат поднятой по `qtake`)."""
+        sec = self.quorum_section()
+        if sec.get("l") and int(sec.get("e_known") or 0) > int(e):
+            sec["e_known"] = max(int(e), int(sec.get("e") or 0))
+            _write(sec, self._QUO_STORE)
+
     def _quorum_epoch_persist(self, e: int) -> None:
         """Известная эпоха — на диск (`e_known`): после перезапуска агента пробы идут с ней,
         а не с эпохой документа (после `qtake` прежний лидер иначе снова набирал бы «да» под
@@ -322,9 +341,16 @@ class GatewayQuorumMixin:
             log.warning("quorum: кандидат забирает основу под эпоху %s — обязательство снято", v.epoch)
             return []
         if kind == "qrel":
+            before = int(v.epoch)
             if v.release(int(body.get("e") or 0)):
                 self._pledge_store(name, None)
-                log.info("quorum: обязательство «нет» под эпохой %s снято (qrel)", body.get("e"))
+                if int(v.epoch) < before:
+                    # «забираю» отменено: эпоха, поднятая по qtake без факта, — назад, на диске тоже (иначе
+                    # после перезапуска пробы снова шли бы с e + 1, и прежний лидер не набрал бы «да»)
+                    self._quorum_epoch_unpersist(int(v.epoch))
+                    log.warning("quorum: «забираю» под эпоху %s отменено (qrel) — эпоха снова %s", before, v.epoch)
+                else:
+                    log.info("quorum: обязательство «нет» под эпохой %s снято (qrel)", body.get("e"))
             return []
         if kind == "qneed":
             return self._quorum_need_in(sec, v, int(body.get("q_gen") or 0), str(body.get("since") or ""))

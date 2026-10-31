@@ -272,6 +272,8 @@ class ReserveStoreMixin:
         actions: list[tuple] = []
         if int(e or 0) and hasattr(self, "_quorum_epoch_in"):
             self._quorum_epoch_in(int(e))                     # эпоха линии от резерва (кворум) — голосующим
+        if state == "idle" and hasattr(self, "_quorum_epoch_settle"):
+            self._quorum_epoch_settle()                       # моих у него нет: поднятая по qtake эпоха — назад к факту
         if state == "idle" and reason and cur.get("share_given_at"):
             from awgbot.domain.notices import reserve as rn
             _w, since = self.quorum_own_view() if hasattr(self, "quorum_own_view") else ("", "")

@@ -48,6 +48,8 @@ class ReserveQuorumInboundMixin:
             self.__dict__["_quo_peer_state"] = {"l": str(body.get("l") or ""), "e": int(body.get("e") or 0),
                                                 "holder": str(body.get("holder") or ""), "r": str(body.get("r") or ""),
                                                 "at": timeutil.now_iso()}
+            if hasattr(self, "reserve_st_sent_reset"):
+                self.reserve_st_sent_reset()                  # вторая сторона приняла эпоху и ждёт моего свежего st — факта, несу ли я её пользователей
             if str(body.get("l") or "") == self.reserve_quorum_side() and int(body.get("e") or 0) > self.reserve_quorum_epoch() \
                     and hasattr(self, "reserve_quorum_adopt"):
                 self.reserve_quorum_adopt(int(body.get("e") or 0), f"«{self.reserve_peer_name()}» (qstate)")

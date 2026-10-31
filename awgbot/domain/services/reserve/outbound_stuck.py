@@ -67,6 +67,11 @@ class ReserveStuckMixin:
         self.reserve_set_poll("mine")
         self.reserve_set_out("home", step="", kind=str(out.get("kind") or "") if forced else "",
                              await_merge=forced, last_switch=timeutil.now_iso())
+        if self.rsv_get("rsv_qlog").get("adopted"):
+            # эпоха принята по кворуму, а пользователи и запись здесь, резерв моих не несёт — отметка
+            # принятия снята: роль дома вернёт эпоху сюда (иначе — следование бессрочно, Q8)
+            self.rsv_update("rsv_qlog", adopted=None)
+            self.__dict__.pop("_quo_adopt_wait_told", None)
         if not forced:
             self.reserve_new_k()
             self.reserve_pkg_mark()
