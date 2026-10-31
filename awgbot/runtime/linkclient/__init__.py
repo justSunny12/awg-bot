@@ -275,6 +275,10 @@ async def _retire_without_conf() -> bool:
     log.info("канал линка: конфига линка нет %d мин — обвязку сняли, клиент канала гашу",
              int((now - _conf_gone_since) // 60))
     client, _client, _conf_gone_since = _client, None, None
+    task = client.__dict__.get("_rekey_task")
+    if task is not None and not task.done():
+        log.info("канал линка: смена ключей линка не завершена — её такт снят вместе с клиентом")
+    client.rekey_stop()                                   # частый такт перехода иначе жил бы без клиента
     if client._writer is not None:
         with contextlib.suppress(Exception):
             client._writer.close()
@@ -316,8 +320,9 @@ async def own_changed(services) -> bool:
             changed = await asyncio.to_thread(reconcile)
     else:
         changed = await asyncio.to_thread(reconcile)
-    if _live_client() is not None and (changed or await asyncio.to_thread(services.own_unsent)):
-        await client.push_own()
+    live = _live_client()                                 # клиент мог появиться во время сверки
+    if live is not None and (changed or await asyncio.to_thread(services.own_unsent)):
+        await live.push_own()
     return changed
 
 
