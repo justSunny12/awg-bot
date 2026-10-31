@@ -88,7 +88,7 @@ def test_dot_reject_is_inserted_after_the_accepts(script):
     """
     # только часть apply: в откате порядок обратный и к цепочке отношения не имеет
     body = script[script.index("# 4) выход наружу"):]
-    accept = body.index('ensure_rule filter FORWARD -s "$CLIENT_SUBNET" -j ACCEPT')
+    accept = body.index('ensure_rule filter FORWARD -s "$CLIENT_SUBNET" -m comment --comment awg-bot -j ACCEPT')
     reject = body.index("--dport 853")
     assert reject > accept, (
         "REJECT 853 стоит в файле раньше ACCEPT — из-за -I он окажется в цепочке "
@@ -310,6 +310,23 @@ def test_rollback_keeps_the_dummy_and_its_dnsmasq_while_client_configs_point_at_
     # остальное снимается как прежде
     assert "DROP nat PREROUTING" in out and "DROP filter FORWARD" in out
     assert "RUN rm -f /etc/systemd/system/awg-bot-routing.service" in out
+
+
+def test_rollback_drops_only_its_own_tagged_forward_accepts(script, tmp_path):
+    """Те же разрешения FORWARD для подсети пользователей часто ставит сам
+    AmneziaWG (PostUp конфига интерфейса). Откат снимал их по совпадению
+    правила — и пользователи на остающемся VPN оставались без пересылки при
+    политике DROP. Свои ставятся с меткой awg-bot, и откат снимает только их."""
+    out = _rollback(script, tmp_path, referenced=False)
+    fwd = [ln for ln in out.splitlines() if ln.startswith("DROP filter FORWARD") and "ACCEPT" in ln]
+    assert sorted(fwd) == sorted([
+        "DROP filter FORWARD -s 10.8.1.0/24 -m comment --comment awg-bot -j ACCEPT",
+        "DROP filter FORWARD -d 10.8.1.0/24 -m comment --comment awg-bot -j ACCEPT",
+    ]), fwd
+    apply = script[script.index("# 4) выход наружу"):]
+    for d in ("-s", "-d"):
+        assert f'ensure_rule filter FORWARD {d} "$CLIENT_SUBNET" -m comment --comment awg-bot -j ACCEPT' in apply
+        assert f'FORWARD {d} "$CLIENT_SUBNET" -j ACCEPT' not in script, "правило без метки — откат его не снимет"
 
 
 def test_a_stale_iptables_masquerade_is_dropped_when_the_bot_leads_nat():

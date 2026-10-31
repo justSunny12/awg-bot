@@ -21,7 +21,8 @@
 #      10.255.53.53) — мимо перехвата: RETURN выше DNAT, ставится заново на
 #      каждом прогоне. На живых хостах то же правило ставит бот на старте
 #      (infra/admindns.py, nat_exempt), не дожидаясь прогона обвязки;
-#   4) разрешения FORWARD для подсети пользователей; MASQUERADE — только если его
+#   4) разрешения FORWARD для подсети пользователей (с меткой -m comment
+#      awg-bot — откат снимает только свои); MASQUERADE — только если его
 #      не ведёт бот (nft-таблица awg_bot_guard, см. README §6b): на новых
 #      установках NAT пользователей живёт там, здесь остаётся для прежней схемы;
 #   5) снимает чужой via-маршрут до подсети пользователей: она connected через
@@ -224,8 +225,9 @@ if [ "$MODE" = "rollback" ]; then
     drop_rule filter FORWARD -s "$CLIENT_SUBNET" -p tcp --dport 853 \
               -j REJECT --reject-with tcp-reset
     drop_rule nat POSTROUTING -s "$CLIENT_SUBNET" -j MASQUERADE
-    drop_rule filter FORWARD -s "$CLIENT_SUBNET" -j ACCEPT
-    drop_rule filter FORWARD -d "$CLIENT_SUBNET" -j ACCEPT
+    # только свои, с меткой: те же разрешения без неё ставит и AmneziaWG
+    drop_rule filter FORWARD -s "$CLIENT_SUBNET" -m comment --comment awg-bot -j ACCEPT
+    drop_rule filter FORWARD -d "$CLIENT_SUBNET" -m comment --comment awg-bot -j ACCEPT
     run "rm -rf /etc/systemd/system/${DNSMASQ_SERVICE}.service.d/ipset.conf"
     if [ -n "$DUMMY_REFERENCED" ]; then
         # Адрес dummy вшит в конфиги пользователей: dnsmasq на нём и сам интерфейс
@@ -449,8 +451,11 @@ ensure_rule nat POSTROUTING -s "$CLIENT_SUBNET" -o "$AWG_IF" -j ACCEPT
 [ -n "$LINK_IF" ] && ensure_rule nat POSTROUTING -s "$CLIENT_SUBNET" -o "$LINK_IF" -j ACCEPT
 [ -n "$MIGRATION_IF" ] && ensure_rule nat POSTROUTING -s "$CLIENT_SUBNET" -o "$MIGRATION_IF" -j ACCEPT
 fi
-ensure_rule filter FORWARD -s "$CLIENT_SUBNET" -j ACCEPT
-ensure_rule filter FORWARD -d "$CLIENT_SUBNET" -j ACCEPT
+# Разрешения FORWARD — с меткой: такие же правила часто ставит сам AmneziaWG
+# (PostUp конфига интерфейса), и откат снимает только свои. Правила прежних
+# версий без метки остаются как есть — отличить их от чужих нечем
+ensure_rule filter FORWARD -s "$CLIENT_SUBNET" -m comment --comment awg-bot -j ACCEPT
+ensure_rule filter FORWARD -d "$CLIENT_SUBNET" -m comment --comment awg-bot -j ACCEPT
 
 # 4a) DoT — режем на транспорте
 # ПОСЛЕ разрешающих правил, и это не косметика: ensure_rule вставляет через -I,
