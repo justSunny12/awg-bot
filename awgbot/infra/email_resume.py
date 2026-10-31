@@ -22,8 +22,6 @@ import email
 import imaplib
 import secrets
 import ssl
-
-from awgbot.util import net4                      # noqa: F401 — тесты подменяют классы через него
 from email.header import decode_header
 from typing import Callable
 
