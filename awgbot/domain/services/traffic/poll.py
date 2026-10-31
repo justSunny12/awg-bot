@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 
 from awgbot.core import config
 from awgbot.core import settings
@@ -14,11 +15,23 @@ from awgbot.domain.services.types import Notification
 
 log = logging.getLogger("awgbot.services")
 
+# Опрос зовут тик, кнопка «🔄», передача резерву и гость — из разных потоков.
+# Дамп и сравнение с сэмплом — под одним замком: иначе дамп, снятый раньше,
+# мог записаться после более позднего, дельта выходила отрицательной и
+# принималась за рестарт awg — весь счётчик интерфейса уходил в месяц.
+_POLL_LOCK = threading.Lock()
+
 
 class PollMixin:
     # ── Опрос трафика (поток 4) ──────────────────────────────────────────────
 
     def poll_traffic(self) -> list:
+        """Опрос трафика под замком (см. _POLL_LOCK): второй вызывающий ждёт
+        конца первого и снимает свой дамп уже после его записи."""
+        with _POLL_LOCK:
+            return self._poll_traffic_locked()
+
+    def _poll_traffic_locked(self) -> list:
         """Каждые 5 мин: dump → дельты с обработкой отката счётчика → накопление.
         last_handshake обновляем только при наличии (не затираем пустым).
 
