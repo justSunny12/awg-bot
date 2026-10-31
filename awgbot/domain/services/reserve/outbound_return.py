@@ -108,9 +108,11 @@ class ReserveReturnMixin:
 
     def _tick_await_merge(self, out: dict) -> list[tuple]:
         """В состоянии home после возврата без резерва: он вышел на связь и всё ещё несёт мой бот —
-        обычный возврат с шага back_req (слияние, рестарт, запись уже на мне)."""
+        обычный возврат с шага back_req (слияние, рестарт, запись уже на мне). «Вышел на
+        связь» — живым словом (journal/epoch `_peer_alive`): сеанс мёртвого резерва и его
+        `st` до потери связи увели бы в back_req к тому, кто не ответит."""
         peer = self.reserve_peer_state()
-        if not self.reserve_online():
+        if not self._peer_alive(peer):
             return []
         if str(peer.get("inn") or "idle") not in HOSTING and not self.reserve_disk_waiting():
             return self._forced_no_merge()
@@ -161,6 +163,12 @@ class ReserveReturnMixin:
         now = time.monotonic()
         if step == "back_req" and out.get("jrn_back"):
             return self.reserve_jrn_back_tick(out)            # журнал: бот на резерве передал право — догоняю
+        if step == "back_req" and str(out.get("return_why") or "") == "force" and not self._peer_reachable():
+            # возврат без резерва: он снова пропал до реплики — назад к ожиданию дома (пользователи и
+            # Telegram здесь, запись на мне); в back_req шлюзы держали бы пересылку, а пути назад нет
+            self.reserve_set_out("home", step="", await_merge=True)
+            log.warning("резерв: «%s» снова не на связи до реплики — жду его дома", self.reserve_peer_name())
+            return [("live",)]
         if step == "back_req":
             peer_idle = self.reserve_online() and str(self.reserve_peer_state().get("inn") or "idle") not in HOSTING
             disk = self.reserve_disk_waiting()
