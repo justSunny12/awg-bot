@@ -118,16 +118,18 @@ def _fence(q) -> None:
 
 # ── старт без большинства ───────────────────────────────────────────────────
 
-def test_a_start_without_a_majority_longer_than_t_down_tells_t_k7_once(q):
+def test_a_start_without_a_majority_longer_than_the_yes_window_tells_t_k7_once(q):
     """После перезапуска основы голосующих нет на связи: без права записи — молча
-    первые T_down (ждём голосов), дальше — Т-К7 без звука, один раз на эпизод."""
+    первые W (ждём голосов: голосующие за время перезапуска ушли в «сомнение», первая
+    проба после подъёма ответчика «да» не даёт — T_down короче этого), дальше — Т-К7
+    без звука, один раз на эпизод."""
     acts = q.tick()
     assert _notes(acts) == []
-    acts = q.run(T_DOWN - 5)
-    assert _notes(acts) == [], "Т-К7 раньше T_down после старта"
-    acts = q.run(5)
+    acts = q.run(T_DOWN + 5)
+    assert _notes(acts) == [], "Т-К7 через T_down после старта — ложная тревога на каждый перезапуск"
+    acts = q.run(W - T_DOWN)
     tk7 = _notes(acts, "без кворума")
-    assert len(tk7) == 1 and tk7[0].silent, f"старт без большинства дольше T_down — нет Т-К7: {acts}"
+    assert len(tk7) == 1 and tk7[0].silent, f"старт без большинства дольше W — нет Т-К7: {acts}"
     assert "видят 0 из 3" in tk7[0].text and not tk7[0].text.endswith("."), tk7[0].text
     assert _notes(q.run(600), "без кворума") == [], "Т-К7 стартового эпизода повторяется"
     assert q.s.reserve_quorum_count()["fenced_since"], "карточка не знает, с какого момента без кворума"
@@ -135,7 +137,7 @@ def test_a_start_without_a_majority_longer_than_t_down_tells_t_k7_once(q):
 
 def test_after_a_restart_the_told_start_episode_is_not_told_again(q):
     q.tick()
-    q.run(T_DOWN + 5)
+    q.run(W + 5)
     assert (q.s.rsv_get("rsv_qlog").get("fenced") or {}).get("told"), "подготовка: Т-К7 не отмечен на диске"
     q.restart()
     acts = q.tick() + q.run(T_DOWN + 30)
@@ -147,7 +149,7 @@ def test_the_first_majority_after_a_long_start_unfences_and_tells_t_k8(q):
     """Т-К7 уже ушёл — значит, возврат к записи объявляется Т-К8 (админ знает, что
     бот молчал)."""
     q.tick()
-    q.run(T_DOWN + 5)
+    q.run(W + 5)
     acts = q.run(10, yes=("b", "a1"))
     assert q.meta()[:2] == ("self", "holder"), "большинство после долгого старта не вернуло запись"
     assert len(_notes(acts, "Кворум вернулся")) == 1, acts
@@ -201,9 +203,9 @@ def test_the_fence_holds_while_a_move_is_going_on(q, monkeypatch, out):
     assert q.meta()[:2] == ("self", "follower"), f"«кворум выключен» в ходе {out} снял ограждение"
 
 
-@pytest.mark.parametrize("why", [["keys"], ["not_acked"], ["timing:up_seconds 50 < 80"], ["keys", "not_acked"]])
+@pytest.mark.parametrize("why", [["keys"], ["not_acked"], ["keys", "not_acked"]])
 def test_the_fence_holds_when_the_quorum_is_off_only_on_my_side(q, why):
-    """Ключи, подтверждение состава, цифры — выключено только у меня: вторая
+    """Ключи, подтверждение состава — выключено только у меня и ненадолго: вторая
     сторона может решать по своему составу, ограждение держится."""
     _fence(q)
     q.active, q.why = False, why
@@ -212,8 +214,12 @@ def test_the_fence_holds_when_the_quorum_is_off_only_on_my_side(q, why):
     assert q.s.reserve_quorum_fenced()
 
 
-@pytest.mark.parametrize("why", [["no_gateways"], ["no_pair"], ["keys", "no_gateways"], ["overlap:10.0.0.0/8"]])
+@pytest.mark.parametrize("why", [["no_gateways"], ["no_pair"], ["keys", "no_gateways"], ["overlap:10.0.0.0/8"],
+                                 ["timing:up_seconds 50 < 80"], ["keys", "timing:up_seconds 50 < 80"]])
 def test_a_structural_switch_off_lifts_the_fence(q, why):
+    """Структурное выключение и цифры (`timing:`): линия в `st.quo` выключена, кандидат второй
+    стороны без `active` не решает — держать ограждение некому, иначе бот молчал бы
+    пользователям бессрочно после правки app.yaml."""
     _fence(q)
     q.active, q.why = False, why
     q.tick()

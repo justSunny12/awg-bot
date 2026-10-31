@@ -26,6 +26,8 @@ b3 (голосующие у лидера `b` — a, b1, b2, b3; v = 4), шлюз
 """
 from __future__ import annotations
 
+import time
+
 import types
 
 import pytest
@@ -475,7 +477,7 @@ def test_an_adopted_epoch_with_the_majority_back_comes_home_with_a_new_epoch(q3,
     # вторая сторона жива и после принятия говорит, что моих пользователей у неё нет
     monkeypatch.setattr(q3.s, "reserve_peer_seen", lambda: "ok")
     q3.s.rsv_update("rsv_peer_state", session=True, inn="idle", st_stale=False,
-                    at=timeutil.to_iso(timeutil.shift(timeutil.now(), 3600)))
+                    at=timeutil.to_iso(timeutil.shift(timeutil.now(), 3600)), at_ts=time.time() + 3600)
     for _ in range(40):
         q3.t += 5
         q3.probe_e("b", e + 1)
@@ -536,7 +538,7 @@ def test_an_adopted_epoch_with_the_live_peer_idle_after_it_stays_home(q3, monkey
     _adopt_at_home(q3)
     monkeypatch.setattr(q3.s, "reserve_peer_seen", lambda: "ok")
     q3.s.rsv_update("rsv_peer_state", session=True, inn="idle", st_stale=False,
-                    at=timeutil.to_iso(timeutil.shift(timeutil.now(), 3600)))
+                    at=timeutil.to_iso(timeutil.shift(timeutil.now(), 3600)), at_ts=time.time() + 3600)
     q3.s.reserve_out_tick()
     assert q3.s.reserve_out() == "home", "живая вторая сторона без моих пользователей — а основа ушла в away"
 

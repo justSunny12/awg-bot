@@ -17,6 +17,8 @@ home ↔ away — на каждом такте живое сообщение и 
 """
 from __future__ import annotations
 
+import time
+
 import pytest
 
 from awgbot.util import timeutil
@@ -44,7 +46,7 @@ def _silent_peer(q) -> None:
 def _live_idle_peer(q, monkeypatch, inn: str = "idle", ahead: int = 3600) -> None:
     monkeypatch.setattr(q.s, "reserve_peer_seen", lambda: "ok")
     q.s.rsv_update("rsv_peer_state", session=True, inn=inn, st_stale=False,
-                   at=timeutil.to_iso(timeutil.shift(timeutil.now(), ahead)))
+                   at=timeutil.to_iso(timeutil.shift(timeutil.now(), ahead)), at_ts=time.time() + ahead)
 
 
 def _webhook_away(q) -> dict:
@@ -127,9 +129,8 @@ def test_a_silent_reserve_keeps_me_away(q):
     assert q.s.reserve_out() == "away"
 
 
-def test_an_away_by_the_adopted_epoch_is_not_undone_by_an_idle_word(q, monkeypatch):
-    """В away по принятой эпохе кворума (`by = share`) — не слово Telegram: возвращает
-    правило лидера по факту второй стороны, а не ветка остатка вебхука."""
+def _share_away(q, monkeypatch) -> int:
+    """Лишённая кворума основа принимает e + 1 по пробе, пара молчит — away по принятой эпохе."""
     e = q.s.reserve_quorum_epoch()
     q.t += 61
     q.tick()
@@ -140,7 +141,35 @@ def test_an_away_by_the_adopted_epoch_is_not_undone_by_an_idle_word(q, monkeypat
     q.s.reserve_out_tick()
     out = q.s.rsv_get("rsv_out")
     assert out.get("state") == "away" and out.get("by") == "share", out
+    return e
+
+
+def test_an_away_by_the_adopted_epoch_comes_home_on_the_peers_idle_word_after_it(q, monkeypatch):
+    """В away по принятой эпохе кворума (`by = share`): живая вторая сторона, сказавшая после
+    принятия, что моих не несёт, — «забираю» сорвалось: домой с прежними отметками, поллинг
+    снова мой, факт запомнен в отметке принятия (`idle_seen`); эпоху вернёт правило лидера."""
+    _share_away(q, monkeypatch)
     _live_idle_peer(q, monkeypatch)
+    acts = q.s.reserve_out_tick()
+    assert q.s.reserve_out() == "home", "живая вторая сторона без моих пользователей — а основа осталась в away"
+    assert q.s.reserve_poll() == "mine" and ("wake_poll",) in acts, "поллинг после возврата не разбужен"
+    assert (q.s.rsv_get("rsv_qlog").get("adopted") or {}).get("idle_seen"), "факт «моих у неё нет» не запомнен"
+    assert q.s.db.jrn_meta()["holder"] == "peer", "эпоха вернулась без правила лидера"
+    _silent_peer(q)                                           # её st потом устарел — факт не отменяется
+    for _ in range(3):
+        q.s.reserve_out_tick()
+        assert q.s.reserve_out() == "home", "устаревший st после увиденного факта снова увёл в away — дребезг"
+
+
+def test_an_idle_word_from_before_the_adoption_does_not_undo_the_share_away(q, monkeypatch):
+    _share_away(q, monkeypatch)
+    _live_idle_peer(q, monkeypatch, ahead=-3600)
     q.s.reserve_out_tick()
-    assert q.s.rsv_get("rsv_out").get("by") == "share" and q.s.reserve_out() == "away", \
-        "away по принятой эпохе снят веткой остатка вебхука"
+    assert q.s.reserve_out() == "away", "слово второй стороны, сказанное до принятия эпохи, вернуло домой"
+
+
+def test_a_peer_serving_after_the_adoption_keeps_the_share_away(q, monkeypatch):
+    _share_away(q, monkeypatch)
+    _live_idle_peer(q, monkeypatch, inn="serving")
+    q.s.reserve_out_tick()
+    assert q.s.reserve_out() == "away"

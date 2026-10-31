@@ -79,7 +79,10 @@ class ReserveQuorumLeaderMixin:
             # ограждение отвергло бы правки админа и слово wiped второй стороны до первого большинства
             self.__dict__["_quo_start_pending"] = not q2 and len(voters) >= 2 and not returned
             if returned:
-                ld.fenced, ld.starting = False, False       # машина — как у лидера с правом записи
+                # машина — по журналу: после возврата домой с правом записи — лидер; после срыва переезда,
+                # начатого лишённой кворума основой (журнал self/follower), или при чужой эпохе (holder
+                # peer) — ограждена, снимет большинство «да» за окно U (не «старт»: без Т-К7)
+                ld.fenced, ld.starting = self._quorum_jrn_wants_fence(), False
             self.__dict__["_quo_ld_at"] = now
         else:
             if tuple(ld.voters) != tuple(voters) or ld.gen.g != g:
@@ -200,6 +203,10 @@ class ReserveQuorumLeaderMixin:
         actions: list[tuple] = []
         if self.__dict__.pop("_quo_start_pending", False) and hasattr(self, "reserve_quorum_fence_apply"):
             actions += self.reserve_quorum_fence_apply("start", ld)
+        self._quorum_machine_sync(ld, now)
+        if self.__dict__.pop("_quo_qstate_due", False) and self.reserve_online():
+            meta = self.db.jrn_meta()                         # принял чужую эпоху: второй стороне qstate — ответом придёт её свежий st
+            actions.append(("send", "qstate", {"l": ld.l, "e": int(meta["epoch"]), "holder": str(meta["holder"]), "r": str(meta["role"])}))
         act = ld.tick(now)
         y = ld.yes_count(now)
         if act == "fence":
@@ -210,13 +217,47 @@ class ReserveQuorumLeaderMixin:
             self.__dict__["_quo_fenced_since"] = ""
         if act in ("fence", "unfence") and hasattr(self, "reserve_quorum_fence_apply"):
             actions += self.reserve_quorum_fence_apply(act, ld)
-        if not act and ld.fenced and ld.starting and now - float(self.__dict__.get("_quo_ld_at") or now) >= ld.timing.down_s \
+        # старт без большинства — Т-К7, но не раньше окна W: голосующие за время перезапуска ушли в «сомнение»,
+        # первая проба после подъёма ответчика несёт `sus` и «да» не даёт, «вижу» — через одну-две пробы (9–21 с);
+        # T_down (20 с) от создания машины почти всегда короче этого — ложная тревога и ложный Т-К8 следом
+        start_wait = max(ld.timing.down_s, ld.timing.yes_window_s)
+        if not act and ld.fenced and ld.starting and now - float(self.__dict__.get("_quo_ld_at") or now) >= start_wait \
                 and not (self.rsv_get("rsv_qlog").get("fenced") or {}).get("told") and hasattr(self, "reserve_quorum_fence_apply"):
-            actions += self.reserve_quorum_fence_apply("fence", ld)   # старт без большинства дольше T_down — Т-К7
+            actions += self.reserve_quorum_fence_apply("fence", ld)   # старт без большинства дольше W — Т-К7
             self.__dict__["_quo_fenced_since"] = str((self.rsv_get("rsv_qlog").get("fenced") or {}).get("since") or "")
         if hasattr(self, "reserve_quorum_leader_tie_tick"):
             actions += self.reserve_quorum_leader_tie_tick(ld, now)
         return actions
+
+    def _quorum_jrn_wants_fence(self) -> bool:
+        """Журнал не даёт мне писать: эпоху держит вторая сторона (принята по пробе или
+        `qstate`) или я держатель без права (ограждение кворума)."""
+        try:
+            meta = self.db.jrn_meta()
+        except Exception:                                     # noqa: BLE001
+            return False
+        return meta["holder"] == "peer" or meta["role"] == "follower"
+
+    def _quorum_machine_sync(self, ld: Leader, now: float) -> None:
+        """Машина лидера отражает журнал. Право записи даёт и отнимает журнал (ограждение,
+        принятая эпоха, возврат домой по рычагам), машина лишь считает «да»; разойдясь —
+        машина без ограждения при журнале без права (пересоздана после срыва переезда,
+        эпоха принята мимо неё) или с ограждением при журнале-держателе (эпоха вернулась
+        рычагом) — она подстраивается под журнал, иначе «да» большинства не сняли бы
+        ограждение никогда (правило выдаёт `unfence` только из fenced) или сняли бы его
+        при чужой эпохе."""
+        want = self._quorum_jrn_wants_fence()
+        if want and not ld.fenced:
+            ld.fence_now(now)
+            log.info("кворум: журнал без права записи, машина лидера — ограждена")
+        elif not want and ld.fenced and not ld.starting:
+            ld.fenced, ld.high_since, ld.low_since = False, None, None   # счёт «нет» — заново: T_down от этого момента
+            log.info("кворум: право записи в журнале здесь — машина лидера без ограждения")
+        try:
+            meta = self.db.jrn_meta()
+            self.__dict__["_quo_fenced"] = meta["holder"] == "self" and meta["role"] == "follower"
+        except Exception:                                     # noqa: BLE001
+            pass
 
     def _quorum_my_name(self) -> str:
         return str(config.SERVER_NAME or self.reserve_quorum_side() or "")

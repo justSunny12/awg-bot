@@ -137,14 +137,30 @@ class Voter:
         self.pledge = {"e": int(self.epoch), "at": now}
 
     def release(self, e: int) -> bool:
-        """`qrel{e}`: обязательство под той эпохой снято."""
-        if self.pledge is not None and int(self.pledge.get("e", -1)) == int(e):
+        """`qrel{e}`: обязательство под той эпохой снято; эпоха, поднятая по `qtake{e}` до
+        e + 1 без факта (ответ ответчика, `qstate`, `state{e}` её не подтвердили), — назад к
+        факту: «забираю» отменено, прежний лидер под e снова может набирать «да»."""
+        e = int(e)
+        done = False
+        if self.pledge is not None and int(self.pledge.get("e", -1)) == e:
             self.pledge = None
+            done = True
+        if int(self.epoch) == e + 1 and int(self.fact) <= e:
+            self.epoch = int(self.fact)
+            done = True
+        return done
+
+    def rollback(self) -> bool:
+        """Эпоха, поднятая словом кандидата (`qtake`), а не фактом, — назад к факту: вторая
+        сторона сказала, что линия на прежней эпохе (`state{idle, e}`)."""
+        if int(self.epoch) > int(self.fact):
+            self.epoch = int(self.fact)
             return True
         return False
 
     def take(self, e: int) -> bool:
-        """`qtake{e}`: кандидат забирает под e + 1 — эпоха вперёд, обязательство снято."""
+        """`qtake{e}`: кандидат забирает под e + 1 — эпоха вперёд (не факт: откатится по `qrel{e}`
+        или слову `state{idle}`, если открытие сорвётся), обязательство снято."""
         e = int(e)
         if e + 1 > self.epoch:
             self.epoch = e + 1
