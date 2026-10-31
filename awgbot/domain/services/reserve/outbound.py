@@ -488,7 +488,7 @@ class ReserveOutboundMixin:
             return [("take_home",)]
         if self.reserve_healthy():
             since = float(out.get("healthy_mono") or 0)
-            if not since:
+            if not since or since > now + 1.0:                # отметки нет или она прежней загрузки — счёт заново
                 self.rsv_update("rsv_out", healthy_mono=now, healthy_since=timeutil.now_iso())
                 return []
             if now - since < HEALTHY_S:
