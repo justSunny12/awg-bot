@@ -102,9 +102,26 @@ class MigrationStateMixin:
             if int(config.IP_HOST_START) < 2:
                 settings.set_value("app.network.ip_host_start", 2)
         except Exception as e:                            # noqa: BLE001
+            # Откат шага: интерфейс поднят, а ключей нет — следующая попытка
+            # сочла бы имя занятым и подняла бы awg2, оставив этот висеть.
+            self._rollback_prepared_interface(new_if, conf_dir)
             raise ServiceErrorMigration(f"ключи переезда не записаны в app.yaml: {e}")
         log.info("переезд: поднят %s (%s.0/24, порт %s)", new_if, new_prefix, got_port)
         return {"iface": new_if, "subnet": f"{new_prefix}.0/24", "port": got_port}
+
+    def _rollback_prepared_interface(self, name: str, conf_dir: str) -> None:
+        """Опустить только что поднятый интерфейс, снять с автозагрузки и убрать
+        его конфиг: он родился этой же подготовкой и без ключей в app.yaml
+        никому не нужен, а занятое имя увело бы повтор на следующий номер."""
+        self._retire_interface(name)                      # down + disable, отказы — в журнал
+        try:
+            Path(conf_dir, f"{name}.conf").unlink()
+        except FileNotFoundError:
+            pass
+        except OSError as e:
+            log.warning("переезд: конфиг %s после отказа записи ключей не убран: %s", name, e)
+            return
+        log.warning("переезд: %s поднят, но ключи в app.yaml не записались — интерфейс опущен, конфиг убран", name)
 
     def _free_subnet_prefix(self) -> str:
         """Первые три октета подсети, которой нет ни в одном конфиге awg."""
