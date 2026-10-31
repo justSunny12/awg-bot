@@ -55,7 +55,9 @@ def test_an_empty_immediate_transaction_is_not_a_commit(db):
 
 
 def test_deferred_stays_the_default(db):
-    """Опросчик держит длинную транзакцию: по умолчанию замок — с первой записи."""
+    """Опросчик держит длинную транзакцию: по умолчанию замок — с первой записи,
+    и чужая запись (timeout=0: замок отозвался бы «database is locked») проходит
+    посреди открытой транзакции и видна после неё."""
     other = sqlite3.connect(db.path, timeout=0)
     try:
         with db.transaction():
@@ -64,6 +66,7 @@ def test_deferred_stays_the_default(db):
             other.commit()
     finally:
         other.close()
+    assert db.get_state("o2") == "1", "чужая запись посреди отложенной транзакции не прошла"
 
 
 # ── сроки против продления ───────────────────────────────────────────────────

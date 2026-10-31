@@ -10,6 +10,7 @@ runtime/pairlink `drop_session`/`wake`): «недоступен» по счёт�
 from __future__ import annotations
 
 import asyncio
+import logging
 
 import pytest
 
@@ -131,8 +132,16 @@ async def test_the_client_closes_its_session_and_keeps_its_loop(monkeypatch):
     c._task.cancel()
 
 
-async def test_drop_without_a_link_or_a_session_is_a_no_op(monkeypatch):
+async def test_drop_without_a_link_or_a_session_is_a_no_op(monkeypatch, caplog):
+    """Живость сказала «недоступен», а закрывать нечего: без линка и без сессии —
+    ни исключения, ни строки «сессия закрыта» в журнале, слушатель на месте."""
     monkeypatch.setattr(pairlink, "_link", None)
-    await pairlink.drop_session()
-    monkeypatch.setattr(pairlink, "_link", pair_server.PairServer(object()))
-    await pairlink.drop_session()
+    with caplog.at_level(logging.INFO):
+        await pairlink.drop_session()
+        srv = pair_server.PairServer(object())
+        monkeypatch.setattr(pairlink, "_link", srv)
+        await pairlink.drop_session()
+        await pairlink.drop_session()
+    assert pairlink._link is srv and srv._sess is None and not srv.online
+    assert not [r for r in caplog.records if "сессия закрыта" in r.getMessage()], \
+        "без сессии журнал сообщает о её закрытии"
