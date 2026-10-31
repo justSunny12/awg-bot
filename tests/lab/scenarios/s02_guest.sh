@@ -8,7 +8,7 @@
 # юнитом, а tests/lab/guest_main.py в пространстве зоны — тем же кодом run_guest, но с макетом.
 #
 # Проверяет:
-#   1. процесс открытия (rsvopen) доходит до done по двум долям, клон поднят в зоне;
+#   1. процесс открытия (rsvopen) доходит до done по двум точкам ключа кворума, клон поднят в зоне;
 #      конфиг клона от rsvopen принимается `awg setconf` (в нём есть Address и MTU — если скрипт
 #      зоны их не снимает, шаг падает здесь);
 #   2. бот гостя отвечает на /start пользователя: в журнале макета есть sendMessage в чат пользователя;
@@ -37,7 +37,7 @@ cleanup
 mkdir -p "$DATA/reserve"
 export AWG_BOT_DATA_DIR="$DATA"
 
-# ── пакет основы: настоящие ключи AWG, база с одним профилем, доли M ─────────────────────────────
+# ── пакет основы: настоящие ключи AWG, база с одним профилем, точки ключа кворума ─────────────────────────────
 PRIV="$(awg genkey)"; PEERPUB="$(awg genkey | awg pubkey)"
 OUT="$(LAB_PRIV="$PRIV" LAB_PEER="$PEERPUB" LAB_TOKEN="$TOKEN" "$PY" - <<'PYEOF'
 import json, os, tempfile
@@ -68,24 +68,25 @@ H4 = 1000-1100
 PublicKey = {os.environ['LAB_PEER']}
 AllowedIPs = 10.8.1.2/32
 """
-gen = rsvkeys.Generation.new(1); k = seal.new_k()
+m = rsvkeys.new_master(); q = rsvkeys.QuorumGen.new(1, 2); k = seal.new_k()   # M и многочлен Mq кворума (порог 2)
 vpn = pkgvpn.build([("awg0", live)], admin=["10.8.1.2"], dns=["10.8.1.1"], upstreams=["198.51.100.53"], tz="UTC")
 botpart = {"db": pkgbot.replica(path).hex(), "conf": {}, "app_guest": {"network": {"server_host": "203.0.113.7", "server_port": 45877}},
            "env": {"BOT_TOKEN": os.environ["LAB_TOKEN"], "ADMIN_ID": 880001}}
-blob = seal.seal({"vpn": vpn, "bot": botpart}, k=k, m=gen.m, pkg_gen=1, m_gen=1)
+blob = seal.seal({"vpn": vpn, "bot": botpart}, k=k, m=m, pkg_gen=1, m_gen=1)
 os.makedirs(os.path.join(config.DATA_DIR, "reserve"), exist_ok=True)
 open(os.path.join(config.DATA_DIR, "reserve", "guest.pkg"), "wb").write(blob)
-x1, y1 = gen.reserve_point(); x2, y2 = gen.gateway_point(1)
-print(json.dumps({"shares": [[x1, y1.hex()], [x2, y2.hex()]], "k": k.hex()}))
+x1, y1 = q.reserve_point(); x2, y2 = q.gateway_point(1)
+print(json.dumps({"qpoints": [[x1, y1.hex()], [x2, y2.hex()]], "qbox": q.qbox(m).hex(), "k": k.hex()}))
 PYEOF
 )" || { echo "пакет не собрался: $OUT"; exit 1; }
-SHARES="$(printf '%s' "$OUT" | "$PY" -c 'import json,sys; print(json.dumps(json.load(sys.stdin)["shares"]))')"
+QPOINTS="$(printf '%s' "$OUT" | "$PY" -c 'import json,sys; print(json.dumps(json.load(sys.stdin)["qpoints"]))')"
+QBOX="$(printf '%s' "$OUT" | "$PY" -c 'import json,sys; print(json.load(sys.stdin)["qbox"])')"
 K="$(printf '%s' "$OUT" | "$PY" -c 'import json,sys; print(json.load(sys.stdin)["k"])')"
 
 # ── 1. открытие ──────────────────────────────────────────────────────────────────────────────────
 bash "$Z" --shell >/dev/null || { echo "оболочка не поднялась"; exit 1; }
 cd "$ROOT" || exit 1
-res="$(printf '{"shares": %s, "set_record": false, "webhook_port": 443, "self_host": "198.51.100.7"}' "$SHARES" \
+res="$(printf '{"qpoints": %s, "qbox": "%s", "set_record": false, "webhook_port": 443, "self_host": "198.51.100.7"}' "$QPOINTS" "$QBOX" \
     | "$PY" -m tools.rsvopen)" || { echo "открытие не дошло до done: $res"; exit 1; }
 echo "$res" | tail -n1 | grep -qx done || { echo "последняя строка хода не done: $res"; exit 1; }
 for secret in "$K" "$TOKEN" "$PRIV"; do

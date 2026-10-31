@@ -39,7 +39,7 @@ trap cleanup EXIT
 cleanup
 mkdir -p "$DATA/reserve"
 
-# ── пакет основы: настоящие ключи AWG, база с одним профилем, доли M ─────────────────────────────
+# ── пакет основы: настоящие ключи AWG, база с одним профилем, точки ключа кворума ─────────────────────────────
 PRIV="$(awg genkey)"; PEERPUB="$(awg genkey | awg pubkey)"
 OUT="$(AWG_BOT_DATA_DIR="$DATA" LAB_PRIV="$PRIV" LAB_PEER="$PEERPUB" LAB_TOKEN="$TOKEN" "$PY" - <<'PYEOF'
 import json, os, tempfile
@@ -70,17 +70,18 @@ H4 = 1000-1100
 PublicKey = {os.environ['LAB_PEER']}
 AllowedIPs = 10.8.1.2/32
 """
-gen = rsvkeys.Generation.new(1); k = seal.new_k()
+m = rsvkeys.new_master(); q = rsvkeys.QuorumGen.new(1, 2); k = seal.new_k()   # M и многочлен Mq кворума (порог 2)
 vpn = pkgvpn.build([("awg0", live)], admin=["10.8.1.2"], dns=["10.8.1.1"], upstreams=["198.51.100.53"], tz="UTC")
 botpart = {"db": pkgbot.replica(path).hex(), "conf": {}, "app_guest": {"network": {"server_host": "203.0.113.7", "server_port": 45877}},
            "env": {"BOT_TOKEN": os.environ["LAB_TOKEN"], "ADMIN_ID": 880001}}
-blob = seal.seal({"vpn": vpn, "bot": botpart}, k=k, m=gen.m, pkg_gen=1, m_gen=1)
+blob = seal.seal({"vpn": vpn, "bot": botpart}, k=k, m=m, pkg_gen=1, m_gen=1)
 open(os.path.join(config.DATA_DIR, "reserve", "guest.pkg"), "wb").write(blob)
-x1, y1 = gen.reserve_point(); x2, y2 = gen.gateway_point(1)
-print(json.dumps({"shares": [[x1, y1.hex()], [x2, y2.hex()]]}))
+x1, y1 = q.reserve_point(); x2, y2 = q.gateway_point(1)
+print(json.dumps({"qpoints": [[x1, y1.hex()], [x2, y2.hex()]], "qbox": q.qbox(m).hex()}))
 PYEOF
 )" || { echo "пакет не собрался: $OUT"; exit 1; }
-SHARES="$(printf '%s' "$OUT" | "$PY" -c 'import json,sys; print(json.dumps(json.load(sys.stdin)["shares"]))')"
+QPOINTS="$(printf '%s' "$OUT" | "$PY" -c 'import json,sys; print(json.dumps(json.load(sys.stdin)["qpoints"]))')"
+QBOX="$(printf '%s' "$OUT" | "$PY" -c 'import json,sys; print(json.load(sys.stdin)["qbox"])')"
 
 # ── 1. оболочка и хранилище — у хоста, до юнита ──────────────────────────────────────────────────
 bash "$Z" --shell >/dev/null || { echo "оболочка не поднялась"; exit 1; }
@@ -96,7 +97,7 @@ print("\n".join(openproc.rsvopen_sandbox_props(sys.argv[1])))' "$ROOT")
 [ "${#PROPS[@]}" -gt 10 ] || { echo "свойств песочницы нет: ${PROPS[*]}"; exit 1; }
 printf '%s\n' "${PROPS[@]}" | grep -qx 'ProtectSystem=strict' || { echo "песочница не strict: ${PROPS[*]}"; exit 1; }
 LAB_PROPS=(-p ProtectHome=tmpfs -p "BindReadOnlyPaths=$HOME_/venv")       # venv стенда — в домашнем каталоге
-res="$(printf '{"shares": %s, "set_record": false, "webhook_port": 443, "self_host": "198.51.100.7"}' "$SHARES" \
+res="$(printf '{"qpoints": %s, "qbox": "%s", "set_record": false, "webhook_port": 443, "self_host": "198.51.100.7"}' "$QPOINTS" "$QBOX" \
     | systemd-run --wait --pipe --collect --quiet --unit=awg-bot-rsvopen-lab "${PROPS[@]}" "${LAB_PROPS[@]}" \
         --setenv=AWG_BOT_DATA_DIR="$DATA" --setenv=AWG_BOT_ENV=/dev/null "$PY" -m tools.rsvopen 2>&1)"
 rc=$?
@@ -173,24 +174,25 @@ H4 = 1000-1100
 PublicKey = {os.environ['LAB_PEER']}
 AllowedIPs = 10.8.1.2/32
 """
-gen = rsvkeys.Generation.new(1)
+m = rsvkeys.new_master(); q = rsvkeys.QuorumGen.new(1, 2)   # M и многочлен Mq кворума (порог 2)
 vpn = pkgvpn.build([("awg0", live)], admin=["10.8.1.2"], dns=["10.8.1.1"], upstreams=["198.51.100.53"], tz="UTC")
 botpart = {"db": rep.hex(), "conf": {}, "app_guest": {"network": {"server_host": "203.0.113.7", "server_port": 45877}},
            "env": {"BOT_TOKEN": os.environ["LAB_TOKEN"], "ADMIN_ID": 880001}}
-blob = seal.seal({"vpn": vpn, "bot": botpart, "jrn": {"v": 1, **marks}}, k=k, m=gen.m, pkg_gen=2, m_gen=1)
+blob = seal.seal({"vpn": vpn, "bot": botpart, "jrn": {"v": 1, **marks}}, k=k, m=m, pkg_gen=2, m_gen=1)
 open(os.path.join(config.DATA_DIR, "reserve", "guest.pkg"), "wb").write(blob)
-x1, y1 = gen.reserve_point(); x2, y2 = gen.gateway_point(1)
-print(json.dumps({"shares": [[x1, y1.hex()], [x2, y2.hex()]], "events": len(evs)}))
+x1, y1 = q.reserve_point(); x2, y2 = q.gateway_point(1)
+print(json.dumps({"qpoints": [[x1, y1.hex()], [x2, y2.hex()]], "qbox": q.qbox(m).hex(), "events": len(evs)}))
 PYEOF
 )" || { echo "пакет-снимок журнала не собрался: $OUT"; exit 1; }
-SHARES="$(printf '%s' "$OUT" | "$PY" -c 'import json,sys; print(json.dumps(json.load(sys.stdin)["shares"]))')"
+QPOINTS="$(printf '%s' "$OUT" | "$PY" -c 'import json,sys; print(json.dumps(json.load(sys.stdin)["qpoints"]))')"
+QBOX="$(printf '%s' "$OUT" | "$PY" -c 'import json,sys; print(json.load(sys.stdin)["qbox"])')"
 NEV="$(printf '%s' "$OUT" | "$PY" -c 'import json,sys; print(json.load(sys.stdin)["events"])')"
 ls "$DATA/reserve/jrn/"ev-*.seg >/dev/null 2>&1 || { echo "сегмента событий в reserve/jrn нет — сценарий не собрал журнал"; exit 1; }
 mapfile -t PROPS < <(cd "$ROOT" && AWG_BOT_DATA_DIR="$DATA" "$PY" -c '
 import sys
 from awgbot.domain.services.reserve import openproc
 print("\n".join(openproc.rsvopen_sandbox_props(sys.argv[1])))' "$ROOT")
-res="$(printf '{"shares": %s, "set_record": false, "webhook_port": 443, "self_host": "198.51.100.7"}' "$SHARES" \
+res="$(printf '{"qpoints": %s, "qbox": "%s", "set_record": false, "webhook_port": 443, "self_host": "198.51.100.7"}' "$QPOINTS" "$QBOX" \
     | systemd-run --wait --pipe --collect --quiet --unit=awg-bot-rsvopen-lab "${PROPS[@]}" "${LAB_PROPS[@]}" \
         --setenv=AWG_BOT_DATA_DIR="$DATA" --setenv=AWG_BOT_ENV=/dev/null "$PY" -m tools.rsvopen 2>&1)"
 rc=$?
