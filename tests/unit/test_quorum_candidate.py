@@ -81,12 +81,12 @@ def test_v3_own_and_one_gateway_ask_the_other_and_repeat():
     c = _cand(3)
     c.set_own("uns", T0)
     c.view_in("a1", "uns", T0)
-    ev = _run(c, T0, T0 + 40)
+    ev = _run(c, T0, T0 + 45)                                 # окно покрывает повтор с разбросом до +40 % (42 с)
     asks = [(t, a) for t, a in ev if a.startswith("ask:")]
     assert len(asks) == 2 and asks[0] == (T0, "ask:a2") and asks[1][1] == "ask:a2", asks
     assert T0 + 0.6 * T.ask_repeat_s <= asks[1][0] <= T0 + 1.4 * T.ask_repeat_s, "повтор опроса не в окне ± 40 %"
     c.view_in("a2", "uns", T0 + 50)
-    ev = _run(c, T0 + 41, T0 + 200)
+    ev = _run(c, T0 + 46, T0 + 200)
     assert _first(ev, "ask") is None, "опрос тому, кто уже сказал «нет»"
     assert [e for e in ev if e[1] == "take"] == [(T0 + T.up_s, "take")]
 
