@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Optional
 
 from awgbot.core import config
@@ -134,7 +135,11 @@ def _hook_present() -> bool:
 def _rule_present() -> bool:
     proc = base._host(["ip", "rule", "show"], check=False, timeout=base._PROBE_TIMEOUT)
     text = proc.stdout.decode(errors="replace")
-    return _MARK_HEX in text and f"lookup {config.ROUTING_TABLE}" in text
+    # построчно и по словам: подстроки по всему выводу находили «0x1» в метке слота
+    # или зоны (0x10…) и «lookup 100» в чужой строке (lookup 1001) — главное правило
+    # считалось стоящим и не восстанавливалось
+    pat = re.compile(rf"\bfwmark {_MARK_HEX}(/{_MARK_HEX})?\s.*\blookup {config.ROUTING_TABLE}\b")
+    return any(pat.search(line) for line in text.splitlines())
 
 
 def ensure_route(iface: str = "") -> None:
