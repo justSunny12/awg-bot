@@ -110,7 +110,7 @@ class ReserveReturnMixin:
         # решения — снова здесь (await_merge): бот на резерве отрезан, его правки вольются при встрече
         guest_e = int(self.db.jrn_meta()["epoch"]) if self.reserve_following() else 0
         self.reserve_epoch_sync()                             # точка взятия эпохи — последнее применённое от него
-        if guest_e:
+        if guest_e and self._pkg_journal():
             self.reserve_c9_start(guest_e)                    # журнал: его правки после этой точки — хвостом
         log.warning("резерв: возврат без резерва «%s» — запись на себя, забираю Telegram", self.reserve_peer_name())
         return actions + [("take_home",)]

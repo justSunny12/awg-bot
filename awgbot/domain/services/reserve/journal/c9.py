@@ -19,6 +19,7 @@ from awgbot.util import timeutil
 
 from ...gateway_link.common import log
 from ...types import Notification
+from ..state import HOSTING
 from .tail import DISPUTED_MAX
 
 
@@ -35,6 +36,30 @@ class ReserveC9Mixin:
                                 "at": timeutil.now_iso(), "k": self.reserve_k().hex()})
         log.warning("резерв: правки бота на «%s» эпохи %s после %s — хвостом при встрече", self.reserve_peer_name(),
                     guest_e, fork)
+
+    def reserve_c9_settle(self) -> None:
+        """Дома без рычага (срыв переезда после передачи бота, снятый зависший вебхук): отметку
+        С9 роль эпохи заводит на случай живого гостя — его правки придут хвостом при встрече.
+        Снимается фактом, что ждать их неоткуда: резерв живым словом, сказанным после моего
+        перехода домой, гостя не несёт, и его журнал на диске не новее перенесённого. По
+        одной лишь смене состояния — нет: гость за мёртвым линком мог жить и писать."""
+        if getattr(self, "guest", False) or not self.rsv_get("rsv_c9"):
+            return
+        out = self._out()
+        if str(out.get("state") or "home") != "home" or out.get("await_merge"):
+            return                                            # рычаг: ждёт _tick_await_merge (или _forced_no_merge)
+        peer = self.reserve_peer_state()
+        if not self._peer_alive(peer) or str(peer.get("inn") or "idle") in HOSTING:
+            return
+        if peer.get("at_ts") is not None and out.get("at_ts") is not None:
+            fresh = float(peer["at_ts"]) > float(out["at_ts"])
+        else:
+            fresh = str(peer.get("at") or "") > str(out.get("since") or "")
+        if not fresh or self.reserve_disk_waiting():
+            return
+        self.rsv_put("rsv_c9", None)
+        log.info("резерв: «%s» на связи без моего гостя — правок бота на резерве не будет, отметка С9 снята",
+                 self.reserve_peer_name())
 
     def reserve_disk_waiting(self) -> bool:
         """Гостя у резерва нет, но его журнал на диске новее того, что здесь уже есть: в С9 —
