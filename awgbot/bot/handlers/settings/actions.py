@@ -14,6 +14,7 @@ from awgbot.bot import keyboards as kb
 from awgbot.bot.callbacks import SetCB
 from awgbot.bot.handlers import settingscore as core
 from awgbot.bot.handlers.common import call, edit, send_menu
+from awgbot.domain.migration import ServiceErrorMigration
 
 log = logging.getLogger("awgbot.handlers.settings")
 from ._router import router
@@ -62,7 +63,12 @@ async def migration_action(cb: CallbackQuery, callback_data: SetCB, services):
 
     if key == "start!":
         await cb.answer("Создаю новые конфигурации…")
-        res = await call(services.migration_start)
+        try:
+            res = await call(services.migration_start)
+        except ServiceErrorMigration as e:
+            # отказ механики — не «не начали молча»: колбэк уже отвечен, итог — следом в чате
+            await _record(cb, texts.migration.migration_start_refused(str(e)), services)
+            return
         cap = texts.migration.STARTED_FAILED_SHOWN if not res.started else texts.migration.LIST_CAP
         more = await _snap_more(cb, services, texts.migration.FAILED_TITLE, res.failed, cap)
         await _record(cb, links.mark_new(texts.migration_started(res, more)), services)

@@ -50,6 +50,15 @@ def migration_started(res, more: str = "") -> str:
     return "\n".join(lines)
 
 
+def migration_start_refused(reason: str) -> str:
+    """Механика переезда отказала до рождения двойников (резолвер нового
+    интерфейса не поднят, переезд не настроен): функция не включена."""
+    why = str(reason).strip().rstrip(".")
+    why = why[:1].upper() + why[1:900]
+    return ("⚠️ Переезд не начат\n\n" + _e(why) + ".\n\n"
+            "Функция осталась выключенной, выдача идёт по-старому")
+
+
 def migration_prepare_failed(reason: str) -> str:
     return ("⚠️ Новый интерфейс не поднят\n\n<pre>" + _e(str(reason)[-900:]) + "</pre>\n\n"
             "Ничего не изменилось: конфиг бота не тронут, старый интерфейс работает как прежде")

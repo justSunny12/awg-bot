@@ -16,6 +16,7 @@ from aiogram.types import CallbackQuery, Message
 from awgbot.bot import texts, roles
 from awgbot.bot import ui
 from awgbot.bot.handlers.common import call, edit_nav, forget_secret, send_menu_to
+from awgbot.domain.services import ServiceError
 
 _MAX_BYTES = 20 * 1024 * 1024          # облачный Bot API отдаёт боту файлы до 20 МБ
 _SUFFIXES = (".tgz", ".tgz.enc", ".tar.gz", ".tar.gz.enc")
@@ -209,7 +210,11 @@ async def report_restore_result(bot, services) -> None:
                          texts.restore_done_report(str(done.get("created_at") or ""), report, bot_u, version=version,
                                                    snap=snap))
         if hasattr(services, "restore_wait_start"):
-            await call(services.restore_wait_start, report)
+            try:
+                await call(services.restore_wait_start, report)
+            except ServiceError as e:              # сервер в отъезде — ждать шлюзов не ему; меню ниже всё равно
+                import logging
+                logging.getLogger("awgbot.restore").info("ожидание шлюзов после восстановления не начато: %s", e)
     if failed or done:
         # как после обычного перезапуска: под отчётом — живое меню
         try:
