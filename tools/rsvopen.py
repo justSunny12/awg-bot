@@ -4,8 +4,8 @@ tools/rsvopen.py — процесс открытия: пакет переезд�
 резерва с её ботом и клоном VPN. Единственный код на резерве, который видит
 `M`, `K` и части пакета; бот резерва его только запускает (временным юнитом
 awg-bot-rsvopen с песочницей — свойства в одном месте,
-domain/services/reserve/openproc.py `rsvopen_sandbox_props`: MemoryMax=192M
-без swap и дампов, PrivateTmp, ProtectHome, ProtectSystem=strict,
+domain/services/reserve/openproc.py `rsvopen_sandbox_props`: MemoryMax от
+размера пакета (rsvzone.open_memory_mb, не меньше 192M), без swap и дампов, PrivateTmp, ProtectHome, ProtectSystem=strict,
 NoNewPrivileges, запись — только хранилище гостя, /var/lib/awg-bot-guest,
 /run/awg-bot/rsv, /run/netns и /etc/systemd; каталог данных резерва подменён
 пустым (TemporaryFileSystem), виден только reserve/guest.pkg
@@ -471,10 +471,15 @@ def run(data: dict) -> int:
         _step("store", from_snapshot=int(from_snapshot))
         for x in extra:                                       # конфиги вторых интерфейсов — в хранилище, скрипт поднимет их
             rsvzone.write_private(rsvzone.RUN_DIR / "awg" / f"{x['name']}.conf", pkgvpn.clone_conf(x))
+        try:                                                  # база после журнала — её размер, не снимка
+            db_size = (rsvzone.RUN_DIR / "data" / "bot.db").stat().st_size
+        except OSError:
+            db_size = len(db_bytes)
         rsvzone.take(pkgvpn.clone_conf(iface), iface=iface["name"], addr=iface["addr"], dns=list(vpn.get("dns") or []),
                      upstreams=list(vpn.get("upstreams") or []), admin=list(vpn.get("admin") or []),
                      channel_port=int(data.get("channel_port") or 0), extra=[(x["name"], x["addr"]) for x in extra],
-                     probe_addr=str(iface.get("probe_resp") or ""), probe_port=int(data.get("probe_port") or 0))
+                     probe_addr=str(iface.get("probe_resp") or ""), probe_port=int(data.get("probe_port") or 0),
+                     memory_mb=rsvzone.guest_memory_mb(db_size))
         _step("clone_up", iface=iface["name"], port=iface["port"], ifaces=",".join([iface["name"]] + [x["name"] for x in extra]), **jinfo)
     except (rsvzone.ZoneError, OpenError, OSError) as e:
         return _fail(f"зона: {e}")

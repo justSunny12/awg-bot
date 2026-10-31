@@ -69,7 +69,19 @@ class ReserveScreenMixin:
                 "rfpeer": self.reserve_rfpeer_view() if hasattr(self, "reserve_rfpeer_view") else {},
                 "jrn_follow": self.reserve_follow_view(),
                 "self_admin": self.reserve_self_peer_admin(),
+                "pkg_mem": self._reserve_pkg_mem_view(),
                 "quorum": self._quorum_card_safe()}
+
+    def _reserve_pkg_mem_view(self) -> dict:
+        """Пакет второй стороны больше PKG_MEM_WARN_BYTES — объём и сколько памяти возьмёт переезд
+        сюда (процесс открытия и бот второй стороны в зоне — одновременно); иначе пусто."""
+        from awgbot.infra import rsvzone
+        from awgbot.util.textfmt import human_bytes
+        size = int(self.rsv_get("rsv_pkg_in").get("size") or 0)
+        if size <= rsvzone.PKG_MEM_WARN_BYTES:
+            return {}
+        need = (rsvzone.open_memory_mb(size) + rsvzone.guest_memory_mb(size)) * 1024 * 1024
+        return {"size": human_bytes(size), "need": human_bytes(need)}
 
     def _quorum_card_safe(self) -> dict:
         try:

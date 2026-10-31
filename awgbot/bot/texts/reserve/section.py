@@ -237,6 +237,10 @@ def card_text(d: dict) -> str:
         lines.append(f"📥 Пользователи {_n(name)}: на его сервере")
         if not in_ok and in_why:
             lines.append("└ ⚠️ " + _e(in_why))
+        mem = d.get("pkg_mem") or {}
+        if mem:
+            lines.append(f"└ ⚠️ данные для переезда {_n(name)} — {_e(mem['size'])}: переезду сюда понадобится "
+                         f"до {_e(mem['need'])} памяти")
         lines += quorum_peer_lines(d.get("quorum") or {})
         lines += rfpeer_peer_lines(d.get("rfpeer") or {}, name)
         if d.get("await_merge"):

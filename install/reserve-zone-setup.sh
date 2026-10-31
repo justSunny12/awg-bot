@@ -47,7 +47,9 @@
 # окна переезда профилей, их конфиги процесс открытия уже положил в
 # $RUN/awg/<имя>.conf), GUEST_CHANNEL_PORT (гостевой канал с линков шлюзов в
 # зону, 8787; бот передаёт его и при --shell — routing.link_channel_port
-# резерва), RF_TABLE (таблица РФ-доступа хоста для трафика из awggr-h; 100 —
+# резерва), GUEST_MEMORY_MB (потолок памяти юнита гостя, МБ, не меньше 160:
+# MemoryMax, MemoryHigh — на 32 меньше; процесс открытия считает его от размера
+# базы основы), RF_TABLE (таблица РФ-доступа хоста для трафика из awggr-h; 100 —
 # умолчание routing.table, обёртка его не передаёт); --serve — WEBHOOK_PORT; --relay — RELAY_TO (адрес:порт основы).
 #
 # Таблица nft зоны — inet awg_guest (input/forward с политикой drop, цепочка
@@ -467,6 +469,11 @@ EOF
 }
 
 write_units() {   # write_units GUEST_IF
+    # потолок памяти гостя (МБ) — от размера базы (её копия в tmpfs и в памяти бота): GUEST_MEMORY_MB
+    # считает процесс открытия; не число или меньше 160 — 160
+    local mem="${GUEST_MEMORY_MB:-160}"
+    case "$mem" in ''|*[!0-9]*) mem=160 ;; esac
+    [ "$mem" -ge 160 ] 2>/dev/null || mem=160
     cat > "$DNS_UNIT" <<EOF
 [Unit]
 Description=awg-bot: резолвер гостевой зоны резерва
@@ -510,8 +517,8 @@ CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
 AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
 LogNamespace=$ZONE
 MemorySwapMax=0
-MemoryHigh=128M
-MemoryMax=160M
+MemoryHigh=$(( mem - 32 ))M
+MemoryMax=${mem}M
 LimitCORE=0
 
 [Install]
