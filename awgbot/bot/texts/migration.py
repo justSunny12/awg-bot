@@ -53,10 +53,26 @@ def migration_started(res, more: str = "") -> str:
 def migration_start_refused(reason: str) -> str:
     """Механика переезда отказала до рождения двойников (резолвер нового
     интерфейса не поднят, переезд не настроен): функция не включена."""
-    why = str(reason).strip().rstrip(".")
-    why = why[:1].upper() + why[1:900]
-    return (ui.head("⚠️ Переезд не начат") + "\n\n" + _e(why) + ".\n\n"
+    return (ui.head("⚠️ Переезд не начат") + "\n\n" + _refused_why(reason) + ".\n\n"
             "Функция осталась выключенной, выдача идёт по-старому — устрани причину и включи снова")
+
+
+def _refused_why(reason: str) -> str:
+    why = str(reason).strip().rstrip(".")
+    return _e(why[:1].upper() + why[1:900])
+
+
+def migration_finish_refused(reason: str) -> str:
+    """Завершение не началось (второе нажатие поверх идущего, пользователи на
+    резерве): пары не тронуты, рычаг включён."""
+    return (ui.head("⚠️ Переезд не завершён") + "\n\n" + _refused_why(reason) + ".\n\n"
+            "Прежние конфигурации на месте, функция осталась включённой — повтори завершение позже")
+
+
+def migration_cancel_refused(reason: str) -> str:
+    """Отмена не началась — по тем же причинам."""
+    return (ui.head("⚠️ Переезд не отменён") + "\n\n" + _refused_why(reason) + ".\n\n"
+            "Функция осталась включённой — повтори отмену позже")
 
 
 def migration_prepare_failed(reason: str) -> str:
@@ -253,6 +269,6 @@ __all__ = [
     "migration_hello", "migration_ready", "migration_started", "migration_prepare_failed",
     "migration_generation_pending", "migration_needed", "migration_promoted", "LIST_CAP", "STARTED_FAILED_SHOWN",
     "_rows", "_names_capped", "migration_pending_page", "migration_orphans_page", "migration_start_confirm",
-    "migration_finish_confirm", "migration_cancel_confirm",
+    "migration_finish_confirm", "migration_cancel_confirm", "migration_finish_refused", "migration_cancel_refused",
     "migration_cancelled", "migration_finished", "migration_prepare_intro", "MIGRATION_ASK_PORT",
     "MIGRATION_PREPARING", "migration_prepared"]

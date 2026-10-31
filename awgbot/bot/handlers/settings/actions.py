@@ -15,6 +15,7 @@ from awgbot.bot.callbacks import SetCB
 from awgbot.bot.handlers import settingscore as core
 from awgbot.bot.handlers.common import call, edit, send_menu
 from awgbot.domain.migration import ServiceErrorMigration
+from awgbot.domain.services import ServiceError
 
 log = logging.getLogger("awgbot.handlers.settings")
 from ._router import router
@@ -65,8 +66,9 @@ async def migration_action(cb: CallbackQuery, callback_data: SetCB, services):
         await cb.answer("Создаю новые конфигурации…")
         try:
             res = await call(services.migration_start)
-        except ServiceErrorMigration as e:
-            # отказ механики — не «не начали молча»: колбэк уже отвечен, итог — следом в чате
+        except (ServiceErrorMigration, ServiceError) as e:
+            # отказ механики (и отказ при пользователях на резерве) — не «не
+            # начали молча»: колбэк уже отвечен, итог — следом в чате
             await _record(cb, texts.migration.migration_start_refused(str(e)), services)
             return
         cap = texts.migration.STARTED_FAILED_SHOWN if not res.started else texts.migration.LIST_CAP
@@ -105,7 +107,13 @@ async def migration_action(cb: CallbackQuery, callback_data: SetCB, services):
 
     if key == "finish!":
         await cb.answer("Завершаю…")
-        removed, dropped, failed = await call(services.migration_finish)
+        try:
+            removed, dropped, failed = await call(services.migration_finish)
+        except (ServiceErrorMigration, ServiceError) as e:
+            # второе нажатие поверх идущего завершения, пользователи на резерве:
+            # колбэк уже отвечен — отказ словами в чат, рычаг как был
+            await _record(cb, texts.migration.migration_finish_refused(str(e)), services)
+            return
         cap = texts.migration.LIST_CAP
         more_f = await _snap_more(cb, services, texts.migration.NOT_REMOVED_TITLE, failed, cap)
         more_d = await _snap_more(cb, services, texts.migration.DROPPED_TITLE, dropped, cap) if not failed else ""
@@ -129,7 +137,11 @@ async def migration_action(cb: CallbackQuery, callback_data: SetCB, services):
 
     if key == "cancel!":
         await cb.answer("Отменяю…")
-        moved = await call(services.migration_cancel)
+        try:
+            moved = await call(services.migration_cancel)
+        except (ServiceErrorMigration, ServiceError) as e:
+            await _record(cb, texts.migration.migration_cancel_refused(str(e)), services)
+            return
         await _record(cb, texts.migration_cancelled(moved), services)
         return
 

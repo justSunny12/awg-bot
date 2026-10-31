@@ -32,11 +32,49 @@ class SchemaMixin:
         """
         with self._tx() as cur:
             cur.executescript(SCHEMA)
+        self.ensure_twin_unique()
         self._ensure_service_client()
         self._ensure_db_line()
         self._ensure_jrn_meta()
         self.__dict__["_jrn_ready"] = True               # соединения других потоков, открытые раньше, — доустановят
         self._jrn_triggers()                              # первый старт: таблиц до этого не было
+
+    TWIN_UNIQUE_INDEX = "idx_devices_twin_uniq"
+
+    def twin_duplicates(self) -> dict[int, list[int]]:
+        """Исходные устройства, у которых двойников больше одного: {id исходного:
+        [id двойников по возрастанию]}. Такие пары рождали параллельные
+        включения рычага прежних выпусков."""
+        out: dict[int, list[int]] = {}
+        for r in self._connection().execute(
+                "SELECT id, twin_of FROM devices WHERE twin_of IS NOT NULL AND twin_of IN "
+                "(SELECT twin_of FROM devices WHERE twin_of IS NOT NULL GROUP BY twin_of HAVING COUNT(*) > 1) "
+                "ORDER BY twin_of, id"):
+            out.setdefault(int(r["twin_of"]), []).append(int(r["id"]))
+        return out
+
+    def ensure_twin_unique(self) -> bool:
+        """Единственность двойника — частичным уникальным индексом по twin_of.
+        Прежний неуникальный idx_devices_twin снимается: уникальный покрывает
+        те же запросы. На базе с дублями индекс не встаёт (CREATE отказал бы) —
+        тогда False и строка в журнал: дубли чистит старт бота
+        (migration_dedup_twins — ему нужен awg, которого у базы нет), после
+        чего зовёт снова. Идемпотентно."""
+        conn = self._connection()
+        if conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?",
+                        (self.TWIN_UNIQUE_INDEX,)).fetchone() is not None:
+            return True
+        dup = self.twin_duplicates()
+        if dup:
+            log.warning("переезд: у %d устройств по несколько двойников (%s) — уникальный индекс "
+                        "twin_of отложен до расчистки", len(dup),
+                        ", ".join(f"{o}: {twins}" for o, twins in sorted(dup.items())[:10]))
+            return False
+        with self._tx() as cur:
+            cur.execute("DROP INDEX IF EXISTS idx_devices_twin")
+            cur.execute(f"CREATE UNIQUE INDEX IF NOT EXISTS {self.TWIN_UNIQUE_INDEX} "
+                        "ON devices(twin_of) WHERE twin_of IS NOT NULL")
+        return True
 
     def _ensure_jrn_meta(self) -> None:
         """Строка эпохи (держатель — этот процесс, пока передачи не было); на

@@ -125,3 +125,25 @@ async def test_each_migration_event_leaves_a_record_in_the_chat(
     rows = [[(b.text, b.callback_data) for b in row] for row in kb.inline_keyboard] if kb is not None else None
     assert rows == [[("Скрыть", "hd")]], f"на записи не одна «Скрыть» (навигация — второе живое меню): {rows}"
     assert [t for kind, t, _ in msg.sent if kind == "answer"], "раздел не пришёл следом"
+
+
+@pytest.mark.parametrize("key, mark", [("finish!", "Переезд не завершён"),
+                                       ("cancel!", "Переезд не отменён")])
+async def test_refused_exit_is_told_in_the_chat_and_the_lever_stays(
+        services, mig, fake_bot, make_active_client, monkeypatch, key, mark):
+    """Отказ выхода (второе нажатие поверх идущего, пользователи на резерве) —
+    словами в чат, а не молчаливое исключение: колбэк уже отвечен «Завершаю…»,
+    и без записи админ решил бы, что всё прошло."""
+    c = make_active_client(name="c", tg_id=7094)
+    dc = services.add_device(c.id, "Тел")
+    services.migration_start()
+    monkeypatch.setattr(services, "reserve_paired", lambda: True)
+    monkeypatch.setattr(services, "reserve_away", lambda: True)
+    monkeypatch.setattr(services, "reserve_peer_name", lambda: "Резерв")
+
+    coro, cb, msg = _press(services, key, fake_bot)
+    await coro
+    edits = [t for kind, t, _ in msg.sent if kind == "edit_text"]
+    assert edits and mark in edits[-1] and "Резерв" in edits[-1], edits
+    assert services.migration_running(), "рычаг тронут при отказе"
+    assert services.db.get_device(dc.device_id) is not None

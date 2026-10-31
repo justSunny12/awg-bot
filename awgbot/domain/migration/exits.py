@@ -8,7 +8,7 @@ from awgbot.core import config
 from awgbot.core.enums import FriendStatus
 from awgbot.infra import awg
 
-from .common import log, _STATE_KEY, STATE_OFF
+from .common import log, _STATE_KEY, STATE_OFF, LEVER
 
 
 class MigrationExitsMixin:
@@ -27,8 +27,16 @@ class MigrationExitsMixin:
 
         Выключение обязано быть безопасным в ЛЮБОЙ момент: это путь отката всей
         затеи, и он же страховка первого включения, когда админ проверяет
-        переезд на себе.
+        переезд на себе. Но не поверх идущего включения или завершения (замок
+        рычага) и не пока пользователи на резерве: отмена переписала бы базу,
+        которой сейчас не верят.
         """
+        if hasattr(self, "reserve_refuse_if_away"):
+            self.reserve_refuse_if_away()
+        with LEVER("отменяется"):
+            return self._migration_cancel_locked()
+
+    def _migration_cancel_locked(self) -> int:
         devices = {d.id: d for d in self.db.list_all_devices()}
         moved = 0
         for d in devices.values():
@@ -118,7 +126,17 @@ class MigrationExitsMixin:
 
         Строки уходят в архив с явной причиной, а не удаляются тихо: иначе потом
         не восстановить, кто отвалился и почему.
+
+        Под замком рычага (второе нажатие поверх идущего — отказ) и не пока
+        пользователи на резерве: снятые пиры и слитая история разошлись бы с
+        базой гостя.
         """
+        if hasattr(self, "reserve_refuse_if_away"):
+            self.reserve_refuse_if_away()
+        with LEVER("завершается"):
+            return self._migration_finish_locked()
+
+    def _migration_finish_locked(self) -> tuple[int, list[str], list[str]]:
         pairs, dropped = self._finish_plan()
         removed = 0
         failed: list[str] = []
