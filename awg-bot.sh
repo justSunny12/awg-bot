@@ -996,6 +996,7 @@ ensure_host_autostart() {
         case "$_rc" in
             0) ok "обновлена копия /usr/local/sbin/$_n (её выполняет юнит при загрузке)" ;;
             1) warn "не удалось обновить /usr/local/sbin/$_n — после ребута встанет прежняя версия" ;;
+            3) ok "права копии /usr/local/sbin/$_n исправлены на 0755 (её выполняет юнит при загрузке)" ;;
         esac
     done
     [[ "$(yaml_get "$CONF_DIR/app.yaml" role)" == "gateway" ]] && return 0
