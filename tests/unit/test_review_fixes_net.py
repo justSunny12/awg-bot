@@ -7,7 +7,8 @@
 - отпечатки разделов `quorum` (timing) и `reserve` (peer_name);
 - install/reserve-zone-setup.sh `tg_path_up`: правило к Telegram ищется без /32;
 - `awg-bot.sh reserve status` — `rfpeer=offer,slot`; снятие бота — правило 151;
-- проба аплинка агента — к DNS из конфига аплинка;
+- проба аплинка агента — к DNS, вписанному в конфиг аплинка руками, иначе к .1 и к .0 подсети
+  пользователей (раскладки новая и прежняя);
 - чистые правила: эпоха голосующего по фактам (`Voter.fact`, `raise_to`), смена состава
   кандидата снимает «решено».
 
@@ -273,10 +274,31 @@ def types_ns(**kw):
     return types.SimpleNamespace(**kw)
 
 
-def test_the_uplink_probe_asks_the_dns_of_the_uplink_config(probe):
+def test_a_hand_written_dns_line_of_the_uplink_config_is_asked_first(probe):
+    """Выданный шлюзу конфиг DNS не несёт; строка, вписанная руками, — первой."""
     (probe.dir / "awgup.conf").write_text("[Interface]\nAddress = 10.8.1.7/32\nDNS = 10.8.1.0, 1.1.1.1\n", encoding="utf-8")
     assert probe.mixin._tgvia_probe("awgup") is True
     assert probe.asked == [("10.8.1.0", "awgup")], f"проба не к DNS конфига аплинка: {probe.asked}"
+
+
+def test_the_issued_uplink_config_has_no_dns_and_the_old_layout_answers_on_dot_zero(probe, monkeypatch):
+    """Конфиг аплинка — как его выдаёт сервер (configgen.gateway_uplink_conf: DNS вырезан). У прежней
+    раскладки сервер на .0: .1 молчит — проба спрашивает .0; ответивший адрес — дальше только он."""
+    from awgbot.domain import configgen
+    from awgbot.domain.gateway.reserve import tgvia as tgmod
+    dev = ("[Interface]\nPrivateKey = DUMMY\nAddress = 10.8.1.7/32\nDNS = 10.8.1.0, 10.8.1.0\n\n"
+           "[Peer]\nPublicKey = DUMMY\nAllowedIPs = 0.0.0.0/0\nEndpoint = vpn.example.org:43125\n")
+    issued = configgen.gateway_uplink_conf(dev)
+    assert "DNS" not in issued, "подготовка: выданный конфиг аплинка несёт DNS"
+    (probe.dir / "awgup.conf").write_text(issued, encoding="utf-8")
+    monkeypatch.setattr(tgmod, "_dns_probe", lambda resolver, iface, timeout=None:
+                        probe.asked.append((resolver, iface)) or resolver == "10.8.1.0")
+    memo: dict = {}
+    assert probe.mixin._tgvia_probe("awgup", memo) is True, "аплинк прежней раскладки никогда не отвечает пробе"
+    assert probe.asked == [("10.8.1.1", "awgup"), ("10.8.1.0", "awgup")], probe.asked
+    probe.asked.clear()
+    assert probe.mixin._tgvia_probe("awgup", memo) is True
+    assert probe.asked == [("10.8.1.0", "awgup")], f"ответивший адрес не запомнен — лишнее ожидание на .1: {probe.asked}"
 
 
 def test_without_the_uplink_config_the_probe_asks_the_dot_one(probe):

@@ -83,7 +83,7 @@ class ReserveTgViaMixin:
         # проба — к резолверу подсети пользователей через аплинк, куда бы он ни смотрел (дома или на клон)
         if now >= float(st["probe_at"]):
             st["probe_at"] = now + PROBE_EVERY_S * random.uniform(0.6, 1.4)
-            ok = (not uplink_stale) and self._tgvia_probe(iface)
+            ok = (not uplink_stale) and self._tgvia_probe(iface, self.__dict__.setdefault("_tgvia_resolver", {}))
             st["streak"] = st["streak"] + 1 if ok else 0
             if st["streak"] >= OFF_STREAK:
                 actions += self._tgvia_off(cur, "аплинк снова отвечает")
@@ -134,28 +134,48 @@ class ReserveTgViaMixin:
             return False
 
     @staticmethod
-    def _tgvia_probe(iface: str) -> bool:
+    def _tgvia_probe(iface: str, memo: dict | None = None) -> bool:
         """DNS-запрос к резолверу сервера через аплинк — любой ответ: аплинк жив (до основы дома
-        или до её клона после переезда). Адрес — `DNS =` конфига аплинка (адрес сервера в его
-        подсети: у прежней раскладки он не .1), без него — .1 подсети пользователей."""
+        или до её клона после переезда). Конфиг аплинка DNS не несёт (выдача шлюзу вырезает его,
+        configgen.gateway_uplink_conf), а адрес сервера в подсети пользователей зависит от
+        раскладки: у новой — .1, у прежней — .0 (сеть). Порядок: `DNS =` конфига, если он вписан
+        руками; .1; .0. Ответивший адрес запоминается (`memo`) — дальше спрашивается только он:
+        раскладка на ходу не меняется, а молчание сервера — не повод перебирать адреса."""
+        cands = ReserveTgViaMixin._tgvia_resolvers(iface)
+        known = str((memo or {}).get(iface) or "")
+        if known in cands:
+            return _dns_probe(known, iface)
+        for resolver in cands:
+            if _dns_probe(resolver, iface):
+                if memo is not None:
+                    memo[iface] = resolver
+                return True
+        return False
+
+    @staticmethod
+    def _tgvia_resolvers(iface: str) -> list[str]:
+        import ipaddress
         import re
         from awgbot.infra import gwguard
         from awgbot.infra.gwguard import uplinktxn
-        resolver = ""
+        out: list[str] = []
         try:
             with open(uplinktxn.uplink_conf_path(iface), encoding="utf-8") as f:
                 m = re.search(r"(?m)^\s*DNS\s*=\s*([0-9.]+)", f.read())
-            resolver = m.group(1) if m else ""
+            if m:
+                out.append(m.group(1))
         except (OSError, ValueError):
-            resolver = ""
-        if not resolver:
-            try:
-                subnet = str(gwguard.unit_env("CLIENT_SUBNET") or "").split("/")[0]
-                parts = subnet.split(".")
-                resolver = ".".join(parts[:3] + ["1"]) if len(parts) == 4 else ""
-            except Exception:                                 # noqa: BLE001
-                resolver = ""
-        return bool(resolver) and _dns_probe(resolver, iface)
+            pass
+        try:
+            subnet = str(gwguard.unit_env("CLIENT_SUBNET") or "").strip()
+            net = ipaddress.IPv4Network(subnet, strict=False) if subnet else None
+        except Exception:                                     # noqa: BLE001 — нет юнита или кривая строка
+            net = None
+        if net is not None and net.num_addresses >= 4:
+            for host in (net.network_address + 1, net.network_address):   # новая раскладка, прежняя
+                if str(host) not in out:
+                    out.append(str(host))
+        return out
 
     # ── перерезолв сразу (§4.12): повтор, пока запись не дала адрес ─────────
     def _reresolve_tick(self, cur: dict, now: float) -> list[tuple]:
