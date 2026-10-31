@@ -172,3 +172,24 @@ def test_the_server_address_is_kept_even_when_it_is_the_same(world, tmp_path):
     text = nb.restore_plan(empty)
     assert "по адресу <code>vpn.example.org</code>" in text and "<code></code>" not in text, text
     assert "В бэкапе адрес сервера" not in text, "одинаковый адрес выдан за другой"
+
+
+def test_the_plan_closes_the_copy_database(world, tmp_path, monkeypatch):
+    """«with sqlite3.connect(...)» — транзакция, а не закрытие: соединение с базой
+    копии держало бы файл (и дескриптор) до сборщика мусора, план считается на
+    каждый показ экрана восстановления. После плана все соединения закрыты."""
+    import sqlite3
+    from awgbot.domain.backup import plan
+    opened = []
+    real = sqlite3.connect
+
+    def connect(*a, **kw):
+        c = real(*a, **kw)
+        opened.append(c)
+        return c
+    monkeypatch.setattr(plan.sqlite3, "connect", connect)
+    _plan(world, world.take_copy(tmp_path / "c"))
+    assert opened, "план не открыл ни одной базы — тест ничего не проверил"
+    for c in opened:
+        with pytest.raises(sqlite3.ProgrammingError):
+            c.execute("SELECT 1")

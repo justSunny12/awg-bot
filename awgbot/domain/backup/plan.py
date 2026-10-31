@@ -14,6 +14,7 @@ tools/restore_merge.py по тому же плану сливает копию �
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import sqlite3
@@ -215,7 +216,8 @@ def plan(meta: dict, copy_db: str, cur_db: str, *, awg_dir: str | None = None,
         cur = _ro(cur_db)
     except sqlite3.Error:
         cur = None
-    with sqlite3.connect(f"file:{copy_db}?mode=ro", uri=True) as cp:
+    # closing: «with» соединения sqlite3 — транзакция, а не закрытие; файл копии держался бы до сборщика
+    with contextlib.closing(sqlite3.connect(f"file:{copy_db}?mode=ro", uri=True)) as cp:
         copy_line = str(meta.get("db_line") or "") or _state(cp, "db_line")
         if cur is None:
             p.line = UNREADABLE
