@@ -148,11 +148,11 @@ def test_the_same_replica_twice_is_merged_once(merge_world):
     assert w.svc.rsv_get("rsv_out")["merge_report"] == report
 
 
-@pytest.mark.xfail(strict=True, reason="Q4-05: дедуп реплики по шифротексту, а не по поколению пакета")
-def test_the_same_replica_resealed_with_another_nonce_is_merged_once(merge_world):
+def test_the_same_replica_resealed_with_another_nonce_is_merged_once(merge_world, monkeypatch):
     """Повторный back_req после слияния получает `rep.bin` с диска: то же
-    содержимое того же поколения, другой nonce — второго слияния нет (при
-    правке Q4-05 снять отметку xfail)."""
+    содержимое того же поколения, другой nonce — второго слияния базы нет
+    (поколение пакета сверяется до слияния, шаг — restart)."""
+    from awgbot.domain.backup.merge import reserve as merge_mod
     from awgbot.util.rsvpkg import seal
     w = merge_world
     _returning(w)
@@ -162,9 +162,9 @@ def test_the_same_replica_resealed_with_another_nonce_is_merged_once(merge_world
     assert again != blob
     w.svc._out_step("back_req")
     calls = []
-    real = w.svc._return_merge
-    w.svc._return_merge = lambda *a: calls.append(a) or real(*a)
-    w.svc.reserve_released_in(again)
+    real = merge_mod.merge
+    monkeypatch.setattr(merge_mod, "merge", lambda *a, **k: calls.append(a) or real(*a, **k))
+    assert w.svc.reserve_released_in(again) == [("restart",)]
     assert calls == [], "реплика того же поколения слита дважды — счётчики трафика сложены дважды"
 
 
@@ -198,13 +198,12 @@ def test_a_successful_return_forgets_the_merge_marks(merge_world):
 
 # ── сторона резерва ─────────────────────────────────────────────────────────
 
-@pytest.mark.xfail(strict=True, reason="Q4-04: после сорванного слияния у основы резерв не возобновляет гостя")
 def test_a_failed_merge_at_the_primary_makes_the_reserve_resume_the_guest(host):
     """Реплика ушла (`released`, гость остановлен), а слияние у основы сорвалось —
     она в away и больше не просит back: бот нем с обеих сторон. Резерв по сроку
     видит `st.out = away` второй стороны и возобновляет гостя сам: юнит гостя
-    стартует, состояние serving, своему админу — уведомление (при правке Q4-04
-    снять отметку xfail)."""
+    стартует, состояние serving, своему админу — уведомление. Верится только
+    `st`, пришедшему после `released_at`: раньше — мог уйти до исхода слияния."""
     from tests.integration.test_reserve_hosting import _serving
     svc = host.svc
     _serving(host)
@@ -212,8 +211,11 @@ def test_a_failed_merge_at_the_primary_makes_the_reserve_resume_the_guest(host):
     assert svc.reserve_guest_replica_in(b"\x01\x02") == [("send_released", {"gen": 7, "blob": "0102"})]
     assert svc.reserve_in() == "releasing" and svc._inn().get("released_at")
     host.spawn.runs.clear()
-    rm.st_in(svc, out="away")                                  # слияние сорвалось: основа осталась в away
-    host.clock.advance(2 * 3600)
+    from datetime import timedelta
+    from awgbot.util import timeutil
+    host.clock.advance(2 * 3600)                               # два часа: монотонные часы и отметка released по стене
+    svc.rsv_update("rsv_in", released_at=timeutil.to_iso(timeutil.now() - timedelta(hours=2)))
+    rm.st_in(svc, out="away")                                  # слияние сорвалось: основа жива и осталась в away
     acts = svc.reserve_in_tick()
     assert svc.reserve_in() == "serving", f"возврат не состоялся, а резерв держит releasing: {svc._inn()}"
     assert ["systemctl", "start", rsvzone.GUEST_UNIT] in host.spawn.runs, "гость не возобновлён — бот нем с обеих сторон"
