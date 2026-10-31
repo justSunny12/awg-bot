@@ -96,6 +96,7 @@ class Box:
         self.record_error: Exception | None = None
         self.take_error: Exception | None = None
         self.store_error: Exception | None = None
+        self.store_sizes: list[int] = []
         self.at_fact_wait: dict = {}
         mp = monkeypatch
         mp.setattr(config, "DATA_DIR", tmp_path / "data")
@@ -112,13 +113,14 @@ class Box:
         self.write_package()
 
     # подмены
-    def _store(self):
+    def _store(self, size_mb: int = 0):
         if self.store_error:
             raise self.store_error
         self.run_dir.mkdir(parents=True, exist_ok=True)
         for sub in ("data", "conf", "awg"):
             (self.run_dir / sub).mkdir(exist_ok=True)
         self.calls.append(("store",))
+        self.store_sizes.append(size_mb)
 
     def _take(self, conf, **kw):
         if self.take_error:
@@ -315,6 +317,24 @@ def test_the_store_gets_env_conf_base_key_webhook_and_pool_with_private_rights(b
     assert json.loads(rsvzone.TG_POOL_FILE.read_text()) == {"pool": ["198.51.100.0/24"]}
     for p in (run / "env", run / "data" / "bot.db", rsvzone.K_FILE, rsvzone.WEBHOOK_FILE, run / "conf" / "app.yaml"):
         assert stat.S_IMODE(os.stat(p).st_mode) == 0o600, f"{p.name}: права {oct(os.stat(p).st_mode)}"
+
+
+def test_the_store_is_sized_by_the_base_before_it_is_written_and_again_at_take(box, monkeypatch):
+    """Бот резерва знает только размер сжатого пакета: хранилище под настоящую базу растит
+    процесс открытия — до записи базы и при --take по базе после журнала (скрипт
+    перемонтирует tmpfs). Размер в 32 МБ на любой базе — база основы больше ~30 МБ в
+    хранилище не влезала, аварийный переезд срывался «нет места»."""
+    seen = []
+    real = box._store
+    monkeypatch.setattr(rsvzone, "store_mb", lambda n: 1000 + n)     # видно, от какого размера посчитано
+    monkeypatch.setattr(rsvzone, "store", lambda size_mb=0: seen.append(
+        (size_mb, (box.run_dir / "data" / "bot.db").exists())) or real(size_mb))
+    assert box.open(**box.points(1), set_record=False) == 0, box.out
+    assert seen == [(1000 + len(box.replica), False)], "хранилище не выросло под базу до её записи"
+    kw = [c for c in box.calls if c[0] == "take"][0][2]
+    db_size = (box.run_dir / "data" / "bot.db").stat().st_size
+    assert kw["store_size_mb"] == 1000 + db_size, kw
+    assert kw["memory_mb"] == rsvzone.guest_memory_mb(db_size), "потолок гостя не покрывает его хранилище"
 
 
 def test_the_webhook_path_and_secret_are_new_each_time(box):

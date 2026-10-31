@@ -27,7 +27,7 @@
 #                             длины (хост видит устройства основы поодиночке — CAKE
 #                             делит загрузку по ним, а не по сайтам назначения)
 #   INSTALL_DIR=/opt/awg-bot  где код (ExecStart юнита гостя)
-#   RSV_RUN=/run/awg-bot-guest  хранилище гостя в памяти; RSV_STORE_SIZE=32M — его размер
+#   RSV_RUN=/run/awg-bot-guest  хранилище гостя в памяти (tmpfs: размер — GUEST_STORE_MB, ниже)
 #   RSV_VAR=/var/lib/awg-bot-guest  на диске только шифротекст под K: rep.bin
 #                             (снимок базы гостя) или jrn/ (журнал данных гостя)
 #   RSV_STATE_DIR=/run/awg-bot/rsv  state.json, open.status, guest.sock
@@ -49,7 +49,11 @@
 # зону, 8787; бот передаёт его и при --shell — routing.link_channel_port
 # резерва), GUEST_MEMORY_MB (потолок памяти юнита гостя, МБ, не меньше 160:
 # MemoryMax, MemoryHigh — на 32 меньше; процесс открытия считает его от размера
-# базы основы), RF_TABLE (таблица РФ-доступа хоста для трафика из awggr-h; 100 —
+# базы основы), GUEST_STORE_MB (и при --store: размер tmpfs хранилища гостя, МБ, от
+# 32 до 4096 — мусор или меньше 32 даёт 32, больше 4096 — 4096; бот резерва считает
+# его от размера пакета, процесс открытия — от размера базы до записи и после журнала;
+# уже смонтированный tmpfs перемонтируется этим размером, без значения — не трогается),
+# RF_TABLE (таблица РФ-доступа хоста для трафика из awggr-h; 100 —
 # умолчание routing.table, обёртка его не передаёт); --serve — WEBHOOK_PORT; --relay — RELAY_TO (адрес:порт основы).
 #
 # Таблица nft зоны — inet awg_guest (input/forward с политикой drop, цепочка
@@ -103,7 +107,11 @@
 #                 свопируемого tmpfs не бывает. Перед процессом открытия его
 #                 монтирует бот резерва в пространстве хоста (из песочницы
 #                 юнита открытия смонтированное хосту не видно); заполняет
-#                 процесс открытия до --take
+#                 процесс открытия до --take. Размер tmpfs — GUEST_STORE_MB;
+#                 уже смонтированный tmpfs с ним перемонтируется (mount -o
+#                 remount,size= — размер у файловой системы общий, его видят
+#                 все пространства монтирования): так процесс открытия
+#                 растит хранилище под базу до записи и при --take
 #   --take        переезд (GUEST_PROBE_ADDR — второй адрес клона cidr для ответчика кворума,
 #                 GUEST_PROBE_NET — подблок линии, GUEST_PROBE_PORT — порт ответчика, 8789:
 #                 в таблицу зоны — вход к ответчику только с подблока, пересылки с блока зондов
@@ -196,7 +204,6 @@ UNIT="/etc/systemd/system/awg-bot-guest.service"
 DNS_UNIT="/etc/systemd/system/awg-bot-guest-dns.service"
 JOURNAL_CONF="/etc/systemd/journald@$ZONE.conf"
 WEBHOOK_PORTS="443 80 88 8443"
-STORE_SIZE="${RSV_STORE_SIZE:-32M}"
 
 say() { printf '%s\n' "$*"; }
 die() { printf 'ОШИБКА: %s\n' "$*" >&2; exit 1; }
@@ -446,11 +453,29 @@ cmd_shell() {
 }
 
 # ── хранилище гостя в памяти ────────────────────────────────────────────────
+store_size_mb() {   # размер tmpfs хранилища (МБ) из GUEST_STORE_MB: не число или меньше 32 — 32, больше 4096 — 4096
+    local mb="${GUEST_STORE_MB:-32}"
+    case "$mb" in ''|*[!0-9]*) mb=32 ;; esac
+    [ "${#mb}" -le 4 ] || mb=4096                   # длиннее четырёх цифр — заведомо выше верха (и без переполнения в [ ])
+    [ "$mb" -ge 32 ] || mb=32
+    [ "$mb" -le 4096 ] || mb=4096
+    printf '%s' "$mb"
+}
+
 store_mount() {
     mkdir -p "$RUN"; chmod 0700 "$RUN"
-    mountpoint -q "$RUN" && return 0
+    local mb; mb="$(store_size_mb)"
+    if mountpoint -q "$RUN"; then
+        # уже стоит: с GUEST_STORE_MB tmpfs получает новый размер (база теперь известна точнее);
+        # ниже занятого ядро не перемонтирует — остаётся прежний; у ramfs размера нет
+        if [ -n "${GUEST_STORE_MB:-}" ] && [ "$(stat -f -c %T "$RUN" 2>/dev/null)" = "tmpfs" ]; then
+            mount -o "remount,size=${mb}M" "$RUN" 2>/dev/null \
+                || say "ВНИМАНИЕ: хранилище гостя не перемонтировано размером ${mb}M — остаётся прежний"
+        fi
+        return 0
+    fi
     if [ "$(store_kind)" = "tmpfs-noswap" ]; then
-        mount -t tmpfs -o "size=$STORE_SIZE,mode=0700,noswap" tmpfs "$RUN" 2>/dev/null \
+        mount -t tmpfs -o "size=${mb}M,mode=0700,noswap" tmpfs "$RUN" 2>/dev/null \
             || mount -t ramfs -o mode=0700 ramfs "$RUN" || die "хранилище гостя не смонтировалось"
     else
         mount -t ramfs -o mode=0700 ramfs "$RUN" || die "хранилище гостя (ramfs) не смонтировалось"
