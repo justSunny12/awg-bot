@@ -315,8 +315,14 @@ class DevicesMixin:
         self._refuse_if_gateway(dev)
         if not dev.private_key:
             raise ServiceError("Это устройство создавал не бот — перевыпустить ключи нельзя")
-        priv, pub = awg.gen_keypair()
+        # В окне переезда у устройства два пира (сам и двойник) — у каждого своя
+        # пара ключей, как при старте переезда: одна пара на оба нарушала бы
+        # уникальность public_key в базе, а на сервере второй пир уже стоял бы
+        # с новым ключом. Отказ на втором пире возвращает прежние ключи первому.
+        backup = self._rekey_snapshot(dev)
+        done = []
         for peer in self._device_pair(dev):
+            priv, pub = awg.gen_keypair()
             iface = awg.iface_of(peer.iface)
             try:
                 awg.remove_peer(peer.public_key, iface=iface)
@@ -326,8 +332,11 @@ class DevicesMixin:
                     awg.add_peer(peer.public_key, peer.preshared_key, peer.address, iface=iface)
                 except awg.AwgError:
                     pass
+                if done:
+                    self._rekey_restore([b for b in backup if b[0] in done])
                 raise ServiceError(f"Не удалось перевыпустить ключи на сервере: {e}")
             self.db.update_device_fields(peer.id, public_key=pub, private_key=priv)
+            done.append(peer.id)
 
     def reassign_device(self, device_id: int, new_client_id: int,
                         add_slot: bool = False) -> dict:

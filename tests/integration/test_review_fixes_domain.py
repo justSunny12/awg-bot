@@ -6,13 +6,18 @@
   записи первого;
 - фиды подсетей сервисов для шлюзов: сбор, где часть источников не ответила, не
   публикуется поверх прежнего фида — прежний остаётся, повтор через полчаса; без
-  прежнего неполный лучше пустого, но повтор тоже скорый.
+  прежнего неполный лучше пустого, но повтор тоже скорый;
+- перевыпуск ключей устройства в окне переезда: у самого и у двойника — свои пары
+  ключей; отказ сервера на втором пире возвращает прежние ключи первому.
 
 Цена ошибки: дамп, снятый раньше, записывался после более позднего — дельта
 выходила отрицательной, принималась за рестарт awg, и весь счётчик интерфейса
 (десятки гигабайт с подъёма) уходил в трафик месяца — лимит срабатывал зря;
 неполный фид уходил шлюзам как полный — подсети Telegram или Google выпадали из
-VPN в локальной сети до следующего похода (до восьми часов).
+VPN в локальной сети до следующего похода (до восьми часов); одна пара ключей на
+оба пира — IntegrityError по public_key посреди перевыпуска: на сервере у
+двойника уже новый ключ, в базе прежний, перепривязка друга к другому владельцу
+в окне переезда не проходит, а сверка видит «чужой пир».
 """
 from __future__ import annotations
 
@@ -22,6 +27,8 @@ import time
 import pytest
 
 from awgbot.infra import awg
+from awgbot.domain.services.types import ServiceError
+from tests.integration._migration_common import _twin
 from tests.integration.test_gwlink_lists_role_diag import ITDOG, _Net
 
 pytestmark = pytest.mark.integration
@@ -115,3 +122,54 @@ def test_partial_nets_without_previous_feeds_are_published_and_retried_soon(lan_
     services.db.set_state(services._LAN_FEEDS_AT_KEY, str(now - 1))         # срок повтора настал
     assert services.gwlink_lan_feeds_update() is True, "полный сбор после неполного не заменил фид"
     assert "91.108.4.0/22" in services.gwlink_lan_feeds()["nets"]
+
+
+# ── перевыпуск ключей в окне переезда ────────────────────────────────────────
+
+def _held_pair(services, make_active_client):
+    """Устройство отдано другу, переезд начат — у устройства двойник."""
+    a = make_active_client(name="a", tg_id=7001)
+    b = make_active_client(name="b", tg_id=7002)
+    dc = services.add_device(a.id, "Тел")
+    assert services.activate_friend(services.make_device_friendly(dc.device_id), 7003, "Друг").ok
+    services.migration_start()
+    twin = _twin(services, dc.device_id)
+    assert twin is not None
+    return dc.device_id, twin.id, b
+
+
+def test_reassign_in_migration_window_rekeys_both_peers_separately(services, mig, make_active_client):
+    """Устройство друга уходит другому владельцу в окне переезда: у обоих пиров
+    новые и разные ключи, на сервере стоят ровно они, прежних нет."""
+    orig_id, twin_id, b = _held_pair(services, make_active_client)
+    old = {i: services.db.get_device(i).public_key for i in (orig_id, twin_id)}
+    services.reassign_device(twin_id, b.id)
+    d0, d1 = services.db.get_device(orig_id), services.db.get_device(twin_id)
+    assert d0.client_id == d1.client_id == b.id
+    assert d0.public_key != d1.public_key, "одна пара ключей на оба пира"
+    assert d0.public_key != old[orig_id] and d1.public_key != old[twin_id], "ключи не перевыпущены"
+    on_server = {pub for peers in mig.peers_by_iface.values() for pub in peers}
+    assert {d0.public_key, d1.public_key} <= on_server
+    assert not set(old.values()) & on_server, "прежний ключ остался на сервере — прежний держатель при доступе"
+
+
+def test_rekey_failure_on_the_second_peer_restores_the_first(services, mig, make_active_client, monkeypatch):
+    """Сервер отказал на втором пире пары: ServiceError, у обоих пиров — прежние
+    ключи и в базе, и на сервере."""
+    from awgbot.infra import awg as infra_awg
+    orig_id, twin_id, _b = _held_pair(services, make_active_client)
+    old = {i: services.db.get_device(i).public_key for i in (orig_id, twin_id)}
+    twin_iface = infra_awg.iface_of(services.db.get_device(twin_id).iface)
+    real_add = infra_awg.add_peer
+
+    def add_peer(pub, psk, ip, iface=None):
+        if infra_awg.iface_of(iface) == twin_iface and pub not in old.values():
+            raise infra_awg.AwgError("отказ сервера")
+        real_add(pub, psk, ip, iface=iface)
+
+    monkeypatch.setattr(infra_awg, "add_peer", add_peer)
+    with pytest.raises(ServiceError):
+        services.rekey_device(orig_id)
+    assert {i: services.db.get_device(i).public_key for i in (orig_id, twin_id)} == old
+    on_server = {pub for peers in mig.peers_by_iface.values() for pub in peers}
+    assert set(old.values()) <= on_server, "прежний ключ не вернулся на сервер"
