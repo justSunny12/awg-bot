@@ -151,7 +151,7 @@ class MarkMixin:
         # На живой резерв, если такой есть: мёртвый держался бы удержанием.
         if others and active is not None and active.id == gw.id:
             target = next((g for g in others if not self._rt_unavailable(g.id)), others[0])
-            self.gateway_switch(target.id, manual=True)
+            self.gateway_switch(target.id, manual=True, wait=True)   # такт автомата — переждать, не отказывать
         self._backup_event(gw.id, "remove")           # имя — пока слот есть
         self._removed_journal_add(gw, prev)           # до смены ключей и снятия линка
         self._reserve_after_gateway_change("после снятия шлюза")   # доля ключа переезда у него была

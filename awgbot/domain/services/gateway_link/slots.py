@@ -169,11 +169,24 @@ class SlotsMixin:
     # ── переключение трафика ─────────────────────────────────────────────────
     _RT_SWITCHED_KEY = "routing_switched_at"
 
-    def gateway_switch(self, slot_id: int, *, manual: bool):
+    SWITCH_WAIT_S = 2.0                # сколько кнопка ждёт замок переключения, занятый автоматом
+
+    def gateway_switch(self, slot_id: int, *, manual: bool, wait: bool = False):
         """Переложить трафик на слот: один маршрут в таблице фичи, маркировка
         не снимается. Стрики нового активного — его слотовые. manual — рукой:
         интервал автомата не трогается (он защищает от автомата, не от
-        человека)."""
+        человека). Под замком переключения (routing.switch_lock), общим с
+        тактом живости: кто активный, маршрут и запись в state — одной парой.
+        wait — ждать замок сколько надо (снятие активного слота: отменять его
+        из-за такта нельзя); иначе — SWITCH_WAIT_S, дальше отказ человеку."""
+        if not routing.switch_lock.acquire(timeout=-1 if wait else self.SWITCH_WAIT_S):
+            raise ServiceError("Идёт автоматическое переключение шлюза — повтори через несколько секунд")
+        try:
+            return self._gateway_switch(slot_id, manual=manual)
+        finally:
+            routing.switch_lock.release()
+
+    def _gateway_switch(self, slot_id: int, *, manual: bool):
         gw = self._gw_slot(slot_id)
         active = self.active_gateway()
         if active is not None and active.id == gw.id:

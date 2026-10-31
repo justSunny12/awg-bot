@@ -55,7 +55,7 @@ def __dir__():
 
 
 __all__ = [
-    "RoutingError", "RoutingUnavailable", "mutation_lock",
+    "RoutingError", "RoutingUnavailable", "mutation_lock", "switch_lock",
     # самопроверка
     "self_check", "available", "invalidate_self_check",
     # имена наборов

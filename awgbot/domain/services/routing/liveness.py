@@ -166,10 +166,48 @@ class RoutingLivenessMixin:
                 log.warning("routing_liveness_tick: обвязка слотов не доведена: %s", e)
 
         was_on = self.db.get_state(self._RT_LINK_KEY) == "1"
-        notes: list[Notification] = []
+        ups: dict = {}                          # ключ слота → хороших подряд
+        # Решение и переключение — под замком переключения (общим с рукой:
+        # кнопка карточки, снятие активного слота): иначе маршрут и запись
+        # активного двух переключений ложились вразнобой. Рука переключила,
+        # пока шли зонды (активный на входе такта уже не тот), — решение по
+        # прежнему активному устарело: этим тактом автомат не переключает,
+        # следующий замерит новые роли.
+        with routing.switch_lock:
+            hand_moved = str(self.db.get_state(self._RT_ACTIVE_KEY) or "") != raw_active
+            if hand_moved:
+                log.info("routing: активный слот сменили рукой во время замера — автомат этим тактом не переключает")
+            switched_to, refused, ok = self._rt_decide(slots, engaged, results, akey, verdict, ups, was_on,
+                                                       hand_moved)
+            if switched_to is not None:
+                akey = switched_to.id
+                verdict = results.get(akey, routing.PROBE_DOWN)
+                try:
+                    routing.switch_active(switched_to.link_if)
+                except routing.RoutingError as e:
+                    log.warning("routing: переключение на слот %s не удалось: %s", switched_to.id, e)
+                active = switched_to
+        try:
+            # ПОД ЗАМКОМ: реконсиляция под ним же пересобирает ту цепочку, чей
+            # рубильник мы дёргаем.
+            with routing.mutation_lock:
+                routing.set_marking_enabled(ok)
+        except routing.RoutingError as e:
+            log.warning("routing_liveness_tick: %s", e)
+            return []
+        self.db.set_state(self._RT_LINK_KEY, "1" if ok else "0")
+        if not engaged:
+            return []
+        return self._rt_announce(slots, results, active, akey, prev_akey, raw_active, ups, verdict,
+                                 switched_to, refused, ok)
+
+    def _rt_decide(self, slots, engaged, results, akey, verdict, ups, was_on, hand_moved):
+        """Стрики и окно по замерам, решение о переключении — одной транзакцией
+        (зовётся под routing.switch_lock). Возвращает (новый активный или None,
+        отказ по интервалу, рубильник ok)."""
         switched_to = None
         refused = False
-        ups: dict = {}                          # ключ слота → хороших подряд
+        active = next((g for g in slots if g.id == akey), None) if slots else None
         with self.db.transaction():
             keys = [g.id for g in slots] if slots else [None]
             if not engaged:
@@ -213,7 +251,7 @@ class RoutingLivenessMixin:
                 unavailable = self._rt_unavailable(akey)
                 if hasattr(self, "_rt_spare_yields") and self._rt_spare_yields(akey, ups):
                     unavailable = True                       # запасной слот не липкий: слот основы ожил
-                if (slots and len(slots) > 1 and unavailable
+                if (slots and len(slots) > 1 and unavailable and not hand_moved
                         and self._rt_failover_enabled() and hold != str(akey)):
                     cand = next((g for g in slots if g.id != akey
                                  and ups[g.id] >= self._RT_UP_STREAK), None)
@@ -252,27 +290,12 @@ class RoutingLivenessMixin:
                     # хорошими) держит рубильник выключенным, пока слот не ожил по-настоящему
                     fell = akey is not None and bool(self.db.get_state(f"routing_gw_{akey}_down_since"))
                     ok = was_on and not unavailable and not fell
+        return switched_to, refused, ok
 
-        if switched_to is not None:
-            try:
-                routing.switch_active(switched_to.link_if)
-            except routing.RoutingError as e:
-                log.warning("routing: переключение на слот %s не удалось: %s", switched_to.id, e)
-            active = switched_to
-        try:
-            # ПОД ЗАМКОМ: реконсиляция под ним же пересобирает ту цепочку, чей
-            # рубильник мы дёргаем.
-            with routing.mutation_lock:
-                routing.set_marking_enabled(ok)
-        except routing.RoutingError as e:
-            log.warning("routing_liveness_tick: %s", e)
-            return []
-        self.db.set_state(self._RT_LINK_KEY, "1" if ok else "0")
-        if not engaged:
-            return []
-
-
-        # ── объявления: в том же такте, что и действие ───────────────────────
+    def _rt_announce(self, slots, results, active, akey, prev_akey, raw_active, ups, verdict,
+                     switched_to, refused, ok) -> list[Notification]:
+        """Объявления: в том же такте, что и действие."""
+        notes: list[Notification] = []
         _a_up_k, a_ann_k = self._rt_keys(akey)
         announced = self.db.get_state(a_ann_k) == "1"
         others = [g for g in slots if g.id != akey]
