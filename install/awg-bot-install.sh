@@ -356,6 +356,14 @@ fi
 
 # ── прошлая установка: обновить, снести и поставить заново, отмена ───────────
 ver_of() { sed -nE 's/^__version__ *= *"([^"]+)".*/\1/p' "$1" 2>/dev/null | head -n1; }
+installed_role() {   # роль прошлой установки из app.yaml; файла нет — пусто и строка об этом
+    # проверка до конвейера: под pipefail упавший sed молча ронял установщик кодом 2
+    if [[ ! -f "$ETC_DIR/conf/app.yaml" ]]; then
+        log "роль прошлой установки не прочитана: нет $ETC_DIR/conf/app.yaml — считаю её сервером AWG" >&2
+        return 0
+    fi
+    sed -nE 's/^ *role: *"?([a-z]+)"?.*/\1/p' "$ETC_DIR/conf/app.yaml" 2>/dev/null | head -n1 || true
+}
 ver_lt() {   # $1 < $2 по X.Y.Z.P
     [[ -n "$1" && -n "$2" && "$1" != "$2" ]] \
         && [[ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n1)" == "$1" ]]
@@ -387,12 +395,19 @@ wipe_previous() {
     # связь агента с Telegram — не трогается), у ВПС — линки, обвязка
     # маршрутизации, резолвер, интерфейсы awg с пирами, таблица файервола.
     # Чистое поле для установки ниже.
-    local role; role="$(sed -nE 's/^ *role: *"?([a-z]+)"?.*/\1/p' "$ETC_DIR/conf/app.yaml" 2>/dev/null | head -n1)"
+    local role; role="$(installed_role)"
     log "снимаю сервис, удаляю код, настройки и данные прошлой установки…"
     systemctl disable --now awg-bot 2>/dev/null || true
     rm -f /etc/systemd/system/awg-bot.service; systemctl daemon-reload 2>/dev/null || true
     rm -f "$SELF_LINK"
+    # пространство зондов кворума резерва (обе роли) — как awg-bot uninstall
+    ip netns del awg-quo 2>/dev/null || true
+    rm -rf /var/lib/awg-gw/quorum
     if [[ "$role" == "gateway" ]]; then
+        # постоянный линк к резерву (awgrsv, своя таблица и юнит) — раньше обвязки
+        [[ -x /usr/local/sbin/reserve-gw-setup.sh ]] \
+            && sh /usr/local/sbin/reserve-gw-setup.sh --remove >/dev/null 2>&1 || true
+        rm -f /usr/local/sbin/reserve-gw-setup.sh
         [[ -x /usr/local/sbin/routing-gw-setup.sh ]] \
             && sh /usr/local/sbin/routing-gw-setup.sh --rollback >/dev/null 2>&1 || true
         # /opt/awg-gw — остаток прежних выпусков: там лежали скрипт обвязки и
@@ -440,6 +455,7 @@ wipe_previous() {
               /etc/systemd/journald@awg-guest.conf
         if mountpoint -q /run/awg-bot-guest 2>/dev/null; then umount -l /run/awg-bot-guest 2>/dev/null || true; fi
         while ip rule del iif awggr-h 2>/dev/null; do :; done
+        while ip rule del pref 151 2>/dev/null; do :; done     # транзит РФ второй стороны (reserve/rfpeer)
         rm -rf /run/awg-bot-guest /var/lib/awg-bot-guest /run/awg-bot/rsv /run/log/journal/*.awg-guest
         ip netns del awg-guest 2>/dev/null || true
         for f in /etc/amnezia/amneziawg/*.conf; do
@@ -473,7 +489,7 @@ if [[ -n "${JOIN_TOKEN:-}" && -x "$INSTALL_DIR/venv/bin/python" ]]; then
     # Агент уже стоит — меню нет (повтор той же команды не ставит заново
     # то, что стоит): вопрос и сразу подключение; версия другая — сначала
     # обновление до выпуска токена, подключение — следом новым кодом
-    inst_role="$(sed -nE 's/^ *role: *"?([a-z]+)"?.*/\1/p' "$ETC_DIR/conf/app.yaml" 2>/dev/null | head -n1)"
+    inst_role="$(installed_role)"
     [[ "${inst_role:-client}" == "gateway" ]] \
         || die "здесь установлен сервер AWG, а команда подключения — для шлюза"
     have_ver="$(ver_of "$INSTALL_DIR/awgbot/__version__.py")"
@@ -525,7 +541,7 @@ if [[ -x "$INSTALL_DIR/venv/bin/python" ]]; then
     # Роль — та, что установлена (app.yaml), а не флаг запуска: команду для
     # шлюза могли скопировать на ВПС, и диалог обязан говорить о том хосте,
     # который будет снесён. Так же выбирает wipe_previous.
-    inst_role="$(sed -nE 's/^ *role: *"?([a-z]+)"?.*/\1/p' "$ETC_DIR/conf/app.yaml" 2>/dev/null | head -n1)"
+    inst_role="$(installed_role)"
     inst_role="${inst_role:-client}"
     have_ver="$(ver_of "$INSTALL_DIR/awgbot/__version__.py")"
     if [[ -n "$SRC_ROOT" ]]; then

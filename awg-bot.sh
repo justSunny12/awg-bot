@@ -151,9 +151,12 @@
 #                          Что было до бота — аплинк шлюза, интерфейсы awg с
 #                          пользователями — остаётся. Линк пары резерва и гостевую
 #                          зону — без вопроса; зону — её же скриптом (копия
-#                          во временный файл до удаления кода, хвосту — в
+#                          во временный каталог до удаления кода, хвосту — в
 #                          AWG_ZONE_SCRIPT): --teardown и --wipe снимают клоны,
 #                          CAKE, ip rule iif awggr-h, юниты и журнал гостя.
+#                          Хвост — копия этого скрипта вместе с install/lib в
+#                          том же временном каталоге (AWG_UNINSTALL_DIR), каталог
+#                          убирается последним шагом.
 #   backup                 бэкап сервера AWG → $BACKUP_DIR/awg-bot-backup-main-*.tgz.enc
 #                          тем же составом, что копия из чата: сборщик
 #                          tools/snapshot.py (БД через backup API SQLite, conf,
@@ -1139,7 +1142,11 @@ cmd_uninstall() {
     warn "Снятие сервиса awg-bot: будут удалены сервис, код и команда awg-bot."
     confirm "Точно снять awg-bot?" n || { log "отменено."; return 0; }
     # Роль — до того, как конфиг исчезнет: хвост снимает обвязку своей роли
-    local role; role="$(sed -nE 's/^ *role: *"?([a-z]+)"?.*/\1/p' "$ETC_DIR/conf/app.yaml" 2>/dev/null | head -n1)"
+    # (app.yaml нет — пусто; под pipefail упавший sed иначе молча ронял бы снятие кодом 2)
+    local role=""
+    [[ -f "$ETC_DIR/conf/app.yaml" ]] \
+        && role="$(sed -nE 's/^ *role: *"?([a-z]+)"?.*/\1/p' "$ETC_DIR/conf/app.yaml" 2>/dev/null | head -n1 || true)"
+    [[ -n "$role" ]] || warn "роль установки не прочитана ($ETC_DIR/conf/app.yaml) — снимаю как сервер AWG"
     # ПОРЯДОК КРИТИЧЕН: сперва БЕЗУСЛОВНО и СИНХРОННО убираем
     # то, из-за чего установка считается установкой (код + симлинк), чтобы
     # прерывание на любом дальнейшем вопросе оставляло чистое поле, а не тупик.
@@ -1147,15 +1154,24 @@ cmd_uninstall() {
     update_guard_disarm                    # сторож обновления — без кода ему нечего возвращать
     rm -f "$UNIT_PATH"; systemctl daemon-reload 2>/dev/null || true
     rm -f "$SELF_LINK"
-    local tmp_self; tmp_self="$(mktemp)"; cp "$SELF_PATH" "$tmp_self"; chmod +x "$tmp_self"
+    # Хвост идёт копией скрипта из временного каталога — ВМЕСТЕ с частями
+    # install/lib: скрипт читает их при разборе (`. "$SELF_DIR/install/lib/…"`),
+    # и одинокая копия падала на первой же строке чтения, не дойдя до хвоста
+    # (данные, обвязка роли, линк пары, зона — оставались на хосте).
+    local tmp_dir; tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/awg-bot-uninstall.XXXXXX")"
+    mkdir -p "$tmp_dir/install/lib"
+    cp "$SELF_PATH" "$tmp_dir/awg-bot.sh"
+    cp "$SELF_DIR"/install/lib/*.sh "$tmp_dir/install/lib/"
     # скрипт зоны резерва — рядом: хвост снимает зону им (CAKE, ip rule, журнал гостя)
     local tmp_zone=""
     if [[ -f "$INSTALL_DIR/install/reserve-zone-setup.sh" ]]; then
-        tmp_zone="$(mktemp)"; cp "$INSTALL_DIR/install/reserve-zone-setup.sh" "$tmp_zone"
+        tmp_zone="$tmp_dir/reserve-zone-setup.sh"; cp "$INSTALL_DIR/install/reserve-zone-setup.sh" "$tmp_zone"
     fi
     rm -rf "$INSTALL_DIR"
     ok "сервис снят, код и команда удалены — хост чист для переустановки."
-    AWG_ROLE="${role:-client}" AWG_ZONE_SCRIPT="$tmp_zone" exec "$tmp_self" __post_uninstall
+    # bash явно: /tmp бывает смонтирован с noexec
+    AWG_ROLE="${role:-client}" AWG_ZONE_SCRIPT="$tmp_zone" AWG_UNINSTALL_DIR="$tmp_dir" \
+        exec bash "$tmp_dir/awg-bot.sh" __post_uninstall
 }
 # Хвост: опциональная зачистка данных/секретов и обвязки роли (из /tmp-копии,
 # прерывание тут уже безопасно — установка полностью снята). Принцип: после
@@ -1179,7 +1195,9 @@ cmd_post_uninstall() {
             while read -r pub _; do
                 [[ -n "$pub" ]] && awg set "$qi" peer "$pub" remove 2>/dev/null || true
             done < <(awg show "$qi" allowed-ips 2>/dev/null | grep '169\.254\.88\.' || true)
-            ip -4 addr show dev "$qi" 2>/dev/null | awk '/inet 169\.254\.88\./{print $2}' | while read -r a; do ip addr del "$a" dev "$qi" 2>/dev/null || true; done
+            # под pipefail упавший ip (интерфейса уже нет) иначе обрывал хвост
+            { ip -4 addr show dev "$qi" 2>/dev/null || true; } | awk '/inet 169\.254\.88\./{print $2}' \
+                | while read -r a; do ip addr del "$a" dev "$qi" 2>/dev/null || true; done
             awk -v RS= -v ORS='\n\n' '!/AllowedIPs *= *169\.254\.88\./' "$qf" | sed '/^Address *= *169\.254\.88\./d' > "$qf.tmp" && mv "$qf.tmp" "$qf"
         done
     fi
@@ -1301,7 +1319,13 @@ cmd_post_uninstall() {
         fi
     fi
     ok "Готово."
-    setsid sh -c "sleep 1; rm -f '$SELF_PATH'" >/dev/null 2>&1 < /dev/null &
+    # временный каталог копии (скрипт, части, копия зоны) — целиком; иначе — сама копия
+    local self_rm="rm -f '$SELF_PATH'"
+    if [[ -n "${AWG_UNINSTALL_DIR:-}" && -d "$AWG_UNINSTALL_DIR" \
+          && "$(cd "$AWG_UNINSTALL_DIR" && pwd -P)" == "$SELF_DIR" ]]; then
+        self_rm="rm -rf '$SELF_DIR'"
+    fi
+    setsid sh -c "sleep 1; $self_rm" >/dev/null 2>&1 < /dev/null &
 }
 
 # ── status / logs ────────────────────────────────────────────────────────────
