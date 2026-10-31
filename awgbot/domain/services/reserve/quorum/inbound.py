@@ -57,12 +57,9 @@ class ReserveQuorumInboundMixin:
         if kind == "qpause":
             v = self._qvoters.get(f"awgq{str(body.get('l') or '')}h") if hasattr(self, "_qvoters") else None
             if v is not None:
-                try:
-                    secs = max(0.0, timeutil.elapsed(timeutil.now(), timeutil.parse_iso(str(body.get("until") or ""))))
-                except (ValueError, TypeError):
-                    secs = 0.0
+                from awgbot.util.quorum.voter import pause_seconds
                 import time as _t
-                v.pause(_t.monotonic(), secs)
+                v.pause(_t.monotonic(), pause_seconds(body))  # dur — длительность, until — по своим часам
                 log.info("кворум: «%s» просит паузу до %s", self.reserve_peer_name(), body.get("until"))
             return []
         if kind == "qmem":
@@ -178,5 +175,5 @@ class ReserveQuorumInboundMixin:
     def reserve_quorum_gw_views(self, l: str, t: str = "h") -> dict:
         """Взгляды узлов на линию `l` (шлюзы и второй сервер), как они известны мне;
         `t` — цель: сервер линии дома (`h`) или его клон у второй стороны (`r`)."""
-        return {n.split(":", 1)[0]: v for n, v in self._qgwviews.items()
+        return {n.split(":", 1)[0]: v for n, v in list(self._qgwviews.items())    # копия: qview вставляют потоки слов
                 if str(v.get("l") or "") == l and str(v.get("t") or "h") == t}

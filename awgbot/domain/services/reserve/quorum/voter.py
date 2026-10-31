@@ -104,14 +104,19 @@ class ReserveQuorumVoterMixin:
         return int(self.reserve_quorum_peer_line().get("g") or 0)
 
     def _quorum_known_epoch(self, l: str) -> int:
-        """Известная эпоха линии: своей — из журнала; чужой — из `st.jrn.mine` второй стороны."""
+        """Известная эпоха линии: своей — из журнала; чужой — из `st.jrn.mine` второй стороны и,
+        пока её пользователи у меня, из журнала её гостя (эпоха E после взятия: вторая сторона её
+        ещё не знает, а шлюзам и моим пробам к её дому она нужна — иначе вернувшаяся основа
+        набрала бы «да» под прежней эпохой при живом госте)."""
         if l == self.reserve_quorum_side():
             return self.reserve_quorum_epoch()
         jrn = self.reserve_peer_state().get("jrn_mine") if isinstance(self.reserve_peer_state().get("jrn_mine"), dict) else {}
         try:
-            return int((jrn or {}).get("e") or 0)
+            e = int((jrn or {}).get("e") or 0)
         except (TypeError, ValueError):
-            return 0
+            e = 0
+        guest = int(self._keep_guest_int("e")) if hasattr(self, "_keep_guest_int") else 0   # 0 — не принимаю
+        return max(e, guest)
 
     def reserve_quorum_my_views(self) -> dict:
         """Мои взгляды по зондам (для карточки): имя → {w, since, l, target, y, v, r}."""

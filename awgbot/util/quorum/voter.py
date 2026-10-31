@@ -11,8 +11,8 @@ voter.py — часть пакета quorum: правило голосующег
 Обязательство «нет»: отдав кандидату `qview{uns}` под эпохой e, голосующий
 не скажет лидеру «вижу» под той же эпохой — пробы идут со взглядом `held`,
 пока кандидат не скажет `qrel{e}` (снято) или `qtake{e}` (эпоха e + 1), но не
-дольше `pledge_s`. `qpause{until}` лидера — «не вижу» кандидату не уходит до
-срока. Эпоха — наибольшая из ответов пробы, `qstate`, `state{e}`.
+дольше `pledge_s`. `qpause{until, dur}` лидера — «не вижу» кандидату не уходит до
+срока (`dur` — длительность, если есть: часы сторон могут расходиться). Эпоха — наибольшая из ответов пробы, `qstate`, `state{e}`.
 
 Машина без ввода-вывода: такт отдаёт действия: `probe` (пора слать),
 `see`/`uns`/`sus` (взгляд сменился — `qview` кандидату и копия лидеру),
@@ -24,6 +24,19 @@ from dataclasses import dataclass, field
 
 from .probe import Info, Reply
 from .timing import Timing
+
+
+def pause_seconds(body: dict) -> float:
+    """Срок `qpause` в секундах: `dur` (длительность — от часов сторон не зависит), если есть;
+    иначе абсолютное `until` по своим часам (прежний отправитель). Не разобралось — 0."""
+    dur = body.get("dur")
+    if isinstance(dur, int) and not isinstance(dur, bool) and dur >= 0:
+        return float(dur)
+    from awgbot.util import timeutil
+    try:
+        return max(0.0, timeutil.elapsed(timeutil.now(), timeutil.parse_iso(str(body.get("until") or ""))))
+    except (ValueError, TypeError):
+        return 0.0
 
 
 @dataclass

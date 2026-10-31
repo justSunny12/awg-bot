@@ -95,9 +95,8 @@ def setup_gateway_scheduler(services, bot):
         next_run_time=timeutil.shift(timeutil.now(), random.randint(120, 300)),
         misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
 
-    # Резерв: клиент гостевого канала, взгляды на основу и на резерв, пересылка
-    # с линка к резерву — такт 5 с (локальные счётчики; наружу — только проба по
-    # подозрению).
+    # Резерв: клиент гостевого канала, связь с резервом, пересылка с линка к
+    # резерву — такт 5 с (локальные счётчики; наружу — только проба по подозрению).
     async def job_gw_reserve_tick():
         try:
             from awgbot.runtime import guestlink
@@ -108,6 +107,22 @@ def setup_gateway_scheduler(services, bot):
     scheduler.add_job(
         job_gw_reserve_tick, IntervalTrigger(seconds=5, timezone=config.TZ),
         id="gw_reserve_tick", max_instances=1, coalesce=True,
+        misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
+
+    # Кворум: пробы голосующего к серверу AWG (и к клону) — своим заданием: в такте
+    # резерва медленные шаги (подъём линка, DNS, уведомления, обход Telegram) задержали
+    # бы пробу дольше no_s — ложное «не вижу» кандидату. Интервал проб с джиттером
+    # ставит правило голосующего; такт — опрос с небольшим сдвигом.
+    async def job_gw_quorum_tick():
+        try:
+            from awgbot.runtime import guestlink
+            await guestlink.quorum_tick(services, bot)
+        except Exception as e:                           # noqa: BLE001
+            log.warning("gw_quorum_tick: %s", e)
+
+    scheduler.add_job(
+        job_gw_quorum_tick, IntervalTrigger(seconds=5, jitter=1, timezone=config.TZ),
+        id="gw_quorum_tick", max_instances=1, coalesce=True,
         misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
 
     # Перерезолв аплинка: адрес для пользователей переехал (резерв) — аплинк идёт

@@ -211,7 +211,7 @@ class ReserveQuorumFenceMixin:
         if m is None or not self.reserve_quorum_active():
             return []
         until = timeutil.to_iso(timeutil.shift(timeutil.now(), int(seconds)))
-        body = {"l": m.l, "until": until}
+        body = {"l": m.l, "until": until, "dur": int(seconds)}   # dur — длительность: часы сторон могут расходиться
         actions: list[tuple] = []
         if self.reserve_online():
             actions.append(("send", "qpause", body))

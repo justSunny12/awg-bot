@@ -136,7 +136,8 @@ PAIR_KINDS: dict[str, tuple[str, dict]] = {
     "qkeys_ok":     (BOTH, {"l": (_S, 1), "m_gen": (_I, None), "q_gen": (_I, None), "c_gen": (_I, None)}),
     "qview":        (BOTH, {"l": (_S, 1), "g": (_I, None), "w": (_S, 8), "since": (_S, 32), "e": (_I, None), "i": (_D, None)}),
     "qstate":       (BOTH, {"l": (_S, 1), "e": (_I, None), "holder": (_S, 8), "r": (_S, 8)}),
-    "qpause":       (BOTH, {"l": (_S, 1), "until": (_S, 32)}),
+    "qpause":       (BOTH, {"l": (_S, 1), "until": (_S, 32), "dur": (_I, None)}),   # dur — секунды паузы: часы
+                                                                                     # сторон могут расходиться
     # журнал данных (jrn1, util/rsvjrn): линия — db_line базы, чьи это данные; записи — под K
     # с открытым заголовком (rsvjrn.event). jev/jack/jneed/jstale — события держателя линии,
     # jcnt/jcack — пачки счётчиков стороны a (основа) или b (клон на резерве)
@@ -172,7 +173,7 @@ GUEST_KINDS: dict[str, tuple[str, dict]] = {
     "qrel":   (RESERVE, {"l": (_S, 1), "e": (_I, None)}),
     "qneed":  (RESERVE, {"l": (_S, 1), "q_gen": (_I, None), "since": (_S, 32)}),
     "qshare": (GATEWAY, {"l": (_S, 1), "q_gen": (_I, None), "x": (_I, None), "y": (_S, 64)}),
-    "qpause": (RESERVE, {"l": (_S, 1), "until": (_S, 32)}),
+    "qpause": (RESERVE, {"l": (_S, 1), "until": (_S, 32), "dur": (_I, None)}),
     "qstate": (RESERVE, {"l": (_S, 1), "e": (_I, None), "holder": (_S, 8), "r": (_S, 8)}),
 }
 
@@ -198,7 +199,7 @@ OPTIONAL: dict[str, frozenset] = {"st": frozenset({"healthy", "can_return", "in_
                                   "go": frozenset({"ttl", "k", "sealed", "oid"}), "go_req": frozenset({"ttl"}),
                                   "pkg": frozenset({"jrn"}), "released": frozenset({"epoch", "last"}),
                                   "qkeys": frozenset({"q_gen", "thr", "y", "qbox"}),   # многочлен — пока кворум линии решает
-                                  "jstale": frozenset({"F"}),
+                                  "jstale": frozenset({"F"}), "qpause": frozenset({"dur"}),
                                   # hello обычной сессии несёт только nonce (и seen); поля сопряжения — у hello с pair
                                   "hello": frozenset({"pair", "eph", "name", "version", "caps", "gen", "ports", "seen", "bot", "gw"})}
 
