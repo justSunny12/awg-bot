@@ -12,7 +12,9 @@ Telegram резерву.
 ссылки, — такт поправит уже другой экран; снимок, не отпущенный после
 правки, — нельзя открыть заново; `deleteMessages`, снявший запись, — у
 неудалённого пакетом сообщения ссылка умрёт без правки; отказ отправки,
-привязавший снимок, — повтор привяжет его к пустому месту; сбой базы в
+привязавший снимок, — повтор привяжет его к пустому месту; отказ правки не
+о пропаже сообщения (разметка, длина), снявший запись, — сообщение остаётся
+в чате без снятия «Скрыть» и правок ссылок; сбой базы в
 посреднике, уронивший отправку, — человек не получает уведомление вовсе;
 записи живых меню у основы после переезда — она правит экран, за который
 отвечает резерв, и возвращает снятые там кнопки; подпись к фото или файлу
@@ -458,6 +460,53 @@ async def test_a_refused_edit_of_another_message_leaves_the_live_menu_alone(rig)
         await rig.bot.edit_message_text("⚠️ Не добавлено ещё", chat_id=CHAT, message_id=m.message_id)
     await rig.bot.send_message(CHAT, "⚠️ Не добавлено ещё", reply_markup=kb.hide_only())
     assert rig.db.get_nav_message_id(CHAT) == menu.message_id, "указатель живого меню сдвинут отказом правки уведомления"
+
+
+@pytest.mark.parametrize("kind", ["not_found", "cant_edit", "id_invalid"])
+async def test_a_refusal_for_a_gone_message_releases_the_record(rig, kind):
+    """Сообщения нет или оно не правится никогда: запись снята, снимок отпущен —
+    его привяжет экран, присланный заново."""
+    from aiogram.exceptions import TelegramBadRequest
+    key = rig.snap()
+    text = "⚠️ Не добавлено " + rig.link(key)
+    m = await rig.bot.send_message(CHAT, text, reply_markup=kb.hide_only())
+    rig.session.refuse(kind, method=EditMessageText, mid=m.message_id)
+    with pytest.raises(TelegramBadRequest):
+        await rig.bot.edit_message_text(text + " ещё", chat_id=CHAT, message_id=m.message_id)
+    assert rig.rec(m.message_id) is None, f"{kind}: запись осталась"
+    assert rig.raw(key)["msg"] == 0
+
+
+@pytest.mark.parametrize("kind", ["parse", "too_long", "chat_not_found"])
+async def test_another_edit_refusal_keeps_the_record_of_the_message_still_in_chat(rig, kind, caplog):
+    """Отказ по иной причине (разметка, длина, незнакомый 400): сообщение в чате
+    прежнее — запись и снимок при нём, «Скрыть» и правки ссылок продолжают
+    работать; отказ — строкой журнала. Снятая запись оставляла кнопку
+    «Скрыть» навсегда, а ссылки — умирать без правки."""
+    from aiogram.exceptions import TelegramBadRequest
+    key = rig.snap()
+    text = "⚠️ Не добавлено " + rig.link(key)
+    m = await rig.bot.send_message(CHAT, text, reply_markup=kb.hide_only())
+    rig.session.refuse(kind, method=EditMessageText, mid=m.message_id)
+    with caplog.at_level(logging.INFO, logger="awgbot.bot.lists.msgs.watch"), pytest.raises(TelegramBadRequest):
+        await rig.bot.edit_message_text(text + " ещё", chat_id=CHAT, message_id=m.message_id)
+    rec = rig.rec(m.message_id)
+    assert rec is not None and rec["keys"] == [key], f"{kind}: запись снята: {rec}"
+    assert rig.raw(key)["msg"] == m.message_id, f"{kind}: снимок отпущен: {rig.raw(key)}"
+    assert any("запись цела" in r.getMessage() for r in caplog.records), "отказ не в журнале"
+
+
+async def test_another_refusal_on_the_live_menu_still_makes_the_resent_screen_live(rig):
+    """Иной отказ правки живого меню: запись цела, но обработчик шлёт экран заново —
+    живым меню становится он, как и при пропавшем сообщении."""
+    from aiogram.exceptions import TelegramBadRequest
+    m = await rig.bot.send_message(CHAT, "экран", reply_markup=MENU)
+    rig.db.nav_touch(CHAT, m.message_id)
+    rig.session.refuse("parse", method=EditMessageText, mid=m.message_id)
+    with pytest.raises(TelegramBadRequest):
+        await rig.bot.edit_message_text("экран ещё", chat_id=CHAT, message_id=m.message_id, reply_markup=MENU)
+    n = await rig.bot.send_message(CHAT, "экран ещё", reply_markup=MENU)
+    assert rig.db.get_nav_message_id(CHAT) == n.message_id
 
 
 async def test_a_not_modified_refusal_keeps_the_record(rig):
