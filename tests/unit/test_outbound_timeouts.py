@@ -465,6 +465,24 @@ def test_the_default_timeouts_of_the_wrappers_are_ten_seconds():
             f"{fn.__name__}: умолчание не 10 с"
 
 
+def test_the_fetch_double_has_the_real_default_and_refuses_more_than_ten(fake_routing):
+    """Двойник routing.fetch из conftest: умолчание — как у настоящей (прежние
+    15 с прятали регресс умолчания), больше 10 с — провал теста, который широкий
+    except вызывающего не проглотит (BaseException)."""
+    from awgbot.infra import routing
+    from awgbot.infra.routing import feeds
+    real = inspect.signature(feeds.fetch).parameters["timeout"].default
+    assert inspect.signature(routing.fetch).parameters["timeout"].default == real == 10
+    assert routing.fetch("https://example.invalid/x")[0] is None
+    assert routing.fetch("https://example.invalid/x", timeout=10)[0] is None
+    with pytest.raises(pytest.fail.Exception) as e:
+        try:
+            routing.fetch("https://example.invalid/x", timeout=11)
+        except Exception:                                 # noqa: BLE001 — как у вызывающих
+            pytest.fail("сторож двойника проглочен широким except")
+    assert "больше 10 с" in str(e.value)
+
+
 def test_the_mailbox_poll_connects_with_a_ten_second_limit(monkeypatch):
     """Опрос ящика кодов возобновления открывает IMAP с пределом 10 с — фоновая
     задача не должна зависать на почтовом сервере."""
