@@ -212,3 +212,35 @@ def test_the_code_window_outside_a_decision_opens_once_the_block_is_gone(c):
     settings.set_value("app.reserve.ready", True)
     c.run(5)
     assert c.s.reserve_code_window()["open"], "готовность включили — окно кода не открылось"
+
+
+# ── отметка автоматического переезда (Q5-04) ────────────────────────────────
+
+def test_a_launch_error_of_an_opening_by_points_leaves_the_damper_not_the_interval(c):
+    _to_points(c)
+    c.b.launch_fail = "юнит не стартовал"
+    c.share(1)
+    inn = c.s.rsv_get("rsv_in")
+    assert inn.get("state") == "idle" and inn.get("ended_auto") is False, f"отказ запуска оставил отметку: {inn}"
+    assert "пауза две минуты" in c.s.reserve_auto_block(), f"после отказа запуска — не демпфер: {c.s.reserve_auto_block()!r}"
+    c.b.advance(DAMPER + 5)
+    assert c.s.reserve_auto_block() == "", f"после демпфера автопереезд всё ещё закрыт: {c.s.reserve_auto_block()!r}"
+
+
+@pytest.mark.parametrize("kind,auto", [("button", False), ("dead", True), ("rf", True)])
+def test_a_move_by_the_primary_key_sets_its_own_automatic_mark(c, monkeypatch, kind, auto):
+    """Переезд с K основы: кнопкой — не автоматический (прежняя отметка не наследуется),
+    по просьбе кворума (dead | rf) — автоматический."""
+    from tests.integration._reserve_vote_common import PKG_GEN
+    monkeypatch.setattr(c.s, "_rsvopen_launch", lambda payload, keep_stdin=False: None)
+    c.s.rsv_update("rsv_in", ended_auto=not auto)              # прежний переезд — другого рода
+    assert c.s.reserve_go_req_in(PKG_GEN, kind) == "", "подготовка: go_req отказан"
+    assert c.s.rsv_get("rsv_in").get("ended_auto") is auto, f"{kind}: отметка {c.s.rsv_get('rsv_in').get('ended_auto')}"
+
+
+def test_a_move_by_the_emergency_code_is_not_automatic(c):
+    c.s.rsv_update("rsv_view", code={"open": True, "since": timeutil.now_iso(), "tries": [], "by": "quorum"})
+    c.s.reserve_open_by_points({"code": "00" * 32, "cbox": "00"}, "code", "H4")
+    inn = c.s.rsv_get("rsv_in")
+    assert inn.get("state") == "taking", f"подготовка: открытие по коду не пошло: {inn}"
+    assert inn.get("ended_auto") is False, "переезд по коду помечен автоматическим — интервал 30 мин закроет точки"

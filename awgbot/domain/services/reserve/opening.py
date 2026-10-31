@@ -96,13 +96,14 @@ class ReserveOpeningMixin:
             self.reserve_set_in("taking", kind=kind, gen=int(pkg_in.get("gen") or 0), why=case, extra="",
                                 by="code" if "code" in secret else "share",
                                 open_started=timeutil.now_iso(), deadline=time.monotonic() + self._open_wait_s(),
-                                up_sent=False, tg_taken=False, ended_auto=True,
+                                up_sent=False, tg_taken=False, ended_auto="code" not in secret,   # по коду — не автоматический
                                 dead_since=str(self.rsv_get("rsv_view").get("code", {}).get("since") or ""))
             self._in_step("open")
         try:
             self._rsvopen_launch(payload)
         except Exception as e:                                # noqa: BLE001
-            self.reserve_set_in("idle", step="", reason=str(e))
+            # срыв открытия: отметка автоматического переезда прочь, пауза — короткий демпфер (fail_at)
+            self.reserve_set_in("idle", step="", reason=str(e), ended_auto=False, fail_at=timeutil.now_iso())
             return [("notify", [Notification(tg_id=int(config.ADMIN_ID), text=_fail_text(self.reserve_peer_name(), str(e)))])]
         log.warning("резерв: процесс открытия по %s запущен (%s, пакет %s)", "коду" if kind == "code" else "точкам",
                     case, pkg_in.get("gen"))

@@ -160,7 +160,8 @@ class ReserveInboundMixin:
             rsvzone.open_status_write("launching")           # прежний open.status не должен сойти за ход этого открытия
             self.reserve_set_in("taking", kind=str(kind or "button"), gen=int(gen), why=str(kind or "button"), by="k",
                                 open_started=timeutil.now_iso(), deadline=time.monotonic() + OPEN_WAIT_S,
-                                up_sent=False, tg_taken=False, sealed=not k_hex, k_passed=False, oid="", eph_sent=0)
+                                up_sent=False, tg_taken=False, sealed=not k_hex, k_passed=False, oid="", eph_sent=0,
+                                ended_auto=str(kind or "button") != "button")   # по просьбе кворума (dead | rf) — автоматический
             self._in_step("open")
         try:
             self._rsvopen_launch(payload, keep_stdin=not k_hex)
