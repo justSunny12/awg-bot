@@ -236,10 +236,13 @@ class Api:
         return web.json_response([r for r in rows if r.get("bot") == bot.me["id"]])
 
 
+API_KEY = web.AppKey("api", Api)
+
+
 def make_app(journal: str) -> web.Application:
     api = Api(journal)
     app = web.Application(client_max_size=64 * 1024 * 1024)
-    app["api"] = api                                          # состояние ботов — для тестов макета
+    app[API_KEY] = api                                        # состояние ботов — для тестов макета
     app.router.add_route("*", "/bot{token}/{method}", api.handle)
     app.router.add_post("/inject/{token}", api.inject)
     app.router.add_get("/journal/{token}", api.journal_get)

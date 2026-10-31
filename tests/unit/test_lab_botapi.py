@@ -157,7 +157,7 @@ async def test_a_certificate_sent_as_attach_reference_is_the_trusted_one(api, re
     form.add_field("f1", b"-----BEGIN CERTIFICATE-----\nDUMMY\n-----END CERTIFICATE-----\n", filename="cert.pem")
     r = await api.post(f"/bot{TOKEN}/setWebhook", data=form)
     assert (await r.json())["ok"]
-    bot = api.server.app["api"].bot(TOKEN)
+    bot = api.server.app[botapi.API_KEY].bot(TOKEN)
     assert bot.webhook["cert"].startswith(b"-----BEGIN CERTIFICATE-----"), bot.webhook["cert"][:40]
     _, body = await _call(api, "getWebhookInfo")
     assert body["result"]["has_custom_certificate"] is True
@@ -182,7 +182,7 @@ async def test_a_broken_certificate_is_a_delivery_error_not_a_dead_delivery(api,
             break
         await asyncio.sleep(0.05)
     assert "last_error_date" in got and got["pending_update_count"] == 1, got
-    assert not api.server.app["api"].bot(TOKEN).deliver_task.done(), "задача доставки умерла"
+    assert not api.server.app[botapi.API_KEY].bot(TOKEN).deliver_task.done(), "задача доставки умерла"
     await _call(api, "deleteWebhook")
 
 
