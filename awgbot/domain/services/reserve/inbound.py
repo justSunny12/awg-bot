@@ -11,7 +11,8 @@ inbound.py — часть пакета reserve (см. __init__): «пользо�
 
 Переезд кнопкой (`go_req{gen, kind}`; предусловия — `reserve_open_block`:
 зона свободна, мои пользователи здесь, готовность, направление, пакет):
-пересылка хвоста прошлого возврата уступает (`_relay_yield`),
+пересылка хвоста прошлого возврата уступает (`_relay_yield`; её записи
+conntrack сбрасывает такт на `clone_up` — `relay_flush`),
 `open.status = launching`, хранилище гостя монтирует бот (у хоста), процесс
 открытия временным юнитом с песочницей (openproc, `rsvopen_sandbox_props`;
 stdin — JSON входа первой строкой, труба открыта; запись DNS меняет основа;
@@ -252,6 +253,12 @@ class ReserveInboundMixin:
                             "reserve.zone_pool или свободного блока нет); их устройства выходят одним адресом зоны, "
                             "CAKE делит загрузку по назначению", zst["netmap_miss"])
             actions += [("send", "up", self._word_oid(inn)), ("fw",)]
+            if inn.get("relay_flush_due"):
+                # хвост прошлого возврата уступил этому открытию: файервол уже без DNAT хвоста (fw выше),
+                # порты клонов — в состоянии зоны; записи conntrack с DNAT на основу — прочь, иначе
+                # рукопожатия устройств по тем же 5-кортежам уходили бы на основу до их истечения
+                self.rsv_update("rsv_in", relay_flush_due=False)
+                actions.append(("relay_flush",))
         elif step in ("clone_up", "record_set", "record_fact", "done") and livestep.mono_due(inn.get("up_resent"), now, 30):
             self.rsv_update("rsv_in", up_resent=now)          # сессия могла оборваться в секунду clone_up — повтор, основа дубли не берёт
             actions.append(("send", "up", self._word_oid(inn)))

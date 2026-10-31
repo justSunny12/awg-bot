@@ -7,6 +7,8 @@ _relay_yield, _relay_restore, _tick_relay; inbound: _take_fail, отказ за�
   с прежними сроком и адресом, такт relay перерисовывает файервол и сбрасывает conntrack;
 - открытие без пересылки до него и после неё пересылку не выдумывает: отметка прошлого
   эпизода не тянется;
+- уступившая пересылка оставляет записи conntrack с DNAT на основу — такт clone_up после
+  перерисовки файервола их сбрасывает (`relay_flush`), один раз;
 - отметка «срыв идёт» живёт в памяти процесса: процесс, убитый посреди срыва (и отметка
   прежнего выпуска в базе), не оставляет taking навсегда — новый процесс срыв доделывает;
   второй срыв, пока идёт первый, — пустой.
@@ -26,7 +28,7 @@ from awgbot.util import timeutil
 
 from tests.integration import _reserve_common as rc
 from tests.integration import _reserve_move as rm
-from tests.integration.test_reserve_hosting import host
+from tests.integration.test_reserve_hosting import OID, eph_ready, host, sealed_for
 
 pytestmark = pytest.mark.integration
 rsv = rc.rsv
@@ -84,6 +86,49 @@ def test_an_open_without_a_tail_relay_brings_none_after_a_failure(host):
     svc.reserve_in_tick()
     assert svc.reserve_in() == "idle" and "relay" not in host.zone.names(), \
         f"пересылка прошлого эпизода вернулась: {host.zone.calls}"
+
+
+# ── записи conntrack хвоста после уступки ───────────────────────────────────
+# Правило DNAT снято, а записи conntrack с DNAT на основу живут: рукопожатия устройств
+# по тем же 5-кортежам ушли бы на мёртвую основу до истечения записей. Сброс — на
+# clone_up: порты клонов к этому шагу снова в состоянии зоны (teardown при уступке их
+# стёр — сброс раньше был бы пустым), а файервол без DNAT перерисован тем же тактом.
+
+def _clone_up_acts(svc, host) -> list:
+    """Путь кнопкой после go_req: разовый ключ → go{sealed} → clone_up; действия такта clone_up."""
+    _, pub = eph_ready(host)
+    svc.reserve_in_tick()                                     # open_eph основе
+    assert svc.reserve_go_in("", 7, "button", 0, sealed=sealed_for(pub), oid=OID) == ""
+    host.zone.status = {"step": "clone_up"}
+    return svc.reserve_in_tick()
+
+
+def test_a_yielded_tail_relay_has_its_conntrack_entries_flushed_after_the_clone_is_up(host):
+    svc = host.svc
+    _relay(svc)
+    assert svc.reserve_go_req_in(7, "button") == ""
+    acts = _clone_up_acts(svc, host)
+    assert "relay_flush" in [a[0] for a in acts], f"записи conntrack хвоста не сброшены: {acts}"
+    kinds = [a[0] for a in acts]
+    assert kinds.index("fw") < kinds.index("relay_flush"), f"сброс до перерисовки без DNAT: {acts}"
+    host.clock.advance(31)
+    assert ("relay_flush",) not in svc.reserve_in_tick(), "сброс на каждом повторе up"
+
+
+def test_an_opening_without_a_tail_relay_flushes_nothing(host):
+    svc = host.svc
+    assert svc.reserve_go_req_in(7, "button") == ""
+    acts = _clone_up_acts(svc, host)
+    assert ("relay_flush",) not in acts, acts
+
+
+def test_a_tail_relay_restored_after_a_failure_does_not_leave_the_flush_mark(host):
+    svc = host.svc
+    _relay(svc)
+    assert svc.reserve_go_req_in(7, "button") == ""
+    host.zone.status = {"step": "fail", "reason": "x"}
+    svc.reserve_in_tick()                                     # хвост вернулся, сброс — тактом relay
+    assert svc.reserve_in() == "relay" and not svc.rsv_get("rsv_in").get("relay_flush_due")
 
 
 # ── отметка «срыв идёт» ─────────────────────────────────────────────────────

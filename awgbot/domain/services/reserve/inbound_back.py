@@ -33,24 +33,30 @@ RESUME_RETRY_S = 60                     # юнит гостя не поднял�
 
 class ReserveInboundBackMixin:
 
-    def _relay_yield(self) -> None:
+    def _relay_yield(self) -> bool:
         """Фаза relay (пересылка хвоста) при новом открытии: правило DNAT снимается —
         иначе оно увело бы пользователей нового клона на основу; состояние — idle.
         Что снято, помнится (`relay_prev`): открытие сорвётся — пересылка вернётся
-        (`_relay_restore`); без пересылки отметка пустая — от прошлого открытия не тянется."""
+        (`_relay_restore`); без пересылки отметка пустая — от прошлого открытия не тянется.
+        Записи conntrack с DNAT хвоста живут и после снятия правила — рукопожатия устройств
+        по тем же 5-кортежам ушли бы на основу до их истечения: отметка `relay_flush_due`,
+        и такт на `clone_up` (клон поднят, порты клонов в состоянии зоны, файервол без DNAT
+        перерисован тем же тактом) сбрасывает их (`relay_flush`). True — пересылка была и снята."""
         from awgbot.infra import rsvzone
         inn = self._inn()
         if self.reserve_in() != "relay":
-            if inn.get("relay_prev"):
-                self.rsv_update("rsv_in", relay_prev=None)
-            return
+            if inn.get("relay_prev") or inn.get("relay_flush_due"):
+                self.rsv_update("rsv_in", relay_prev=None, relay_flush_due=False)
+            return False
         prev = {k: str(inn.get(k) or "") for k in ("relay_to", "relay_until", "relay_at", "relay_last_traffic")}
         try:
             rsvzone.teardown()
         except rsvzone.ZoneError as e:
             log.info("резерв: пересылка хвоста при новом открытии снята с ошибкой: %s", e)
-        self.reserve_set_in("idle", step="", relay_to="", relay_until="", relay_prev=prev if prev["relay_to"] else None)
+        self.reserve_set_in("idle", step="", relay_to="", relay_until="", relay_prev=prev if prev["relay_to"] else None,
+                            relay_flush_due=bool(prev["relay_to"]))
         log.info("резерв: пересылка хвоста снята — зона нужна новому переезду")
+        return bool(prev["relay_to"])
 
     def _relay_restore(self) -> bool:
         """Открытие сорвалось (отказ запуска, `_take_fail`), а пересылка хвоста, уступившая ему,
@@ -61,7 +67,7 @@ class ReserveInboundBackMixin:
         prev = dict(self._inn().get("relay_prev") or {})
         if not prev:
             return False
-        self.rsv_update("rsv_in", relay_prev=None)
+        self.rsv_update("rsv_in", relay_prev=None, relay_flush_due=False)   # сброс сделает такт relay (relay_redraw)
         to = str(prev.get("relay_to") or "")
         if not to or self.reserve_in() != "idle":
             return False
