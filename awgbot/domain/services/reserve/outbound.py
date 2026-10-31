@@ -152,7 +152,8 @@ class ReserveOutboundMixin:
                                        msg=[int(chat_id), int(message_id)] if chat_id else [],
                                        target_ip=target_ip, record=self.reserve_dns_name(), go_sent=False,
                                        pkg_at="", up_at="", record_set_at="", record_fact_at="", released_at="",
-                                       taken_at="", reason="", gen=0, guest_stopped=False, await_merge=False)
+                                       taken_at="", reason="", gen=0, guest_stopped=False, await_merge=False,
+                                       release_error="")
             self._out_step("pkg", PKG_WAIT_S, pkg_unchanged=False)
             self.reserve_pkg_mark()                           # журнал: такт соберёт снимок, только если изменилось вне базы
         log.info("резерв: переезд кнопкой на «%s» начат", self.reserve_peer_name())
@@ -296,6 +297,8 @@ class ReserveOutboundMixin:
         if step == "record":
             return self._tick_record(out, str(out.get("target_ip") or ""), "release")
         if step == "release":
+            if out.get("release_error"):
+                return self._move_fail(str(out["release_error"]), released=True)   # реплика не уложится в канал
             # передача бота: действие выдаётся снова, пока не прошло (сбой подтверждения пачки,
             # реплики или отправки — не повод срывать переезд через 5 минут)
             now = time.monotonic()
@@ -423,6 +426,14 @@ class ReserveOutboundMixin:
             return None
         blob = seal.snapshot_seal(self.reserve_k(), {"pkg_gen": int(out.get("gen") or 0), "at": timeutil.now_iso(),
                                                      "db": db_bytes.hex()})
+        too_big = self.pkg_too_big(blob)
+        if too_big:
+            # до смены шага: иначе ProtocolError при нарезке частей оставил бы шаг released без поллинга
+            # и без реплики у резерва; «не собралась» — поллинг обратно, такт шага release срывает
+            # переезд по отметке сразу (Т-РУ), а не повторяет передачу каждые 30 с до срока
+            log.warning("резерв: финальная реплика не уложится в канал: %s", too_big)
+            self.rsv_update("rsv_out", release_error=too_big)
+            return None
         # снимок для слияния при возврате — именно эта реплика: с неё стартует гость, и всё,
         # что было записано здесь между пакетом и передачей, не удвоится и не станет «чужим»
         try:

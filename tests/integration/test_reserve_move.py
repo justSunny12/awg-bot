@@ -462,6 +462,38 @@ def test_another_k_does_not_open_the_replica(mv):
         seal.snapshot_open(b"\x01" * 32, blob)
 
 
+def test_a_replica_too_big_for_the_channel_is_known_before_the_step_changes_and_fails_the_move(mv, monkeypatch):
+    """Нарезка частей (`pairproto.chunks`) бросала бы ProtocolError уже после шага released и
+    `poll=away`: поллинга нет, реплики у резерва нет — бот нем. Предел проверяется до смены
+    шага; такт шага release срывает переезд сразу (`back` резерву, запись обратно, поллинг),
+    а не повторяет передачу каждые 30 с до срока."""
+    svc = mv.svc
+    monkeypatch.setattr(pairproto, "MAX_CHUNKS", 1)
+    monkeypatch.setattr(pairproto, "MAX_BLOB", 2048)        # потолок 1 КБ: база не уложится
+    rm.to_step(svc, "release", gen=9)
+    assert svc.reserve_release_build() is None
+    out = svc.rsv_get("rsv_out")
+    assert out["step"] == "release" and svc.reserve_poll() == "mine", "шаг сменился до проверки предела"
+    assert "предела передачи" in out["release_error"]
+    acts = svc.reserve_out_tick()
+    assert svc.reserve_out() == "home" and "back" in sent(acts) and ("wake_poll",) in acts
+    assert any("предела передачи" in n.text for n in notices(acts))
+    svc.reserve_move_start()
+    assert not svc.rsv_get("rsv_out").get("release_error"), "новый переезд унаследовал отметку"
+
+
+def test_a_package_too_big_for_the_channel_is_a_card_line_not_a_failed_move(mv, monkeypatch):
+    """О потолке — при подготовке (строка pkg_error в карточке), а не на переезде."""
+    svc = mv.svc
+    monkeypatch.setattr(pairproto, "MAX_CHUNKS", 1)
+    monkeypatch.setattr(pairproto, "MAX_BLOB", 2048)
+    svc.reserve_pkg_mark()
+    mv.clock.advance(11)
+    assert svc.reserve_pkg_tick() is None
+    assert "предела передачи" in svc.rsv_get("rsv_view")["pkg_error"]
+    assert not svc.rsv_get("rsv_pkg_sent").get("pending_gen"), "пакет, который не уйдёт, отмечен как отправляемый"
+
+
 # ── taken ───────────────────────────────────────────────────────────────────
 
 def test_taken_makes_the_clients_away_and_tells_the_admin_once(mv):
