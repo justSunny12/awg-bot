@@ -130,6 +130,33 @@ async def _type_domain(svc, fake_bot, kind: str, text: str) -> None:
     await gh.gw_transit_domain_received(reply, st, svc)
 
 
+async def test_too_many_domains_at_once_are_asked_again_before_the_script(gw, fake_bot, monkeypatch):
+    """Список длиннее потолка — переспрос до вызова скрипта: иначе списки
+    применялись наполовину, а скрипт убивался по таймауту агента; диалог ввода
+    открыт — пришлют частями."""
+    from awgbot.bot import texts
+    from awgbot.bot.states import GatewayTransitDomain
+    calls = []
+    monkeypatch.setattr(gw, "lan_domains", lambda kind, domains: calls.append(domains) or (True, ""))
+    st = FakeState()
+    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    await gh.gw_transit_ask(cb, GwCB(action="lan_add"), gw, st)
+    n = gh.LAN_DOMAINS_MAX + 1
+    reply = FakeMessage(text="\n".join(f"s{i}.example.com" for i in range(n)),
+                        chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    await gh.gw_transit_domain_received(reply, st, gw)
+    assert calls == [], "скрипт вызван со списком выше потолка"
+    assert await st.get_state() == GatewayTransitDomain.value.state, "диалог закрыт"
+    answers = [s[1] for s in reply.sent if s[0] == "answer"]
+    assert answers == [texts.gateway_transit_too_many(n, gh.LAN_DOMAINS_MAX)], answers
+    assert str(gh.LAN_DOMAINS_MAX) in answers[0] and str(n) in answers[0]
+    reply2 = FakeMessage(text=" ".join(f"s{i}.example.com" for i in range(gh.LAN_DOMAINS_MAX)),
+                         chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    await gh.gw_transit_domain_received(reply2, st, gw)
+    assert len(calls) == 1 and len(calls[0]) == gh.LAN_DOMAINS_MAX
+
+
 async def test_a_button_edit_leaves_at_once_and_says_so(gw, host, fake_bot, monkeypatch, tmp_path):
     """Канал жив: правка кнопкой уходит серверу тем же нажатием, а не тиком
     монитора — иначе соседний шлюз получает домен минутами позже."""

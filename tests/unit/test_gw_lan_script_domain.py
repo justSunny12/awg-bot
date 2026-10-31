@@ -25,7 +25,9 @@ def test_domain_tool_adds_resolves_and_fills_the_set(domain_env):
     assert (dns_d / "awg-gw-vpn-user.conf").read_text() == "nftset=/example.com/inet#awg_lan#lan_vpn4\n"
     text = log.read_text()
     assert "systemctl restart dnsmasq" in text, "именно restart: SIGHUP конфиги не перечитывает"
-    assert "nft add element inet awg_lan lan_vpn4 { 198.51.100.34 }" in text
+    # адреса всех добавленных — одним вызовом nft, а не по адресу
+    assert "nft add element inet awg_lan lan_vpn4 { 198.51.100.34,198.51.100.35 }" in text, text
+    assert text.count("nft add element") == 1
     assert "2 адрес(а) в наборе lan_vpn4" in r.stdout
     assert "<code>example.com</code>: уже в списке" in _run(tool, env, "add", "example.com").stdout
 

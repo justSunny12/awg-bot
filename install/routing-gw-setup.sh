@@ -843,14 +843,21 @@ if [ "$cmd" = "sync" ]; then
     echo "свои списки: $(grep -c . "$TMPD/want_vpn") в туннель, $(grep -c . "$TMPD/want_ru") напрямую"
     exit 0
 fi
-for pair in $added; do
-    d="${pair%%:*}"; set_="${pair##*:}"; n=0
-    for ip in $(resolve "$d"); do
-        # «напрямую» уже наполнен целиком выше — только считаем
-        if [ "$set_" = "lan_ru4" ] || nft add element $TABLE $set_ "{ $ip }" 2>/dev/null; then n=$((n+1)); fi
-    done
-    echo "  $d → $n адрес(а) в наборе $set_"
-done
+if [ -n "$added" ]; then
+    # в одном вызове набор один: add → lan_vpn4, ru → lan_ru4
+    set_="${added##*:}"
+    for pair in $added; do printf '%s\n' "${pair%%:*}"; done > "$TMPD/added"
+    # dig — 16 запросами разом, адреса каждого домена в свой файл; в набор — одним
+    # nft на все адреса: 500 доменов по одному (dig до 3 с + nft на адрес) не
+    # укладывались в таймаут агента, а списки к тому моменту уже применены
+    xargs -r -P 16 -I{} sh -c 'dig +short +time=3 +tries=1 @127.0.0.1 "$1" A 2>/dev/null | grep -E "^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$" > "$2/ips_$1"' _ {} "$TMPD" < "$TMPD/added"
+    if [ "$set_" = "lan_vpn4" ]; then
+        _ips="$(cat "$TMPD"/ips_* 2>/dev/null | sort -u | paste -sd, -)"
+        [ -n "$_ips" ] && nft add element $TABLE lan_vpn4 "{ $_ips }" 2>/dev/null || true
+    fi
+    # «напрямую» уже наполнен целиком выше — только считаем
+    while read -r d; do echo "  $d → $(grep -c . "$TMPD/ips_$d" 2>/dev/null || echo 0) адрес(а) в наборе $set_"; done < "$TMPD/added"
+fi
 snapshot_vpn
 DOMEOF
 chmod 0755 "$LAN_DOMAIN.new" && mv -f "$LAN_DOMAIN.new" "$LAN_DOMAIN"
