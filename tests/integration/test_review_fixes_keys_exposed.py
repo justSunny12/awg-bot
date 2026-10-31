@@ -55,7 +55,7 @@ def _texts(acts) -> list[str]:
 
 # ── пути домой без возврата ─────────────────────────────────────────────────
 
-def test_forced_home_with_an_empty_reserve_after_a_move_by_points_makes_a_new_generation(mv):
+def test_forced_home_with_an_empty_reserve_after_a_move_by_points_makes_a_new_generation(mv, monkeypatch):
     """«Вернуть без резерва» (аварийно, по кворуму), резерв вышел на связь пустым: реплики нет —
     а `M` он знал: новое поколение, код прежний, Т-РУ17 (токен DNS был у него)."""
     svc = mv.svc
@@ -68,6 +68,7 @@ def test_forced_home_with_an_empty_reserve_after_a_move_by_points_makes_a_new_ge
     svc.reserve_force_home(check=False)
     svc.reserve_stuck_home()
     rm.st_in(svc, **{"in": "idle"})
+    monkeypatch.setattr(svc, "reserve_peer_seen", lambda: "ok")   # резерв вышел на связь живым словом, не одним st
     acts = svc.reserve_out_tick()
     assert svc.reserve_out() == "home"
     assert _gens(svc) == (m0 + 1, c0), f"резерв знал M, а поколение прежнее: {_gens(svc)}"
@@ -78,7 +79,7 @@ def test_forced_home_with_an_empty_reserve_after_a_move_by_points_makes_a_new_ge
     assert _gens(svc)[0] == m0 + 1, "поколение сменилось второй раз за тот же эпизод"
 
 
-def test_forced_home_after_a_move_by_code_changes_the_code_too(mv):
+def test_forced_home_after_a_move_by_code_changes_the_code_too(mv, monkeypatch):
     svc = mv.svc
     mv.rsv.gw = False
     rm.go_away(svc, kind="code")
@@ -88,12 +89,13 @@ def test_forced_home_after_a_move_by_code_changes_the_code_too(mv):
     svc.reserve_force_home(check=False)
     svc.reserve_stuck_home()
     rm.st_in(svc, **{"in": "idle"})
+    monkeypatch.setattr(svc, "reserve_peer_seen", lambda: "ok")   # резерв вышел на связь живым словом, не одним st
     svc.reserve_out_tick()
     assert _gens(svc) == (m0 + 1, c0 + 1), f"после переезда по коду код прежний: {_gens(svc)}"
     assert svc.reserve_code_notify_pending(), "новый код админу не поставлен"
 
 
-def test_forced_home_after_a_button_move_keeps_the_generation(mv):
+def test_forced_home_after_a_button_move_keeps_the_generation(mv, monkeypatch):
     """`go` отдавал я (K конвертом) — прямая цела: только новый K."""
     svc = mv.svc
     mv.rsv.gw = False
@@ -105,6 +107,7 @@ def test_forced_home_after_a_button_move_keeps_the_generation(mv):
     svc.reserve_force_home(check=False)
     svc.reserve_stuck_home()
     rm.st_in(svc, **{"in": "idle"})
+    monkeypatch.setattr(svc, "reserve_peer_seen", lambda: "ok")   # резерв вышел на связь живым словом, не одним st
     svc.reserve_out_tick()
     assert _gens(svc) == (m0, c0) and svc.reserve_k() != k0
 

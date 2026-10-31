@@ -73,7 +73,7 @@ def test_the_lever_is_possible_when_the_reserve_holding_my_clients_is_gone_ten_m
 
 @pytest.mark.parametrize("prep, word", [
     (lambda s: s.reserve_set_out("home"), "не у резерва"),
-    (lambda s: s.rsv_update("rsv_peer_state", session=True), "на связи"),
+    (lambda s: (s.rsv_update("rsv_peer_state", session=True), setattr(s._lv, "state", "ok")), "на связи"),   # сеанс и живость
     (lambda s: s.rsv_update("rsv_peer_state", down_since=_ago(9)), "меньше 10 мин"),
     (lambda s: s.rsv_update("rsv_peer_state", down_since=""), "меньше 10 мин"),
     (lambda s: s.rsv_update("rsv_peer_state", down_since="вчера"), "не известен"),
@@ -157,6 +157,7 @@ def test_a_reserve_still_offline_keeps_the_mark_and_does_nothing(gone):
 def test_the_reserve_back_with_my_guest_starts_the_regular_return(gone):
     _forced_home(gone)
     rm.st_in(gone.svc, **{"in": "serving"})
+    gone.svc._lv.state = "ok"                                   # живость — словом канала, не одним st
     acts = gone.svc.reserve_out_tick()
     out = gone.svc.rsv_get("rsv_out")
     assert gone.svc.reserve_out() == "returning" and out.get("step") == "back_req", out
@@ -169,6 +170,7 @@ def test_the_reserve_back_with_my_guest_starts_the_regular_return(gone):
 def test_a_reserve_that_is_opening_or_releasing_is_merged_too(gone, inn):
     _forced_home(gone)
     rm.st_in(gone.svc, **{"in": inn})
+    gone.svc._lv.state = "ok"                                   # живость — словом канала, не одним st
     gone.svc.reserve_out_tick()
     assert gone.svc.reserve_out() == "returning"
 
@@ -177,6 +179,7 @@ def test_the_reserve_back_without_my_guest_drops_the_mark_with_a_new_k_and_one_n
     _forced_home(gone)
     k = gone.svc.reserve_k()
     rm.st_in(gone.svc, **{"in": "idle"})
+    gone.svc._lv.state = "ok"                                   # живость — словом канала, не одним st
     acts = gone.svc.reserve_out_tick()
     assert gone.svc.reserve_out() == "home" and not gone.svc.rsv_get("rsv_out").get("await_merge")
     assert gone.svc.reserve_k() != k and _pkg_due(gone.svc), "реплики не будет, а K прежний — резерв его знает"
@@ -191,16 +194,19 @@ def test_the_reserve_back_without_my_guest_drops_the_mark_with_a_new_k_and_one_n
 
 def test_a_stale_view_of_the_reserve_does_not_leave_the_return_hanging(gone):
     """Сессия пары открылась раньше первого `st` резерва: в памяти — его
-    прежнее `in = serving` (до того, как он лёг). Резерв перезагрузился и
-    пуст: на back_req он молчит (не serving). Основа не должна остаться в
-    «возврате» навсегда, когда резерв сказал `in = idle`."""
+    прежнее `in = serving` (до того, как он лёг). Старый взгляд возврат не
+    начинает: живым словом резерв ещё ничего не сказал (`st` устаревший, живость
+    `down`) — основа ждёт дома. Резерв перезагрузился и пуст — его первый `st`
+    `in = idle` снимает рычаг без слияния."""
     _forced_home(gone)
     gone.svc.rsv_update("rsv_peer_state", inn="serving")         # последний st до падения
     gone.svc.reserve_session_opened({})
     gone.svc.reserve_out_tick()
-    assert gone.svc.reserve_out() == "returning", "предпосылка: старый взгляд начал возврат"
+    out = gone.svc.rsv_get("rsv_out")
+    assert gone.svc.reserve_out() == "home" and out.get("await_merge"), f"старый st начал возврат к тому, кто не ответит: {out}"
     k = gone.svc.reserve_k()
     rm.st_in(gone.svc, **{"in": "idle"})                         # первый st после перезагрузки
+    gone.svc._lv.state = "ok"                                   # живость — словом канала, не одним st
     acts = []
     for _ in range(3):
         gone.clock.advance(outbound.RELEASED_WAIT_S + 1)
