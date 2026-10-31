@@ -178,8 +178,9 @@ def test_the_ephemeral_key_of_the_reserve_turns_into_go_with_the_key_sealed_to_i
 
 
 def test_a_repeated_or_foreign_open_eph_is_ignored(mv):
-    """Второй `open_eph` (повтор резерва раз в 10 с, когда `go` уже ушёл),
-    чужое поколение или не тот шаг — молча: второго `go` нет."""
+    """Чужое поколение, другой процесс открытия (другой `oid`) или не тот шаг — молча:
+    второго `go` нет. Повтор того же процесса на шаге up — `go` снова (прежний
+    потерялся: резерв повторяет `open_eph`, только пока процесс ждёт конверт)."""
     svc = mv.svc
     svc.reserve_move_start()
     rm.confirm_package(svc, gen=4)
@@ -191,7 +192,15 @@ def test_a_repeated_or_foreign_open_eph_is_ignored(mv):
     _priv, again = rm.open_eph(svc, gen=4, oid="ffffffffffffffff")
     assert again == [] and svc.rsv_get("rsv_out")["step"] == "up", "повтор open_eph дал второй go — два конверта к разным ключам"
     assert svc.reserve_out() == "leaving"
-    assert rm.open_eph(svc, gen=4)[1] == [], "open_eph вне шага eph что-то сделал"
+    deadline = svc.rsv_get("rsv_out")["deadline"]
+    priv, again = rm.open_eph(svc, gen=4)
+    assert sent(again) == ["go"], "потерянный go не повторён — срыв переезда через UP_WAIT_S"
+    body = actions_of(again, "send")[0][2]
+    assert seal.open_sealed_k(priv, bytes.fromhex(body["sealed"]), 4, "0123456789abcdef") == svc.reserve_k()
+    out = svc.rsv_get("rsv_out")
+    assert out["step"] == "up" and out["deadline"] == deadline, "повтор go продлил срок шага up"
+    svc._out_step("record", 300)
+    assert rm.open_eph(svc, gen=4)[1] == [], "open_eph вне шагов eph и up что-то сделал"
 
 
 def test_an_open_eph_with_a_malformed_key_fails_the_move_and_releases_the_reserve(mv):

@@ -355,10 +355,15 @@ class ReserveOutboundMixin:
     # ── события канала (переезд) ────────────────────────────────────────────
     def reserve_open_eph_in(self, gen: int, eph_hex: str, oid: str) -> list[tuple]:
         """`open_eph` от резерва: разовый ключ его процесса открытия — `K`
-        конвертом к нему в `go{sealed, oid}`; шаг up. Повтор (`open_eph`
-        дошёл дважды) — молча: `go` уже ушёл."""
+        конвертом к нему в `go{sealed, oid}`; шаг up. Повтор на шаге up от того же
+        процесса (тот же `oid` и поколение) — `go` снова: резерв повторяет `open_eph`,
+        только пока процесс ждёт конверт, значит прежний `go` потерялся (резерв второй
+        конверт тому же процессу не передаёт — молча). Срок шага up не продлевается."""
         out = self._out()
-        if out.get("state") != "leaving" or out.get("step") != "eph" or int(out.get("gen") or 0) != int(gen):
+        if out.get("state") != "leaving" or int(out.get("gen") or 0) != int(gen):
+            return []
+        again = out.get("step") == "up" and out.get("go_sent") and str(out.get("oid") or "") == str(oid)
+        if out.get("step") != "eph" and not again:
             return []
         try:
             eph = bytes.fromhex(str(eph_hex))
@@ -368,7 +373,10 @@ class ReserveOutboundMixin:
             sealed = seal.seal_k_to(eph, self.reserve_k(), int(gen), str(oid))
         except seal.PackageError as e:
             return self._move_fail(f"разовый ключ от «{self.reserve_peer_name()}» не годится: {e}", released=True)
-        self._out_step("up", UP_WAIT_S, oid=str(oid))
+        if again:
+            log.info("резерв: «%s» снова просит ключ того же открытия — go повторён", self.reserve_peer_name())
+        else:
+            self._out_step("up", UP_WAIT_S, oid=str(oid))
         self.rsv_update("rsv_out", go_sent=True)                 # K отдан — своя отметка, не слово резерва
         return [("send", "go", {"gen": int(gen), "kind": str(out.get("kind") or "button"),
                                 "ttl": int(self.rsv_get("rsv_dns").get("ttl") or 0),
