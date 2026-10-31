@@ -9,6 +9,9 @@ from pathlib import Path
 from typing import Optional
 from awgbot.infra import nftjson, systemd
 from awgbot.infra import nftguard as pkg       # имена пакета — через него: их подменяют тесты
+from awgbot.infra.nftguard.common import log
+
+_SYSTEMCTL_TIMEOUT = 10                         # с: зависший systemd не держит CLI и бота бесконечно
 
 
 # ── nft: применить, прочитать ────────────────────────────────────────────────
@@ -226,7 +229,12 @@ def ensure_persistence() -> list[str]:
             done.append(f"include в {pkg.MAIN_CONF}")
     except OSError as e:
         raise pkg.GuardError(f"{pkg.MAIN_CONF}: {e}")
-    rc = subprocess.run(["systemctl", "enable", "nftables"], capture_output=True).returncode
+    try:
+        rc = subprocess.run(["systemctl", "enable", "nftables"], capture_output=True,
+                            timeout=_SYSTEMCTL_TIMEOUT).returncode
+    except (OSError, subprocess.SubprocessError) as e:   # нет systemctl (контейнер) или завис
+        log.warning("файервол: systemctl enable nftables: %s", e)
+        rc = None
     if rc == 0:
         done.append("nftables.service включён")
     else:
@@ -246,7 +254,10 @@ def arm_rollback(seconds: int, command: list[str], env: dict) -> None:
             "--collect", "--quiet"]
     for k, v in env.items():
         args.append(f"--setenv={k}={v}")
-    proc = subprocess.run(args + command, capture_output=True)
+    try:
+        proc = subprocess.run(args + command, capture_output=True, timeout=_SYSTEMCTL_TIMEOUT)
+    except (OSError, subprocess.SubprocessError) as e:
+        raise pkg.GuardError(f"таймер отката не поставлен: {e}")
     if proc.returncode != 0:
         raise pkg.GuardError("таймер отката не поставлен: "
                          + proc.stderr.decode(errors="replace").strip())
@@ -255,8 +266,11 @@ def arm_rollback(seconds: int, command: list[str], env: dict) -> None:
 def disarm_rollback() -> bool:
     was = pkg.rollback_armed()
     for unit in (f"{pkg.ROLLBACK_UNIT}.timer", f"{pkg.ROLLBACK_UNIT}.service"):
-        subprocess.run(["systemctl", "stop", unit], capture_output=True)
-        subprocess.run(["systemctl", "reset-failed", unit], capture_output=True)
+        for verb in ("stop", "reset-failed"):
+            try:
+                subprocess.run(["systemctl", verb, unit], capture_output=True, timeout=_SYSTEMCTL_TIMEOUT)
+            except (OSError, subprocess.SubprocessError) as e:
+                log.warning("файервол: systemctl %s %s: %s", verb, unit, e)
     return was
 
 
