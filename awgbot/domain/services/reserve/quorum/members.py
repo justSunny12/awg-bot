@@ -259,7 +259,14 @@ class ReserveQuorumMembersMixin:
         why = self.reserve_quorum_off_reasons()
         from awgbot.infra import quoprobe
         return {"l": m.l, "g": int(m.g), "members": list(m.members), "active": not why, "why": why[:8],
-                "port": int(quoprobe.port())}                 # порт моего ответчика — зонду второй стороны
+                "port": int(quoprobe.port()),                 # порт моего ответчика — зонду второй стороны
+                "tm": self.reserve_quorum_timing_digits()}    # цифры лидера — кандидат сверяет со своими
+
+    def reserve_quorum_timing_digits(self) -> dict:
+        """Цифры времени, которыми связаны лидер и кандидат: проба, T_no, окно «да», T_down, T_up, T_up_rf."""
+        tm = self.reserve_quorum_timing()
+        return {"p": int(tm.probe_s), "no": int(tm.no_s), "w": int(tm.yes_window_s), "down": int(tm.down_s),
+                "up": int(tm.up_s), "rf": int(tm.rf_block_s)}
 
     def reserve_quorum_epoch(self) -> int:
         """Эпоха своей линии (журнал); без журнала — 0."""

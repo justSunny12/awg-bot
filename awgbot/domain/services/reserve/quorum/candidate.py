@@ -41,6 +41,17 @@ class ReserveQuorumCandidateMixin:
         if not side or not peer.get("active") or not peer.get("members") or self.reserve_hosting():
             self.__dict__.pop("_rsv_qcand", None)
             return None
+        off = self.reserve_quorum_peer_timing_off()
+        if off:
+            # цифры кандидата и лидера связаны (T_up ≥ W + T_down + …): по разным цифрам запас может уйти в минус —
+            # два писателя; кворум о второй линии не включаю, окно кода — запасным сигналом по линку пары
+            if self.__dict__.get("_quo_tm_told") != off:
+                self.__dict__["_quo_tm_told"] = off
+                log.warning("кворум: цифры кворума расходятся с «%s» (%s) — голосование о нём не включаю",
+                            self.reserve_peer_name(), off)
+            self.__dict__.pop("_rsv_qcand", None)
+            return None
+        self.__dict__.pop("_quo_tm_told", None)
         other = probenet.other_side(side)
         try:
             comp = qm.Members.make(str(peer.get("l") or other), int(peer.get("g") or 1), peer.get("members") or [])
@@ -61,6 +72,18 @@ class ReserveQuorumCandidateMixin:
         elif tuple(c.voters) != tuple(n for n in voters if n != side) or c.v != len(voters):
             c.set_members(voters, len(voters))
         return c
+
+    def reserve_quorum_peer_timing_off(self) -> str:
+        """Цифры времени из `st.quo` второй стороны расходятся с моими: какие (через запятую);
+        пусто — сходятся или она их не прислала."""
+        tm = self.reserve_quorum_peer_line().get("tm")
+        if not isinstance(tm, dict) or not tm or not hasattr(self, "reserve_quorum_timing_digits"):
+            return ""
+        mine = self.reserve_quorum_timing_digits()
+        try:
+            return ",".join(k for k, v in mine.items() if int(tm.get(k) or 0) != int(v))
+        except (TypeError, ValueError):
+            return ",".join(mine)
 
     def _quorum_candidate_feed(self, c: Candidate, now: float) -> None:
         """Свой взгляд — из зонда к её AWG; взгляды шлюзов — из `qview` гостевого канала,

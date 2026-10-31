@@ -82,7 +82,8 @@ class ReserveCodeWindowMixin:
             return []
         line = self.reserve_quorum_peer_line()
         cw = dict(self.rsv_get("rsv_view").get("code") or {})
-        if line.get("active"):
+        tm_off = self.reserve_quorum_peer_timing_off() if hasattr(self, "reserve_quorum_peer_timing_off") else ""
+        if line.get("active") and not tm_off:                 # цифры расходятся — кандидата нет, сигнал по линку
             if cw.get("open") and cw.get("by") == "link":
                 return self.reserve_code_window_set(False, by="link", quiet=True)   # дальше ведёт кандидат (Т-К21 — своим словом)
             return []
@@ -97,7 +98,7 @@ class ReserveCodeWindowMixin:
                     return []
             except ValueError:
                 return []
-            why = [str(c) for c in (line.get("why") or [])]
+            why = ([f"timing:{tm_off}"] if tm_off else []) + [str(c) for c in (line.get("why") or [])]
             return self.reserve_code_window_set(True, since=since, by="link", off_why=rn_off_why(why))
         if not down and cw.get("open") and cw.get("by") == "link":
             return self.reserve_code_window_set(False, by="link")

@@ -329,3 +329,38 @@ def test_the_candidate_refused_with_quorum_goes_by_points_after_ask_seconds(c):
     acts = c.run(ASK + 5)
     assert not sent(acts, "ask"), "после отказа «у лидера кворум» просьба повторена"
     assert sorted({s for s, _ in gw_sent(acts, "qneed")}) == [1, 2] and c.stage() == "points"
+
+
+# ── цифры кворума лидера и кандидата (Q8-6) ─────────────────────────────────
+
+def _peer_digits(c, **over) -> None:
+    tm = {**c.s.reserve_quorum_timing_digits(), **over}
+    quo = dict(c.s.rsv_get("rsv_peer_state").get("quo") or {})
+    c.s.rsv_update("rsv_peer_state", quo={**quo, "tm": tm})
+
+
+def test_the_st_quo_carries_the_timing_digits(c):
+    from awgbot.util.quorum.timing import Timing
+    t = Timing()
+    assert c.s.reserve_quorum_timing_digits() == {"p": t.probe_s, "no": t.no_s, "w": t.yes_window_s, "down": t.down_s,
+                                                  "up": t.up_s, "rf": t.rf_block_s}
+
+
+def test_equal_digits_keep_the_candidate(c):
+    _peer_digits(c)
+    acts = _majority(c) + c.run(T_UP)
+    assert gw_sent(acts, "qtake"), "цифры сходятся, а кандидата нет"
+
+
+def test_diverging_digits_switch_the_candidate_off_and_leave_the_link_signal(c):
+    c.b.peer_admin_opened()
+    _peer_digits(c, down=60)                                # лидер ограждается позже, чем рассчитывает кандидат
+    assert c.s.reserve_quorum_peer_timing_off() == "down"
+    acts = _majority(c) + c.run(T_UP)
+    assert not gw_sent(acts, "qtake") and not gw_sent(acts, "qask"), "цифры расходятся, а кандидат решает по своим"
+    assert c.s.__dict__.get("_rsv_qcand") is None
+    c.b.primary(False, since=timeutil.now_iso())
+    acts = c.run(T_UP + 10) + c.s.reserve_code_link_watch()
+    assert c.s.reserve_code_window()["open"], "цифры расходятся — запасного окна кода по линку пары нет"
+    texts = [n.text for n in notes(acts)]
+    assert any("цифры времени не сходятся" in t for t in texts), f"в Т-К21д нет причины: {texts}"
