@@ -70,3 +70,13 @@ class RetryingSession(AiohttpSession):
 
 def make(*, ipv4_only: bool = True) -> RetryingSession:
     return RetryingSession(ipv4_only=ipv4_only)
+
+
+def renew(old, *, ipv4_only: bool = True) -> RetryingSession:
+    """Новая сессия на замену живой (обход Telegram агента): посредники запросов
+    прежней — те же объекты, в том же порядке (отметка жизни, записи сообщений
+    списков); без них новая сессия молча перестала бы их вести."""
+    new = make(ipv4_only=ipv4_only)
+    for mw in list(getattr(old, "middleware", None) or []):
+        new.middleware.register(mw)
+    return new

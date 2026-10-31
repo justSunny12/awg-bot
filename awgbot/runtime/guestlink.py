@@ -254,7 +254,7 @@ async def _renew_session(*, check: bool) -> None:
     if _bot is None:
         return
     old = getattr(_bot, "session", None)
-    _bot.session = tgsession.make(ipv4_only=settings.get_bool("app.gateway.ipv4_only", True))
+    _bot.session = tgsession.renew(old, ipv4_only=settings.get_bool("app.gateway.ipv4_only", True))
     if old is not None:
         try:
             await old.close()
