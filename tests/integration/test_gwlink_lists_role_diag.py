@@ -81,6 +81,10 @@ class _Net:
             f"{ITDOG}/Russia/inside-dnsmasq-ipset.lst": DOMAINS,
             f"{ITDOG}/Subnets/IPv4/telegram.lst": "91.108.4.0/22\n149.154.160.0/20\n",
             f"{ITDOG}/Subnets/IPv4/meta.lst": "31.13.24.0/21\n",
+            # остальные сервисы ответили пустыми списками: ответ есть — сбор полный
+            f"{ITDOG}/Subnets/IPv4/twitter.lst": "",
+            f"{ITDOG}/Subnets/IPv4/cloudflare.lst": "",
+            f"{ITDOG}/Subnets/IPv4/discord.lst": "",
             "https://www.gstatic.com/ipranges/goog.json":
                 '{"prefixes":[{"ipv4Prefix": "8.8.8.0/24"},{"ipv6Prefix": "2001:4860::/32"}]}',
         }

@@ -91,17 +91,28 @@ class FeedsMixin:
             retry_soon()
             return False
         nets: list[str] = []
+        missed: list[str] = []
         for svc in self._LAN_SERVICES:
             text, err, _code = routing.fetch(f"{self._LAN_ITDOG}/Subnets/IPv4/{svc}.lst", timeout=10)
             if text is None:
                 log.info("канал линка: подсети %s не получены (%s)", svc, err)
+                missed.append(svc)
                 continue
             nets += re.findall(r"(?m)^\d+\.\d+\.\d+\.\d+/\d+$", text)
         goog, err, _code = routing.fetch(self._LAN_GOOG_URL, timeout=10)
         if goog is not None:
             nets += re.findall(r'"ipv4Prefix"\s*:\s*"(\d+\.\d+\.\d+\.\d+/\d+)"', goog)
+        else:
+            missed.append("goog")
         if not nets:
             log.warning("канал линка: подсети локальной сети не получены ни из одного источника")
+            retry_soon()
+            return False
+        if missed and self.gwlink_lan_feeds_digest():
+            # Часть источников не ответила: такой сбор — не фид. Опубликуй его —
+            # и подсети сервиса, чей список не пришёл, ушли бы со шлюзов до
+            # следующего похода (часы). Прежний фид остаётся, повтор — скоро.
+            log.warning("канал линка: подсети %s не получены — прежний фид остаётся", ", ".join(missed))
             retry_soon()
             return False
         nets_text = "\n".join(sorted(set(nets))) + "\n"
@@ -123,6 +134,11 @@ class FeedsMixin:
             log.warning("канал линка: фиды локальной сети не записаны: %s", e)
             retry_soon()
             return False
+        if missed:
+            # прежнего фида нет — неполный лучше пустого, но полный нужен скоро
+            log.warning("канал линка: фиды локальной сети без подсетей %s — повтор скоро", ", ".join(missed))
+            retry_soon()
+            return True
         self.db.set_state(self._LAN_FEEDS_CHECKED_KEY, str(now))
         log.info("канал линка: фиды локальной сети обновлены")
         return True
