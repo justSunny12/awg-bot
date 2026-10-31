@@ -11,7 +11,9 @@ import pytest
 
 from awgbot.domain.services import ServiceError
 from awgbot.infra import nftguard
-from tests.integration.test_firewall import fw  # noqa: F401
+from tests.integration.test_firewall import fw
+
+__all__ = ["fw"]
 
 
 def test_the_last_address_is_not_removed_while_the_filter_is_on(services, fw):

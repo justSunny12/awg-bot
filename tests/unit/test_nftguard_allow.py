@@ -20,7 +20,9 @@ import pytest
 from awgbot.core import config
 from awgbot.infra import nftguard
 from awgbot.bot.texts.settings.firewall import settings_firewall_text
-from tests.unit.test_nftguard import _conf, host_mode  # noqa: F401
+from tests.unit.test_nftguard import _conf, host_mode
+
+__all__ = ["host_mode"]
 
 pytestmark = pytest.mark.unit
 

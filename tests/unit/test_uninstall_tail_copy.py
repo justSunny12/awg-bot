@@ -113,7 +113,7 @@ def _tail(h: _Host, uninstall_dir: Path, *, ip_addr_fails: bool) -> subprocess.C
         "set -euo pipefail", h.stubs(),
         f'ip() {{ _j "ip $*"; [ "$1 $2" = "-4 addr" ] && {fail}; return 1; }}',
         'awg() { return 0; }',
-        f'setsid() {{ _j "setsid $*"; }}',
+        'setsid() { _j "setsid $*"; }',
         f'DATA_DIR="{h.tmp}/data"; ETC_DIR="{h.tmp}/etc-awg-bot"',
         f'SELF_DIR="{uninstall_dir}"; SELF_PATH="{uninstall_dir}/awg-bot.sh"',
         f'AWG_UNINSTALL_DIR="{uninstall_dir}"', "AWG_ROLE=client", "unset AWG_ZONE_SCRIPT",
