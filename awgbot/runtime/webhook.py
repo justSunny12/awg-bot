@@ -107,6 +107,7 @@ class WebhookServer:
         self.set_at: str = ""
         self._stalled_since: float = 0.0
         self._stalled_notified = False
+        self.url_ours: bool | None = None                    # последний getWebhookInfo: адрес мой (None — не спрашивал)
         self._filter = None
         self._pool_key = None
 
@@ -185,7 +186,8 @@ class WebhookServer:
         except Exception as e:                               # noqa: BLE001
             log.warning("гость: getWebhookInfo: %s", e)
             return None
-        if info.url != self.conf.url:
+        self.url_ours = info.url == self.conf.url
+        if not self.url_ours:
             return {"foreign": True, "url": info.url or ""}
         err_at = int(getattr(info, "last_error_date", None) or 0)
         fresh = err_at and time.time() - err_at < STALL_FRESH_SECONDS

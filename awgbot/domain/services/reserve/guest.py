@@ -206,6 +206,14 @@ class ReserveGuestMixin:
         from awgbot.domain.notices import reserve as rn
         from awgbot.infra import rsvzone
         cur = self.rsv_get("rsv_in")
+        if body.get("foreign"):
+            if cur.get("webhook_foreign"):
+                return []                                     # гость повторяет на каждом надзоре — сказано
+            self.rsv_update("rsv_in", webhook_foreign=True)
+            name = self.reserve_peer_name()
+            log.warning("резерв: вебхук бота «%s» не у гостя — Telegram у основы, гость решений не пишет", name)
+            return [("notify", [Notification(tg_id=int(config.ADMIN_ID), force_sound=True,
+                                             text=rn.webhook_foreign_reserve(name))])]
         stalled = bool(body.get("stalled"))
         if stalled == bool(cur.get("webhook_stalled")):
             return []
@@ -220,6 +228,33 @@ class ReserveGuestMixin:
         else:
             text = rn.webhook_restored_reserve(name)
         return [("notify", [Notification(tg_id=int(config.ADMIN_ID), text=text, silent=True)])]
+
+    def guest_webhook_foreign(self) -> None:
+        """Гость: вебхук указывает не сюда (основа забрала Telegram) — решений больше не пишу:
+        ограждение базы (держатель без права записи, эпоха та же, как у кворума) — задания
+        решений выходят, правки отказывают; свои неподтверждённые события основе досылаются.
+        Правило лидера кворума ограждение не снимает, пока отметка стоит (quorum/fence)."""
+        from awgbot.util.rsvjrn import schema_too_old
+        first = not self.__dict__.get("_guest_hook_foreign")
+        self.__dict__["_guest_hook_foreign"] = True
+        try:
+            got = self.db.jrn_fence(why="вебхук не здесь — Telegram у основы")
+        except Exception as e:                                # noqa: BLE001
+            if not schema_too_old(e):
+                raise
+            got = None
+        if first or got is not None:
+            log.warning("гость: вебхук не здесь — решений больше не пишу%s", " (ограждение базы)" if got else "")
+
+    def guest_webhook_ours(self) -> None:
+        """Гость: адрес вебхука снова мой (прошлое «не здесь» не подтвердилось) — решения снова здесь."""
+        if not self.__dict__.pop("_guest_hook_foreign", None):
+            return
+        try:
+            got = self.db.jrn_unfence(why="вебхук снова здесь")
+        except Exception:                                     # noqa: BLE001
+            got = None
+        log.warning("гость: вебхук снова здесь — решения снова пишу%s", "" if got is None else " (ограждение снято)")
 
     GUEST_BLOCKS_RESEND_S = 120
 

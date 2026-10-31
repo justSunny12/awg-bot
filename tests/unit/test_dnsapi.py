@@ -482,6 +482,28 @@ def test_no_record_has_ttl_zero(dns):
     assert dnsapi.read_authoritative_ttl("nothing.example.net") == ([], 0)
 
 
+def test_a_name_behind_a_cname_is_refused_with_the_reason(dns):
+    """Имя — CNAME (цель вне зоны, A в ответе нет): не «записей нет» с TTL 0, а причина —
+    «🧪 Проверить» покажет её при настройке, а не переезд по ложному следу."""
+    def answer(server, name, qtype, query):
+        if server == "203.0.113.53" and qtype == 1:
+            return _answer(query, [(5, _name("edge.cdn.example.org"), 3600)])
+    dns.override = answer
+    with pytest.raises(dnsapi.DnsError, match="vpn.example.net — CNAME: бот меняет только A-запись"):
+        dnsapi.read_authoritative_ttl("vpn.example.net")
+    with pytest.raises(dnsapi.DnsError, match="CNAME"):
+        dnsapi.read_authoritative("vpn.example.net")
+
+
+def test_a_cname_answered_with_its_address_reads_as_before(dns):
+    """Цель CNAME в той же зоне — сервер кладёт её A в ответ: адрес читается как прежде."""
+    def answer(server, name, qtype, query):
+        if server == "203.0.113.53" and qtype == 1:
+            return _answer(query, [(5, _name("edge.example.net"), 3600), (1, socket.inet_aton("198.51.100.7"), 120)])
+    dns.override = answer
+    assert dnsapi.read_authoritative_ttl("vpn.example.net") == (["198.51.100.7"], 120)
+
+
 DP = {"provider": "digitalplat", "name": "vpn.example.dpdns.org", "token": "DUMMY-dp_live"}
 _DP_DOMAINS = json.dumps({"success": True, "data": [
     {"domain": "dpdns.org", "status": "active"},            # короткий суффикс — ловушка

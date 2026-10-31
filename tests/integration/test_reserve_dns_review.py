@@ -2,7 +2,9 @@
 проверка записи читает все адреса и TTL и предупреждает при второй A-записи и
 TTL больше 300 с, посреди переезда не идёт; факт записи — ровно один адрес;
 смена провайдера сбрасывает токен прежнего; DynDNS2 хранит сервер без пути и
-терпит путь из записей прежних выпусков.
+терпит путь из записей прежних выпусков; имя за CNAME — причина в проверке, а
+чтение без записей (TTL 0) не затирает последний известный TTL, который уходит
+гостю в `go_req`.
 
 Мир DNS — DnsWorld из tests/integration/_reserve_move (авторитетный сервер,
 системный резолвер, API провайдера).
@@ -12,12 +14,15 @@ TTL больше 300 с, посреди переезда не идёт; факт
 предупреждения — пользователи переходят через час, админ ждёт пять минут; проверка
 у DuckDNS/DynDNS2 посреди переезда — это запись, она вернула бы прежний адрес;
 токен Cloudflare, отданный DuckDNS после смены провайдера, — секрет уходит не
-тому; путь /nic/update дважды — каждое обновление DynDNS2 отвечает 404.
+тому; путь /nic/update дважды — каждое обновление DynDNS2 отвечает 404; TTL 0
+в `go_req` — пауза гостя перед «переподключи VPN» 60 с вместо реального TTL,
+пользователи переподключаются к прежнему адресу из кэша.
 """
 from __future__ import annotations
 
 import pytest
 
+from awgbot.util import dnsapi
 from awgbot.util.dnsapi import dyndns2
 
 from tests.integration import _reserve_common as rc
@@ -78,6 +83,29 @@ def test_the_fact_of_the_record_is_exactly_one_address(mv):
     assert svc.reserve_dns_points_to(PEER_IP) is False
     mv.dns.auth = []
     assert svc.reserve_dns_points_to(PEER_IP) is False, "записи нет — это «не туда», а не «не прочиталось»"
+
+
+def test_a_name_behind_a_cname_shows_the_reason_in_the_check(mv, monkeypatch):
+    def cname(name):
+        raise dnsapi.DnsError(f"{name} — CNAME: бот меняет только A-запись")
+    monkeypatch.setattr(dnsapi, "read_authoritative_ttl", cname, raising=False)
+    got = mv.svc.reserve_dns_check()
+    assert got["ok"] is False and "CNAME: бот меняет только A-запись" in got["text"], got
+    assert "CNAME" in mv.svc.rsv_get("rsv_dns")["check_why"]
+
+
+def test_a_read_without_records_keeps_the_last_known_ttl_for_the_guest(mv):
+    svc = mv.svc
+    automatic(svc)
+    mv.dns.ttl = 240
+    assert svc.reserve_dns_check()["ttl"] == 240
+    mv.dns.auth = []                                     # посреди смены записи — записей нет
+    assert svc.reserve_dns_points_to(PEER_IP) is False
+    assert svc.rsv_get("rsv_dns")["ttl"] == 240, "TTL 0 «записей нет» затёр последний известный"
+    rm.to_step(svc, "pkg")
+    rm.confirm_package(svc)
+    sends = [a for a in svc.reserve_out_tick() if a[0] == "send" and a[1] == "go_req"]
+    assert sends and sends[0][2]["ttl"] == 240, sends
 
 
 # ── провайдер и токен ───────────────────────────────────────────────────────

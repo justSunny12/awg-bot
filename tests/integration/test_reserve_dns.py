@@ -304,6 +304,7 @@ def test_the_watch_survives_an_unreadable_zone_and_an_unknown_own_address(watch)
     watch.dns.system = {}
     watch.clock.advance(700)                                      # кэш своего адреса истёк
     watch.svc.__dict__.pop("_rsv_own_ip", None)
+    watch.svc.rsv_update("rsv_dns", own_last=None)                # и последнего успешного адреса нет
     assert _tick(watch) == [], "свой адрес не определился — сравнивать не с чем, тревога была бы ложной"
 
 
@@ -332,6 +333,7 @@ def test_returning_the_record_reports_why_it_failed(watch):
     watch.dns.set_error = ""
     watch.dns.system = {}
     svc.__dict__.pop("_rsv_own_ip", None)
+    svc.rsv_update("rsv_dns", own_last=None)                      # последнего успешного адреса нет
     assert "не определился" in svc.reserve_record_return()
 
 

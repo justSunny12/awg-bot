@@ -178,6 +178,13 @@ def record_not_changed(name: str, reason: str, ip: str) -> str:
             f"<code>{_e(ip)}</code>")
 
 
+def record_own_unknown(name: str, host: str = "") -> str:
+    """Т-РУ11: свой адрес не определился — запись на себя бот не сменит."""
+    why = f" (<code>{_e(host)}</code> не разрешается)" if host else ""
+    return (f"⚠️ Запись <code>{_e(name)}</code> не изменена: свой адрес не определился{why} — поправь её у провайдера "
+            "вручную на адрес этого сервера")
+
+
 def record_manual_needed(name: str, ip: str, back: bool = False) -> str:
     """Запись меняет человек: просьба сменить её — при возврате и при переезде без живого сообщения."""
     what = "пользователи возвращаются" if back else "пользователи переезжают"
@@ -442,6 +449,12 @@ def webhook_stalled_reserve(primary: str, since: str, error: str, port: int) -> 
     """Т-РУ19 админу резерва: Telegram не доставляет обновления бота основы сюда."""
     return (f"⚠️ Telegram не доставляет обновления бота {_n(primary)} на этот сервер с {_when(since)}: "
             f"<code>{_e(error)}</code> — проверь, открыт ли у хостинга порт <code>{int(port)}</code>")
+
+
+def webhook_foreign_reserve(primary: str) -> str:
+    """Админу резерва: вебхук бота основы больше не у её бота здесь — Telegram забрала основа."""
+    return (f"⚠️ Вебхук бота {_n(primary)} указывает не на этот сервер — Telegram у основы, бот основы здесь "
+            "решения больше не принимает")
 
 
 def webhook_restored_reserve(primary: str) -> str:

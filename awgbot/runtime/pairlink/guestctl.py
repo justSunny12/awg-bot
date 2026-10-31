@@ -169,7 +169,7 @@ class GuestCtlServer:
             await self.send("ack", {"of": "tg_taken"})      # гость повторяет слово, пока не подтверждено
         elif kind == "webhook":
             self._words.append(("webhook", {"stalled": bool(msg.get("stalled")), "since": str(msg.get("since") or ""),
-                                            "error": str(msg.get("error") or "")}))
+                                            "error": str(msg.get("error") or ""), "foreign": bool(msg.get("foreign"))}))
         elif kind == "replica":
             try:
                 self.replica = bytes.fromhex(str(msg.get("blob") or ""))

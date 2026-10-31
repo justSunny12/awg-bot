@@ -211,7 +211,9 @@ def read_authoritative(name: str, timeout: float = TIMEOUT) -> list[str]:
 
 def read_authoritative_ttl(name: str, timeout: float = TIMEOUT) -> tuple[list[str], int]:
     """То же, с TTL A-записи (наименьший из ответа; 0 — записей нет): по нему
-    бот предупреждает админа и выдерживает паузу перед «переподключи VPN»."""
+    бот предупреждает админа и выдерживает паузу перед «переподключи VPN».
+    Имя — CNAME без A в ответе — DnsError: бот меняет только A-запись, а «записей
+    нет» с TTL 0 увело бы и проверку, и паузу гостя по ложному следу."""
     last: DnsError | None = None
     for ns in _ns_of(name, timeout):
         for addr in read_system(ns, timeout)[:2]:
@@ -221,6 +223,9 @@ def read_authoritative_ttl(name: str, timeout: float = TIMEOUT) -> tuple[list[st
                 last = e
                 continue
             a_recs = [(rdata, ttl) for nm, t, rdata, _m, _a, ttl in recs if t == 1 and len(rdata) == 4]
+            if not a_recs and any(t == 5 and nm.lower().rstrip(".") == name.lower().rstrip(".")
+                                  for nm, t, _r, _m, _a, _ttl in recs):
+                raise DnsError(f"{name} — CNAME: бот меняет только A-запись")
             addrs = sorted({str(_IPV4(rdata)) for rdata, _t in a_recs})
             return addrs, (min(ttl for _r, ttl in a_recs) if a_recs else 0)
     raise last or DnsError(f"авторитетные серверы {name} не ответили")
