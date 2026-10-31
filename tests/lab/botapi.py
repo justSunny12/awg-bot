@@ -119,7 +119,11 @@ class Bot:
                     pass
                 continue
             upd = self.updates[0]
-            ok = await self._post(upd)
+            try:
+                ok = await self._post(upd)
+            except Exception as e:  # noqa: BLE001 — доставка не должна умирать молча
+                print(f"доставка {upd['update_id']} бота {self.me['id']}: {e!r}", flush=True)
+                ok = False
             if ok:
                 self.ack_below(upd["update_id"] + 1)
                 backoff = 1.0
@@ -131,18 +135,18 @@ class Bot:
         wh = self.webhook
         if not wh:
             return False
-        ctx: ssl.SSLContext | bool = False
-        if wh["cert"]:
-            ctx = ssl.create_default_context()
-            ctx.check_hostname = False
-            with tempfile.NamedTemporaryFile(suffix=".pem", delete=False) as f:
-                f.write(wh["cert"])
-                path = f.name
-            ctx.load_verify_locations(path)
         headers = {"Content-Type": "application/json"}
         if wh["secret"]:
             headers["X-Telegram-Bot-Api-Secret-Token"] = wh["secret"]
         try:
+            ctx: ssl.SSLContext | bool = False
+            if wh["cert"]:
+                ctx = ssl.create_default_context()
+                ctx.check_hostname = False
+                with tempfile.NamedTemporaryFile(suffix=".pem", delete=False) as f:
+                    f.write(wh["cert"])
+                    path = f.name
+                ctx.load_verify_locations(path)             # не сертификат — ошибка доставки, как у Telegram
             async with ClientSession(connector=TCPConnector(ssl=ctx)) as s:
                 async with s.post(wh["url"], json=update, headers=headers, timeout=10) as r:
                     if 200 <= r.status < 300:
@@ -150,6 +154,7 @@ class Bot:
                     self.last_error = (int(time.time()), f"Wrong response from the webhook: {r.status}")
         except Exception as e:  # noqa: BLE001
             self.last_error = (int(time.time()), f"Connection failed: {str(e)[:120] or e.__class__.__name__}")
+        print(f"доставка {update['update_id']} бота {self.me['id']} на {wh['url']}: {self.last_error[1]}", flush=True)
         return False
 
 
@@ -169,12 +174,17 @@ class Api:
         params: dict = {}
         cert: bytes | None = None
         if request.content_type.startswith("multipart/"):
+            # aiogram кладёт файл частью со случайным именем, а в поле — ссылку `attach://<имя>`
+            # (как Bot API принимает и его, и файл прямо в поле)
+            files: dict[str, bytes] = {}
             reader = await request.multipart()
             async for part in reader:
-                if part.name == "certificate":
-                    cert = await part.read()
+                if part.filename is not None:
+                    files[str(part.name)] = await part.read()
                 else:
                     params[part.name] = (await part.text())
+            ref = str(params.pop("certificate", "") or "")
+            cert = files.get(ref[len("attach://"):]) if ref.startswith("attach://") else files.get("certificate")
         elif request.can_read_body:
             try:
                 params = await request.json()
@@ -229,6 +239,7 @@ class Api:
 def make_app(journal: str) -> web.Application:
     api = Api(journal)
     app = web.Application(client_max_size=64 * 1024 * 1024)
+    app["api"] = api                                          # состояние ботов — для тестов макета
     app.router.add_route("*", "/bot{token}/{method}", api.handle)
     app.router.add_post("/inject/{token}", api.inject)
     app.router.add_get("/journal/{token}", api.journal_get)
