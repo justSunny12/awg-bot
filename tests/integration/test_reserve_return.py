@@ -9,7 +9,8 @@
 возврата; прежний `K` после возврата — резерв, которому мы только что
 отдали пользователей, остаётся способным открыть следующие пакеты; `wiped`,
 обработанный дважды, — второй новый `K` при уже отправленном пакете;
-слияние, упавшее молча, — пользователи возвращены без данных резерва.
+слияние, упавшее молча, — пользователи возвращены без данных резерва; отметка
+здоровья прежней загрузки хоста — автовозврат и кнопка закрыты на прежний аптайм.
 """
 from __future__ import annotations
 
@@ -112,6 +113,17 @@ def test_a_hiccup_of_the_primary_resets_the_five_minutes(away):
         "накопленные 5 минут не сброшены сбоем — возврат на полусбойной основе"
     _healthy_for(away, 60)
     assert svc.reserve_out() == "returning"
+
+
+def test_a_health_mark_from_the_previous_boot_is_counted_afresh(away):
+    """Отметка начала здоровья monotonic, записанная до перезагрузки хоста (часы начались
+    заново — отметка «в будущем»): счёт пяти минут — с нуля, а не на прежний аптайм."""
+    svc = away.svc
+    svc.rsv_update("rsv_out", healthy_mono=away.clock.t + 5_000_000.0)
+    assert _healthy_for(away, outbound.HEALTHY_S - 30) == [] and svc.reserve_out() == "away"
+    assert svc.rsv_get("rsv_out")["healthy_mono"] <= away.clock.t, "отметка прежней загрузки осталась"
+    _healthy_for(away, 60)
+    assert svc.reserve_out() == "returning", "автовозврат заблокирован отметкой прежней загрузки"
 
 
 def test_the_minimum_interval_between_switches_holds_the_return(away):

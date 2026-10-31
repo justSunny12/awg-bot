@@ -10,7 +10,9 @@ reserve_stuck_home с await_merge / _tick_await_merge / _return_done) и
   (реплика резерва под ним), одно уведомление «пользователи снова здесь»;
 - резерв вышел на связь и несёт гостя — обычный возврат с back_req
   (return_why = force); вышел пустым — отметка снята, новый K, пакет,
-  уведомление «не вольются»; конец возврата снимает отметку.
+  уведомление «не вольются»; конец возврата снимает отметку;
+- deleteWebhook рычага не прошёл — повтор раз в минуту, ~5 минут отказов — одно
+  уведомление со звуком.
 
 Окружение — `mv` из _reserve_move (пара, запись DNS и часы автоматов — модели).
 
@@ -19,7 +21,8 @@ reserve_stuck_home с await_merge / _tick_await_merge / _return_done) и
 переезда не открыть, они теряются; отметка, не снятая после возврата, —
 следующий выход резерва на связь затевает лишний возврат; без снимка
 финальной реплики слияние считает «чужим» всё, что записано здесь между
-пакетом и передачей, — удвоения и откаты профилей.
+пакетом и передачей, — удвоения и откаты профилей; take_home без повтора — бот
+нем, пока не сработает путь зависшего вебхука (полчаса и больше), и админ не знает.
 """
 from __future__ import annotations
 
@@ -29,7 +32,7 @@ import sqlite3
 import pytest
 
 from awgbot.core import config
-from awgbot.domain.services.reserve import outbound
+from awgbot.domain.services.reserve import outbound, outbound_return
 from awgbot.domain.services.types import ServiceError
 from awgbot.util import timeutil
 
@@ -260,3 +263,37 @@ def test_a_merge_base_that_cannot_be_written_does_not_stop_the_handover(mv, monk
     monkeypatch.setattr(svc, "_pkg_store_base", boom)
     built = svc.reserve_release_build()
     assert built and svc.rsv_get("rsv_out")["step"] == "released", "передача остановлена из-за снимка"
+
+
+# ── deleteWebhook рычага не прошёл ──────────────────────────────────────────
+
+def test_a_failed_take_of_the_lever_is_repeated_every_minute_and_told_after_five(gone):
+    """take_home ушёл, а deleteWebhook отказал (Telegram недоступен с основы): основа в away с
+    отметкой await_merge и без поллинга — повтор раз в минуту, ~5 минут отказов — Т-РУ со звуком
+    один раз; автоматического возврата по здоровью в это время нет."""
+    svc = gone.svc
+    assert svc.reserve_force_home() == [("take_home",)]
+    assert svc.reserve_out_tick() == [], "повтор сразу за первой попыткой"
+    takes, told = 0, []
+    for _ in range(12):
+        gone.clock.advance(outbound_return.FORCE_TAKE_RETRY_S * 1.2 + 1)
+        svc.rsv_update("rsv_out", force_at=_ago((gone.clock.t - 1000) / 60))
+        acts = svc.reserve_out_tick()
+        takes += acts.count(("take_home",))
+        told += notices(acts)
+        assert svc.reserve_out() == "away", acts
+    assert takes == 12, f"deleteWebhook повторён {takes} раз из 12 минут"
+    assert len(told) == 1 and told[0].force_sound and "deleteWebhook" in told[0].text and "«Beta»" in told[0].text, \
+        [n.text for n in told]
+    assert not told[0].text.rstrip().endswith(".")
+
+
+def test_the_lever_take_that_finally_passes_ends_the_repeats(gone):
+    svc = gone.svc
+    svc.reserve_force_home()
+    gone.clock.advance(80)
+    assert svc.reserve_out_tick() == [("take_home",)]
+    svc.reserve_stuck_home()                                  # теперь прошёл
+    gone.clock.advance(80)
+    assert ("take_home",) not in svc.reserve_out_tick()
+    assert svc.reserve_out() == "home" and svc.rsv_get("rsv_out").get("await_merge") is True

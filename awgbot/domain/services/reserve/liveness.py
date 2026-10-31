@@ -82,6 +82,7 @@ class ReserveLivenessMixin:
     def _liveness_up(self) -> list[Notification]:
         """Связь вернулась (по счётчику, по слову или по pong): отметка и Т-РУ8 один раз."""
         self.rsv_update("rsv_peer_state", down_since="")
+        self.reserve_st_sent_reset()                          # мой st у неё — до потери связи (st_stale): заново
         log.info("резерв: «%s» снова на связи", self.reserve_peer_name())
         return [Notification(tg_id=int(config.ADMIN_ID), text=rn.peer_up(self.reserve_peer_name()))]
 

@@ -8,7 +8,8 @@ inbound_back.py — часть пакета reserve (см. __init__): «поль
 хвоста, сразу idle), учёт, `relay{until}`, `--wipe`, прежний пакет и доля —
 прочь, `wiped`, Т-РУ5 → relay до `relay_max_days` или тишины
 `relay_idle_hours` (по счётчику правила DNAT — nftguard.relay_packets) → idle.
-Новое открытие при relay — пересылка уступает (`_relay_yield`).
+Новое открытие при relay — пересылка уступает (`_relay_yield`); открытие
+сорвалось — возвращается (`_relay_restore`).
 """
 from __future__ import annotations
 
@@ -26,16 +27,47 @@ class ReserveInboundBackMixin:
 
     def _relay_yield(self) -> None:
         """Фаза relay (пересылка хвоста) при новом открытии: правило DNAT снимается —
-        иначе оно увело бы пользователей нового клона на основу; состояние — idle."""
+        иначе оно увело бы пользователей нового клона на основу; состояние — idle.
+        Что снято, помнится (`relay_prev`): открытие сорвётся — пересылка вернётся
+        (`_relay_restore`); без пересылки отметка пустая — от прошлого открытия не тянется."""
         from awgbot.infra import rsvzone
+        inn = self._inn()
         if self.reserve_in() != "relay":
+            if inn.get("relay_prev"):
+                self.rsv_update("rsv_in", relay_prev=None)
             return
+        prev = {k: str(inn.get(k) or "") for k in ("relay_to", "relay_until", "relay_at", "relay_last_traffic")}
         try:
             rsvzone.teardown()
         except rsvzone.ZoneError as e:
             log.info("резерв: пересылка хвоста при новом открытии снята с ошибкой: %s", e)
-        self.reserve_set_in("idle", step="", relay_to="", relay_until="")
+        self.reserve_set_in("idle", step="", relay_to="", relay_until="", relay_prev=prev if prev["relay_to"] else None)
         log.info("резерв: пересылка хвоста снята — зона нужна новому переезду")
+
+    def _relay_restore(self) -> bool:
+        """Открытие сорвалось (отказ запуска, `_take_fail`), а пересылка хвоста, уступившая ему,
+        была: вернуть её — устройства, сидящие на моём адресе с прошлого возврата, снова идут
+        на основу, а не теряют VPN. Срок и тишину решит такт relay, как прежде; он же первым
+        делом перерисует файервол с DNAT хвоста и сбросит записи conntrack (`relay_redraw`)."""
+        from awgbot.infra import rsvzone
+        prev = dict(self._inn().get("relay_prev") or {})
+        if not prev:
+            return False
+        self.rsv_update("rsv_in", relay_prev=None)
+        to = str(prev.get("relay_to") or "")
+        if not to or self.reserve_in() != "idle":
+            return False
+        try:
+            rsvzone.relay(to)
+        except rsvzone.ZoneError as e:
+            log.warning("резерв: пересылка хвоста после срыва открытия не возвращена: %s", e)
+            return False
+        self.reserve_set_in("relay", step="", relay_to=to, relay_until=str(prev.get("relay_until") or ""),
+                            relay_at=str(prev.get("relay_at") or timeutil.now_iso()),
+                            relay_last_traffic=str(prev.get("relay_last_traffic") or ""), relay_pkts=None,
+                            relay_redraw=True)
+        log.info("резерв: открытие не состоялось — пересылка хвоста на %s снова идёт", to)
+        return True
 
     @staticmethod
     def _relay_host_ip(host: str) -> str:
@@ -132,6 +164,10 @@ class ReserveInboundBackMixin:
 
     def _tick_relay(self, inn: dict) -> list[tuple]:
         from awgbot.infra import rsvzone
+        if inn.get("relay_redraw"):
+            # пересылка вернулась после срыва открытия: DNAT хвоста — в таблицу, потом записи conntrack прочь
+            self.rsv_update("rsv_in", relay_redraw=False)
+            return [("fw",), ("relay_flush",)]
         until = str(inn.get("relay_until") or "")
         done = False
         try:

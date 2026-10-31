@@ -8,7 +8,8 @@ take_tg (`deleteWebhook`, поллинг) → record_back (запись → св
 (journal/handover) реплики и слияния нет: `released{epoch, last}` → догон
 (`jrn_back`, `reserve_jrn_back_tick`) → сразу take_tg; отчёт Т-РУ5б — сводка
 эпохи. Рычаг «вернуть без резерва» (резерв не на связи): запись на себя,
-Telegram забирается, реплика вольётся по выходу резерва на связь (await_merge)
+Telegram забирается (deleteWebhook не прошёл — повтор раз в минуту, ~5 мин
+отказов — уведомление), реплика вольётся по выходу резерва на связь (await_merge)
 — или не вольётся (резерв вернулся пустым); с журналом вместо реплики — правки
 бота на резерве хвостом (`reserve_c9_start`, journal/c9), и пока его журнал
 данных на диске резерва новее перенесённого (`reserve_disk_waiting`), возврат
@@ -21,10 +22,12 @@ merge по сроку и после рестарта посреди — снов
 раза в минуту, take_tg — каждый такт, ~5 мин отказов — уведомление,
 record_back без факта 30 мин — `back` всё равно и Т-РУ11 (при «вручную»
 просьба сменить запись — сразу), `back` раз в минуту до `relay`. Возврат и
-пока не перенесён мой хвост (journal/tail) — ждёт, не дольше TAIL_WAIT_S.
+пока не перенесён мой хвост (journal/tail) — ждёт, не дольше TAIL_WAIT_S. Дома,
+а живой резерв в releasing (`back` потерялся) — `back` снова раз в минуту.
 """
 from __future__ import annotations
 
+import random
 import time
 
 from awgbot.core import config
@@ -34,6 +37,9 @@ from ..types import Notification, ServiceError
 from ..gateway_link.common import log
 from .outbound import FORCE_OFFLINE_S, RECORD_WAIT_S, RELAY_WAIT_S, RELEASED_WAIT_S
 from .state import HOSTING, _LOCK
+
+FORCE_TAKE_RETRY_S = 60          # возврат без резерва: повтор deleteWebhook
+FORCE_TAKE_TELL_S = 5 * 60       # столько отказов — админу
 
 
 class ReserveReturnMixin:
@@ -46,10 +52,15 @@ class ReserveReturnMixin:
         return {"name": self.reserve_peer_name(), "record": self.reserve_dns_name(), "own": self.reserve_own_ip(),
                 "manual": not self.reserve_dns_automatic()}
 
+    def _peer_reachable(self) -> bool:
+        """Резерв на связи: сеанс канала есть и живость не `down`. Один флаг сеанса — не то:
+        сеанс отрезанного сервера держится до ~23 мин (keepalive TCP)."""
+        return bool(self.reserve_online() and self.reserve_peer_seen() != "down")
+
     def reserve_return_check(self) -> str:
         if self.reserve_out() != "away":
             return "пользователи не у резерва"
-        if not self.reserve_online():
+        if not self._peer_reachable():
             return f"«{self.reserve_peer_name()}» не на связи"
         return self.reserve_tail_return_why()                 # мой хвост ещё переносится на резерв — ждать
 
@@ -59,7 +70,7 @@ class ReserveReturnMixin:
         не на связи дольше FORCE_OFFLINE_S."""
         if self.reserve_out() != "away":
             return "пользователи не у резерва"
-        if self.reserve_online():
+        if self._peer_reachable():
             return f"«{self.reserve_peer_name()}» на связи — верни пользователей обычным путём"
         since = self.reserve_down_since()
         try:
@@ -92,7 +103,8 @@ class ReserveReturnMixin:
             except ServiceError as e:
                 actions.append(("notify", [Notification(tg_id=int(config.ADMIN_ID), force_sound=True,
                                                         text=rn.record_not_changed(self.reserve_dns_name(), str(e), own))]))
-        self.rsv_update("rsv_out", await_merge=True, force_at=timeutil.now_iso())
+        self.rsv_update("rsv_out", await_merge=True, force_at=timeutil.now_iso(), take_home_at=time.monotonic(),
+                        take_home_told=False)
         # решения — снова здесь (await_merge): бот на резерве отрезан, его правки вольются при встрече
         guest_e = int(self.db.jrn_meta()["epoch"]) if self.reserve_following() else 0
         self.reserve_epoch_sync()                             # точка взятия эпохи — последнее применённое от него
@@ -101,11 +113,34 @@ class ReserveReturnMixin:
         log.warning("резерв: возврат без резерва «%s» — запись на себя, забираю Telegram", self.reserve_peer_name())
         return actions + [("take_home",)]
 
+    def _tick_force_take(self, out: dict) -> list[tuple]:
+        """away с отметкой await_merge: рычаг (или аварийный возврат по кворуму) выдал
+        `take_home`, а deleteWebhook не прошёл — бот нем: повтор раз в минуту (с разбросом),
+        ~5 минут отказов — админу, со звуком, один раз."""
+        now = time.monotonic()
+        if not livestep.mono_due(out.get("take_home_at"), now, FORCE_TAKE_RETRY_S * random.uniform(0.8, 1.2)):
+            return []
+        self.rsv_update("rsv_out", take_home_at=now)
+        actions: list[tuple] = [("take_home",)]
+        try:
+            long = timeutil.elapsed(timeutil.parse_iso(str(out.get("force_at") or ""))) >= FORCE_TAKE_TELL_S
+        except ValueError:
+            long = True
+        if long and not out.get("take_home_told"):
+            from awgbot.domain.notices import reserve as rn
+            self.rsv_update("rsv_out", take_home_told=True)
+            log.warning("резерв: deleteWebhook не проходит %d мин — бот не отвечает", FORCE_TAKE_TELL_S // 60)
+            actions.append(("notify", [Notification(tg_id=int(config.ADMIN_ID), force_sound=True,
+                                                    text=rn.take_tg_stuck(self.reserve_peer_name()))]))
+        return actions
+
     def _tick_await_merge(self, out: dict) -> list[tuple]:
         """В состоянии home после возврата без резерва: он вышел на связь и всё ещё несёт мой бот —
-        обычный возврат с шага back_req (слияние, рестарт, запись уже на мне)."""
+        обычный возврат с шага back_req (слияние, рестарт, запись уже на мне). «Вышел на
+        связь» — живым словом (journal/epoch `_peer_alive`): сеанс мёртвого резерва и его
+        `st` до потери связи увели бы в back_req к тому, кто не ответит."""
         peer = self.reserve_peer_state()
-        if not self.reserve_online():
+        if not self._peer_alive(peer):
             return []
         if str(peer.get("inn") or "idle") not in HOSTING and not self.reserve_disk_waiting():
             return self._forced_no_merge()
@@ -115,6 +150,23 @@ class ReserveReturnMixin:
             self._out_step("back_req", RELEASED_WAIT_S)
         log.info("резерв: «%s» снова на связи — сливаю его реплику", self.reserve_peer_name())
         return [("send", "back_req", {}), ("live",)]
+
+    def _home_back_resend(self) -> list[tuple]:
+        """Дома, а живой резерв всё ещё в releasing: мой `back` потерялся (шаг relay повторял
+        его RELAY_WAIT_S и сдался) — без него резерв ждёт вечно, держит зону и отвергает
+        новый пакет («зона занята»). Повтор раз в минуту, пока он не скажет иное."""
+        out = self._out()
+        if str(out.get("state") or "home") != "home" or out.get("await_merge"):
+            return []
+        peer = self.reserve_peer_state()
+        if str(peer.get("inn") or "") != "releasing" or not self._peer_alive(peer):
+            return []
+        now = time.monotonic()
+        if not livestep.mono_due(out.get("home_back_at"), now, 60):
+            return []
+        self.rsv_update("rsv_out", home_back_at=now)
+        log.info("резерв: «%s» всё ещё отдаёт моих пользователей — повторяю back", self.reserve_peer_name())
+        return [("send", "back", {})]
 
     def _forced_no_merge(self) -> list[tuple]:
         """Резерв вернулся пустым (перезагрузка — гость жил в памяти): сливать нечего —
@@ -158,6 +210,12 @@ class ReserveReturnMixin:
         now = time.monotonic()
         if step == "back_req" and out.get("jrn_back"):
             return self.reserve_jrn_back_tick(out)            # журнал: бот на резерве передал право — догоняю
+        if step == "back_req" and str(out.get("return_why") or "") == "force" and not self._peer_reachable():
+            # возврат без резерва: он снова пропал до реплики — назад к ожиданию дома (пользователи и
+            # Telegram здесь, запись на мне); в back_req шлюзы держали бы пересылку, а пути назад нет
+            self.reserve_set_out("home", step="", await_merge=True)
+            log.warning("резерв: «%s» снова не на связи до реплики — жду его дома", self.reserve_peer_name())
+            return [("live",)]
         if step == "back_req":
             peer_idle = self.reserve_online() and str(self.reserve_peer_state().get("inn") or "idle") not in HOSTING
             disk = self.reserve_disk_waiting()

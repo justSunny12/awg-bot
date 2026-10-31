@@ -188,7 +188,9 @@ class ReserveOutboundMixin:
                                       text=rn.record_not_changed(self.reserve_dns_name(), record_back, self.reserve_own_ip())))
         actions: list[tuple] = [("live",), ("notify", notes)]
         if released:
-            actions.insert(0, ("send", "back", {}))
+            # передача могла остановить поллинг (`release`, rsv_poll = away): право отвечать снова
+            # решает Telegram — разбудить сразу, а не ждать перепроверки (до 7 мин)
+            actions[:0] = [("send", "back", {}), ("wake_poll",)]
         return actions
 
     def reserve_out_tick(self) -> list[tuple]:
@@ -200,11 +202,13 @@ class ReserveOutboundMixin:
         state = str(out.get("state") or "home")
         if state == "leaving":
             return self._tick_leaving(out)
+        if state == "away" and out.get("await_merge"):
+            return self._tick_force_take(out)                 # возврат без резерва: deleteWebhook ещё не прошёл
         if state == "away":
             return self._tick_away(out)
         if state == "returning":
             return self._tick_returning(out)
-        return self._tick_home(out) + self.reserve_tail_settle()   # свой хвост при держателе дома — переносить
+        return self._tick_home(out) + self.reserve_tail_settle() + self._home_back_resend()   # свой хвост при держателе дома — переносить
 
     def _tick_home(self, out: dict) -> list[tuple]:
         """В состоянии home: после «вернуть без резерва» — ждать его (outbound_return); вебхук
@@ -358,10 +362,15 @@ class ReserveOutboundMixin:
     # ── события канала (переезд) ────────────────────────────────────────────
     def reserve_open_eph_in(self, gen: int, eph_hex: str, oid: str) -> list[tuple]:
         """`open_eph` от резерва: разовый ключ его процесса открытия — `K`
-        конвертом к нему в `go{sealed, oid}`; шаг up. Повтор (`open_eph`
-        дошёл дважды) — молча: `go` уже ушёл."""
+        конвертом к нему в `go{sealed, oid}`; шаг up. Повтор на шаге up от того же
+        процесса (тот же `oid` и поколение) — `go` снова: резерв повторяет `open_eph`,
+        только пока процесс ждёт конверт, значит прежний `go` потерялся (резерв второй
+        конверт тому же процессу не передаёт — молча). Срок шага up не продлевается."""
         out = self._out()
-        if out.get("state") != "leaving" or out.get("step") != "eph" or int(out.get("gen") or 0) != int(gen):
+        if out.get("state") != "leaving" or int(out.get("gen") or 0) != int(gen):
+            return []
+        again = out.get("step") == "up" and out.get("go_sent") and str(out.get("oid") or "") == str(oid)
+        if out.get("step") != "eph" and not again:
             return []
         try:
             eph = bytes.fromhex(str(eph_hex))
@@ -371,7 +380,10 @@ class ReserveOutboundMixin:
             sealed = seal.seal_k_to(eph, self.reserve_k(), int(gen), str(oid))
         except seal.PackageError as e:
             return self._move_fail(f"разовый ключ от «{self.reserve_peer_name()}» не годится: {e}", released=True)
-        self._out_step("up", UP_WAIT_S, oid=str(oid))
+        if again:
+            log.info("резерв: «%s» снова просит ключ того же открытия — go повторён", self.reserve_peer_name())
+        else:
+            self._out_step("up", UP_WAIT_S, oid=str(oid))
         self.rsv_update("rsv_out", go_sent=True)                 # K отдан — своя отметка, не слово резерва
         return [("send", "go", {"gen": int(gen), "kind": str(out.get("kind") or "button"),
                                 "ttl": int(self.rsv_get("rsv_dns").get("ttl") or 0),
@@ -522,7 +534,7 @@ class ReserveOutboundMixin:
             return [("take_home",)]
         if self.reserve_healthy():
             since = float(out.get("healthy_mono") or 0)
-            if not since:
+            if not since or since > now + 1.0:                # отметки нет или она прежней загрузки — счёт заново
                 self.rsv_update("rsv_out", healthy_mono=now, healthy_since=timeutil.now_iso())
                 return []
             if now - since < HEALTHY_S:

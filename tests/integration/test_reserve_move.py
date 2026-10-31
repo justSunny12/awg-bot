@@ -178,8 +178,9 @@ def test_the_ephemeral_key_of_the_reserve_turns_into_go_with_the_key_sealed_to_i
 
 
 def test_a_repeated_or_foreign_open_eph_is_ignored(mv):
-    """Второй `open_eph` (повтор резерва раз в 10 с, когда `go` уже ушёл),
-    чужое поколение или не тот шаг — молча: второго `go` нет."""
+    """Чужое поколение, другой процесс открытия (другой `oid`) или не тот шаг — молча:
+    второго `go` нет. Повтор того же процесса на шаге up — `go` снова (прежний
+    потерялся: резерв повторяет `open_eph`, только пока процесс ждёт конверт)."""
     svc = mv.svc
     svc.reserve_move_start()
     rm.confirm_package(svc, gen=4)
@@ -191,7 +192,15 @@ def test_a_repeated_or_foreign_open_eph_is_ignored(mv):
     _priv, again = rm.open_eph(svc, gen=4, oid="ffffffffffffffff")
     assert again == [] and svc.rsv_get("rsv_out")["step"] == "up", "повтор open_eph дал второй go — два конверта к разным ключам"
     assert svc.reserve_out() == "leaving"
-    assert rm.open_eph(svc, gen=4)[1] == [], "open_eph вне шага eph что-то сделал"
+    deadline = svc.rsv_get("rsv_out")["deadline"]
+    priv, again = rm.open_eph(svc, gen=4)
+    assert sent(again) == ["go"], "потерянный go не повторён — срыв переезда через UP_WAIT_S"
+    body = actions_of(again, "send")[0][2]
+    assert seal.open_sealed_k(priv, bytes.fromhex(body["sealed"]), 4, "0123456789abcdef") == svc.reserve_k()
+    out = svc.rsv_get("rsv_out")
+    assert out["step"] == "up" and out["deadline"] == deadline, "повтор go продлил срок шага up"
+    svc._out_step("record", 300)
+    assert rm.open_eph(svc, gen=4)[1] == [], "open_eph вне шагов eph и up что-то сделал"
 
 
 def test_an_open_eph_with_a_malformed_key_fails_the_move_and_releases_the_reserve(mv):
@@ -384,6 +393,26 @@ def test_the_released_step_without_a_word_of_telegram_wakes_the_poll_three_times
     acts = svc.reserve_out_tick()
     assert svc.reserve_out() == "home" and "back" in sent(acts), acts
     assert "право отвечать не проверено" in " ".join(n.text for n in notices(acts))
+    assert ("wake_poll",) in acts, "срыв после передачи бота не будит поллинг — бот нем до перепроверки (до 7 мин)"
+
+
+@pytest.mark.parametrize("step", ["eph", "up", "record", "release"])
+def test_a_move_failed_after_go_req_wakes_the_poll(mv, step):
+    """Срыв на шагах после go_req: `back` резерву и поллинг будится — право отвечать снова решает
+    Telegram (передача могла остановить поллинг и пометить rsv_poll = away)."""
+    svc = mv.svc
+    rm.to_step(svc, step)
+    mv.clock.advance(600)
+    acts = svc.reserve_out_tick()
+    assert svc.reserve_out() == "home" and "back" in sent(acts) and ("wake_poll",) in acts, acts
+
+
+def test_a_move_failed_before_go_req_does_not_touch_the_poll(mv):
+    svc = mv.svc
+    rm.to_step(svc, "pkg")
+    mv.clock.advance(600)
+    acts = svc.reserve_out_tick()
+    assert svc.reserve_out() == "home" and ("wake_poll",) not in acts and "back" not in sent(acts), acts
 
 
 def test_down_from_the_reserve_aborts_the_move_without_a_second_back(mv):

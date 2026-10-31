@@ -8,7 +8,9 @@ outbound_stuck.py — часть пакета reserve (см. __init__): «мои
 пары нет на связи дольше STUCK_PAIR_S — `("take_home",)`: `deleteWebhook`,
 поллинг, home без возврата, новый `K`. Проверяют такт away и такт home (в home
 основа следует по слову Telegram — journal/epoch — и без этого стояла бы без
-права записи бессрочно).
+права записи бессрочно). Счёт «подряд» начинается заново при смене состояния
+направления и права отвечать (state: reserve_set_out, reserve_set_poll): отметка
+прежнего эпизода не подтверждает новый.
 """
 from __future__ import annotations
 
@@ -34,7 +36,10 @@ class ReserveStuckMixin:
         self.rsv_update("rsv_out", stuck_probe=now)
         own = self.reserve_own_ip()
         stuck = False
-        if own and self.reserve_dns_points_to(own):
+        points = self.reserve_dns_points_to(own) if own else False
+        if points is None:
+            return False                                      # запись не прочиталась — ни «да», ни «нет»: счёт как был
+        if points:
             peer = self.reserve_peer_state()
             if self._peer_alive(peer):                        # живым словом, не флагом сеанса (journal/epoch)
                 stuck = str(peer.get("inn") or "idle") == "idle"

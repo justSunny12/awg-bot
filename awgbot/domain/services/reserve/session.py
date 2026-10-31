@@ -240,6 +240,7 @@ class ReserveSessionMixin:
                         in_by=str(body.get("in_by") or ""), st_stale=False)
             # своё о сессии и связи (session, session_at, down_since, linked_msg …) — не из st, не стирать
             self.rsv_put("rsv_peer_state", {**prev, **peer})
+            self.reserve_pkg_zone_freed(peer["inn"])         # «зона занята» прошла — пакет без отступа
             self.reserve_pkg_resend_if_stale()               # у резерва не тот пакет (или никакого) — отметка заново
             jrn = body.get("jrn") if isinstance(body.get("jrn"), dict) else {}
             keep = jrn.get("keep") if isinstance(jrn.get("keep"), dict) else None
@@ -329,6 +330,7 @@ class ReserveSessionMixin:
         восстановлен из копии без них; `slots` идемпотентен)."""
         self.rsv_update("rsv_peer_state", session=True, session_at=timeutil.now_iso(), confirmed=True)
         self.rsv_update("rsv_view", slots_sent=[], slots_at="")
+        self.reserve_pkg_retry_clear()                        # отступ отвергнутого пакета — от прежней сессии
         self._jrn_sess_reset()                                # журнал: ничего не слать до сверки по st резерва
         if hasattr(self, "reserve_qprobe_reset"):
             self.reserve_qprobe_reset()                       # кворум: конфиг зонда второй стороне заново
@@ -364,6 +366,13 @@ class ReserveSessionMixin:
 
     def reserve_session_closed(self) -> None:
         self.rsv_update("rsv_peer_state", session=False)
+
+    def reserve_session_reset(self) -> None:
+        """Старт процесса: сеанс канала пары прошлого процесса умер вместе с его сокетом (флаг
+        в базе снимал только `finally` сеанса — после краха или перезагрузки он оставался), а
+        `st` второй стороны — из прошлого: флаг снят, `st` устаревший до нового (journal/epoch)."""
+        if self.rsv_get("rsv_peer_state"):
+            self.rsv_update("rsv_peer_state", session=False, st_stale=True)
 
     def reserve_last_word(self) -> list[Notification]:
         return self.reserve_liveness_word()
