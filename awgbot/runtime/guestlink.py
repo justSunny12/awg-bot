@@ -29,7 +29,7 @@ from awgbot.util import gwlink, pairproto
 
 log = logging.getLogger(__name__)
 
-HELLO_TIMEOUT = 15
+HELLO_TIMEOUT = gwlink.FIRST_LINE_S
 SEND_TIMEOUT = 20
 _BACKOFF = (5, 10, 20, 40, 80, 160, 300)
 _STORE_LOCK = asyncio.Lock()       # reserve.json правят такт и обработчик слов — не одновременно
@@ -95,19 +95,22 @@ class GuestClient:
         self._key = await asyncio.to_thread(self.services.reserve_guest_channel_key)
         if not host or not self._key:
             raise OSError("адрес или ключ гостевого канала не определены")
-        reader, writer = await asyncio.wait_for(asyncio.open_connection(host, port, limit=gwlink.MAX_LINE), timeout=20)
-        gwlink.tcp_keepalive(writer)
-        self._seq, self._cn, self._sn = 0, gwlink.new_nonce(), b""
-        body = await asyncio.to_thread(self.services.reserve_guest_hello_body)
-        if not body:
-            writer.close()
-            raise OSError("взгляда на основу ещё нет — hello позже")
-        body["nonce"] = gwlink.nonce_b64(self._cn)
-        self._seq += 1
-        writer.write(gwlink.pack(self._key, "hello", body, seq=self._seq, pad=gwlink.PAD_DELTA))
-        await asyncio.wait_for(writer.drain(), SEND_TIMEOUT)
+        writer = None
         last_seq = 0
         try:
+            # открытие — внутри try: сбой или отмена до ответа резерва (hello в потоке,
+            # drain) оставляли бы сокет без close — _writer ещё не выставлен, _close его не видит
+            reader, writer = await asyncio.wait_for(
+                asyncio.open_connection(host, port, limit=gwlink.MAX_LINE), timeout=gwlink.CONNECT_S)
+            gwlink.tcp_keepalive(writer)
+            self._seq, self._cn, self._sn = 0, gwlink.new_nonce(), b""
+            body = await asyncio.to_thread(self.services.reserve_guest_hello_body)
+            if not body:
+                raise OSError("взгляда на основу ещё нет — hello позже")
+            body["nonce"] = gwlink.nonce_b64(self._cn)
+            self._seq += 1
+            writer.write(gwlink.pack(self._key, "hello", body, seq=self._seq, pad=gwlink.PAD_DELTA))
+            await asyncio.wait_for(writer.drain(), SEND_TIMEOUT)
             first = await asyncio.wait_for(reader.readline(), HELLO_TIMEOUT)
             if not first:
                 return
@@ -132,6 +135,9 @@ class GuestClient:
                 await self._handle(msg)
         finally:
             self.online = False
+            if writer is not None and writer is not self._writer:
+                with contextlib.suppress(Exception):
+                    writer.close()
 
     async def _handle(self, msg: dict) -> None:
         kind = str(msg.get("t") or "")

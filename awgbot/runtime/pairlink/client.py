@@ -80,19 +80,22 @@ class PairClient(InboundMixin):
         secret = await asyncio.to_thread(self.services.reserve_channel_secret)
         if not target or not secret:
             raise OSError("адрес или ключ канала пары не определены")
-        reader, writer = await asyncio.wait_for(
-            asyncio.open_connection(target[0], target[1], limit=gwlink.MAX_LINE), timeout=20)
-        gwlink.tcp_keepalive(writer)
-        sess = _Session(writer, channel_key(secret), listener=False)
-        pairing = await asyncio.to_thread(self.services.reserve_accept_hello_body)
+        sess: _Session | None = None
         try:
+            # открытие — внутри try: отмена задачи или сбой до него (сборка hello в потоке)
+            # оставляли бы сокет без close
+            reader, writer = await asyncio.wait_for(
+                asyncio.open_connection(target[0], target[1], limit=gwlink.MAX_LINE), timeout=gwlink.CONNECT_S)
+            gwlink.tcp_keepalive(writer)
+            sess = _Session(writer, channel_key(secret), listener=False)
+            pairing = await asyncio.to_thread(self.services.reserve_accept_hello_body)
             body = dict(pairing) if pairing else await asyncio.to_thread(self.services.reserve_hello_body)
             body["nonce"] = gwlink.nonce_b64(sess.sn)
             sess.sn_sent = True
             sess.seq += 1
             writer.write(gwlink.pack(sess.key, "hello", body, seq=sess.seq, pad=gwlink.PAD_DELTA))
             await writer.drain()
-            first = await asyncio.wait_for(reader.readline(), 20)
+            first = await asyncio.wait_for(reader.readline(), gwlink.FIRST_LINE_S)
             if not first:
                 return
             msg = gwlink.unpack(sess.key, first, nonce=sess.sn)
@@ -122,11 +125,12 @@ class PairClient(InboundMixin):
                 if not await self._handle_safe(sess, msg):
                     break
         finally:
-            if self._sess is sess:
-                self._sess = None
-                with contextlib.suppress(Exception):
-                    await asyncio.to_thread(self.services.reserve_session_closed)
-            await close_session(sess)
+            if sess is not None:
+                if self._sess is sess:
+                    self._sess = None
+                    with contextlib.suppress(Exception):
+                        await asyncio.to_thread(self.services.reserve_session_closed)
+                await close_session(sess)
 
     async def _pairing_loop(self, reader, sess: _Session, first: dict, last_seq: int) -> None:
         msg = first

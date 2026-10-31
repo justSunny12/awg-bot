@@ -62,21 +62,23 @@ class SessionMixin:
         # Ключ — заново на каждое подключение: бандл из чата мог привезти новый
         # ключ линка, а процесс агента тот же.
         self._key = None
-        # Коннект с таймаутом: без него попытка при дропе SYN висела бы до
-        # системного, минуты, и бэкофф считал бы не то.
-        reader, writer = await asyncio.wait_for(
-            asyncio.open_connection(host, port, limit=gwlink.MAX_LINE), timeout=20)
-        # keepalive ядра: полуоткрытая сессия после жёсткого ребута ВПС иначе
-        # висит днями — переподключения ждать не от чего
-        gwlink.tcp_keepalive(writer)
-        self._seq = 0
-        self._rev = 0
-        self._prev = {}
-        self._parts = {}                      # части фидов прошлой сессии — не наши
-        self._confirmed = False
-        self._cn, self._sn = gwlink.new_nonce(), b""
-        log.info("канал линка: подключился к %s:%s", host, port)
+        writer = None
         try:
+            # Коннект с таймаутом: без него попытка при дропе SYN висела бы до
+            # системного, минуты, и бэкофф считал бы не то. Открытие — внутри
+            # try: сокет, открытый до него, при отмене задачи оставался без close.
+            reader, writer = await asyncio.wait_for(
+                asyncio.open_connection(host, port, limit=gwlink.MAX_LINE), timeout=gwlink.CONNECT_S)
+            # keepalive ядра: полуоткрытая сессия после жёсткого ребута ВПС иначе
+            # висит днями — переподключения ждать не от чего
+            gwlink.tcp_keepalive(writer)
+            self._seq = 0
+            self._rev = 0
+            self._prev = {}
+            self._parts = {}                      # части фидов прошлой сессии — не наши
+            self._confirmed = False
+            self._cn, self._sn = gwlink.new_nonce(), b""
+            log.info("канал линка: подключился к %s:%s", host, port)
             # hello — без нонса (сервер свой ещё не назвал), с нашим нонсом внутри.
             # _writer до ответа сервера не выставляем: снимок из тика или poke
             # ушёл бы без нонса сервера, и тот оборвал бы сессию.
@@ -117,7 +119,7 @@ class SessionMixin:
             self._sent_bytes += len(hello)
             self._io(tx=len(hello))
             # первое сообщение сервера — подписано нашим нонсом и несёт его нонс
-            first = await asyncio.wait_for(reader.readline(), timeout=20)
+            first = await asyncio.wait_for(reader.readline(), timeout=gwlink.FIRST_LINE_S)
             if not first:
                 return
             self._io(rx=len(first))
@@ -178,9 +180,10 @@ class SessionMixin:
             if self._confirmed:
                 with contextlib.suppress(Exception):
                     await asyncio.to_thread(self.services.lan_feeds_touch)
-            with contextlib.suppress(Exception):
-                writer.close()
-                await writer.wait_closed()
+            if writer is not None:
+                with contextlib.suppress(Exception):
+                    writer.close()
+                    await writer.wait_closed()
 
     def _set_online(self, on: bool) -> None:
         """Признак «сессия открыта» — для домена агента, без импорта runtime."""
