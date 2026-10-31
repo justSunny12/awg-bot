@@ -14,7 +14,9 @@
 отвечать у резерва, который пользователей ещё несёт; слияние, не нашедшее
 снимок по поколению, — пользователи застревают на резерве; смена Telegram у
 профиля на резерве без строки в итоге — чужой аккаунт получает профиль
-незаметно; обновление посреди переезда — код меняется под гостем.
+незаметно; обновление посреди переезда — код меняется под гостем; отметка
+«зависший» прежнего эпизода или сбой чтения записи, сочтённый за «не на мне», —
+вебхук снят без десятиминутного подтверждения или не снят никогда.
 """
 from __future__ import annotations
 
@@ -152,6 +154,45 @@ def test_without_the_pair_the_webhook_counts_as_stuck_only_after_thirty_minutes(
     svc.rsv_update("rsv_peer_state", session=False, down_since=_ago(down_min))
     svc.reserve_out_tick()
     assert (("take_home",) in _stuck_ticks(stuck, 11)) is want, f"пары нет {down_min} мин"
+
+
+def test_an_unread_record_neither_confirms_nor_resets_the_stuck_count(stuck):
+    """Авторитетный сервер не ответил (None) — не «запись не на мне»: счёт десяти минут
+    не сбрасывается и не подтверждается."""
+    svc = stuck.svc
+    since = _ago(11)
+    svc.rsv_update("rsv_out", stuck_since=since)
+    stuck.dns.auth_error = True
+    stuck.clock.advance(169)
+    assert ("take_home",) not in svc.reserve_out_tick(), "вебхук снят по непрочитанной записи"
+    assert svc.rsv_get("rsv_out").get("stuck_since") == since, "непрочитанная запись сбросила счёт"
+    stuck.dns.auth_error = False
+    stuck.clock.advance(169)
+    assert ("take_home",) in svc.reserve_out_tick(), "счёт потерян из-за одного сбоя чтения записи"
+
+
+@pytest.mark.parametrize("change", [
+    lambda s: (s.reserve_set_out("home"), s.reserve_set_out("away")),
+    lambda s: (s.reserve_set_poll("mine"), s.reserve_set_poll("away")),
+])
+def test_a_stuck_mark_of_a_previous_episode_does_not_confirm_a_new_one(stuck, change):
+    """Отметка начала «зависшего» прежнего эпизода (состояние или право отвечать с тех пор
+    менялись) не подтверждает новый по первой пробе — десять минут заново."""
+    svc = stuck.svc
+    svc.rsv_update("rsv_out", stuck_since=_ago(30))
+    change(svc)
+    assert not svc.rsv_get("rsv_out").get("stuck_since"), "смена состояния не сбросила счёт"
+    stuck.clock.advance(169)
+    assert ("take_home",) not in svc.reserve_out_tick(), "вебхук снят по первой пробе нового эпизода"
+
+
+def test_the_same_state_again_keeps_the_stuck_count(stuck):
+    """Повтор того же права отвечать (перепроверка getWebhookInfo раз в ~5 мин) счёт не сбрасывает."""
+    svc = stuck.svc
+    since = _ago(11)
+    svc.rsv_update("rsv_out", stuck_since=since)
+    svc.reserve_set_poll("away", why="webhook_info")
+    assert svc.rsv_get("rsv_out").get("stuck_since") == since
 
 
 def test_no_take_home_when_the_right_to_answer_is_mine(stuck):

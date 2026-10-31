@@ -101,6 +101,8 @@ class ReserveStateMixin:
     def reserve_set_out(self, state: str, **why) -> dict:
         if state not in OUT_STATES:
             raise ValueError(f"не состояние направления: {state}")
+        if str(self.rsv_get("rsv_out").get("state") or "home") != state:
+            why.setdefault("stuck_since", "")             # счёт зависшего вебхука — заново в новом состоянии (outbound_stuck)
         # at_ts — порядок с точностью до долей секунды: роль эпохи сверяет «что было раньше»
         out = self.rsv_update("rsv_out", state=state, since=timeutil.now_iso(), at_ts=time.time(), **why)
         self.reserve_epoch_sync()                         # право записи — по новому состоянию
@@ -119,6 +121,8 @@ class ReserveStateMixin:
         out = self.rsv_update("rsv_poll", state=state, since=timeutil.now_iso(), at_ts=time.time(),
                               **{"why": "", "url": "", **why})
         self.reserve_epoch_sync()                         # право записи — по новому состоянию (не по слову Telegram)
+        if state != prev and self.rsv_get("rsv_out").get("stuck_since"):
+            self.rsv_update("rsv_out", stuck_since="")    # счёт зависшего вебхука — заново (outbound_stuck)
         if state == "away" and prev != "away":
             # бот на резерве правит живые меню и снимает кнопки уведомлений сам: сохранённые
             # клавиатуры таких сообщений перестают быть правдой — записи прочь (снимки живут до срока)
