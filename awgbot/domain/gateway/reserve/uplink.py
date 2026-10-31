@@ -10,6 +10,10 @@ uplink.py — перерезолв аплинка шлюза: адрес для 
 другой — `awg set <аплинк> peer <ключ> endpoint <адрес>:<порт>` на живом
 интерфейсе, без перезапуска. Работает и без пары — любой переезд имени.
 Строка в журнале, без уведомления.
+
+Адрес, поставленный по авторитетной записи (`reresolve_now`), «приколот» на
+TTL записи (не меньше 300 с): кэш системного резолвера до тех пор может
+отдавать прежний адрес, и периодический проход вернул бы аплинк на него.
 """
 from __future__ import annotations
 
@@ -19,6 +23,7 @@ import os
 import re
 import socket
 import subprocess
+import time
 
 from awgbot.core import config
 from awgbot.infra import gwguard
@@ -26,6 +31,7 @@ from awgbot.infra import gwguard
 log = logging.getLogger(__name__)
 
 HANDSHAKE_STALE = 180           # с без рукопожатия — проверить, не переехал ли адрес
+PIN_MIN = 300                   # с: не меньше — прикол адреса по записи держится до TTL кэша
 RESOLVE_TIMEOUT = 3.0
 _ENDPOINT_RE = re.compile(r"^\s*Endpoint\s*=\s*(\S+)\s*$", re.M)
 
@@ -77,6 +83,32 @@ def set_endpoint(iface: str, pub: str, endpoint: str) -> bool:
 
 
 _IP_TOLD: set[str] = set()
+_PIN: dict[str, tuple[str, float]] = {}      # аплинк → (адрес по записи, до monotonic)
+_PIN_TOLD: set[tuple[str, str]] = set()     # (аплинк, адрес кэша) — строка журнала один раз
+
+
+def _pin(iface: str, ip: str, ttl: int) -> None:
+    """Адрес подтверждён записью у авторитетного сервера — кэш резолвера с
+    прежним ответом живёт до TTL; до тех пор периодический проход его не ставит."""
+    _PIN[iface] = (ip, time.monotonic() + max(int(ttl or 0), PIN_MIN))
+    _PIN_TOLD.clear()
+
+
+def _pinned(iface: str, ip: str) -> bool:
+    """Кэш даёт `ip`, а аплинк приколот к другому адресу по записи — не трогать."""
+    pin = _PIN.get(iface)
+    if not pin:
+        return False
+    if time.monotonic() >= pin[1]:
+        _PIN.pop(iface, None)
+        return False
+    if ip == pin[0]:
+        return False
+    if (iface, ip) not in _PIN_TOLD:
+        _PIN_TOLD.add((iface, ip))
+        log.info("аплинк %s: кэш резолвера даёт %s, а запись у авторитетного сервера — %s; адрес не меняю до истечения TTL",
+                 iface, ip, pin[0])
+    return True
 
 
 def reresolve_now(name: str, expect: str, why: str = "", move: int = 0, iface: str = "") -> str:
@@ -100,13 +132,14 @@ def reresolve_now(name: str, expect: str, why: str = "", move: int = 0, iface: s
     if not ip:
         return "skip:unresolved"
     try:
-        addrs = dnsapi.read_authoritative(name)
+        addrs, ttl = dnsapi.read_authoritative_ttl(name)
     except dnsapi.DnsError as e:
         log.info("аплинк %s: запись %s у авторитетного сервера не прочитана: %s", iface, name, e)
         return "skip:unread"
     if ip not in addrs:
         return "skip:record"
     if gwguard._endpoint_host(iface) == ip:
+        _pin(iface, ip, ttl)
         return "same"
     pub = (gwguard._awg(["show", iface, "peers"]).split() or [""])[0]
     if not pub:
@@ -114,6 +147,7 @@ def reresolve_now(name: str, expect: str, why: str = "", move: int = 0, iface: s
     if not set_endpoint(iface, pub, f"{ip}:{port}"):
         log.warning("аплинк %s: Endpoint %s:%s по записи не применился", iface, ip, port)
         return "skip:set-failed"
+    _pin(iface, ip, ttl)
     log.info("аплинк %s: Endpoint по записи у авторитетного сервера — %s (%s, move %s)", iface, ip, why or "сразу", move)
     return "set"
 
@@ -146,6 +180,8 @@ def reresolve(iface: str = "", stale: int = HANDSHAKE_STALE) -> str:
     ip = resolve(host)
     if not ip:
         return "skip:unresolved"
+    if _pinned(iface, ip):
+        return "skip:pinned"
     if gwguard._endpoint_host(iface) == ip:
         return "same"
     pub = (gwguard._awg(["show", iface, "peers"]).split() or [""])[0]

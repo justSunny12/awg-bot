@@ -15,7 +15,9 @@ DNS раз в минуту, тот самый маячок; `awg set` при т�
 лишняя пересборка сессии и потеря пакетов каждую минуту; перерезолв, когда
 Endpoint — IP, или на интерфейсе, которого нет, — `awg set` в никуда и
 мусор в журнале; аплинк, не переставленный после переезда, — шлюз без
-связи с сервером до рестарта.
+связи с сервером до рестарта; адрес, поставленный по авторитетной записи
+при переезде, откаченный периодическим проходом по кэшу резолвера (TTL до
+300 с), — аплинк снова на мёртвом адресе на всё время кэша.
 """
 from __future__ import annotations
 
@@ -94,6 +96,8 @@ class _Host:
 
 @pytest.fixture()
 def host(tmp_path, monkeypatch):
+    monkeypatch.setattr(uplink, "_PIN", {})
+    monkeypatch.setattr(uplink, "_PIN_TOLD", set())
     return _Host(tmp_path, monkeypatch)
 
 
@@ -181,6 +185,95 @@ def test_an_ipv6_endpoint_in_brackets_reads_as_an_ip(host):
     host.write_conf()
     assert uplink.conf_endpoint("awgup") == ("2001:db8::1", 51820)
     assert uplink.reresolve() == "skip:ip"
+
+
+# ── прикол адреса по авторитетной записи ─────────────────────────────────────
+
+class _Clock:
+    def __init__(self):
+        self.t = 1000.0
+
+    def monotonic(self) -> float:
+        return self.t
+
+
+@pytest.fixture()
+def moved(host, monkeypatch):
+    """Переезд: запись у авторитетного сервера уже на резерве (TTL 300), кэш
+    системного резолвера ещё отдаёт прежний адрес; часы модуля подставные."""
+    from awgbot.util import dnsapi
+    host.auth = (["203.0.113.5"], 300)
+    monkeypatch.setattr(dnsapi, "read_authoritative_ttl", lambda name, *a, **k: host.auth, raising=False)
+    clock = _Clock()
+    monkeypatch.setattr(uplink, "time", clock)
+    host.clock = clock
+    return host
+
+
+def test_the_address_set_by_the_record_is_not_reverted_by_the_stale_cache(moved, caplog):
+    assert uplink.reresolve_now("vpn.example.net", "203.0.113.5", move=1) == "set"
+    assert moved.sets[-1][-1] == "203.0.113.5:51820"
+    moved.handshake_age = 600                           # рукопожатие с новым адресом ещё не освежилось
+    with caplog.at_level("INFO", logger=uplink.__name__):
+        assert uplink.reresolve() == "skip:pinned"
+        moved.clock.t += 60
+        assert uplink.reresolve() == "skip:pinned"
+    assert len(moved.sets) == 1, "периодический проход вернул аплинк на адрес из кэша"
+    assert sum("кэш резолвера даёт" in r.getMessage() for r in caplog.records) == 1, "строка журнала — один раз"
+
+
+def test_the_pin_lasts_for_the_record_ttl_but_not_less_than_five_minutes(moved):
+    moved.auth = (["203.0.113.5"], 60)
+    assert uplink.reresolve_now("vpn.example.net", "203.0.113.5") == "set"
+    moved.live_ip = "203.0.113.5"
+    moved.clock.t += 299
+    assert uplink.reresolve() == "skip:pinned"
+    moved.clock.t += 2                                  # 301 с — кэш системы своё отжил
+    assert uplink.reresolve() == "set"
+    assert moved.sets[-1][-1] == "198.51.100.7:51820"
+
+
+def test_a_long_ttl_keeps_the_pin_longer(moved):
+    moved.auth = (["203.0.113.5"], 900)
+    assert uplink.reresolve_now("vpn.example.net", "203.0.113.5") == "set"
+    moved.live_ip = "203.0.113.5"
+    moved.clock.t += 600
+    assert uplink.reresolve() == "skip:pinned"
+    moved.clock.t += 301
+    assert uplink.reresolve() == "set"
+
+
+def test_the_same_address_confirmed_by_the_record_is_pinned_too(moved):
+    """Ядро уже на адресе записи («same») — кэш с прежним ответом не уводит его назад."""
+    moved.live_ip = "203.0.113.5"
+    assert uplink.reresolve_now("vpn.example.net", "203.0.113.5") == "same"
+    assert uplink.reresolve() == "skip:pinned"
+    assert moved.sets == []
+
+
+def test_the_cache_agreeing_with_the_pin_passes_as_usual(moved):
+    assert uplink.reresolve_now("vpn.example.net", "203.0.113.5") == "set"
+    moved.live_ip = "203.0.113.5"
+    moved.dns["vpn.example.net"] = "203.0.113.5"        # кэш догнал запись
+    assert uplink.reresolve() == "same"
+
+
+def test_no_pin_without_a_set_by_the_record(moved):
+    """Запись не дала ожидаемого адреса — прикола нет, периодический проход как прежде."""
+    moved.auth = (["198.51.100.7"], 300)
+    assert uplink.reresolve_now("vpn.example.net", "203.0.113.5") == "skip:record"
+    moved.dns["vpn.example.net"] = "192.0.2.44"
+    assert uplink.reresolve() == "set"
+
+
+def test_a_new_move_by_the_record_replaces_the_pin(moved):
+    assert uplink.reresolve_now("vpn.example.net", "203.0.113.5") == "set"
+    moved.live_ip = "203.0.113.5"
+    moved.auth = (["198.51.100.7"], 300)               # возврат на основу
+    assert uplink.reresolve_now("vpn.example.net", "198.51.100.7") == "set"
+    moved.live_ip = "198.51.100.7"
+    moved.dns["vpn.example.net"] = "203.0.113.5"        # кэш застрял на адресе резерва
+    assert uplink.reresolve() == "skip:pinned"
 
 
 # ── задание в планировщике агента ────────────────────────────────────────────

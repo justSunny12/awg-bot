@@ -1,12 +1,51 @@
-"""dispatch.py — разбор входящих от ВПС."""
+"""dispatch.py — разбор входящих от ВПС; очередь обработки, мимо которой — слова кворума."""
 from __future__ import annotations
 
 import asyncio
+import contextlib
 
 from .common import log
 
+QUORUM_WORDS = ("qask", "qtake", "qrel", "qneed", "qpause", "qstate")
+
 
 class DispatchMixin:
+    # ── очередь входящих ──
+    # Цикл чтения не ждёт обработчиков: документ конфигурации применяется
+    # минутами, а слово кворума, простоявшее за ним, — голос, опоздавший к
+    # кандидату. Слова кворума — сразу в цикле чтения (от документа они не
+    # зависят: состав и эпоха приходят своими словами); прочее — одним
+    # обработчиком по порядку прихода, как и прежде. Документ — целиком: не
+    # начатый прежний в очереди заменяет пришедший позже.
+
+    async def _take(self, msg: dict) -> None:
+        if msg.get("t") in QUORUM_WORDS:
+            await self._handle(msg)
+            return
+        box = self._inbox
+        if msg.get("t") == "cfg":
+            stale = [m for m in box if m.get("t") == "cfg"]
+            for old in stale:
+                box.remove(old)
+            if stale:
+                log.info("канал линка: документ gen %s ещё не применялся — его заменил gen %s",
+                         stale[-1].get("gen"), msg.get("gen"))
+        box.append(msg)
+        if self._inbox_task is None or self._inbox_task.done():
+            self._inbox_task = asyncio.get_running_loop().create_task(self._inbox_run())
+
+    async def _inbox_run(self) -> None:
+        while self._inbox:
+            await self._handle(self._inbox.popleft())
+
+    async def _inbox_drain(self) -> None:
+        """Прочитанное в сессии — обработать до того, как сокет снят: ответы
+        уходят по этой сессии, а следующая не начнётся посреди обработки."""
+        task = self._inbox_task
+        if task is not None and not task.done():
+            with contextlib.suppress(BaseException):
+                await asyncio.shield(task)
+
     async def _handle(self, msg: dict) -> None:
         """Разбор одного сообщения. Исключение внутри — в журнал, а не наружу:
         иначе поломка одного обработчика рвала бы сессию целиком, и та же

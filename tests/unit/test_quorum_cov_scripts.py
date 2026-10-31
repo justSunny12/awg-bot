@@ -178,6 +178,37 @@ def test_tg_off_takes_the_block_and_its_rule_and_keeps_the_link_rule(tg):
     assert tg.kv()["tg"] == "off"
 
 
+def test_tg_off_with_the_link_down_takes_the_block_from_the_standing_table(tg):
+    """Линк опущен мимо `--down` (таблица с блоком стоит), агент выключает обход:
+    таблицу заново не рисуют, но цепочки блока и набор снимаются, правило метки —
+    тоже. Иначе метка 0x53 перебивает метку аплинка, а правила под неё нет —
+    Bot API агента идёт мимо политики аплинка."""
+    tg.cgroup()
+    tg.run("--tg", "on")
+    tg.up.unlink()                                   # awgrsv опущен, таблица осталась
+    r = tg.run("--tg", "off")
+    assert r.returncode == 0 and "tg: off" in r.stdout, r.stdout + r.stderr
+    calls = tg.calls()
+    for chain in ("rsv_tgout", "rsv_tgpost", "rsv_tgmss"):
+        assert f"nft flush chain inet awg_rsv_guard {chain}" in calls, calls
+        assert f"nft delete chain inet awg_rsv_guard {chain}" in calls, calls
+    assert "nft delete set inet awg_rsv_guard tg_nets4" in calls, calls
+    assert calls.index("nft delete set inet awg_rsv_guard tg_nets4") > calls.index(
+        "nft delete chain inet awg_rsv_guard rsv_tgout"), "набор удаляется раньше цепочки, что на него ссылается"
+    assert tg.rule_marks() == ["0x52"], tg.rules.read_text(encoding="utf-8")
+    assert tg.kv()["tg"] == "off"
+
+
+def test_tg_off_without_the_table_is_quiet(tg):
+    """Таблицы нет (или блока в ней нет): nft отказывает на каждом снятии — `--tg off` всё равно успешен."""
+    fake_cmd(tg.bin / "nft", f'echo "nft $*" >> {tg.log}\n'
+                             'case "$1" in flush|delete) echo "Error: No such file or directory" >&2; exit 1 ;; esac\n'
+                             'exit 0\n')
+    tg.up.unlink()
+    r = tg.run("--tg", "off")
+    assert r.returncode == 0 and "tg: off" in r.stdout and not r.stderr.strip(), r.stdout + r.stderr
+
+
 @pytest.mark.parametrize("arg", ["", "yes", "ON"])
 def test_tg_with_a_wrong_word_refuses_and_changes_nothing(tg, arg):
     tg.cgroup()

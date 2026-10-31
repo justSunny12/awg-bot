@@ -64,7 +64,8 @@
 #                   (socket cgroupv2) к набору tg_nets4; ip rule fwmark 0x53
 #                   lookup 152 — в awgrsv; postrouting — masquerade с меткой
 #                   (адрес сокета выбран до перемаршрутизации). Решает агент
-#                   (tgvia.py); off — всё снято; состояние tg=0|1 в RSV_STATE
+#                   (tgvia.py); off — всё снято, и при опущенном линке (цепочки
+#                   блока из стоящей таблицы, правило метки); состояние tg=0|1 в RSV_STATE
 #   --status        key=value: link, open, src, rx, tx, conf, tg
 # Окружение: RSV_IF (awgrsv), RSV_CONF_DIR (/etc/awg-gw), RSV_STATE
 # (/var/lib/awg-gw/rsv.status: open=0|1, src=…, admins=…, tg=0|1), RSV_MARK (0x52),
@@ -246,6 +247,14 @@ tg_routes_up() {   # сокеты Bot API с меткой TG_MARK — в awgrsv 
 tg_routes_down() {
     while ip rule list | grep -q "fwmark $TG_MARK lookup $RSV_TABLE"; do ip rule del fwmark "$TG_MARK" lookup "$RSV_TABLE" || break; done
 }
+tg_block_down() {   # блок tg из стоящей таблицы — и при опущенном линке (таблицу заново тогда не рисуют):
+    # метка TG_MARK без правила маршрута перебила бы метку аплинка, и Bot API ушёл бы мимо его политики
+    for _c in rsv_tgout rsv_tgpost rsv_tgmss; do
+        nft flush chain $GUARD_TABLE "$_c" 2>/dev/null || true
+        nft delete chain $GUARD_TABLE "$_c" 2>/dev/null || true
+    done
+    nft delete set $GUARD_TABLE tg_nets4 2>/dev/null || true
+}
 
 link_up() {
     # линк уже поднят — ключи и пир подтягиваются без пересоздания (сессия с
@@ -342,7 +351,7 @@ cmd_tg() {   # --tg on|off: метка сокетов Bot API агента и п
     case "${1:-}" in on) _v=1 ;; off) _v=0 ;; *) die "tg: on|off" ;; esac
     state_write open="$(state_get open)" src="$(state_get src)" admins="$(state_get admins)" tg="$_v"
     if [ -f "$CONF" ] && ip link show "$RSV_IF" >/dev/null 2>&1; then guard_apply; fi
-    if [ "$(state_get tg)" = "1" ]; then tg_routes_up; else tg_routes_down; fi
+    if [ "$(state_get tg)" = "1" ]; then tg_routes_up; else tg_block_down; tg_routes_down; fi
     say "tg: $1"
 }
 

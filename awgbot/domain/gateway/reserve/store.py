@@ -151,6 +151,8 @@ class ReserveStoreMixin:
     def _note_still_true(cur: dict, cond: dict) -> bool:
         if cond.get("open") and not rsvlink.is_open():
             return False                                      # Т-РА3: пересылка уже закрыта — переезд кончился
+        if cond.get("tg_via") and (not cur.get("tg_via") or str(cur.get("tg_since") or "") != str(cond["tg_via"])):
+            return False                                      # Т-К24: эпизод обхода кончился
         return True
 
     def reserve_section(self) -> dict:
