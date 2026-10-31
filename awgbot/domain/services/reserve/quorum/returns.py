@@ -135,8 +135,10 @@ class ReserveQuorumReturnsMixin:
         try:
             actions += self.reserve_force_home(check=False)
         except ServiceError as err:
-            log.warning("кворум: аварийный возврат не пошёл: %s", err)
+            log.warning("кворум: аварийный возврат не пошёл: %s — qrel %s", err, ",".join(sent))
             c.blocked()
+            for node in sent:                                 # «забираю» уже разослано: шлюзы держат поднятую эпоху — откат
+                actions += self._quorum_to_own_gw(node, "qrel", {"l": c.l, "e": e})
         return actions
 
     def reserve_quorum_back_view(self) -> dict:

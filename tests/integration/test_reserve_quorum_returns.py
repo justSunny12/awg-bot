@@ -209,6 +209,22 @@ def test_no_majority_on_the_clone_for_t_up_takes_the_users_home(aw):
     assert ("take_home",) not in aw.run(60), "аварийный возврат повторяется"
 
 
+def test_a_failed_emergency_return_releases_the_gateways_that_got_qtake(aw, monkeypatch):
+    """`qtake` уже разослан, а возврат не пошёл (ServiceError): шлюзы держали бы поднятую
+    эпоху без исхода — в ту же раздачу идёт `qrel` тем же узлам, кандидат блокируется."""
+    from awgbot.domain.services.types import ServiceError
+
+    def boom(check=True):
+        raise ServiceError("возврат: канал пары занят")
+    monkeypatch.setattr(aw.s, "reserve_force_home", boom)
+    acts = _majority(aw) + aw.run(T_UP + 5)
+    taken = sorted(gwlink(acts, "qtake"))
+    assert taken == [(1, {"l": "a", "e": 9, "tgt": "r"}), (2, {"l": "a", "e": 9, "tgt": "r"})], taken
+    assert sorted(gwlink(acts, "qrel")) == taken, f"после сорванного возврата qrel не ушёл тем же шлюзам: {gwlink(acts, 'qrel')}"
+    assert ("take_home",) not in acts
+    assert aw.s.reserve_out() == "away"
+
+
 def test_a_majority_seeing_the_clone_does_nothing(aw):
     aw.clone.view = "see"
     aw.gw_view(1, "see")
