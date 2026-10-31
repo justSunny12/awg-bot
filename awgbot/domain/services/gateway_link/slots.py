@@ -30,10 +30,11 @@ class SlotsMixin:
             slots.append(spare)
         return slots
 
-    def active_gateway(self):
+    def active_gateway(self, slots: list | None = None):
         """Слот, который несёт трафик: из состояния; ключа нет или слот убран —
-        первый по порядку (предпочтительный, затем номер)."""
-        slots = self.rt_slots()
+        первый по порядку (предпочтительный, затем номер). slots — уже
+        прочитанный состав (такт живости: активный — из того же списка)."""
+        slots = self.rt_slots() if slots is None else slots
         if not slots:
             return None
         raw = self.db.get_state(self._RT_ACTIVE_KEY)

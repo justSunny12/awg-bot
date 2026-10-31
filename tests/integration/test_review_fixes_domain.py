@@ -10,7 +10,8 @@
 - перевыпуск ключей устройства в окне переезда: у самого и у двойника — свои пары
   ключей; отказ сервера на втором пире возвращает прежние ключи первому;
 - «✏️ Период» на открытой админ-паузе правит сохранённый конец подписки, а не
-  period_end (он на паузе пуст — подписка временно бессрочная).
+  period_end (он на паузе пуст — подписка временно бессрочная);
+- такт живости шлюзов берёт активный слот из того же прочитанного состава слотов.
 
 Цена ошибки: дамп, снятый раньше, записывался после более позднего — дельта
 выходила отрицательной, принималась за рестарт awg, и весь счётчик интерфейса
@@ -21,7 +22,9 @@ VPN в локальной сети до следующего похода (до 
 двойника уже новый ключ, в базе прежний, перепривязка друга к другому владельцу
 в окне переезда не проходит, а сверка видит «чужой пир»; правка дат на паузе
 писала period_end, выход из паузы затирал его сохранённым концом — админ ставил
-пользователю двести дней, а после снятия блока у того оставался прежний месяц.
+пользователю двести дней, а после снятия блока у того оставался прежний месяц;
+активный из второго чтения состава — KeyError посреди такта живости при первом
+шлюзе или появлении слота 29: такт срывался, переключение и объявления ждали.
 """
 from __future__ import annotations
 
@@ -209,3 +212,33 @@ def test_period_edit_to_unlimited_during_open_admin_pause(services, make_active_
     services.set_subscription_dates(c.id, timeutil.now(), None)
     services.unblock_client_manual(c.id, ClientBlock.ADMIN_SILENT, notify=False)
     assert services.db.get_client(c.id).period_end is None
+
+
+# ── такт живости шлюзов: активный — из того же состава слотов ─────────────────
+
+def test_liveness_tick_takes_the_active_slot_from_the_same_slot_list(services, fake_awg, fake_routing,
+                                                                    make_active_client, monkeypatch):
+    """Такт прочитал состав слотов, а между чтениями появился слот (первый шлюз,
+    слот 29 «шлюзы второго сервера»), записанный активным: активный берётся из
+    прочитанного состава — без KeyError на стрике хороших, такт доходит до конца."""
+    import sys
+    from awgbot.core import config as cfg
+    from awgbot.infra import routing
+    admin = make_active_client(name="Админ", tg_id=cfg.ADMIN_ID, device_limit=0)
+    pi = services.add_device(admin.id, "NASPi")
+    pi2 = services.add_device(admin.id, "Pi2")
+    g1 = services.db.gateway_add(pi.device_id, "awglink", 443, "10.99.99.0/30", slot_id=1)
+    services.db.gateway_add(pi2.device_id, "awglink2", 8443, "10.99.99.4/30", slot_id=2)
+    monkeypatch.setattr(services, "_probe_slot", lambda g, active=False: "ok")
+    monkeypatch.setattr(services, "_rt_standby_interval", lambda: 0)
+    monkeypatch.setattr(routing.marking, "switch_active", lambda iface: None)
+    monkeypatch.setattr(services, "_run_link_script", lambda mode, env=None: None)
+    services.db.set_state(services._RT_ACTIVE_KEY, "2")
+    real = type(services).rt_slots
+
+    def rt_slots(self=services):
+        if sys._getframe(1).f_code.co_name == "routing_liveness_tick":
+            return [services.db.gateway(g1.id)]               # состав такта — до появления слота 2
+        return real(services)
+    monkeypatch.setattr(services, "rt_slots", rt_slots)
+    assert isinstance(services.routing_liveness_tick(), list)   # KeyError здесь — дефект
