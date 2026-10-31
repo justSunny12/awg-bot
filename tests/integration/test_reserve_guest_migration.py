@@ -112,8 +112,7 @@ def _back(w, gsvc) -> list:
     w.svc.reserve_return_start("button")
     w.svc.reserve_set_out("returning", kind="button", gen=7, step="back_req", return_started_at=timeutil.now_iso())
     w.wg.adds.clear()
-    blob = seal.snapshot_seal(w.svc.reserve_k(), {"pkg_gen": 7, "at": timeutil.now_iso(),
-                                                  "db": pkgbot.replica(gsvc.db.path).hex()})
+    blob = seal.snapshot_seal(w.svc.reserve_k(), {"pkg_gen": 7, "at": timeutil.now_iso()}, pkgbot.replica(gsvc.db.path))
     return w.svc.reserve_released_in(blob)
 
 

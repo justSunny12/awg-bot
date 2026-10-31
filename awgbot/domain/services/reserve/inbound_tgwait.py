@@ -70,6 +70,7 @@ class ReserveInboundTgWaitMixin:
             return []
         try:
             subprocess.run(["systemctl", "reset-failed", rsvzone.GUEST_UNIT], capture_output=True, timeout=30)
+            rsvzone.guest_fit()                               # потолок памяти — по базе, с которой гость стартует сейчас
             proc = subprocess.run(["systemctl", "start", rsvzone.GUEST_UNIT], capture_output=True, timeout=60)
             if proc.returncode != 0:
                 raise subprocess.SubprocessError(f"код {proc.returncode}")

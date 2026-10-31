@@ -36,8 +36,8 @@ class ReserveMergeOpsMixin:
     def _return_merge(self, blob: bytes, gen: int) -> dict:
         from awgbot.domain.backup.merge import reserve as merge_mod
         from awgbot.infra import awg
-        snap = seal.snapshot_open(self.reserve_k(), blob)
-        if not isinstance(snap, dict) or not snap.get("db"):
+        snap, snap_db = seal.snapshot_open(self.reserve_k(), blob)
+        if not snap_db.size:
             raise ServiceError("реплика не того вида")
         base_dir = os.path.join(str(config.DATA_DIR), "reserve", "out")
         snap_gen = int(snap.get("pkg_gen") or 0)             # поколение пакета, с которого стартовал гость
@@ -62,7 +62,7 @@ class ReserveMergeOpsMixin:
             os.unlink(rep)                                    # остаток прерванного слияния — свой файл заново
         fd = os.open(rep, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)   # права с рождения, без окна по umask
         with os.fdopen(fd, "wb") as f:
-            f.write(bytes.fromhex(str(snap["db"])))
+            snap_db.write_to(f)                               # потоком: база реплики целиком в памяти не лежит
         try:
             removed = [] if no_base else self._pubkeys_removed(base, rep)
             before = self._merge_watch_snapshot(base)

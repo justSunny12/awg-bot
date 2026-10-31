@@ -178,11 +178,12 @@ class Duo:
         # пакет, который держит резерв (`reserve/guest.pkg`): база и часть jrn — под K
         from awgbot.domain.services.reserve.package import guest_pkg_path
         with open(guest_pkg_path(), "rb") as f:
-            parts = seal.open_parts(f.read(), self.a.reserve_k())
+            blob = f.read()
+        parts = seal.open_parts(blob, self.a.reserve_k())
         assert isinstance(parts.get("jrn"), dict), "в пакете нет части jrn — открытие пошло бы прежним путём"
         path = str(self.tmp / "guest.db")
         with open(path, "wb") as f:
-            f.write(bytes.fromhex(parts["bot"]["db"]))
+            seal.open_blob(blob, self.a.reserve_k()).write_to(f)
         res = opener.build(path, self.a.reserve_k(), parts["jrn"], self.b_keep.path, var / "jrn", button=button)
         old = config.GUEST
         config.GUEST = True

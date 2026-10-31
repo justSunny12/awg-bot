@@ -158,7 +158,8 @@ def test_the_same_replica_resealed_with_another_nonce_is_merged_once(merge_world
     _returning(w)
     blob = rm.snapshot_blob(w.svc)
     assert w.svc.reserve_released_in(blob) == [("restart",)]
-    again = seal.snapshot_seal(w.svc.reserve_k(), seal.snapshot_open(w.svc.reserve_k(), blob))
+    meta, db = seal.snapshot_open(w.svc.reserve_k(), blob)
+    again = seal.snapshot_seal(w.svc.reserve_k(), meta, db.read())
     assert again != blob
     w.svc._out_step("back_req")
     calls = []

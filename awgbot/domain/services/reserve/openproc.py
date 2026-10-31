@@ -3,7 +3,8 @@ openproc.py — часть пакета reserve (см. __init__): запуск �
 пакета (tools/rsvopen) на резерве — выделено из inbound (там автомат приёма).
 
 Процесс идёт временным юнитом systemd-run с песочницей (`rsvopen_sandbox_props`):
-память (от размера базы основы, без него — пакета), PrivateTmp, ProtectSystem=strict, каталог данных подменён пустым и виден
+память (от размеров пакета, снимка `rep.bin` и базы — большей из базы основы и базы
+снимка), PrivateTmp, ProtectSystem=strict, каталог данных подменён пустым и виден
 только пакет второй стороны, запись — хранилище гостя, его каталог на диске,
 состояние зоны и /etc/systemd. Хранилище гостя монтирует бот до запуска (в
 пространстве хоста), секреты идут только в stdin, хвост stderr — в
@@ -28,8 +29,10 @@ def rsvopen_sandbox_props(base: str, db_size: int = 0) -> list[str]:
     """Свойства systemd-run для процесса открытия — одним списком, чтобы стенд
     запускал его ровно так же. Хранилище гостя и каталоги из ReadWritePaths
     должны существовать до запуска (`_rsvopen_launch` их создаёт). Потолок памяти —
-    `rsvzone.open_memory_mb`: от размера пакета и базы основы (`db_size` — из слова
-    `pkg`, несжатой; 0 — не известен, пакет прежней основы: только от пакета)."""
+    `rsvzone.open_memory_mb`: от размера пакета, снимка `rep.bin` (перезагрузка резерва
+    посреди обслуживания — база гостя из него, и она больше ушедшей в пакете) и базы:
+    большей из `db_size` (слово `pkg`, несжатой; 0 — не известен) и базы снимка из его
+    открытого заголовка."""
     from awgbot.infra import rsvzone
     pkg = str(config.DATA_DIR / "reserve" / "guest.pkg")
     jrn = str(config.DATA_DIR / "reserve" / "jrn")
@@ -37,7 +40,9 @@ def rsvopen_sandbox_props(base: str, db_size: int = 0) -> list[str]:
         pkg_size = os.path.getsize(pkg)
     except OSError:
         pkg_size = 0
-    return ["-p", f"MemoryMax={rsvzone.open_memory_mb(pkg_size, db_size)}M", "-p", "MemorySwapMax=0", "-p", "LimitCORE=0", "-p", "Nice=5",
+    rep_size, rep_db = rsvzone.rep_sizes()
+    mem = rsvzone.open_memory_mb(pkg_size, max(int(db_size or 0), rep_db), rep_size)
+    return ["-p", f"MemoryMax={mem}M", "-p", "MemorySwapMax=0", "-p", "LimitCORE=0", "-p", "Nice=5",
             "-p", "PrivateTmp=yes", "-p", "ProtectHome=yes", "-p", "ProtectSystem=strict",
             "-p", "NoNewPrivileges=yes",
             "-p", f"InaccessiblePaths=-{config.ENV_PATH or '/etc/awg-bot/env'}",
@@ -87,11 +92,12 @@ class ReserveOpenProcMixin:
         except OSError:
             pkg_size = 0
         db_size = rsvzone.db_size_of(self.rsv_get("rsv_pkg_in").get("db_size"))
+        rep_db = rsvzone.rep_sizes()[1]
         try:
-            # tmpfs — у хоста, юнит его видит; размер — по базе основы из слова `pkg`, у пакета
-            # прежней основы — по пакету (база внутри него сжата и закрыта K); процесс открытия
+            # tmpfs — у хоста, юнит его видит; размер — по большей из баз: основы из слова `pkg` и
+            # снимка `rep.bin` (заголовок открыт); не известна ни одна — по пакету; процесс открытия
             # перемонтирует хранилище под настоящую базу (после журнала она больше)
-            rsvzone.store(rsvzone.store_mb(db_size or pkg_size))
+            rsvzone.store(rsvzone.store_mb(max(db_size, rep_db) or pkg_size))
         except rsvzone.ZoneError as e:
             raise ServiceError(f"хранилище гостя не смонтировано: {e}")
         for d in (rsvzone.VAR_DIR, rsvzone.STATE_DIR):

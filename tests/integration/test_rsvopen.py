@@ -146,17 +146,21 @@ class Box:
         return self.fact
 
     # пакет
-    def write_package(self, *, pkg_gen=5, parts=None, env=None, dns=DNS, k=None, m=None, lists=None):
+    def write_package(self, *, pkg_gen=5, parts=None, env=None, dns=DNS, k=None, m=None, lists=None, db=None,
+                      no_db=False):
+        """Пакет в reserve/guest.pkg; реплика — двоичной частью `db` (по умолчанию — своя;
+        no_db — пакет без этой части)."""
         iface = pkgvpn.build([("awg0", LIVE)], admin=["10.8.1.2"], dns=["10.8.1.1"], upstreams=["198.51.100.53"],
                              tz="Asia/Yekaterinburg")
-        bot_part = {"db": self.replica.hex(), "conf": {"limits": {"limits": {"default_days": 5}},
+        bot_part = {"conf": {"limits": {"limits": {"default_days": 5}},
                                                        "app": {"client_config": {"server_name": "Альфа"}}},
                     "app_guest": {"network": {"server_host": "203.0.113.7", "server_port": 51820}, "awg": {"protocol_id": 2}},
                     "env": env if env is not None else {"BOT_TOKEN": TOKEN, "ADMIN_ID": 77}}
         if lists is not None:
             bot_part["lists"] = lists
+        db = self.replica if db is None else db
         blob = seal.seal(parts or {"vpn": iface, "bot": bot_part}, k=k or self.k, m=m or self.m, pkg_gen=pkg_gen,
-                         m_gen=self.m_gen, dns=dns)
+                         m_gen=self.m_gen, dns=dns, blobs=None if no_db else {seal.DB_PART: db})
         path = config.DATA_DIR / "reserve" / "guest.pkg"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(blob)
@@ -493,7 +497,7 @@ def test_a_package_without_the_bot_part_fails(box):
 def test_a_package_with_a_vpn_part_that_does_not_pass_the_check_fails_before_the_zone(box):
     bad = pkgvpn.build([("awg0", LIVE)], admin=[], dns=[], upstreams=[], tz="")
     bad["ifaces"][0]["obf"] = {"PostUp": "rm -rf /"}
-    box.write_package(parts={"vpn": bad, "bot": {"db": "00", "conf": {}, "env": {"BOT_TOKEN": TOKEN, "ADMIN_ID": 1}}})
+    box.write_package(parts={"vpn": bad, "bot": {"conf": {}, "env": {"BOT_TOKEN": TOKEN, "ADMIN_ID": 1}}})
     assert box.open(**box.points(1)) == 1 and box.calls == []
 
 
@@ -503,6 +507,13 @@ def test_a_package_without_a_token_or_admin_fails_and_the_clone_is_not_started(b
     assert box.open(**box.points(1)) == 1
     assert "токена" in box.out and "take" not in box.kinds()
     assert not rsvzone.TG_TAKE_FILE.exists()
+
+
+def test_a_package_without_the_base_part_fails_before_the_zone(box):
+    """Формат 2: база — двоичная часть `db`; её нет (в том числе пакет, где база ехала бы
+    внутри части бота) — отказ до хранилища, а не гость без базы."""
+    box.write_package(no_db=True)
+    assert box.open(**box.points(1)) == 1 and "нет части db" in box.out and box.calls == [], box.out
 
 
 def test_an_empty_replica_fails(box):
@@ -546,7 +557,7 @@ def _snapshot(box, *, pkg_gen, names, key=None):
     snapdir = box.tmp / "snap"
     snapdir.mkdir(exist_ok=True)
     db = _replica(snapdir, names=names)
-    blob = seal.snapshot_seal(key or box.k, {"pkg_gen": pkg_gen, "at": "x", "db": db.hex()})
+    blob = seal.snapshot_seal(key or box.k, {"pkg_gen": pkg_gen, "at": "x"}, db)
     box.var_dir.mkdir(parents=True, exist_ok=True)
     rsvzone.REP_PATH.write_bytes(blob)
     return db
@@ -707,7 +718,7 @@ def test_a_package_without_lists_opens_as_before(box):
 def test_a_settings_set_with_an_unknown_name_is_not_written_anywhere(box, name):
     """Имя набора приходит из пакета второй стороны: не из pkgbot.CONF_FILES —
     не пишется вовсе (ни в хранилище, ни путём наружу)."""
-    bot = {"db": box.replica.hex(), "env": {"BOT_TOKEN": TOKEN, "ADMIN_ID": 77},
+    bot = {"env": {"BOT_TOKEN": TOKEN, "ADMIN_ID": 77},
            "conf": {"limits": {"limits": {"default_days": 5}}, name: {"x": 1}}}
     iface = pkgvpn.build([("awg0", LIVE)], admin=["10.8.1.2"], dns=["10.8.1.1"], upstreams=["198.51.100.53"], tz="")
     box.write_package(parts={"vpn": iface, "bot": bot})
@@ -720,7 +731,7 @@ def test_a_settings_set_with_an_unknown_name_is_not_written_anywhere(box, name):
 
 
 def test_every_known_settings_set_is_written(box):
-    bot = {"db": box.replica.hex(), "env": {"BOT_TOKEN": TOKEN, "ADMIN_ID": 77},
+    bot = {"env": {"BOT_TOKEN": TOKEN, "ADMIN_ID": 77},
            "conf": {n: {n: {"on": True}} for n in pkgbot.CONF_FILES}}
     iface = pkgvpn.build([("awg0", LIVE)], admin=["10.8.1.2"], dns=["10.8.1.1"], upstreams=["198.51.100.53"], tz="")
     box.write_package(parts={"vpn": iface, "bot": bot})

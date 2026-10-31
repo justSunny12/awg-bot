@@ -70,26 +70,20 @@ def _mb_up(n: int) -> int:
     return -(-max(0, int(n)) // _MB)
 
 
-def open_memory_mb(pkg_bytes: int, db_bytes: int = 0) -> int:
-    """Потолок памяти процесса открытия (tools/rsvopen.py), не меньше прежних 192 МБ.
+def open_memory_mb(pkg_bytes: int, db_bytes: int = 0, rep_bytes: int = 0) -> int:
+    """Потолок памяти процесса открытия (tools/rsvopen.py), не меньше прежних 192 МБ:
+    128 МБ + 4 × (пакет + снимок `rep.bin`) + 2 × база.
 
-    Размер базы основы известен (`db_bytes` — поле `db_size` слова `pkg`) — 128 МБ +
-    3 × пакет + 14 × база. Одновременно в памяти: файл пакета целиком, срезы шифротекстов
-    частей и расшифрованная сжатая часть — до трёх копий сжатого (пакет ≤ 16 МБ); база в
-    части бота — hex внутри JSON (2 знака на байт), и распаковка держит сразу байты JSON
-    (2 × база) и строку из них, которую декодер растит ступенями по самому широкому знаку
-    части (ASCII → UCS-2 → UCS-4: кириллица в настройках — уже 2 байта на знак, знак вне BMP —
-    4), держа обе ступени: до 2 + 4 + 8 = 14 × база в пике. Дальше меньше: строка и hex
-    из неё при разборе (до 10 ×), затем hex (2 ×), байты базы (1 ×), база в хранилище
-    (tmpfs числится в cgroup записавшего, 1 ×) и журнал поверх неё; путь снимка `rep.bin`
-    (hex части + распаковка снимка без широких знаков) — до 6,4 ×. 128 МБ — интерпретатор
-    с библиотеками, кэш SQLite журнала и прочие части.
-
-    Размер базы не известен (пакет прежней основы) — как раньше, по пакету: 128 МБ +
-    3 × размер пакета."""
-    if int(db_bytes or 0) > 0:
-        return max(OPEN_MEM_FLOOR_MB, 128 + 3 * _mb_up(pkg_bytes) + 14 * _mb_up(db_bytes))
-    return max(OPEN_MEM_FLOOR_MB, 128 + 3 * _mb_up(pkg_bytes))
+    База — двоичная часть пакета (util/rsvpkg/seal, формат 2) и база снимка: в памяти
+    она только сжатой, распаковка идёт потоком прямо в хранилище. Одновременно в памяти:
+    файл пакета (и снимка) целиком, срез шифротекста двоичной части и её расшифровка
+    (у NaCl — две копии) — до четырёх копий сжатого (пакет ≤ 16 МБ); база в хранилище
+    (tmpfs числится в cgroup записавшего, 1 ×) и журнал SQLite поверх неё, когда
+    процесс применяет журнал правок (до 1 ×). 128 МБ — интерпретатор с библиотеками,
+    кэш SQLite журнала, части-JSON и прочее. `db_bytes` — размер базы основы (поле
+    `db_size` слова `pkg`; снимок `rep.bin` новее пакета — больший из двух), 0 — не
+    известен; `rep_bytes` — размер файла `rep.bin` (0 — снимка нет)."""
+    return max(OPEN_MEM_FLOOR_MB, 128 + 4 * (_mb_up(pkg_bytes) + _mb_up(rep_bytes)) + 2 * _mb_up(db_bytes))
 
 
 DB_SIZE_CEIL = STORE_CEIL_MB * _MB   # размер базы из слова `pkg` больше — заведомо мусор: не известен
@@ -124,6 +118,50 @@ def guest_memory_mb(db_bytes: int) -> int:
     входит в MemoryMax его юнита и без свопа не вытесняется. 96 МБ + размер базы +
     `store_mb`, не меньше прежних 160."""
     return max(GUEST_MEM_FLOOR_MB, 96 + _mb_up(db_bytes) + store_mb(db_bytes))
+
+
+def rep_sizes(path: Path | None = None) -> tuple[int, int]:
+    """(размер файла `rep.bin`, размер его базы из открытого заголовка) — без ключа;
+    снимка нет или не того формата — (0, 0)."""
+    from awgbot.util.rsvpkg import seal
+    p = path or REP_PATH
+    try:
+        with open(p, "rb") as f:
+            head = f.read(64)
+            size = os.fstat(f.fileno()).st_size
+    except OSError:
+        return 0, 0
+    db = seal.snapshot_db_size(head)
+    return (size, db) if db else (0, 0)
+
+
+def guest_db_size(extra: int = 0) -> int:
+    """Больший из размеров базы, с которой стартует гость: база в хранилище, база снимка
+    `rep.bin` (гость подхватит его на старте) и `extra` (реплика, которую кладут сейчас)."""
+    try:
+        here = (RUN_DIR / "data" / "bot.db").stat().st_size
+    except OSError:
+        here = 0
+    return max(int(here), rep_sizes()[1], int(extra or 0))
+
+
+def guest_fit(extra: int = 0) -> int:
+    """Перед стартом гостя ботом резерва: хранилище и потолок памяти юнита — по базе, с
+    которой он стартует сейчас (`guest_db_size`), а не по той, что ушла в пакете:
+    за обслуживание база растёт, а реплика при передаче бота и снимок `rep.bin` её
+    несут. Хранилище перемонтируется размером `store_mb`, юнит — `--guest-mem` с
+    `guest_memory_mb`. Сбой — строка в журнал, старт гостя не срывается (прежний
+    потолок лучше, чем гость не поднят). Возвращает потолок, МБ (0 — не записан)."""
+    db = guest_db_size(extra)
+    mb = guest_memory_mb(db)
+    try:
+        store(store_mb(db))
+        run("guest-mem", env={"GUEST_MEMORY_MB": str(mb)}, timeout=60)
+    except ZoneError as e:
+        log.warning("резерв: потолок памяти гостя по базе %d МБ не записан: %s", _mb_up(db), e)
+        return 0
+    log.info("резерв: потолок памяти гостя %d МБ (база %d МБ)", mb, _mb_up(db))
+    return mb
 
 
 ZONE_TOOLS = ("dnsmasq", "conntrack")            # пакеты, без которых зона не полна (резолвер зоны, сброс хвоста)
@@ -358,12 +396,20 @@ def read_json(path: Path) -> dict:
 def write_private(path: Path, data: bytes | str, mode: int = 0o600) -> None:
     """Файл хранилища гостя: 0600 с первого байта (создание под umask, затем
     chmod — окно, в котором файл читаем шире)."""
+    raw = data.encode() if isinstance(data, str) else data
+    write_private_with(path, lambda f: f.write(raw), mode)
+
+
+def write_private_with(path: Path, fill, mode: int = 0o600):
+    """То же, что write_private, но содержимое пишет `fill(f)` — потоком (база из пакета
+    или снимка распаковывается прямо в файл, без копии в памяти). Возвращает то, что
+    вернул `fill`; сбой — временный файл прочь, прежний на месте."""
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
     fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
     try:
         with os.fdopen(fd, "wb") as f:
-            f.write(data.encode() if isinstance(data, str) else data)
+            got = fill(f)
             f.flush()
             os.fsync(f.fileno())                              # rep.bin и пакет переживают крах хоста
     except BaseException:
@@ -379,6 +425,7 @@ def write_private(path: Path, data: bytes | str, mode: int = 0o600) -> None:
             os.close(dfd)
     except OSError:
         pass
+    return got
 
 
 def open_status_write(step: str, **fields) -> None:

@@ -233,7 +233,6 @@ class ReservePackageMixin:
                 marks["cb"] = self.db.jrn_counts_bn()         # пачки по этот номер — из строк, учтённых снимком
                 marks["reset"] = bool(self.rsv_get("rsv_jrn_out").get("reset"))
             pkgbot.assert_clean(db_bytes)
-            bot_part["db"] = db_bytes.hex()
             if not journal:
                 logical = _logical(db_bytes)
                 if not force and logical in (sent.get("logical"), sent.get("pending_logical")):
@@ -244,8 +243,11 @@ class ReservePackageMixin:
             jrn = {"v": 1, **marks} if journal else None
             if jrn:
                 parts["jrn"] = jrn
+            # реплика — двоичной частью (seal.DB_PART), не hex внутри JSON части бота: процесс
+            # открытия на резерве распаковывает её потоком в хранилище, без копий базы в памяти
             blob = seal.seal(parts, k=bytes.fromhex(keys["k"]), m=bytes.fromhex(keys["m"]),
-                             pkg_gen=gen, m_gen=int(keys.get("m_gen") or 0), dns=dns)
+                             pkg_gen=gen, m_gen=int(keys.get("m_gen") or 0), dns=dns,
+                             blobs={seal.DB_PART: db_bytes})
             # потолок канала (MAX_CHUNKS частей) — узнать при подготовке, а не на переезде: строка в
             # карточке (pkg_error), а не сорванная отправка; снимок и отметка pending — после проверки
             too_big = self.pkg_too_big(blob)
@@ -261,7 +263,7 @@ class ReservePackageMixin:
                      f", журнал по {marks['i']}" if journal else "")
             # отпечаток `M` пакета — рядом с поколением: резерв сверяет с ним ящики (`qkeys`)
             # размер базы (несжатой) — резерву: по нему потолок памяти процесса открытия и хранилище
-            # гостя (сжатый пакет о базе почти ничего не говорит); прежний резерв поле отбрасывает
+            # гостя (сжатый пакет о базе почти ничего не говорит)
             built = {"gen": gen, "fp": fp, "blob": blob.hex(), "mf": rsvkeys.m_print(bytes.fromhex(keys["m"])),
                      "db_size": len(db_bytes)}
             if jrn:

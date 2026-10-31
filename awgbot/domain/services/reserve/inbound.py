@@ -386,6 +386,9 @@ class ReserveInboundMixin:
             subprocess.run(["systemctl", "stop", rsvzone.GUEST_UNIT], capture_output=True, timeout=60)
             rsvzone.write_private(rsvzone.REP_PATH, blob)
             rsvzone.write_private(rsvzone.TG_TAKE_FILE, "1")
+            # гость подхватит реплику на старте, а она несёт базу основы на момент передачи — больше
+            # ушедшей в пакете: хранилище и потолок памяти юнита — по ней, а не по устаревшему размеру
+            rsvzone.guest_fit()
             subprocess.run(["systemctl", "start", rsvzone.GUEST_UNIT], capture_output=True, timeout=60)
         except (OSError, subprocess.SubprocessError) as e:
             log.warning("резерв: реплика не положена гостю: %s", e)

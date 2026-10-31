@@ -1,5 +1,6 @@
 """
-bot.py — часть бота пакета: реплика БД, значения настроек по белому списку, env.
+bot.py — часть бота пакета: реплика БД (едет двоичной частью `db` пакета, не
+внутри JSON), значения настроек по белому списку, env.
 
 Реплика — согласованный снимок базы (backup API) без таблиц истории и без
 того, что резерву не нужно никогда: закрытых ключей устройств, фразы и ключа
@@ -253,8 +254,9 @@ def assert_clean(db_bytes: bytes) -> None:
             pass
 
 
-def build(db_path: str, conf_dir: str, *, token: str, admin_id: int) -> dict:
-    """Часть бота целиком: реплика (hex), настройки, env."""
+def build(db_path: str, conf_dir: str, *, token: str, admin_id: int) -> tuple[dict, bytes]:
+    """Часть бота целиком: (настройки и env — часть-JSON, реплика — байты двоичной
+    части `db` пакета, seal.DB_PART)."""
     db = replica(db_path)
     assert_clean(db)
-    return {"db": db.hex(), "conf": conf_part(conf_dir), "env": env_part(token, admin_id)}
+    return {"conf": conf_part(conf_dir), "env": env_part(token, admin_id)}, db

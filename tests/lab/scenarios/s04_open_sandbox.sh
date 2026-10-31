@@ -72,9 +72,9 @@ AllowedIPs = 10.8.1.2/32
 """
 m = rsvkeys.new_master(); q = rsvkeys.QuorumGen.new(1, 2); k = seal.new_k()   # M и многочлен Mq кворума (порог 2)
 vpn = pkgvpn.build([("awg0", live)], admin=["10.8.1.2"], dns=["10.8.1.1"], upstreams=["198.51.100.53"], tz="UTC")
-botpart = {"db": pkgbot.replica(path).hex(), "conf": {}, "app_guest": {"network": {"server_host": "203.0.113.7", "server_port": 45877}},
+botpart = {"conf": {}, "app_guest": {"network": {"server_host": "203.0.113.7", "server_port": 45877}},
            "env": {"BOT_TOKEN": os.environ["LAB_TOKEN"], "ADMIN_ID": 880001}}
-blob = seal.seal({"vpn": vpn, "bot": botpart}, k=k, m=m, pkg_gen=1, m_gen=1)
+blob = seal.seal({"vpn": vpn, "bot": botpart}, k=k, m=m, pkg_gen=1, m_gen=1, blobs={seal.DB_PART: pkgbot.replica(path)})
 open(os.path.join(config.DATA_DIR, "reserve", "guest.pkg"), "wb").write(blob)
 x1, y1 = q.reserve_point(); x2, y2 = q.gateway_point(1)
 print(json.dumps({"qpoints": [[x1, y1.hex()], [x2, y2.hex()]], "qbox": q.qbox(m).hex()}))
@@ -176,9 +176,10 @@ AllowedIPs = 10.8.1.2/32
 """
 m = rsvkeys.new_master(); q = rsvkeys.QuorumGen.new(1, 2)   # M и многочлен Mq кворума (порог 2)
 vpn = pkgvpn.build([("awg0", live)], admin=["10.8.1.2"], dns=["10.8.1.1"], upstreams=["198.51.100.53"], tz="UTC")
-botpart = {"db": rep.hex(), "conf": {}, "app_guest": {"network": {"server_host": "203.0.113.7", "server_port": 45877}},
+botpart = {"conf": {}, "app_guest": {"network": {"server_host": "203.0.113.7", "server_port": 45877}},
            "env": {"BOT_TOKEN": os.environ["LAB_TOKEN"], "ADMIN_ID": 880001}}
-blob = seal.seal({"vpn": vpn, "bot": botpart, "jrn": {"v": 1, **marks}}, k=k, m=m, pkg_gen=2, m_gen=1)
+blob = seal.seal({"vpn": vpn, "bot": botpart, "jrn": {"v": 1, **marks}}, k=k, m=m, pkg_gen=2, m_gen=1,
+                 blobs={seal.DB_PART: rep})
 open(os.path.join(config.DATA_DIR, "reserve", "guest.pkg"), "wb").write(blob)
 x1, y1 = q.reserve_point(); x2, y2 = q.gateway_point(1)
 print(json.dumps({"qpoints": [[x1, y1.hex()], [x2, y2.hex()]], "qbox": q.qbox(m).hex(), "events": len(evs)}))

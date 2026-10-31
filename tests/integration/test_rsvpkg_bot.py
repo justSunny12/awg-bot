@@ -159,9 +159,10 @@ def test_the_guard_refuses_a_dirty_replica(live, tmp_path, dirt):
 
 
 def test_the_whole_bot_part_carries_two_env_lines_only(live, monkeypatch):
-    part = bot.build(_db_path(live), str(ROOT / "conf"), token="123456789:AA-DUMMY", admin_id=config.ADMIN_ID)
+    part, db = bot.build(_db_path(live), str(ROOT / "conf"), token="123456789:AA-DUMMY", admin_id=config.ADMIN_ID)
     assert part["env"] == {"BOT_TOKEN": "123456789:AA-DUMMY", "ADMIN_ID": config.ADMIN_ID}
-    assert bytes.fromhex(part["db"])[:16] == b"SQLite format 3\x00"
+    assert "db" not in part, "реплика внутри JSON части бота — её место в двоичной части пакета"
+    assert db[:16] == b"SQLite format 3\x00"
 
 
 # ── настройки по белому списку ───────────────────────────────────────────────

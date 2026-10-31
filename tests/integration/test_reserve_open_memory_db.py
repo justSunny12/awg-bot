@@ -7,14 +7,19 @@
 `_rsvopen_launch`) и строку памяти в карточке резерва (screen.py `_reserve_pkg_mem_view`).
 Без поля (пакет прежней основы) — всё, как раньше, от размера пакета.
 
-Процесс открытия (tools/rsvopen.py) держит базу не сжатой: часть бота — JSON с hex базы
-(2 знака на байт), распаковка держит байты JSON и строку из них, а строка растёт ступенями
-по самому широкому знаку части (кириллица настроек — 2 байта на знак, эмодзи — 4); пик
-памяти меряется здесь же по настоящему коду сборки и открытия пакета.
+Пакет формата 2 (util/rsvpkg/seal): база — двоичная часть, JSON — только метаданные;
+процесс открытия (tools/rsvopen.py) держит базу только сжатой и распаковывает её потоком
+прямо в хранилище гостя — потолок 128 МБ + 4 × (пакет + снимок `rep.bin`) + 2 × база
+(хранилище в cgroup записавшего и журнал SQLite поверх него), а не прежние 14 × база;
+пик памяти меряется здесь же по настоящему коду сборки и открытия пакета. Снимок
+`rep.bin` новее пакета (перезагрузка резерва посреди обслуживания) несёт базу гостя —
+она больше ушедшей в пакете: потолок и хранилище при запуске — по большей из баз
+(размер базы снимка в его открытом заголовке) и с размером файла снимка.
 
-Цена ошибки: хорошо сжимаемая база больше «пакет + ~40 МБ» убивает процесс открытия по
-OOM посреди аварийного переезда при любом хранилище — пользователи без VPN, когда чинить
-поздно; карточка не предупреждает админа резерва о памяти, которую возьмёт переезд к
+Цена ошибки: база в памяти процесса открытия целиком (hex, JSON, копии) — OOM посреди
+аварийного переезда на сервере в 1 ГБ при базе от ~60 МБ — пользователи без VPN, когда
+чинить поздно; потолок по базе пакета при открытии из большего снимка — тот же OOM после
+перезагрузки резерва; карточка не предупреждает админа резерва о памяти, которую возьмёт переезд к
 нему (пакет ≤ 16 МБ, порог 64 МБ — строка по пакету не появлялась никогда); новое поле
 обязательным — прежний резерв рвал бы сессию на каждом пакете; мусор в поле — потолок
 из чужого числа.
@@ -49,14 +54,21 @@ PKG = {"gen": 1, "fp": "ab" * 32, "i": 0, "n": 1, "blob": ""}
 
 # ── формула ─────────────────────────────────────────────────────────────────
 
-@pytest.mark.parametrize("pkg, db, want", [
-    (0, 0, 192), (1 * MB, 0, 192), (30 * MB, 0, 218),          # базы не знаю — от пакета, как раньше
-    (1 * MB, 1 * MB, 192), (1 * MB, 4 * MB, 192),              # маленькая база — прежний пол
-    (1 * MB, 12 * MB, 128 + 3 + 14 * 12), (16 * MB, 100 * MB, 128 + 48 + 1400),
-    (1 * MB, 12 * MB + 1, 128 + 3 + 14 * 13),
+@pytest.mark.parametrize("pkg, db, rep, want", [
+    (0, 0, 0, 192), (1 * MB, 0, 0, 192), (30 * MB, 0, 0, 128 + 120),          # базы не знаю — от пакета
+    (1 * MB, 12 * MB, 0, 192), (1 * MB, 30 * MB, 0, 192),                     # маленькая база — прежний пол
+    (1 * MB, 40 * MB, 0, 128 + 4 + 80), (16 * MB, 100 * MB, 0, 128 + 64 + 200),
+    (2 * MB, 50 * MB + 1, 0, 128 + 8 + 102),
+    (1 * MB, 40 * MB, 10 * MB, 128 + 44 + 80),                                 # снимок rep.bin — своим файлом
 ])
-def test_the_open_ceiling_follows_the_base_when_its_size_is_known_and_the_package_otherwise(pkg, db, want):
-    assert rsvzone.open_memory_mb(pkg, db) == want
+def test_the_open_ceiling_follows_the_package_the_snapshot_and_the_base(pkg, db, rep, want):
+    assert rsvzone.open_memory_mb(pkg, db, rep) == want
+
+
+def test_the_ceiling_no_longer_grows_fourteen_times_the_base():
+    """База 100 МБ: прежний потолок — 128 + 3 × пакет + 14 × база (1,5 ГБ на сервере в 1 ГБ),
+    новый — две базы и пакет."""
+    assert rsvzone.open_memory_mb(2 * MB, 100 * MB) < 128 + 6 + 3 * 100
 
 
 @pytest.mark.parametrize("v, want", [(12 * MB, 12 * MB), (0, 0), (None, 0), (-5, 0), (True, 0), ("много", 0),
@@ -74,34 +86,47 @@ def _peak_mb(fn) -> float:
         tracemalloc.stop()
 
 
+def _compressible(n: int) -> bytes:
+    return (os.urandom(256) + b"\0" * 3840) * (n // 4096)
+
+
 @pytest.mark.parametrize("label", ["1 месяц", "1 месяц 🙂"])
 @pytest.mark.parametrize("path", ["package", "snapshot"])
-def test_the_ceiling_covers_what_the_open_process_really_holds_for_a_well_compressed_base(label, path):
-    """Пик памяти шагов процесса открытия с базой (open_parts, hex → байты; путь снимка
-    `rep.bin` — ещё и его распаковка) по настоящему коду пакета: хорошо сжимаемая база
-    20 МБ в пакете меньше мегабайта. Потолок от базы покрывает пик с запасом не меньше
-    64 МБ на интерпретатор; потолок от пакета (прежний) — нет."""
-    db = (os.urandom(256) + b"\0" * 3840) * (20 * MB // 4096)
+@pytest.mark.parametrize("kind", ["compressible", "random"])
+def test_the_ceiling_covers_what_the_open_process_really_holds(tmp_path, label, path, kind):
+    """Пик памяти шагов процесса открытия с базой (open_parts, двоичная часть или снимок
+    `rep.bin` — потоком в файл хранилища) по настоящему коду пакета: хорошо сжимаемая база
+    40 МБ (пакет меньше двух мегабайт) и несжимаемая 10 МБ. Потолок покрывает пик с запасом
+    не меньше 64 МБ на интерпретатор, а сам пик не держит базу целиком: распаковка — потоком.
+    Широкие знаки в настройках (кириллица, эмодзи) пика больше не растят — база не в JSON."""
+    db = _compressible(40 * MB) if kind == "compressible" else os.urandom(10 * MB)
     k, m = seal.new_k(), bytes(16)
-    bot = {"conf": {"subscription": {"period_labels": {"month": label}}}, "app_guest": {}, "env": {}, "lists": {},
-           "db": db.hex()}
-    blob = seal.seal({"vpn": {}, "bot": bot}, k=k, m=m, pkg_gen=1, m_gen=1)
-    rep = seal.snapshot_seal(k, {"pkg_gen": 2, "at": "", "db": db.hex()})
-    del bot
-    assert len(blob) < MB, "база сжалась хуже, чем нужно сценарию"
+    bot = {"conf": {"subscription": {"period_labels": {"month": label}}}, "app_guest": {}, "env": {}, "lists": {}}
+    blob = seal.seal({"vpn": {}, "bot": bot}, k=k, m=m, pkg_gen=1, m_gen=1, blobs={seal.DB_PART: db})
+    rep = seal.snapshot_seal(k, {"pkg_gen": 2, "at": ""}, db) if path == "snapshot" else b""
+    if kind == "compressible":
+        assert len(blob) < 2 * MB, "база сжалась хуже, чем нужно сценарию"
+    out = tmp_path / "bot.db"
 
     def opening():
-        parts = seal.open_parts(bytes(blob), k)               # файл пакета — своя копия в памяти
+        pkg = bytes(blob)                                     # файл пакета — своя копия в памяти
+        parts = seal.open_parts(pkg, k)
+        assert "db" not in parts["bot"]
         if path == "snapshot":
-            snap = seal.snapshot_open(k, bytes(rep))
-            got = bytes.fromhex(snap["db"])
-            del snap
+            _meta, src = seal.snapshot_open(k, bytes(rep))
         else:
-            got = bytes.fromhex(parts["bot"]["db"])
-        assert len(got) == len(db)
+            src = seal.open_blob(pkg, k, seal.DB_PART)
+        del pkg
+        with open(out, "wb") as f:
+            assert src.write_to(f) == len(db)
     peak = _peak_mb(opening)
-    assert peak + 64 <= rsvzone.open_memory_mb(len(blob), len(db)), (peak, rsvzone.open_memory_mb(len(blob), len(db)))
-    assert peak + 64 > rsvzone.open_memory_mb(len(blob)), "сценарий не воспроизводит недобор потолка по пакету"
+    assert out.stat().st_size == len(db)
+    ceiling = rsvzone.open_memory_mb(len(blob), len(db), len(rep))
+    assert peak + 64 <= ceiling, (peak, ceiling)
+    if kind == "compressible":
+        assert peak < len(db) / MB / 4, f"распаковка держит базу в памяти: пик {peak:.1f} МБ при базе 40 МБ"
+    else:
+        assert peak <= 5 * len(db) / MB, f"больше пяти копий несжимаемой базы: {peak:.1f} МБ"
 
 
 # ── канал пары: поле необязательное ─────────────────────────────────────────
@@ -130,8 +155,8 @@ def test_a_reserve_of_the_previous_release_drops_the_new_field_instead_of_breaki
 def test_the_primary_sends_the_size_of_the_replica_that_went_into_the_package(paired, make_active_client, clock):
     make_active_client(name="Профиль", tg_id=7001)
     built = _tick(paired, clock)
-    parts = seal.open_parts(bytes.fromhex(built["blob"]), paired.reserve_k())
-    assert built["db_size"] == len(bytes.fromhex(parts["bot"]["db"])) > 0, built.get("db_size")
+    db = seal.open_blob(bytes.fromhex(built["blob"]), paired.reserve_k())
+    assert built["db_size"] == db.size == len(db.read()) > 0, built.get("db_size")
 
 
 async def test_the_size_rides_with_every_chunk_and_reaches_the_reserve_and_an_old_chunk_passes_without_it(monkeypatch):
@@ -186,7 +211,31 @@ def test_the_sandbox_ceiling_is_taken_from_the_base_size_and_from_the_package_wi
     with open(tmp_path / "reserve" / "guest.pkg", "wb") as f:
         f.truncate(1 * MB)
     assert "MemoryMax=192M" in openproc.rsvopen_sandbox_props(str(tmp_path)), "без размера базы — по пакету"
-    assert f"MemoryMax={128 + 3 + 14 * 40}M" in openproc.rsvopen_sandbox_props(str(tmp_path), db_size=40 * MB)
+    assert f"MemoryMax={128 + 4 + 2 * 40}M" in openproc.rsvopen_sandbox_props(str(tmp_path), db_size=40 * MB)
+
+
+def _rep_file(db_size: int) -> bytes:
+    """`rep.bin` со сжимаемой базой `db_size` под чужим K: боту резерва нужен только заголовок."""
+    blob = seal.snapshot_seal(seal.new_k(), {"pkg_gen": 9, "at": ""}, b"\0" * db_size)
+    rsvzone.REP_PATH.parent.mkdir(parents=True, exist_ok=True)
+    rsvzone.REP_PATH.write_bytes(blob)
+    return blob
+
+
+def test_the_sandbox_ceiling_counts_a_snapshot_whose_base_grew_during_service(tmp_path, monkeypatch):
+    """Перезагрузка резерва посреди обслуживания: процесс открытия берёт базу из `rep.bin`, а она
+    больше ушедшей в пакете — потолок по большей из баз и с файлом снимка, не по `db_size`."""
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    (tmp_path / "reserve").mkdir()
+    with open(tmp_path / "reserve" / "guest.pkg", "wb") as f:
+        f.truncate(1 * MB)
+    rep = _rep_file(90 * MB)
+    want = rsvzone.open_memory_mb(1 * MB, 90 * MB, len(rep))
+    assert want == 128 + 4 * (1 + 1) + 2 * 90, want
+    assert f"MemoryMax={want}M" in openproc.rsvopen_sandbox_props(str(tmp_path), db_size=40 * MB)
+    assert rsvzone.rep_sizes() == (len(rep), 90 * MB)
+    rsvzone.REP_PATH.write_bytes(b"\x00" * 100)
+    assert rsvzone.rep_sizes() == (0, 0), "мусор вместо снимка — размер из чужих байт"
 
 
 def test_the_launch_mounts_the_store_and_sets_the_ceiling_by_the_base_size(host):
@@ -197,7 +246,16 @@ def test_the_launch_mounts_the_store_and_sets_the_ceiling_by_the_base_size(host)
     assert f"MemoryMax={rsvzone.open_memory_mb(pkg, 40 * MB)}M" in host.spawn.popen[0]["cmd"], host.spawn.popen[0]["cmd"]
 
 
-def test_the_launch_of_a_package_from_an_old_primary_stays_by_the_package(host):
+def test_the_launch_mounts_the_store_by_the_snapshot_base_when_it_is_bigger(host):
+    host.svc.rsv_update("rsv_pkg_in", db_size=40 * MB)
+    rep = _rep_file(70 * MB)
+    assert host.svc.reserve_go_req_in(7, "button") == ""
+    assert host.zone.store_sizes == [rsvzone.store_mb(70 * MB)], host.zone.store_sizes
+    pkg = len(b"DUMMY-package")
+    assert f"MemoryMax={rsvzone.open_memory_mb(pkg, 70 * MB, len(rep))}M" in host.spawn.popen[0]["cmd"]
+
+
+def test_the_launch_without_a_known_base_size_stays_by_the_package(host):
     assert host.svc.reserve_go_req_in(7, "button") == ""
     pkg = len(b"DUMMY-package")
     assert host.zone.store_sizes == [rsvzone.store_mb(pkg)], host.zone.store_sizes
@@ -213,6 +271,6 @@ def test_the_card_warns_by_the_base_size_when_the_primary_sends_it(services, rsv
     services.rsv_put("rsv_pkg_in", {"gen": 7, "fp": "DUMMY-fp", "size": 2 * MB, "db_size": 100 * MB})
     d = services.reserve_card_data()
     need = rsvzone.open_memory_mb(2 * MB, 100 * MB) + rsvzone.guest_memory_mb(100 * MB)
-    assert need == 128 + 6 + 1400 + 512, need
-    assert d["pkg_mem"] == {"size": "0,1 ГБ", "need": "2 ГБ"}, d["pkg_mem"]
-    assert "└ ⚠️ данные для переезда «" in card_text(d) and "понадобится около 2 ГБ памяти" in card_text(d), card_text(d)
+    assert need == 128 + 8 + 200 + 512, need
+    assert d["pkg_mem"] == {"size": "0,1 ГБ", "need": "0,83 ГБ"}, d["pkg_mem"]
+    assert "└ ⚠️ данные для переезда «" in card_text(d) and "понадобится около 0,83 ГБ памяти" in card_text(d), card_text(d)
