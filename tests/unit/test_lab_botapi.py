@@ -146,6 +146,46 @@ async def test_a_refusing_receiver_keeps_the_update_pending_and_shows_the_error(
     await _call(api, "deleteWebhook")
 
 
+async def test_a_certificate_sent_as_attach_reference_is_the_trusted_one(api, receiver):
+    """aiogram шлёт сертификат setWebhook частью со случайным именем и ссылкой `attach://` в поле:
+    макет должен взять файл, а не строку ссылки (иначе ни одна доставка вебхука с сертификатом не
+    проходит — сценарии с ботом основы на резерве не видят ни ответов, ни ошибок доставки)."""
+    from aiohttp import FormData
+    form = FormData()
+    form.add_field("url", receiver["url"])
+    form.add_field("certificate", "attach://f1")
+    form.add_field("f1", b"-----BEGIN CERTIFICATE-----\nDUMMY\n-----END CERTIFICATE-----\n", filename="cert.pem")
+    r = await api.post(f"/bot{TOKEN}/setWebhook", data=form)
+    assert (await r.json())["ok"]
+    bot = api.server.app[botapi.API_KEY].bot(TOKEN)
+    assert bot.webhook["cert"].startswith(b"-----BEGIN CERTIFICATE-----"), bot.webhook["cert"][:40]
+    _, body = await _call(api, "getWebhookInfo")
+    assert body["result"]["has_custom_certificate"] is True
+
+
+async def test_a_broken_certificate_is_a_delivery_error_not_a_dead_delivery(api, receiver):
+    """Сертификат, который не читается, — ошибка доставки в getWebhookInfo и повтор, а не молча
+    умершая задача доставки (сценарий ждал бы ошибку, которой макет никогда не покажет)."""
+    from aiohttp import FormData
+    form = FormData()
+    form.add_field("url", receiver["url"].replace("http://", "https://"))
+    form.add_field("certificate", "attach://f1")
+    form.add_field("f1", b"not a certificate", filename="cert.pem")
+    await api.post(f"/bot{TOKEN}/setWebhook", data=form)
+    await _inject(api, 1)
+
+    async def info():
+        return (await _call(api, "getWebhookInfo"))[1]["result"]
+    for _ in range(80):
+        got = await info()
+        if "last_error_message" in got:
+            break
+        await asyncio.sleep(0.05)
+    assert "last_error_date" in got and got["pending_update_count"] == 1, got
+    assert not api.server.app[botapi.API_KEY].bot(TOKEN).deliver_task.done(), "задача доставки умерла"
+    await _call(api, "deleteWebhook")
+
+
 async def test_drop_pending_updates_clears_the_queue(api, receiver):
     await _inject(api, 2)
     await _call(api, "deleteWebhook", drop_pending_updates=True)

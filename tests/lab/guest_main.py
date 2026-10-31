@@ -7,6 +7,7 @@ AWG_BOT_DATA_DIR, AWG_BOT_ENV, BOT_TOKEN и ADMIN_ID из env хранилища
 LAB_MAKE_CLIENT=<имя> — до старта завести в базе гостя активный профиль (так
 сценарий получает «запись, сделанную на резерве», не подключая настоящих
 пользователей).
+LAB_CONST — сжатые сроки (как у узлов стенда, pairnode.lab_consts).
 LAB_GUEST_CMD=<каталог> — правки в работающем боте (как правка админа на резерве):
 файл `edit_one` с JSON {"name": …} — профиль с устройством, `set` с {"name",
 "field", "value"} — поле профиля; итог — `<команда>.done` (отказ базы следующему —
@@ -115,6 +116,8 @@ async def _run() -> None:
 def main() -> None:
     if not config.GUEST:
         raise SystemExit("AWG_BOT_GUEST не задан — это запуск гостевого режима")
+    from tests.lab import pairnode
+    pairnode.lab_consts()                                      # сжатые сроки сценария (LAB_CONST), как у узлов
     if os.environ.get("LAB_MAKE_CLIENT"):
         _make_client(os.environ["LAB_MAKE_CLIENT"])
     main_pkg.Bot = LabBot

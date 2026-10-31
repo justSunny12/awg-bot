@@ -30,7 +30,20 @@ data/ (bot.db, reserve/), awg/ (конфиги awg0 и awgpair), cmd/ (кома�
 Команды (файл cmd/<имя>, содержимое — аргументы JSON): load {n, prefix, pause, base},
 set {name, field, value}, code {out}, move {},
 return {}, backup {out}, qpause {seconds} (кворум: плановая пауза лидера перед остановкой),
-fw {enabled} (форма файервола хоста и перерисовка).
+fw {enabled} (форма файервола хоста и перерисовка), card {} (текст карточки «🛟 Резерв»),
+force {dry, tg_silent} (рычаг «вернуть без резерва» путём кнопки: обе проверки и сам рычаг;
+dry — только проверки, tg_silent — Telegram не ответил на getWebhookInfo), c9drop {} («🗑 Не
+ждать» отметки С9).
+
+Сроки резерва сжимает окружение `LAB_CONST` (`модуль:ИМЯ=число,ИМЯ=число;модуль2:…`) —
+константы модулей подменяются до старта (у бота основы на резерве — тоже, guest_main).
+`LAB_OPEN_RECORD=1` — запись при аварийном открытии меняет сам процесс открытия (как на
+хостах, done без record=skipped): его модуль запускается обёрткой `tests/lab/rsvopen_lab.py` с
+миром DNS стенда (каталог `base-rec`, общий каталог стенда — на запись в песочнице). Отметка
+`shared/auth.hold` — авторитетный сервер записи не отвечает (факт записи не подтверждается).
+
+`bloat --mb N` (до старта, захват журнала выключен) — база узла раздута списком доменов
+профиля админа до N МБ: снимок пакета несёт его, событий журнала нет.
 
 РФ-доступ (LAB_RT=1, s08_rf_transit): `rtseed` — слот 1 с линком `awglink` и пользователь на awg0;
 в работе — файервол хоста, наборы и цепочка маркировки (адрес «РФ-сайта» LAB_RF_SET — в набор
@@ -106,6 +119,29 @@ def seed(a: argparse.Namespace) -> None:
     db.close()
 
 
+def bloat(a: argparse.Namespace) -> None:
+    """База узла больше N МБ (s13): домены списка профиля админа — таблица решений, едет в
+    снимке пакета; до старта узла захват журнала выключен — событий нет. Сжимаются хорошо:
+    пакет мал, база велика (потолки памяти — от базы, а не пакета)."""
+    from awgbot.core import config, settings
+    settings.init(config.CONF_DIR)
+    from awgbot.infra.db import Database
+    db = Database(config.DB_PATH)
+    db.init_schema()
+    admin = db.get_client_by_tg(int(config.ADMIN_ID))
+    con = db._connection()
+    want = int(a.mb) * 1024 * 1024
+    i = 0
+    while os.path.getsize(config.DB_PATH) < want:
+        con.executemany("INSERT INTO client_routing_domains (client_id, domain, added_at) VALUES (?, ?, ?)",
+                        [(int(admin.id), f"d{i + k:08d}.bloat.lab.test", _START) for k in range(20000)])
+        con.commit()
+        con.execute("PRAGMA wal_checkpoint(TRUNCATE)")          # размер — у файла базы, не WAL
+        i += 20000
+    db.close()
+    print(json.dumps({"rows": i, "size": os.path.getsize(config.DB_PATH)}))
+
+
 def rtseed(a: argparse.Namespace) -> None:
     """РФ-доступ узла (s08_rf_transit): слот 1 с линком `awglink` до шлюза стенда (устройство
     шлюза — запись без ключа в awg0, как у подключённого шлюза) и, если задан ключ, пользователь
@@ -150,11 +186,14 @@ class LabDns:
         v = self._read().get(name)
         return [v] if v else []
 
+    def _held(self) -> bool:
+        return (self.path.parent / "auth.hold").exists()     # авторитетный сервер не отвечает (рычаг сценария)
+
     def read_authoritative(self, name: str) -> list[str]:
-        return self.read_system(name)
+        return [] if self._held() else self.read_system(name)
 
     def read_authoritative_ttl(self, name: str) -> tuple[list[str], int]:
-        got = self.read_system(name)
+        got = self.read_authoritative(name)
         return got, (30 if got else 0)
 
     def provider_for(self, cfg: dict):
@@ -178,6 +217,40 @@ class LabDns:
         return Provider()
 
 
+def lab_consts() -> None:
+    """Сроки резерва, сжатые для сценария: LAB_CONST=`модуль:ИМЯ=число,ИМЯ=число;модуль2:…` —
+    константа модуля подменяется до старта (модуль читает её при вызове, не при импорте)."""
+    import importlib
+    import logging
+    for part in (os.environ.get("LAB_CONST") or "").split(";"):
+        mod, _, pairs = part.strip().partition(":")
+        if not mod or not pairs:
+            continue
+        m = importlib.import_module(mod)
+        for kv in pairs.split(","):
+            name, _, val = kv.partition("=")
+            if not hasattr(m, name.strip()):
+                raise SystemExit(f"LAB_CONST: у {mod} нет {name.strip()}")
+            setattr(m, name.strip(), type(getattr(m, name.strip()))(float(val)))
+            logging.getLogger("lab").info("стенд: %s.%s = %s", mod, name.strip(), val)
+
+
+def _rec_base(base: Path) -> Path:
+    """BASE_DIR процесса открытия с миром DNS стенда (LAB_OPEN_RECORD=1): те же ссылки, что у
+    base, а `tools` — каталог, где `rsvopen` — обёртка tests/lab/rsvopen_lab.py."""
+    rec = base.parent / "base-rec"
+    (rec / "tools").mkdir(parents=True, exist_ok=True)
+    for name in ("venv", "awgbot", "install"):
+        if not (rec / name).exists():
+            (rec / name).symlink_to(os.readlink(base / name))
+    (rec / "tools" / "__init__.py").write_text("", encoding="utf-8")
+    (rec / "tools" / "rsvopen.py").write_text(
+        "import runpy, sys\n"
+        f"sys.path.insert(0, {str(ROOT)!r})\n"
+        "runpy.run_module('tests.lab.rsvopen_lab', run_name='__main__')\n", encoding="utf-8")
+    return rec
+
+
 def lab_world(svc, shared: Path) -> None:
     from awgbot.domain.services.reserve import openproc
     from awgbot.util import dnsapi
@@ -187,12 +260,14 @@ def lab_world(svc, shared: Path) -> None:
     svc.reserve_has_gateway = lambda: True
     # запись DNS у основы — «автоматическая» (провайдер подменён LabDns): конверт DNS едет в пакете, и
     # аварийное открытие на резерве разрешено; саму запись меняет сценарий (у стенда нет провайдера
-    # и авторитетного DNS), поэтому процессу открытия — set_record=False, отметку tg_take кладёт сценарий
+    # и авторитетного DNS), поэтому процессу открытия — set_record=False, отметку tg_take кладёт сценарий;
+    # LAB_OPEN_RECORD=1 — запись меняет процесс открытия миром DNS стенда (rsvopen_lab), как на хостах
     svc.rsv_update("rsv_dns", provider="digitalplat", token="lab")
+    open_record = os.environ.get("LAB_OPEN_RECORD") == "1"
     real_launch = svc._rsvopen_launch
 
     def launch(payload: dict, keep_stdin: bool = False) -> None:
-        real_launch({**payload, "set_record": False}, keep_stdin)
+        real_launch(payload if open_record else {**payload, "set_record": False}, keep_stdin)
     svc._rsvopen_launch = launch
     api = os.environ.get("LAB_BOTAPI", "")
 
@@ -212,6 +287,8 @@ def lab_world(svc, shared: Path) -> None:
     svc._pair_env = lambda: {**real_pair_env(), "CONF_DIR": str(config.AWG_DIR)}
     from awgbot.core import config
     config.BASE_DIR = Path(os.environ["AWG_BOT_CONF_DIR"]).parent / "base"   # venv и код — ссылками (setup)
+    if open_record:
+        config.BASE_DIR = _rec_base(config.BASE_DIR)
     real_props = openproc.rsvopen_sandbox_props
     venv = os.environ.get("LAB_VENV", "")
     netns = os.environ.get("LAB_NETNS", "")
@@ -220,6 +297,9 @@ def lab_world(svc, shared: Path) -> None:
         extra = ["-p", "ProtectHome=tmpfs", "-p", f"BindReadOnlyPaths={venv}"] if venv else []
         if netns:
             extra += ["-p", f"NetworkNamespacePath=/run/netns/{netns}"]
+        if open_record:                                        # мир DNS стенда — файл общего каталога
+            extra += ["-p", f"ReadWritePaths={shared}", "-p",
+                      f"Environment=LAB_SHARED={shared} LAB_RECORD={os.environ.get('LAB_RECORD', '')}"]
         return real_props(base, **kw) + extra
     openproc.rsvopen_sandbox_props = props
 
@@ -415,11 +495,17 @@ def _status(svc, w: Path) -> dict:
           "last_i": svc.db.jrn_last_i(), "out": svc.rsv_get("rsv_out"), "in": svc.rsv_get("rsv_in"),
           "poll": svc.rsv_get("rsv_poll"), "pkg_sent": {k: v for k, v in svc.rsv_get("rsv_pkg_sent").items()
                                                           if k in ("gen", "at", "jrn")},
-          "pkg_in": {k: v for k, v in svc.rsv_get("rsv_pkg_in").items() if k in ("gen", "at", "m_gen")},
+          "pkg_in": {k: v for k, v in svc.rsv_get("rsv_pkg_in").items() if k in ("gen", "at", "m_gen", "db_size")},
           "m_gen": int(svc.reserve_keys().get("m_gen") or 0),
           "peer": {k: v for k, v in svc.reserve_peer_state().items() if k in ("ready", "caps", "version", "inn", "out")},
           "jrn_on": svc.reserve_jrn_on(), "code_window": svc.reserve_code_window(),
           "tail_meta": svc.rsv_get("rsv_tail"), "quo": _quo_status(svc)}
+    for key, fn in (("in_tg", lambda: svc.reserve_in_tg()), ("c9", lambda: {k: v for k, v in svc.rsv_get("rsv_c9").items() if k != "k"}),
+                    ("c9_view", lambda: svc.reserve_c9_wait_view())):
+        try:
+            st[key] = fn()
+        except Exception as e:                                 # noqa: BLE001
+            st[key] = f"{type(e).__name__}: {e}"
     if os.environ.get("LAB_RT") == "1":
         st["rt"] = _rt_status(svc)
     try:
@@ -460,9 +546,44 @@ def client_id(db, name: str) -> int:
     return int(row[0])
 
 
-async def _command(svc, w: Path, name: str, args: dict) -> dict:
+async def _command(svc, w: Path, name: str, args: dict, bot=None) -> dict:
     from awgbot.core import config
     from awgbot.runtime import rsvactions
+    if name == "card":
+        from awgbot.bot.texts.reserve import section as st_t
+        d = await asyncio.to_thread(svc.reserve_card_data)
+        return {"text": st_t.card_text(d, svc.bot_username or "lab_bot")}
+    if name == "force":
+        # «⚠️ Вернуть без …» → «Да» (handlers/settings/reserve/move.force_go): возможность рычага,
+        # слово Telegram (getWebhookInfo, вебхук не снимается), сам рычаг
+        from awgbot.bot.handlers.settings.reserve.move import _webhook_info
+        from awgbot.domain.services import ServiceError
+        why = await asyncio.to_thread(svc.reserve_force_check)
+        if why:
+            return {"refused": why, "stage": "check"}
+        info = None if args.get("tg_silent") else await _webhook_info(bot)
+        try:
+            await asyncio.to_thread(svc.reserve_force_webhook_check, info)
+        except ServiceError as e:
+            return {"refused": str(e), "stage": "webhook", "info": info}
+        if args.get("dry"):
+            return {"go": True, "info": info}
+        try:
+            acts = await asyncio.to_thread(svc.reserve_force_home)
+        except ServiceError as e:
+            return {"refused": str(e), "stage": "home", "info": info}
+        await rsvactions.run(acts)
+        return {"go": True, "info": info, "acts": [a[0] for a in acts]}
+    if name == "c9drop":
+        from awgbot.bot.notifier import send_notifications
+        from awgbot.domain.services import ServiceError
+        try:
+            notes = await asyncio.to_thread(svc.reserve_c9_drop)
+        except ServiceError as e:
+            return {"refused": str(e)}
+        if notes and bot is not None:
+            await send_notifications(bot, notes)
+        return {"dropped": notes is not None, "notes": len(notes or [])}
     if name == "load":
         made = []
         for i in range(int(args.get("n", 10))):
@@ -531,6 +652,7 @@ async def run(a: argparse.Namespace) -> None:
     from awgbot.runtime import pairlink, pollctl, rsvactions
     from awgbot.runtime.scheduler.reserve import setup_reserve_jobs
 
+    lab_consts()
     w = Path(a.work)
     db = Database(config.DB_PATH)
     db.init_schema()
@@ -609,7 +731,7 @@ async def run(a: argparse.Namespace) -> None:
                     args = {}
                 f.unlink()
                 try:
-                    res = await _command(svc, w, f.name, args)
+                    res = await _command(svc, w, f.name, args, bot)
                     (cmd / f"{f.name}.done").write_text(json.dumps(res, ensure_ascii=False), encoding="utf-8")
                 except Exception as e:                         # noqa: BLE001
                     (cmd / f"{f.name}.err").write_text(f"{type(e).__name__}: {e}", encoding="utf-8")
@@ -648,6 +770,8 @@ def main() -> None:
     s2.add_argument("--peer-name", dest="peer_name", required=True)
     s2.add_argument("--peer-host", dest="peer_host", required=True)
     s2.add_argument("--peer-admin", dest="peer_admin", required=True)
+    s4 = sub.add_parser("bloat")
+    s4.add_argument("--mb", required=True)
     s3 = sub.add_parser("rtseed")
     s3.add_argument("--link-if", dest="link_if", default="awglink")
     s3.add_argument("--link-port", dest="link_port", default="443")
@@ -665,6 +789,8 @@ def main() -> None:
         setup(a)
     elif a.cmd == "seed":
         seed(a)
+    elif a.cmd == "bloat":
+        bloat(a)
     elif a.cmd == "rtseed":
         rtseed(a)
     else:
