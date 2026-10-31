@@ -229,9 +229,12 @@ def test_back_with_an_empty_zone_answers_wiped(host, state):
     assert host.zone.calls == []
 
 
-@pytest.mark.parametrize("step, relays", [("launched", False), ("clone_up", False), ("record_set", True),
+@pytest.mark.parametrize("step, relays", [("launched", False), ("store", False), ("clone_up", True), ("record_set", True),
                                           ("done", True)])
 def test_back_from_taking_relays_the_tail_only_if_clients_could_have_come(host, monkeypatch, step, relays):
+    """Клон поднят (`clone_up`) — пользователи уже могли прийти: по кнопке запись меняет основа
+    сразу после `up`, процесс открытия до record_set не доходит вовсе. Без хвоста они теряли
+    VPN до переподключения; лишний хвост безвреден — кончится по тишине."""
     real = host.svc.reserve_peer_state
     monkeypatch.setattr(host.svc, "reserve_peer_state", lambda: {**real(), "self_host": "203.0.113.9", "ports": [45877]})
     _taking(host)

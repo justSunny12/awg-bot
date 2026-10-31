@@ -7,7 +7,7 @@ inbound_back.py — часть пакета reserve (см. __init__): «поль
 (слияние у неё сорвалось) или прислала `resume` — гость снова у меня
 (`reserve_resume`: юнит гостя, serving), иначе бот нем с обеих сторон.
 `back` основы: пересылка хвоста (`--relay`, файервол с DNAT, `relay_flush`;
-адрес основы — IP, имя резолвится сейчас; срыв открытия до смены записи — без
+адрес основы — IP, имя резолвится сейчас; срыв открытия до подъёма клона — без
 хвоста, сразу idle), учёт, `relay{until}`, `--wipe`, прежний пакет — прочь,
 `wiped`, Т-РУ5 → relay до `relay_max_days` или тишины
 `relay_idle_hours` (по счётчику правила DNAT — nftguard.relay_packets) → idle.
@@ -187,9 +187,11 @@ class ReserveInboundBackMixin:
             return [("send", "wiped", {})]
         name = self.reserve_peer_name()
         # пересылка хвоста нужна, только если пользователи могли прийти на клон: зона обслуживала
-        # или процесс открытия дошёл до смены записи; срыв раньше — сразу idle
+        # или клон уже поднят — запись по кнопке меняет основа сразу после `up`, и пользователи
+        # могли прийти раньше, чем процесс открытия дойдёт до record_set; срыв раньше клона — сразу
+        # idle (лишний хвост безвреден: кончится по тишине relay_idle_hours)
         step = str(rsvzone.open_status().get("step") or "")
-        had_clients = str(inn.get("state") or "") != "taking" or step in ("record_set", "record_fact", "done")
+        had_clients = str(inn.get("state") or "") != "taking" or step in ("clone_up", "record_set", "record_fact", "done")
         if str(inn.get("state") or "") == "taking":
             try:
                 self._rsvopen_stop()                          # переезд сорвался на открытии — юнит прочь
