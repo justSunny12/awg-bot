@@ -6,8 +6,9 @@ handlers/reply_commands.py — кнопки действий на уведомл
 
 Инлайн-«Отмена» нужна обеим ролям — фабрика make_cancel_router(), свой Router
 на диспетчер (bot/routers.py, до общих разделов). Модульный router (NoteCB и
-reply-«Отмена») включает только основной бот — первым из своих роутеров, до
-общих разделов настроек (bot/sections): reply-«Отмена» ловится по точному
+reply-«Отмена») включает только основной бот — сразу за загородкой лишённого
+кворума (handlers/fenced: она берёт и кнопки уведомлений), до общих разделов
+настроек (bot/sections): reply-«Отмена» ловится по точному
 тексту + StateFilter("*") раньше FSM-хендлеров (иначе записалась бы как
 значение или имя).
 """
@@ -23,6 +24,8 @@ from aiogram.types import CallbackQuery, Message
 from awgbot.bot import keyboards as kb
 from awgbot.bot.callbacks import CancelCB, NoteCB
 from awgbot.bot.handlers.common import call, edit_nav, show_main_menu
+from awgbot.bot.texts.reserve import quorum as qt
+from awgbot.domain.services.types import ServiceError
 
 router = Router(name="reply_commands")
 
@@ -64,22 +67,38 @@ async def on_note_action(cb: CallbackQuery, callback_data: NoteCB, state: FSMCon
     истории), экран приходит новым живым меню. Роль — из middleware; чужая
     подсказка (пользователя у админа и наоборот) — главная роли."""
     from awgbot.bot import screens
+    from awgbot.bot.handlers import guest as guest_fence
     from awgbot.bot.handlers.common import send_menu, cleanup_content
+    kind, ref = callback_data.kind, callback_data.ref
+    guest = bool(getattr(services, "guest", False))
+    if guest and role == "admin" and kind in guest_fence.GUEST_NOTES_REFUSED:
+        # бот основы на резерве: запись и шлюзы — хост основы; кнопки остаются, как у прочих отказов
+        await guest_fence.refuse(cb)
+        return
     await state.clear()
     try:
         await cb.message.edit_reply_markup(reply_markup=None)
     except Exception:                                 # noqa: BLE001
         pass
-    kind, ref = callback_data.kind, callback_data.ref
     if kind == "rsv_record_back" and role == "admin":
         # Т-РУ16: запись указывает не сюда, а переезда не было — вернуть её на себя
-        why = await asyncio.to_thread(services.reserve_record_return)
+        try:
+            why = await asyncio.to_thread(services.reserve_record_return)
+        except ServiceError as e:
+            why = str(e)
         await cb.answer("Запись возвращена на этот сервер" if not why else f"Запись не изменена: {why}"[:200],
                         show_alert=bool(why))
         return
     if kind == "gw_retry" and role == "admin":
         # неудачный догон шлюза: не ждать расписания повтора — команда ближайшим тактом
-        why = await asyncio.to_thread(services.fleet_gw_retry, int(ref))
+        try:
+            why = await asyncio.to_thread(services.fleet_gw_retry, int(ref))
+        except ServiceError as e:
+            await cb.answer(str(e)[:200], show_alert=True)
+            return
+        if why == "fenced":
+            await cb.answer(qt.ADMIN_FENCED, show_alert=True)
+            return
         if why == "running":
             await cb.answer("Обновление уже идёт", show_alert=True)
             return
@@ -99,6 +118,8 @@ async def on_note_action(cb: CallbackQuery, callback_data: NoteCB, state: FSMCon
     screen_kind = {"extend": "extend", "unassigned": "unassigned", "sub": "sub", "gw": "gw"}.get(kind, "main")
     if role != "admin" and screen_kind in ("extend", "unassigned", "gw"):
         screen_kind = "main"
+    if guest and screen_kind == "gw":
+        screen_kind = "main"                          # шлюзы у гостя — хост основы
     if role == "admin" and screen_kind == "sub":
         screen_kind = "main"
     parts = await screens.render(screen_kind, ref, services=services, role=role, client=client,

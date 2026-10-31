@@ -118,7 +118,11 @@ class FleetRollbackMixin:
     def fleet_gw_retry(self, slot_id: int) -> str:
         """«🔁 Повторить» на уведомлении о неудачном догоне одного шлюза: не
         ждать расписания повтора — команда уйдёт ближайшим тактом. Пусто —
-        сброшено; «running» — идёт ход; «nothing» — повторять нечего."""
+        сброшено; «running» — идёт ход; «nothing» — повторять нечего; «fenced» —
+        бот лишён кворума (решений не исполняет, кнопка за загородкой бота)."""
+        barred = getattr(self, "reserve_quorum_barred", None)
+        if barred is not None and barred():
+            return "fenced"
         with _LOCK:
             if self.fleet_run().get("state") in ACTIVE_RUN:
                 return "running"

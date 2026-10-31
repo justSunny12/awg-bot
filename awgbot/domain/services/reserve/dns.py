@@ -223,6 +223,10 @@ class ReserveDnsMixin:
         self.rsv_update("rsv_record_watch", mono=now)
         if self.reserve_away() or self.reserve_out() != "home" or self.reserve_poll() == "away":
             return []                                         # право отвечать у вебхука резерва — переезд был
+        if self.reserve_quorum_barred() or self.reserve_following():
+            # без кворума или следуя запись чужая может быть по праву (переезд по кворуму): ни
+            # Т-РУ16 с «↩️ Вернуть запись», ни отметки — кворум вернётся, надзор посмотрит заново
+            return []
         own = self.reserve_own_ip()
         name = self.reserve_dns_name()
         from awgbot.domain.notices import reserve as rn
@@ -259,7 +263,14 @@ class ReserveDnsMixin:
                              force_sound=True, action=("rsv_record_back", 0))]
 
     def reserve_record_return(self) -> str:
-        """«↩️ Вернуть запись»: на свой адрес; пусто — ок, иначе причина."""
+        """«↩️ Вернуть запись»: на свой адрес; пусто — ок, иначе причина. Лишённый
+        кворума или следующий за резервом запись на себя не переводит: решение о
+        том, где пользователи, сейчас не за ним (переезд по кворуму мог увести их
+        за записью)."""
+        if self.reserve_quorum_barred():
+            return "бот без кворума"
+        if self.reserve_following():
+            return "бот следует за резервом"
         own = self.reserve_own_ip()
         if not own:
             return "свой адрес не определился"

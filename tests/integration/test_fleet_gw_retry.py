@@ -6,7 +6,8 @@
 
 Цена ошибки: без кнопки админ после «не обновился — повторю через 6 часов»
 ждёт шесть часов или идёт в раздел обновлений; без tries агент пишет
-«повторит через 30 минут» перед каждой из трёх попыток.
+«повторит через 30 минут» перед каждой из трёх попыток; повтор у лишённого
+кворума — команда шлюзу от сервера, который сейчас решений не принимает.
 """
 from __future__ import annotations
 
@@ -158,6 +159,20 @@ def test_the_command_carries_the_number_of_past_failures(fleet, monkeypatch):
         sent = fleet.sent(fleet.tick())
         assert [s for s, _ in sent] == [1]
         assert sent[0][1]["tries"] == want, f"повтор №{want} несёт tries {sent[0][1]['tries']}"
+
+
+@pytest.mark.parametrize("how", ["mark", "journal"])
+def test_retry_while_fenced_resets_nothing(fleet, monkeypatch, how):
+    """Лишённый кворума (по отметке такта или по журналу — после перезапуска,
+    пока такт не прошёл): «fenced», расписание повтора не тронуто."""
+    _failed_catchup(fleet, monkeypatch)
+    before = dict(fleet.st(1))
+    if how == "mark":
+        fleet.s.__dict__["_quo_fenced"] = True
+    else:
+        fleet.s.db.jrn_fence(why="DUMMY")
+    assert fleet.s.fleet_gw_retry(1) == "fenced"
+    assert fleet.st(1) == before, "у лишённого кворума сброшено расписание повтора"
 
 
 def test_upd_body_has_tries_as_an_int_even_when_the_slot_has_none():

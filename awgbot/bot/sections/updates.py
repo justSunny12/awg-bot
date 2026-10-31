@@ -156,36 +156,36 @@ def register_update_buttons(router, br=None) -> None:
         # «⬅️ В меню» на итоге обновления (руками, awg-bot update) у агента живая
         router.callback_query(UpdateCB.filter(F.action == "menu"))(menu)
 
-        async def _agent_stale(cb: CallbackQuery, services) -> None:
+        async def agent_stale(cb: CallbackQuery, services) -> None:
             await cb.answer(AGENT_STALE, show_alert=True)
             try:
                 await cb.message.edit_reply_markup(reply_markup=None)
             except Exception:                             # noqa: BLE001
                 pass
-        router.callback_query(UpdateCB.filter())(_agent_stale)
-        router.callback_query(GwCB.filter(F.action.in_({"updates", "upd_toggle"})))(_agent_stale)
+        router.callback_query(UpdateCB.filter())(agent_stale)
+        router.callback_query(GwCB.filter(F.action.in_({"updates", "upd_toggle"})))(agent_stale)
         return
 
     async def _rerender(cb, services):
         from . import render
         await render(cb, br, services, ID, "cached")
 
-    async def _install(cb: CallbackQuery, callback_data: UpdateCB, services) -> None:
+    async def on_install(cb: CallbackQuery, callback_data: UpdateCB, services) -> None:
         await fleet_flow.install(cb, services, callback_data.tag,
                                  rerender=(lambda: _rerender(cb, services)) if br is not None else None)
 
-    async def _go(cb: CallbackQuery, callback_data: UpdateCB, services) -> None:
+    async def on_go(cb: CallbackQuery, callback_data: UpdateCB, services) -> None:
         await fleet_flow.start(cb, services, callback_data.tag)
 
-    async def _cancel(cb: CallbackQuery, services) -> None:
+    async def on_cancel(cb: CallbackQuery, services) -> None:
         await fleet_flow.cancel(cb, services, rerender=(lambda: _rerender(cb, services)) if br is not None else None)
 
-    async def _retry_btn(cb: CallbackQuery, services) -> None:
+    async def on_retry(cb: CallbackQuery, services) -> None:
         await fleet_flow.retry(cb, services)
 
-    router.callback_query(UpdateCB.filter(F.action == "install"))(_install)
-    router.callback_query(UpdateCB.filter(F.action == "go"))(_go)
-    router.callback_query(UpdateCB.filter(F.action == "cancel"))(_cancel)
-    router.callback_query(UpdateCB.filter(F.action == "retry"))(_retry_btn)
+    router.callback_query(UpdateCB.filter(F.action == "install"))(on_install)
+    router.callback_query(UpdateCB.filter(F.action == "go"))(on_go)
+    router.callback_query(UpdateCB.filter(F.action == "cancel"))(on_cancel)
+    router.callback_query(UpdateCB.filter(F.action == "retry"))(on_retry)
     router.callback_query(UpdateCB.filter(F.action == "menu"))(menu)
     router.callback_query(UpdateCB.filter(F.action == "mute"))(mute)

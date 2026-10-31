@@ -4,7 +4,7 @@
 настоящий диспетчер роли) собирают диспетчер отсюда — списков роутеров в
 двух местах больше нет, и порядок включения живёт здесь один раз:
 
-  paging → hide → cancel → [основной бот: reply_commands] → sections(br) →
+  paging → lists → hide → cancel → [основной бот: fenced → reply_commands] → sections(br) →
   [роутеры роли по порядку] → stale
 
 Роутеры только одной роли (admin, settings, client, gateway…) — модульные,
@@ -40,7 +40,8 @@ def routers_for(role: str) -> list[Router]:
         return head + [shared, gateway_handlers.router, stale.make_router(_gw_main)]
     from awgbot.bot.handlers import admin, client, friend, guide, peeradmin, peercode, reply_commands, routing, settings
     from awgbot.bot.handlers.common import show_main_menu
-    # reply_commands ПЕРВЫМ — до общих разделов: reply-«✖️ Отмена» бьёт раньше
+    # reply_commands — до общих разделов (из роутеров роли первым только fenced, сообщений
+    # он не берёт): reply-«✖️ Отмена» бьёт раньше
     # FSM ввода (иначе записалась бы как значение); routing ДО client — у обоих
     # роль client, и FSM ввода адресов должен ловиться в routing, а не общим
     # message-хендлером пользователя; stale ПОСЛЕДНИМ
@@ -51,13 +52,15 @@ def routers_for(role: str) -> list[Router]:
         # загородкой guest, которая отвечает Т-РГ2 на всё, что действует на хост
         # основы (шлюзы, обновления, бэкапы, сервис, восстановление, переезд)
         from awgbot.bot.handlers import fenced, guest
-        return head + [reply_commands.router, fenced.router, shared, guest.router, admin.router, settings.router, guide.router,
+        return head + [fenced.router, reply_commands.router, shared, guest.router, admin.router, settings.router, guide.router,
                        friend.router, routing.router, client.router, stale.make_router(show_main_menu)]
-    # fenced — загородка лишённого кворума лидера (кворум резерва): до общих разделов и
-    # админских (все её обработчики — только роли admin, админ второго сервера проходит);
-    # действует только пока сервисы говорят «лишён кворума»
+    # fenced — загородка лишённого кворума лидера (кворум резерва): до кнопок уведомлений
+    # (reply_commands), общих разделов и админских — все колбэки админа, кроме раздела
+    # «🛟 Резерв», за ней (её обработчики — только роли admin, админ второго сервера
+    # проходит); сообщений она не берёт, кроме файла вне ввода, — reply-«✖️ Отмена» по-прежнему
+    # раньше FSM; действует только пока сервисы говорят «лишён кворума»
     from awgbot.bot.handlers import fenced
-    return head + [reply_commands.router, fenced.router, shared, peercode.router, peeradmin.router, admin.router, settings.router,
+    return head + [fenced.router, reply_commands.router, shared, peercode.router, peeradmin.router, admin.router, settings.router,
                    guide.router, friend.router, routing.router, client.router, stale.make_router(show_main_menu)]
 
 

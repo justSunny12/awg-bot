@@ -10,7 +10,9 @@
 надзор, который шлёт Т-РУ16 при каждом тике, — админ глохнет к настоящей
 тревоге, а молчащий при чужом адресе — пользователи уходят на чужой сервер
 незамеченными; «Вернуть запись» без сброса отметки — следующий уход записи
-тоже промолчит.
+тоже промолчит; «Вернуть запись» у лишённого кворума или следующего за
+резервом — запись уводят у стороны, к которой пользователи переехали по праву
+(второй писатель), и надзор, зовущий это сделать, — то же самое кнопкой.
 """
 from __future__ import annotations
 
@@ -309,3 +311,42 @@ def test_returning_the_record_reports_why_it_failed(watch):
     watch.dns.system = {}
     svc.__dict__.pop("_rsv_own_ip", None)
     assert "не определился" in svc.reserve_record_return()
+
+
+# ── без кворума и при следовании ────────────────────────────────────────────
+
+def _bar(svc, how: str) -> None:
+    if how == "mark":
+        svc.__dict__["_quo_fenced"] = True
+    elif how == "journal":
+        svc.db.jrn_fence(why="DUMMY")                             # лишён кворума: держатель без права писать
+    else:
+        svc.db.jrn_pass(holder="peer", role="follower", why="DUMMY")   # следую за резервом
+
+
+@pytest.mark.parametrize("how,why", [("mark", "без кворума"), ("journal", "без кворума"), ("follow", "следует")],
+                         ids=["mark", "journal", "follow"])
+def test_returning_the_record_is_refused_without_quorum_or_while_following(watch, how, why):
+    svc = watch.svc
+    rm.automatic(svc)
+    watch.dns.auth = [FOREIGN]
+    _bar(svc, how)
+    assert why in svc.reserve_record_return()
+    assert watch.dns.sets == [], "запись переведена на сервер, который решений сейчас не принимает"
+
+
+@pytest.mark.parametrize("how", ["mark", "journal", "follow"])
+def test_the_watch_does_not_offer_the_return_without_quorum_or_while_following(watch, how):
+    watch.dns.auth = [FOREIGN]
+    _bar(watch.svc, how)
+    assert _tick(watch) == [], "Т-РУ16 с «↩️ Вернуть запись» у сервера, который решений не принимает"
+    assert not watch.svc.rsv_get("rsv_record_watch").get("told"), "отметка «сказал» без уведомления"
+
+
+def test_the_watch_speaks_again_once_the_fence_is_lifted(watch):
+    watch.dns.auth = [FOREIGN]
+    watch.svc.__dict__["_quo_fenced"] = True
+    assert _tick(watch) == []
+    watch.svc.__dict__["_quo_fenced"] = False
+    notes = _tick(watch)
+    assert len(notes) == 1 and notes[0].action == ("rsv_record_back", 0), notes

@@ -12,7 +12,9 @@
 админа раньше загородки — то же через другую дверь; роутер админа второго
 сервера в боте основы — чужой человек получает экран пары; `awg-quick` в
 песочнице клона — клон не поднимется, VPN пользователей основы встанет на резерве
-в самый момент аварии.
+в самый момент аварии; кнопки уведомлений «↩️ Вернуть запись» и «🔁 Повторить»
+в боте на резерве — запись DNS переводится на адрес лежащей основы (пользователи
+уходят на мёртвый сервер), а догон трогает шлюзы основы.
 """
 from __future__ import annotations
 
@@ -23,7 +25,7 @@ from aiogram import Bot
 from aiogram.types import CallbackQuery, Chat, Document, Message, Update, User
 
 from awgbot.bot import roles
-from awgbot.bot.callbacks import GwJoinCB, GwMarkCB, GwSlotCB, RsvCB, SetCB, UpdateCB
+from awgbot.bot.callbacks import GwJoinCB, GwMarkCB, GwSlotCB, NoteCB, RsvCB, SetCB, UpdateCB
 from awgbot.bot.routers import make_dispatcher, routers_for
 from awgbot.core import config
 from awgbot.domain.services.reserve import guest as guest_svc
@@ -136,6 +138,51 @@ async def test_every_host_action_gets_the_unavailable_toast_and_changes_nothing(
     calls = await run.press(cb)
     assert _kinds(calls) == ["AnswerCallbackQuery"], f"кроме всплывашки бот сделал: {_kinds(calls)}"
     assert calls[0].text == guest_svc.GUEST_REFUSED and calls[0].show_alert is True
+
+
+async def _host_note(run, services, monkeypatch, cb):
+    hits = []
+    monkeypatch.setattr(type(services), "reserve_own_ip", lambda self: "203.0.113.1")
+    monkeypatch.setattr(type(services), "reserve_dns_switch", lambda self, ip: hits.append(("dns", ip)))
+    monkeypatch.setattr(type(services), "fleet_gw_retry", lambda self, slot: hits.append(("retry", slot)) or "")
+    calls = await run.press(cb)
+    return calls, hits
+
+
+@pytest.mark.parametrize("cb", [NoteCB(kind="rsv_record_back"), NoteCB(kind="gw_retry", ref=3)], ids=lambda c: c.kind)
+async def test_host_notification_buttons_get_the_unavailable_toast_and_reach_nothing(run, services, monkeypatch, cb):
+    """Кнопки уведомлений разбирает reply_commands, он раньше загородки гостя:
+    хостовые из них отклоняются той же всплывашкой Т-РГ2, кнопки остаются."""
+    services.guest_install_refusals()
+    calls, hits = await _host_note(run, services, monkeypatch, cb)
+    assert _kinds(calls) == ["AnswerCallbackQuery"], f"кроме всплывашки бот сделал: {_kinds(calls)}"
+    assert calls[0].text == guest_svc.GUEST_REFUSED and calls[0].show_alert is True
+    assert hits == [], f"кнопка уведомления на резерве дошла до хоста: {hits}"
+
+
+async def test_the_gateways_note_screen_is_the_main_menu_on_the_reserve(run, services, monkeypatch):
+    """Экран шлюзов по кнопке уведомления — хост основы: у гостя главная."""
+    from awgbot.bot import screens
+    seen = []
+    real = screens.render
+
+    async def render(kind, *a, **kw):
+        seen.append(kind)
+        return await real(kind, *a, **kw)
+    monkeypatch.setattr(screens, "render", render)
+    from awgbot.bot.handlers import common
+
+    async def quiet(*a, **kw):                                   # заглушка сессии не возвращает сообщений
+        return None
+    monkeypatch.setattr(common, "send_menu", quiet)
+    monkeypatch.setattr(common, "cleanup_content", quiet)
+    await run.press(NoteCB(kind="gw", ref=1))
+    assert seen and seen[0] == "main", f"у гостя по кнопке уведомления открыт экран {seen}"
+
+
+def test_the_host_only_services_cover_the_notification_buttons():
+    """Страховка за загородкой: и в обход бота запись и догон на резерве отказывают."""
+    assert {"reserve_record_return", "fleet_gw_retry"} <= set(guest_svc.HOST_ONLY)
 
 
 async def test_the_reserve_card_and_the_settings_root_are_open(run, services):
