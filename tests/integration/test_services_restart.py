@@ -38,6 +38,26 @@ def test_reconcile_blocks_skips_unblocked_devices(services, fake_awg, make_activ
     assert dev.address not in fake_awg.blocked              # незаблокированных не трогаем
 
 
+def test_reconcile_blocks_collapses_duplicate_drops(services, fake_awg, make_active_client, monkeypatch):
+    """Два DROP на заблокированный адрес (гонка прежних выпусков): сверка сводит
+    к одному и без prune — иначе снятие блокировки убирало бы одно правило из
+    двух, и адрес оставался заблокированным. Чужие дубли не трогаем."""
+    from awgbot.infra import awg
+    client = make_active_client(tg_id=905)
+    dc = services.add_device(client.id, "d")
+    services._device_set_block(dc.device_id, DeviceBlock.EXPIRY)
+    dev = services.db.get_device(dc.device_id)
+    counts = {dev.address: 2, "10.200.0.7": 2}
+    calls: list[tuple[str, str]] = []
+    monkeypatch.setattr(awg, "blocked_ip_counts", lambda: dict(counts), raising=False)
+    monkeypatch.setattr(awg, "blocked_ips", lambda: set(counts), raising=False)
+    monkeypatch.setattr(awg, "unblock_ip", lambda ip: calls.append(("D", ip)) or counts.pop(ip, None))
+    monkeypatch.setattr(awg, "block_ip", lambda ip: calls.append(("I", ip)) or counts.__setitem__(ip, 1))
+    assert services.reconcile_blocks() == 1
+    assert calls == [("D", dev.address), ("I", dev.address)]
+    assert counts == {dev.address: 1, "10.200.0.7": 2}, "чужой дубль тронут или наш не сведён"
+
+
 # ── check_resource_alerts (гистерезис по стрикам) ────────────────────────────
 def test_resource_alert_fires_after_streak_and_recovers(services, fake_awg):
     streak = settings.get_int("app.monitoring.alert_streak", 5)

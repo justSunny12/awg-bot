@@ -61,7 +61,7 @@ def test_block_ip_inserts_drop_when_absent(monkeypatch):
     monkeypatch.setattr(awg, "is_blocked", lambda ip: False)
     monkeypatch.setattr(awg, "_exec", lambda args, **k: calls.append(args) or _cp())
     awg.block_ip("10.8.0.9")
-    assert calls and calls[0][:3] == ["iptables", "-I", "FORWARD"]
+    assert calls and calls[0][:5] == ["iptables", "-w", "5", "-I", "FORWARD"]   # -w: ждать замок xtables, не отказывать
     assert "10.8.0.9/32" in calls[0]
 
 
@@ -75,10 +75,71 @@ def test_block_ip_noop_when_already_blocked(monkeypatch):
 
 def test_unblock_ip_deletes_drop(monkeypatch):
     calls = []
-    monkeypatch.setattr(awg, "is_blocked", lambda ip: True)
+    present = [True]
+    monkeypatch.setattr(awg, "is_blocked", lambda ip: present.pop() if present else False)
     monkeypatch.setattr(awg, "_exec", lambda args, **k: calls.append(args) or _cp())
     awg.unblock_ip("10.8.0.9")
-    assert calls and calls[0][:3] == ["iptables", "-D", "FORWARD"]
+    assert calls and calls[0][:5] == ["iptables", "-w", "5", "-D", "FORWARD"]
+
+
+def test_unblock_ip_removes_every_duplicate_drop(monkeypatch):
+    """Два DROP на адрес (гонка прежних выпусков, ручной iptables): снятие одного
+    оставляло адрес заблокированным — unblock_ip снимает, пока -C видит правило."""
+    rules = {"10.8.0.9": 2}
+
+    def _exec(args, **k):
+        if "-C" in args:
+            return _cp(returncode=0 if rules["10.8.0.9"] > 0 else 1)
+        if "-D" in args:
+            rules["10.8.0.9"] -= 1
+        return _cp()
+    monkeypatch.setattr(awg, "_exec", _exec)
+    awg.unblock_ip("10.8.0.9")
+    assert rules["10.8.0.9"] == 0
+    assert awg.is_blocked("10.8.0.9") is False
+
+
+def test_unblock_ip_gives_up_when_the_rule_keeps_coming_back(monkeypatch):
+    """-D «успешен», а -C всё ещё видит правило — не крутиться вечно."""
+    monkeypatch.setattr(awg, "_exec", lambda args, **k: _cp(returncode=0))
+    with pytest.raises(awg.AwgError):
+        awg.unblock_ip("10.8.0.9")
+
+
+def test_block_ip_check_and_insert_are_one_critical_section(monkeypatch):
+    """Два потока одновременно: проверка и вставка под одним замком — один DROP,
+    а не по одному на поток."""
+    import threading
+    rules = {"n": 0}
+    gate = threading.Barrier(2, timeout=5)
+
+    def _exec(args, **k):
+        if "-C" in args:
+            return _cp(returncode=0 if rules["n"] else 1)
+        rules["n"] += 1
+        return _cp()
+    monkeypatch.setattr(awg, "_exec", _exec)
+
+    def worker():
+        gate.wait()
+        awg.block_ip("10.8.0.9")
+    ts = [threading.Thread(target=worker) for _ in range(2)]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join(5)
+    assert rules["n"] == 1, "DROP задвоился"
+
+
+def test_blocked_ip_counts_sees_duplicates(monkeypatch):
+    out = (b"-P FORWARD ACCEPT\n"
+           b"-A FORWARD -s 10.8.0.9/32 -j DROP\n"
+           b"-A FORWARD -s 10.8.0.9/32 -j DROP\n"
+           b"-A FORWARD -s 10.8.0.3/32 -j DROP\n"
+           b"-A FORWARD -i awg0 -j ACCEPT\n")
+    monkeypatch.setattr(awg, "_exec", lambda args, **k: _cp(stdout=out))
+    assert awg.blocked_ip_counts() == {"10.8.0.9": 2, "10.8.0.3": 1}
+    assert awg.blocked_ips() == {"10.8.0.9", "10.8.0.3"}
 
 
 def test_block_ip_rejects_bad_ip(monkeypatch):
