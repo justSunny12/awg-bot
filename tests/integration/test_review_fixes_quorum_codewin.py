@@ -24,7 +24,6 @@ from __future__ import annotations
 import pytest
 
 from awgbot.infra import rsvzone
-from awgbot.util import timeutil
 from awgbot.util.quorum.voter import Voter
 
 from tests.integration import _reserve_common as rc
