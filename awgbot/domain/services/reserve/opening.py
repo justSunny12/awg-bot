@@ -102,6 +102,7 @@ class ReserveOpeningMixin:
             self._rsvopen_launch(payload)
         except Exception as e:                                # noqa: BLE001
             self.reserve_set_in("idle", step="", reason=str(e))
+            self._relay_restore()                             # пересылка хвоста, уступившая открытию, — обратно
             return [("notify", [Notification(tg_id=int(config.ADMIN_ID), text=_fail_text(self.reserve_peer_name(), str(e)))])]
         log.warning("резерв: процесс открытия по %s запущен (%s, пакет %s)", "коду" if kind == "code" else "точкам",
                     case, pkg_in.get("gen"))

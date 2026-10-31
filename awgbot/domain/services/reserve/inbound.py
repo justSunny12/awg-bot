@@ -166,6 +166,7 @@ class ReserveInboundMixin:
             self._rsvopen_launch(payload, keep_stdin=not k_hex)
         except ServiceError as e:
             self.reserve_set_in("idle", step="", reason=str(e))
+            self._relay_restore()                             # пересылка хвоста, уступившая открытию, — обратно
             return str(e)
         log.info("резерв: процесс открытия запущен (%s, пакет %s%s)", kind, gen, ", ключ — конвертом" if not k_hex else "")
         return ""
@@ -310,6 +311,7 @@ class ReserveInboundMixin:
                 log.warning("резерв: зона после отказа: %s", e)
         # ended_auto — только после состоявшегося переезда; после срыва — короткий демпфер (fail_at)
         self.reserve_set_in("idle", step="", reason=reason, ended_auto=False, fail_at=timeutil.now_iso(), failing=False)
+        self._relay_restore()                                 # пересылка хвоста, уступившая открытию, — обратно
         gw_word = self.reserve_gw_state_actions(force=True, reason=reason) if hasattr(self, "reserve_gw_state_actions") else []
         return [("send", "down", {"reason": reason[:120]}), ("fw",),
                 ("notify", [Notification(tg_id=int(config.ADMIN_ID), text=rn.hosting_failed(name, reason))])] + extra + gw_word
