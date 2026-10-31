@@ -71,7 +71,9 @@ pl_guest_start
 "$PY" -c 'import json,sys; p=sys.argv[1]; d=json.load(open(p)); d[sys.argv[2]]="198.51.100.7"; json.dump(d, open(p, "w"))' \
     "$PL/shared/dns.json" "$RECORD"
 printf '1' > /run/awg-bot-guest/tg_take; chmod 600 /run/awg-bot-guest/tg_take
-pl_wait G 's.get("role") == "holder" and s.get("holder") == "self"' 60 "бот основы на резерве — держатель" || exit 1
+# старт гостя: getMe к макету (до 10 с, если первый запрос попал в окно до перерисовки NAT), затем состав от
+# бота резерва и правило лидера (v = 1 — без ограждения) — запас 150 с
+pl_wait G 's.get("role") == "holder" and s.get("holder") == "self"' 150 "бот основы на резерве — держатель" || exit 1
 ae="$(sql "$PL/A/data/bot.db" 'SELECT epoch FROM jrn_meta')"
 [ "$(pl_q G 's["epoch"]')" = "$((ae + 1))" ] || pl_fail "эпоха гостя $(pl_q G 's["epoch"]'), а у A — $ae (ожидалась A + 1)"
 printf '{"name": "Спорный-1", "field": "device_limit", "value": 7}' > "$PL/G/set"

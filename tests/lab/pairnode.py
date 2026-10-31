@@ -546,7 +546,7 @@ async def run(a: argparse.Namespace) -> None:
         svc.reserve_quorum_leader_start()
     except Exception as e:                                     # noqa: BLE001
         logging.warning("кворум: ограждение на старте: %s", e)
-    bot = Bot(config.BOT_TOKEN, session=AiohttpSession(api=TelegramAPIServer.from_base(os.environ["LAB_BOTAPI"])),
+    bot = Bot(config.BOT_TOKEN, session=AiohttpSession(api=TelegramAPIServer.from_base(os.environ["LAB_BOTAPI"]), timeout=10),
               default=DefaultBotProperties(parse_mode=ParseMode.HTML, link_preview_is_disabled=True))
     try:
         me = await bot.get_me()
