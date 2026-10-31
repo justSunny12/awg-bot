@@ -148,6 +148,26 @@ def test_the_same_replica_twice_is_merged_once(merge_world):
     assert w.svc.rsv_get("rsv_out")["merge_report"] == report
 
 
+@pytest.mark.xfail(strict=True, reason="Q4-05: дедуп реплики по шифротексту, а не по поколению пакета")
+def test_the_same_replica_resealed_with_another_nonce_is_merged_once(merge_world):
+    """Повторный back_req после слияния получает `rep.bin` с диска: то же
+    содержимое того же поколения, другой nonce — второго слияния нет (при
+    правке Q4-05 снять отметку xfail)."""
+    from awgbot.util.rsvpkg import seal
+    w = merge_world
+    _returning(w)
+    blob = rm.snapshot_blob(w.svc)
+    assert w.svc.reserve_released_in(blob) == [("restart",)]
+    again = seal.snapshot_seal(w.svc.reserve_k(), seal.snapshot_open(w.svc.reserve_k(), blob))
+    assert again != blob
+    w.svc._out_step("back_req")
+    calls = []
+    real = w.svc._return_merge
+    w.svc._return_merge = lambda *a: calls.append(a) or real(*a)
+    w.svc.reserve_released_in(again)
+    assert calls == [], "реплика того же поколения слита дважды — счётчики трафика сложены дважды"
+
+
 def test_the_same_merge_error_twice_is_silent_and_stops_the_automatic_return(merge_world):
     w = merge_world
     bad = rm.snapshot_blob(w.svc, k=b"\x02" * 32)

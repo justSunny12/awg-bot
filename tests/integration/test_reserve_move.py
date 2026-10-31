@@ -482,6 +482,18 @@ def test_taken_outside_a_move_changes_nothing(mv):
     assert mv.svc.reserve_taken_in() == [] and mv.svc.reserve_out() == "home" and mv.svc.reserve_poll() == "mine"
 
 
+@pytest.mark.xfail(strict=True, reason="Q4-07: taken принимается на любом шаге leaving")
+@pytest.mark.parametrize("step", ["pkg", "eph", "up", "record"])
+def test_taken_before_the_handover_changes_nothing(mv, step):
+    """Запоздалое `taken` прошлого эпизода на шаге до передачи (запись DNS ещё
+    на мне): ни away, ни poll=away (при правке Q4-07 снять отметку xfail)."""
+    svc = mv.svc
+    rm.to_step(svc, step)
+    assert svc.reserve_taken_in() == []
+    assert svc.reserve_out() == "leaving" and svc.rsv_get("rsv_out")["step"] == step
+    assert svc.reserve_poll() == "mine"
+
+
 # ── пользователи у резерва мимо меня ────────────────────────────────────────
 
 def test_taking_at_the_reserve_is_not_yet_a_fact_that_my_clients_moved(mv):
