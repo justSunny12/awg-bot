@@ -119,7 +119,7 @@ class DispatchMixin:
         if msg.get("t") == "cfg":
             await self._apply_cfg(msg)
             return
-        if msg.get("t") in QUORUM_WORDS:
+        if msg.get("t") in ("qask", "qtake", "qrel", "qneed", "qpause", "qstate"):
             # кворум: свой сервер — кандидат в отъезде своей линии (те же слова, что у резерва)
             if hasattr(self.services, "quorum_guest_in"):
                 from awgbot.runtime import guestlink
