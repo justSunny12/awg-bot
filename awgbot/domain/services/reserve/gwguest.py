@@ -44,7 +44,33 @@ class ReserveGwGuestMixin:
         qs = self._quorum_qstate_body()
         if qs is not None:
             actions.append(("gw", int(slot), "qstate", qs))   # эпоха линии первым словом новой сессии (§3.3)
+        actions += self._quorum_gw_view_forget(int(slot), rec.get("caps") or [])
         return actions
+
+    def _quorum_gw_view_forget(self, slot: int, caps: list) -> list[tuple]:
+        """Новая сессия шлюза: его прежний взгляд (по гостевому каналу) — неизвестен до свежего
+        `qview`, и `qask` за ним. Между сессиями взгляд мог смениться, а слово о смене — не
+        дойти (сессии не было); шлюз переподключается быстрее своего такта и новой сессии мог
+        не заметить — прежнее «нет» залипло бы на живом канале голосом в счёте кандидата."""
+        stale = [n for n, v in list(self._qgwviews.items())
+                 if str(v.get("via") or "") == "guest" and n == f"{v.get('l') or ''}{int(slot)}"] \
+            if hasattr(self, "_qgwviews") else []
+        if not stale:
+            return []
+        lines = set()
+        for n in stale:
+            lines.add(str(self._qgwviews.pop(n, {}).get("l") or ""))
+        c = self.__dict__.get("_rsv_qcand")
+        if c is not None:
+            vt = c.votes.get(f"{c.l}{int(slot)}")
+            if vt is not None:
+                vt.w, vt.since = "new", ""                     # голос — неизвестен; обязательство (said_no) — прежнее
+        peer = self.reserve_quorum_peer_line() if hasattr(self, "reserve_quorum_peer_line") else {}
+        l = str(peer.get("l") or "")
+        if "quo1" not in caps or not peer.get("active") or l not in lines:
+            return []
+        log.info("резерв: шлюз %s основы — новая сессия, прежний взгляд забыт, спрашиваю заново", slot)
+        return [("gw", int(slot), "qask", {"l": l, "g": int(peer.get("g") or 0)})]
 
     def _quorum_line_epoch_for_gw(self) -> int:
         """Эпоха линии основы, как её знает кандидат: из `st.jrn` второй стороны и ответов зонда."""

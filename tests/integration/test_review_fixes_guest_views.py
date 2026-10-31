@@ -1,0 +1,63 @@
+"""Правки по ревью — взгляды шлюзов основы у резерва (domain/services/reserve/gwguest.py,
+quorum/inbound.py): новая сессия гостевого канала делает прежний взгляд шлюза неизвестным
+и спрашивает его заново (`qask`); такт канала и экран обходят память взглядов копией.
+
+Сценарий — `_Box` и `Cand` из _reserve_vote_common (линия `b` второй стороны, кандидат —
+этот сервер, шлюзы b1, b2 на гостевом канале).
+
+Цена ошибки: между сессиями шлюз снова видит основу, а слово об этом не дошло (сессии не
+было); прежнее «нет» по-прежнему в счёте на живом канале — ложное большинство, `qtake` и
+просьба `ask{q}` при живой основе; поток слов, вставляющий взгляд во время обхода памяти
+тактом, роняет такт (RuntimeError) — счёт кандидата пропускает шаг.
+"""
+from __future__ import annotations
+
+import pytest
+
+from tests.integration import _reserve_common as rc
+from tests.integration._reserve_vote_common import LINE, Cand, box, gw_sent
+
+pytestmark = pytest.mark.integration
+rsv = rc.rsv
+__all__ = ["box"]
+
+
+def test_a_new_session_forgets_the_gateway_view_and_asks_again(box):
+    c = Cand(box)
+    c.own("uns")
+    c.view(1, "uns")
+    c.view(2, "uns")
+    c.tick()
+    assert box.s.reserve_quorum_candidate_view()["no"] == 3, "подготовка: «нет» обоих шлюзов не в счёте"
+    acts = box.hello(1)                                       # обрыв и новая сессия без reserve_guest_closed
+    assert "b1" not in box.s.reserve_quorum_gw_views(LINE), "прежний взгляд шлюза пережил новую сессию"
+    assert gw_sent(acts, "qask") == [(1, {"l": LINE, "g": 1})], f"новой сессии не задан вопрос о взгляде: {acts}"
+    c.tick()
+    assert box.s.reserve_quorum_candidate_view()["no"] == 2, "прежнее «нет» шлюза осталось в счёте кандидата"
+    c.view(1, "see")
+    c.tick()
+    assert box.s.reserve_quorum_candidate_view()["no"] == 2
+
+
+def test_the_forgotten_vote_keeps_the_pledge_for_qrel(box):
+    """Голос неизвестен, но «нет» шлюз сказал — обязательство снимает только qrel/qtake."""
+    c = Cand(box)
+    c.own("uns")
+    c.view(1, "uns")
+    c.tick()
+    box.hello(1)
+    vt = box.s._qcand.votes["b1"]
+    assert vt.w == "new" and vt.said_no, "обязательство шлюза потеряно — qrel ему не уйдёт"
+
+
+def test_a_first_session_has_no_question(box):
+    Cand(box, hello=False)
+    acts = box.hello(1)
+    assert not gw_sent(acts, "qask"), "вопрос о взгляде без прежнего взгляда — лишнее слово"
+
+
+def test_a_gateway_without_quorum_gets_no_question(box):
+    c = Cand(box)
+    c.view(1, "uns")
+    acts = box.hello(1, caps=["rsv1"])
+    assert not gw_sent(acts, "qask") and "b1" not in box.s.reserve_quorum_gw_views(LINE)

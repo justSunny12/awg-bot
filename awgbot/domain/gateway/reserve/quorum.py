@@ -248,13 +248,16 @@ class GatewayQuorumMixin:
                 self.__dict__["_quo_ask_due"].pop(name, None)
                 actions += self._quorum_qview_now(name, rec, v)      # ответ на qask после свежих проб
         online = bool(self.__dict__.get("_quo_reserve_online"))
-        if online and not self.__dict__.get("_quo_online_prev"):
+        sess = self.__dict__.get("_quo_guest_session")             # номер сессии от runtime (обрыв между тактами)
+        if online and (not self.__dict__.get("_quo_online_prev") or sess != self.__dict__.get("_quo_session_prev")):
             # новая сессия гостевого канала: текущий взгляд о сервере — первым словом (у резерва взгляды в памяти)
             for name, rec in want.items():
                 v = self._gw_qvoters.get(name)
                 if v is not None and rec.get("target") == "h" and v.view != "new":
                     actions += self._quorum_qview_now(name, rec, v)
         self.__dict__["_quo_online_prev"] = online
+        if online:
+            self.__dict__["_quo_session_prev"] = sess
         return actions
 
     def quorum_reply_in(self, name: str, data: bytes) -> list[tuple]:

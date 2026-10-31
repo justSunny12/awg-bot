@@ -117,6 +117,10 @@ class GuestClient:
             self._writer = writer
             self.online = True
             self._confirmed = True
+            # номер сессии — домену: быстрый обрыв и подъём между тактами кворума флаг online
+            # не покажет, а взгляд о сервере новой сессии сказать надо (у резерва он в памяти)
+            sess = int(self.services.__dict__.get("_quo_guest_session") or 0) + 1
+            self.services.__dict__["_quo_guest_session"] = sess
             log.info("гостевой канал: сессия с резервом открыта (%s:%s)", host, port)
             await self._handle(msg)
             while True:
