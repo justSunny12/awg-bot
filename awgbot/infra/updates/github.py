@@ -36,11 +36,19 @@ _ATTEMPTS = 3                   # попыток на один запрос: а�
 _RETRY_PAUSE = 1.0              # с между попытками
 
 
+class Body(bytes):
+    """Тело ответа и его заголовки (.headers; у подставных ответов — пусто):
+    байты для всех, кому нужно тело, а список выпусков читает из заголовков
+    ссылку на следующую страницу."""
+    headers: dict = {}
+
+
 def _request(url: str, accept: str) -> bytes:
     """GET к GitHub. Сетевая неудача (нет соединения, таймаут, обрыв) —
     повтор до _ATTEMPTS раз: запрос идемпотентный, а потеря части SYN на
     аплинке иначе роняла бы ступень обновления на ровном месте. Ответ HTTP с
-    кодом ошибки — без повторов."""
+    кодом ошибки — без повторов. Возвращает Body — байты с заголовками
+    ответа."""
     import time
     req = urllib.request.Request(url)
     req.add_header("Accept", accept)
@@ -51,7 +59,9 @@ def _request(url: str, accept: str) -> bytes:
     for attempt in range(1, _ATTEMPTS + 1):
         try:
             with net4.urlopen(req, timeout=_TIMEOUT) as resp:         # только IPv4
-                return resp.read()
+                body = Body(resp.read())
+                body.headers = getattr(resp, "headers", None) or {}
+                return body
         except urllib.error.HTTPError as e:
             raise UpdateError(_http_error(e, host))
         except (urllib.error.URLError, TimeoutError, OSError, http.client.HTTPException) as e:
@@ -110,11 +120,20 @@ def list_releases(meta_cache: Optional[dict] = None, fetch_meta: bool = True,
     # больше чем на 30 выпусков, не нашла бы своей версии («нерелизная сборка»)
     raw = _up()._request(f"{_API}/repos/{config.UPDATES_REPO}/releases?per_page=100",
                          "application/vnd.github+json")
-    try:
-        data = json.loads(raw.decode("utf-8"))
-    except (ValueError, UnicodeDecodeError) as e:
-        raise UpdateError(f"некорректный ответ GitHub: {e}")
+    data = _release_page(raw)
     installed = parse_version(config.INSTALLED_VERSION)
+    # своей версии на первой странице нет (отстали больше чем на 100 выпусков) —
+    # вторая страница по ссылке rel="next" из заголовка Link; дальше не идём:
+    # отставшей на 200 выпусков установке хватит и «нерелизной сборки»
+    nxt = _next_page(raw)
+    if nxt and installed is not None and not _up()._is_release_build(
+            installed, [v for v in (parse_version(r.get("tag_name", "")) for r in data
+                                    if isinstance(r, dict) and not r.get("draft")) if v]):
+        # выпуск, вышедший между запросами, сдвигает страницы — хвост первой
+        # приходит второй раз; двойник по тегу отбрасываем
+        seen = {r.get("tag_name") for r in data if isinstance(r, dict)}
+        data = data + [r for r in _release_page(_up()._request(nxt, "application/vnd.github+json"))
+                       if not (isinstance(r, dict) and r.get("tag_name") in seen)]
     found = []
     for r in data:
         if r.get("draft"):
@@ -153,6 +172,37 @@ def list_releases(meta_cache: Optional[dict] = None, fetch_meta: bool = True,
                            prerelease=bool(r.get("prerelease"))))
     out.sort(key=lambda x: x.version)
     return out
+
+
+def _release_page(raw: bytes) -> list:
+    """Страница списка выпусков: JSON-массив, иначе UpdateError."""
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError) as e:
+        raise UpdateError(f"некорректный ответ GitHub: {e}")
+    if not isinstance(data, list):
+        raise UpdateError("некорректный ответ GitHub: список выпусков не массив")
+    return data
+
+
+def _next_page(raw: bytes) -> str:
+    """Адрес следующей страницы из заголовка Link (rel="next") или ''. Только
+    https на api.github.com: по ссылке из ответа в другое место не ходим."""
+    hdrs = getattr(raw, "headers", None) or {}
+    link = str(hdrs.get("Link", "") or hdrs.get("link", "") or "")
+    for part in link.split(","):
+        url, _, params = part.partition(";")
+        url = url.strip()
+        if not (url.startswith("<") and url.endswith(">")):
+            continue
+        rels = [p.strip() for p in params.split(";")]
+        if 'rel="next"' not in rels and "rel=next" not in rels:
+            continue
+        url = url[1:-1]
+        parts = urllib.parse.urlsplit(url)
+        if parts.scheme == "https" and parts.hostname == urllib.parse.urlsplit(_API).hostname:
+            return url
+    return ""
 
 
 def withdrawn_reason(r: dict, title: str) -> str:
