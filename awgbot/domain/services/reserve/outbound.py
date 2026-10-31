@@ -395,12 +395,22 @@ class ReserveOutboundMixin:
                                 "ttl": int(self.rsv_get("rsv_dns").get("ttl") or 0),
                                 "sealed": sealed.hex(), "oid": str(oid)}), ("live",)]
 
-    def reserve_up_in(self) -> list[tuple]:
+    def reserve_up_in(self, oid: str = "") -> list[tuple]:
         out = self._out()
         if out.get("state") != "leaving" or out.get("step") != "up":
             return []
+        if self._word_foreign(out, "up", oid):
+            return []
         self._out_step("record", RECORD_WAIT_S, up_at=timeutil.now_iso())
         return [("live",)]
+
+    @staticmethod
+    def _word_foreign(out: dict, word: str, oid: str) -> bool:
+        """`up`/`taken` с id открытия (ret1) не моего — слово прошлого эпизода; без поля — как прежде."""
+        if oid and out.get("oid") and str(oid) != str(out.get("oid")):
+            log.warning("резерв: «%s» открытия %s, а моё — %s: слово прошлого эпизода — пропущено", word, oid, out.get("oid"))
+            return True
+        return False
 
     def reserve_down_in(self, reason: str) -> list[tuple]:
         """`down` резерва на переезде: срыв; `back` не нужен — резерв зону снял сам
@@ -444,11 +454,18 @@ class ReserveOutboundMixin:
         self.reserve_set_poll("away", why="released")           # своя отметка; слово Telegram — webhook/webhook_info
         return {"gen": int(out.get("gen") or 0), "blob": blob.hex()}
 
-    def reserve_taken_in(self) -> list[tuple]:
-        """`taken` от резерва: бот основы на резерве отвечает в Telegram."""
+    def reserve_taken_in(self, oid: str = "") -> list[tuple]:
+        """`taken` от резерва: бот основы на резерве отвечает в Telegram. Только на шагах
+        передачи бота (release/released): запоздалое `taken` прошлого эпизода на шаге pkg/eph/up/record
+        переводило бы в away с `poll=away`, пока запись DNS ещё на мне."""
         from awgbot.domain.notices import reserve as rn
         out = self._out()
         if out.get("state") != "leaving":
+            return []
+        if str(out.get("step") or "") not in ("release", "released"):
+            log.warning("резерв: «taken» на шаге %s — вне передачи бота, пропущено", out.get("step") or "pkg")
+            return []
+        if self._word_foreign(out, "taken", oid):
             return []
         self.reserve_set_out("away", kind=str(out.get("kind") or "button"), step="", taken_at=timeutil.now_iso(),
                              last_switch=timeutil.now_iso(), healthy_since="")

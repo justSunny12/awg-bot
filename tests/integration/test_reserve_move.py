@@ -514,16 +514,38 @@ def test_taken_outside_a_move_changes_nothing(mv):
     assert mv.svc.reserve_taken_in() == [] and mv.svc.reserve_out() == "home" and mv.svc.reserve_poll() == "mine"
 
 
-@pytest.mark.xfail(strict=True, reason="Q4-07: taken принимается на любом шаге leaving")
 @pytest.mark.parametrize("step", ["pkg", "eph", "up", "record"])
 def test_taken_before_the_handover_changes_nothing(mv, step):
     """Запоздалое `taken` прошлого эпизода на шаге до передачи (запись DNS ещё
-    на мне): ни away, ни poll=away (при правке Q4-07 снять отметку xfail)."""
+    на мне): ни away, ни poll=away."""
     svc = mv.svc
     rm.to_step(svc, step)
     assert svc.reserve_taken_in() == []
     assert svc.reserve_out() == "leaving" and svc.rsv_get("rsv_out")["step"] == step
     assert svc.reserve_poll() == "mine"
+
+
+def test_taken_and_up_of_another_opening_are_words_of_a_past_episode(mv):
+    """`oid` (ret1) в `up`/`taken` сверяется с моим открытием; без поля — как прежде."""
+    svc = mv.svc
+    rm.to_step(svc, "up")
+    svc.rsv_update("rsv_out", oid="abcd1234")
+    assert svc.reserve_up_in("ffff0000") == [] and svc.rsv_get("rsv_out")["step"] == "up"
+    assert svc.reserve_up_in("abcd1234") == [("live",)] and svc.rsv_get("rsv_out")["step"] == "record"
+    rm.to_step(svc, "released")
+    svc.rsv_update("rsv_out", oid="abcd1234")
+    assert svc.reserve_taken_in("ffff0000") == [] and svc.reserve_out() == "leaving" and svc.reserve_poll() == "mine"
+    assert svc.reserve_taken_in("") != [] and svc.reserve_out() == "away", "без поля — как у стороны прежнего выпуска"
+
+
+def test_the_reserve_puts_its_opening_id_into_up_and_taken_only_for_a_primary_that_knows_it(mv):
+    from awgbot.domain.services.reserve import inbound
+    svc = mv.svc
+    rm.st_in(svc, caps=list(compat.CAPS))
+    assert inbound.ReserveInboundMixin._word_oid(svc, {"oid": "abcd1234"}) == {"oid": "abcd1234"}
+    assert inbound.ReserveInboundMixin._word_oid(svc, {}) == {}, "аварийный путь: ключа от основы не было — oid нет"
+    rm.st_in(svc, caps=[c for c in compat.CAPS if c != "ret1"])
+    assert inbound.ReserveInboundMixin._word_oid(svc, {"oid": "abcd1234"}) == {}
 
 
 # ── пользователи у резерва мимо меня ────────────────────────────────────────

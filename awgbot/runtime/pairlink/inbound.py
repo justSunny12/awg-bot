@@ -120,7 +120,7 @@ class InboundMixin:
             await self._actions(await asyncio.to_thread(self.services.reserve_go_refused, why, bool(body.get("sealed"))))
 
     async def _in_up(self, sess: _Session, body: dict) -> None:
-        await self._actions(await asyncio.to_thread(self.services.reserve_up_in))
+        await self._actions(await asyncio.to_thread(self.services.reserve_up_in, str(body.get("oid") or "")))
 
     async def _in_down(self, sess: _Session, body: dict) -> None:
         await self._actions(await asyncio.to_thread(self.services.reserve_down_in, str(body["reason"])))
@@ -158,7 +158,7 @@ class InboundMixin:
             await self._actions(await asyncio.to_thread(self.services.reserve_released_store, blob))
 
     async def _in_taken(self, sess: _Session, body: dict) -> None:
-        await self._actions(await asyncio.to_thread(self.services.reserve_taken_in))
+        await self._actions(await asyncio.to_thread(self.services.reserve_taken_in, str(body.get("oid") or "")))
 
     async def _in_back_req(self, sess: _Session, body: dict) -> None:
         await self._actions(await asyncio.to_thread(self.services.reserve_back_req_in))
