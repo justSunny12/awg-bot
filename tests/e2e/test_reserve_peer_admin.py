@@ -78,6 +78,32 @@ async def test_the_role_comes_before_the_client_profile(services, rsv, make_acti
     assert await _role(services.db, PEER_ADMIN) == "peer_admin"
 
 
+async def test_the_user_menu_session_lets_the_peer_admin_in_as_a_client(services, rsv, make_active_client):
+    """«👤 Меню пользователя» у админа второго сервера: пока сессия открыта, шаг
+    роли пропущен — он пользователь этого сервера; закрыта — снова роль."""
+    make_active_client(name="Совпал", tg_id=PEER_ADMIN)
+    rc.pair_row(services)
+    access_cache.peer_client_on(PEER_ADMIN)
+    try:
+        assert await _role(services.db, PEER_ADMIN) == "client"
+    finally:
+        access_cache.peer_client_off(PEER_ADMIN)
+    access_cache.invalidate_all()
+    assert await _role(services.db, PEER_ADMIN) == "peer_admin"
+
+
+async def test_the_user_menu_session_without_a_profile_is_a_stranger(services, rsv):
+    """Сессия открыта, а профиля пользователя здесь нет — посторонний (роль не
+    возвращается сама собой, экраны пользователя не рисуются)."""
+    rc.pair_row(services)
+    access_cache.peer_client_on(PEER_ADMIN)
+    try:
+        assert await _role(services.db, PEER_ADMIN) is None
+        assert await _role(services.db, PEER_ADMIN, "/start") == "activation"
+    finally:
+        access_cache.peer_client_off(PEER_ADMIN)
+
+
 async def test_a_new_admin_id_moves_the_role_at_once(services, rsv):
     rc.pair_as_inviter(services, rsv)
     assert await _role(services.db, PEER_ADMIN) == "peer_admin"
