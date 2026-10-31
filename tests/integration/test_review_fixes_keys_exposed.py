@@ -166,6 +166,28 @@ def test_at_home_the_word_about_the_code_changes_the_code(mv):
     assert svc.reserve_code_notify_pending(), "новый код админу не поставлен"
 
 
+def test_a_gateway_saying_it_gave_a_point_marks_the_generation_even_if_the_reserve_is_silent(mv):
+    """Независимый сигнал шлюза (`quo.pg` снимка: точка какого многочлена отдана кандидату):
+    многочлен текущего `M` — отметка compromised по точкам и новое поколение дома сразу,
+    даже без `st.exposed` резерва; тот же сигнал после смены поколения (многочлен прежнего
+    `M`) — ничего: иначе шлюз с давней отметкой крутил бы поколения без конца."""
+    svc = mv.svc
+    svc._quorum_new_poly(2, "подготовка")
+    q0 = int(svc.reserve_qkeys()["q_gen"])
+    assert int(svc.reserve_qkeys()["m_q_gen"]) == q0, "первый многочлен поколения M не отмечен"
+    m0, c0 = _gens(svc)
+    code0 = svc.reserve_code()
+    svc.reserve_quorum_snapshot_in(1, {"w": "see", "g": 1, "e": 0, "pg": {"q": q0 - 1, "at": "2026-11-02T14:05:00"}})
+    assert not svc.reserve_compromised(), "точка многочлена прежнего M сошла за текущее поколение"
+    svc.reserve_quorum_snapshot_in(1, {"w": "see", "g": 1, "e": 0, "pg": {"q": q0, "at": "2026-11-02T14:05:00"}})
+    assert svc.reserve_compromised() and svc.reserve_keys().get("compromised_by") == "share"
+    svc.reserve_compromised_settle()
+    assert _gens(svc) == (m0 + 1, c0) and svc.reserve_code() == code0, f"сигнал шлюза о точке: {_gens(svc)}"
+    assert int(svc.reserve_qkeys()["m_q_gen"]) > q0
+    svc.reserve_quorum_snapshot_in(1, {"w": "see", "g": 1, "e": 0, "pg": {"q": q0, "at": "2026-11-02T14:05:00"}})
+    assert not svc.reserve_compromised() and _gens(svc)[0] == m0 + 1, "давняя отметка шлюза сменила поколение второй раз"
+
+
 def test_a_word_about_an_older_generation_changes_nothing(mv):
     svc = mv.svc
     svc.reserve_new_generation("подготовка", code=False)

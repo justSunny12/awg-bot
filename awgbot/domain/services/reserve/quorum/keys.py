@@ -87,6 +87,11 @@ class ReserveQuorumKeysMixin:
             q = self.reserve_qkeys()
             gen = rsvkeys.QuorumGen.new(int(q.get("q_gen") or 0) + 1, max(2, int(t)))
             q.update(q_gen=gen.q_gen, t=gen.t, poly=[c.hex() for c in gen.poly.coeffs], poly_at=timeutil.now_iso())
+            m_gen = int(self.reserve_keys().get("m_gen") or 0)
+            if int(q.get("poly_m_gen") or -1) != m_gen:
+                # первый многочлен этого поколения `M`: точка любого многочлена с этого номера с ящиком
+                # того же `M` открывает его — порог для сигнала шлюза об отданной точке (quo.pg)
+                q.update(poly_m_gen=m_gen, m_q_gen=gen.q_gen)
             self.rsv_put("rsv_qkeys", q)
         log.info("кворум: многочлен ключа кворума %s (порог %s) — %s", gen.q_gen, gen.t, why)
 

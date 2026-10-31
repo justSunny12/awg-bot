@@ -31,7 +31,7 @@ from ..base import log
 from .store import STORE_LOCK                                 # один замок на reserve.json и quorum.json
 
 STORE_PATH = Path("/var/lib/awg-gw/quorum.json")
-_KEEP_KEYS = ("views", "pledges", "told", "apply_mono", "share_given_at", "e_known", "e_take")
+_KEEP_KEYS = ("views", "pledges", "told", "apply_mono", "share_given_at", "e_known", "e_take", "point_given")
 APPLY_EVERY_S = 300
 EPOCH_STEP_MAX = 1000          # эпоха из слова или ответа — не дальше известной на столько (мусор, поломка)
 
@@ -506,6 +506,9 @@ class GatewayQuorumMixin:
             rs = self.reserve_section()                       # отметку читает слово state{idle, reason} — Т-РА5
             rs["share_given_at"], rs["share_move"] = timeutil.now_iso(), None   # попытку свяжет первый serving
             _write_rsv(rs, self._RSV_STORE)
+            cur = self.quorum_section()                       # факт для основы — снимком (`quo.pg`): точка какого
+            cur["point_given"] = {"q": int(q_gen), "at": timeutil.now_iso()}   # многочлена ушла; qrel и новый документ не стирают
+            _write(cur, self._QUO_STORE)
         return [("guest", "qshare", {"l": str(sec.get("l") or ""), "q_gen": int(q_gen), "x": int(point.get("x") or 0),
                                      "y": str(point.get("y"))})]
 
@@ -556,13 +559,19 @@ class GatewayQuorumMixin:
         return out
 
     def quorum_snapshot(self) -> dict | None:
-        """Поле `quo` снимка: взгляд на основу, поколение, эпоха."""
+        """Поле `quo` снимка: взгляд на основу, поколение, эпоха; `pg` — точка какого многочлена
+        и когда отдана кандидату (основа по нему узнаёт о возможно известном ключе, даже если
+        резерв промолчал)."""
         sec = self.quorum_section()
         if not sec.get("l"):
             return None
         name = f"awgq{sec['l']}h"
         v = self._gw_qvoters.get(name)
         view = dict((sec.get("views") or {}).get(name) or {})
-        return {"w": v.view if v is not None else str(view.get("w") or ""), "since": str(view.get("since") or ""),
-                "g": int(sec.get("g") or 0), "e": int(v.epoch) if v is not None else int(sec.get("e") or 0),
-                "q": int((sec.get("point") or {}).get("q_gen") or 0)}      # поколение моей точки — подтверждение ключей
+        out = {"w": v.view if v is not None else str(view.get("w") or ""), "since": str(view.get("since") or ""),
+               "g": int(sec.get("g") or 0), "e": int(v.epoch) if v is not None else int(sec.get("e") or 0),
+               "q": int((sec.get("point") or {}).get("q_gen") or 0)}      # поколение моей точки — подтверждение ключей
+        pg = sec.get("point_given")
+        if isinstance(pg, dict) and int(pg.get("q") or 0):
+            out["pg"] = {"q": int(pg["q"]), "at": str(pg.get("at") or "")}
+        return out

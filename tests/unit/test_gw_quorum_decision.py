@@ -269,6 +269,21 @@ def test_the_share_mark_survives_a_new_document(ag):
     assert json.loads((ag.tmp / "reserve.json").read_text(encoding="utf-8")).get("share_given_at") == mark, "новый раздел документа стёр отметку отданной точки"
 
 
+def test_the_given_point_is_told_to_the_server_by_the_snapshot_and_outlives_qrel(ag):
+    """Факт «точку отдал» (какого многочлена, когда) идёт основе полем `quo.pg` снимка и не
+    стирается ни `qrel`, ни новым документом: по нему основа узнаёт о возможно известном
+    ключе, даже если резерв промолчал. Пока точка не отдавалась — поля нет."""
+    assert "pg" not in (ag.svc.quorum_snapshot() or {})
+    ag.uns()
+    ag.word("qneed", q_gen=Q_GEN, since="2026-10-30T10:05:00+03:00")
+    pg = ag.svc.quorum_snapshot()["pg"]
+    assert pg["q"] == Q_GEN and pg["at"], pg
+    ag.word("qrel", e=E + 1)
+    sec = ag.section()
+    ag.svc.quorum_apply({k: sec[k] for k in ("l", "g", "members", "t", "port", "probes", "point", "e")})
+    assert ag.svc.quorum_snapshot()["pg"] == pg, "qrel или новый документ стёрли факт отданной точки"
+
+
 # ── пауза и эпоха ───────────────────────────────────────────────────────────
 
 def test_qpause_holds_uns_until_the_term(ag):

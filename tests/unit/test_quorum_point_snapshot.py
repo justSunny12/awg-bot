@@ -62,3 +62,15 @@ def test_the_server_takes_the_point_generation_only_as_a_number(raw, want):
 
 def test_a_snapshot_of_an_older_agent_without_q_reads_as_zero():
     assert gwsnapshot.sanitize({"quo": {"w": "see", "g": 1, "e": 0}})["quo"]["q"] == 0
+
+
+@pytest.mark.parametrize("raw, want", [
+    ({"q": 3, "at": "2026-11-02T14:05:00"}, {"q": 3, "at": "2026-11-02T14:05:00"}),
+    ({"q": "3", "at": "x" * 80}, {"q": 3, "at": "x" * 40}),
+    ({"q": 0, "at": "2026-11-02T14:05:00"}, None), ({"q": "7; rm"}, None), ("3", None), (None, None),
+], ids=["ok", "digits_long_at", "zero", "injection", "string", "none"])
+def test_the_given_point_signal_is_cleaned_and_absent_when_empty(raw, want):
+    """`quo.pg` — факт отданной точки: число многочлена и строка времени, иначе поля нет
+    (основа по нему помечает поколение ключа — мусор туда не должен доходить)."""
+    out = gwsnapshot.sanitize({"quo": {"w": "see", "g": 1, "e": 0, "q": 3, "pg": raw}})["quo"]
+    assert out.get("pg") == want, out
