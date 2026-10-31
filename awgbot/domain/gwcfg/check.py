@@ -240,6 +240,7 @@ def check_doc(parsed: dict, *, link_cidr: str, address: str = "", fixed: dict | 
 
 _HOST_RE = re.compile(r"^[A-Za-z0-9.-]{1,253}$")
 _HEX32_RE = re.compile(r"^[0-9a-f]{32}$")
+_HEX16_RE = re.compile(r"^[0-9a-f]{16}$")
 
 
 def check_reserve(sec: dict) -> dict:
@@ -315,6 +316,9 @@ def check_quorum(sec: dict) -> dict:
     x, y, q_gen = int(point.get("x") or 0), str(point.get("y") or ""), int(point.get("q_gen") or 0)
     if y and (not 2 <= x <= 254 or not _HEX32_RE.match(y) or q_gen <= 0):
         raise CfgError("quorum: точка ключа кворума не того вида")
+    qf = str(point.get("qf") or "")                       # отпечаток многочлена — необязательный (прежний сервер)
+    if qf and not _HEX16_RE.match(qf):
+        raise CfgError("quorum: отпечаток многочлена ключа кворума не того вида")
     port = int(sec.get("port") or 0)
     if port and not 1 <= port <= 65535:
         raise CfgError("quorum: порт вне 1–65535")
@@ -328,7 +332,8 @@ def check_quorum(sec: dict) -> dict:
             if timing[key] < 0:
                 raise CfgError(f"quorum: цифра {key} отрицательная")
     return {"l": l, "g": int(sec.get("g") or 0), "members": members, "t": int(sec.get("t") or 0), "port": port,
-            "e": int(sec.get("e") or 0), "probes": probes, "point": {"x": x, "y": y, "q_gen": q_gen} if y else {},
+            "e": int(sec.get("e") or 0), "probes": probes,
+            "point": {"x": x, "y": y, "q_gen": q_gen, **({"qf": qf} if qf else {})} if y else {},
             "timing": timing}
 
 

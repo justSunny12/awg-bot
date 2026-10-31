@@ -13,6 +13,9 @@ quorum.py — часть пакета reserve агента (см. __init__): к�
 `serving` резерва в reserve.json). Свои отметки хода (`_KEEP_KEYS`) новый
 документ не стирает; точка прежнего поколения (`point_prev`) живёт до
 следующей смены — её просит второй сервер, пока ключи нового до него не дошли.
+Поколение точки — номер `q_gen` и отпечаток многочлена `qf` (rsvkeys.same_q):
+после восстановления основы из копии номера идут заново; сервер прежней версии
+отпечатка не шлёт — тогда по номеру.
 """
 from __future__ import annotations
 
@@ -21,7 +24,7 @@ import os
 import time
 from pathlib import Path
 
-from awgbot.util import fsatomic, livestep, timeutil
+from awgbot.util import fsatomic, livestep, rsvkeys, timeutil
 from awgbot.util.quorum import timing as qt
 from awgbot.util.quorum.probe import Probe, Reply
 from awgbot.util.quorum.timing import Timing
@@ -56,18 +59,18 @@ def _point_prev(cur: dict, new_point: dict) -> dict:
     if not new_point.get("y"):
         return {}
     old = dict(cur.get("point") or {})
-    if old.get("y") and int(old.get("q_gen") or 0) != int(new_point.get("q_gen") or 0):
+    if old.get("y") and not rsvkeys.same_q(old, new_point):
         return old
     prev = dict(cur.get("point_prev") or {})
-    return prev if prev.get("y") and int(prev.get("q_gen") or 0) != int(new_point.get("q_gen") or 0) else {}
+    return prev if prev.get("y") and not rsvkeys.same_q(prev, new_point) else {}
 
 
-def _point_of_gen(sec: dict, q_gen: int) -> dict:
-    """Точка того поколения, которое просит кандидат: текущая или прежняя; иначе — текущая
-    (отказ по несовпадению скажет, какое у меня)."""
+def _point_of_gen(sec: dict, want: dict) -> dict:
+    """Точка того поколения (`q_gen`, `qf`), которое просит кандидат: текущая или прежняя;
+    иначе — текущая (отказ по несовпадению скажет, какое у меня)."""
     point = dict(sec.get("point") or {})
     prev = dict(sec.get("point_prev") or {})
-    if int(point.get("q_gen") or 0) != int(q_gen) and prev.get("y") and int(prev.get("q_gen") or 0) == int(q_gen):
+    if not rsvkeys.same_q(point, want) and prev.get("y") and rsvkeys.same_q(prev, want):
         return prev
     return point
 
@@ -435,7 +438,8 @@ class GatewayQuorumMixin:
                 self.reserve_share_released()                 # «не забираю» до начала попытки — точка не понадобится
             return []
         if kind == "qneed":
-            return self._quorum_need_in(sec, v, int(body.get("q_gen") or 0), str(body.get("since") or ""))
+            return self._quorum_need_in(sec, v, {"q_gen": int(body.get("q_gen") or 0), "qf": body.get("qf")},
+                                        str(body.get("since") or ""))
         if kind == "qpause":
             from awgbot.util.quorum.voter import pause_seconds
             v.pause(now, pause_seconds(body))                 # dur — длительность, until — по своим часам
@@ -492,14 +496,17 @@ class GatewayQuorumMixin:
             self._pledge_store(name, {"e": int(v.epoch), "at": timeutil.now_iso()})
         return ([("guest", "qview", body)] if rec.get("target") != "r" else []) + [("link", "qview", body)]
 
-    def _quorum_need_in(self, sec: dict, v: Voter, q_gen: int, since: str) -> list[tuple]:
-        point = _point_of_gen(sec, q_gen)
+    def _quorum_need_in(self, sec: dict, v: Voter, want: dict, since: str) -> list[tuple]:
+        point = _point_of_gen(sec, want)
+        q_gen = int(want.get("q_gen") or 0)
         if v.view != "uns":
             log.info("quorum: кандидат просит точку (с %s), а сервер AWG виден — отказ", since)
             return []
-        if not point.get("y") or int(point.get("q_gen") or 0) != int(q_gen):
-            log.warning("quorum: кандидат просит точку поколения %s, у меня %s — отказ", q_gen, point.get("q_gen"))
+        if not point.get("y") or not rsvkeys.same_q(point, want):
+            log.warning("quorum: кандидат просит точку поколения %s, у меня %s (или многочлен другой — отпечаток) — отказ",
+                        q_gen, point.get("q_gen"))
             return []
+        qf = rsvkeys.m_print_of(point.get("qf"))
         log.warning("quorum: отдаю точку ключа кворума кандидату (сервер AWG не отвечает с %s)", since)
         from .store import _write as _write_rsv
         with STORE_LOCK:
@@ -507,10 +514,11 @@ class GatewayQuorumMixin:
             rs["share_given_at"], rs["share_move"] = timeutil.now_iso(), None   # попытку свяжет первый serving
             _write_rsv(rs, self._RSV_STORE)
             cur = self.quorum_section()                       # факт для основы — снимком (`quo.pg`): точка какого
-            cur["point_given"] = {"q": int(q_gen), "at": timeutil.now_iso()}   # многочлена ушла; qrel и новый документ не стирают
+            cur["point_given"] = {"q": int(q_gen), "at": timeutil.now_iso(),   # многочлена ушла; qrel и новый
+                                  **({"qf": qf} if qf else {})}          # документ не стирают
             _write(cur, self._QUO_STORE)
         return [("guest", "qshare", {"l": str(sec.get("l") or ""), "q_gen": int(q_gen), "x": int(point.get("x") or 0),
-                                     "y": str(point.get("y"))})]
+                                     "y": str(point.get("y")), **({"qf": qf} if qf else {})})]
 
     def _pledge_store(self, name: str, pledge: dict | None) -> None:
         with STORE_LOCK:
@@ -571,7 +579,12 @@ class GatewayQuorumMixin:
         out = {"w": v.view if v is not None else str(view.get("w") or ""), "since": str(view.get("since") or ""),
                "g": int(sec.get("g") or 0), "e": int(v.epoch) if v is not None else int(sec.get("e") or 0),
                "q": int((sec.get("point") or {}).get("q_gen") or 0)}      # поколение моей точки — подтверждение ключей
+        qf = rsvkeys.m_print_of((sec.get("point") or {}).get("qf"))
+        if qf:
+            out["qf"] = qf                                    # и её многочлен: номер после копии основы не уникален
         pg = sec.get("point_given")
         if isinstance(pg, dict) and int(pg.get("q") or 0):
             out["pg"] = {"q": int(pg["q"]), "at": str(pg.get("at") or "")}
+            if rsvkeys.m_print_of(pg.get("qf")):
+                out["pg"]["qf"] = rsvkeys.m_print_of(pg.get("qf"))
         return out

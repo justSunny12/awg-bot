@@ -135,10 +135,12 @@ PAIR_KINDS: dict[str, tuple[str, dict]] = {
     "qprobe":       (BOTH, {"l": (_S, 1), "g": (_I, None), "conf": (_S, 4096)}),
     "qkeys":        (BOTH, {"l": (_S, 1), "m_gen": (_I, None), "q_gen": (_I, None), "thr": (_I, None), "x": (_I, None),
                             "y": (_S, 64), "qbox": (_S, 256), "c_gen": (_I, None), "cy": (_S, 64), "cbox": (_S, 256),
-                            "mf": (_S, 16)}),
+                            "mf": (_S, 16), "qf": (_S, 16)}),
                     # thr — порог многочлена: имя «t» занято конвертом канала (вид сообщения, gwlink.pack)
-    "qkeys_ok":     (BOTH, {"l": (_S, 1), "m_gen": (_I, None), "q_gen": (_I, None), "c_gen": (_I, None), "mf": (_S, 16)}),
-                    # mf — отпечаток `M` (rsvkeys.m_print) рядом с m_gen: номера после восстановления из копии не уникальны
+    "qkeys_ok":     (BOTH, {"l": (_S, 1), "m_gen": (_I, None), "q_gen": (_I, None), "c_gen": (_I, None), "mf": (_S, 16),
+                            "qf": (_S, 16)}),
+                    # mf — отпечаток `M` (rsvkeys.m_print) рядом с m_gen, qf — многочлена (rsvkeys.q_print) рядом с
+                    # q_gen: номера после восстановления из копии не уникальны
     "qview":        (BOTH, {"l": (_S, 1), "g": (_I, None), "w": (_S, 8), "since": (_S, 32), "e": (_I, None), "i": (_D, None)}),
     "qstate":       (BOTH, {"l": (_S, 1), "e": (_I, None), "holder": (_S, 8), "r": (_S, 8)}),
     "qpause":       (BOTH, {"l": (_S, 1), "until": (_S, 32), "dur": (_I, None)}),   # dur — секунды паузы: часы
@@ -176,8 +178,8 @@ GUEST_KINDS: dict[str, tuple[str, dict]] = {
     "qask":   (RESERVE, {"l": (_S, 1), "g": (_I, None)}),
     "qtake":  (RESERVE, {"l": (_S, 1), "e": (_I, None)}),
     "qrel":   (RESERVE, {"l": (_S, 1), "e": (_I, None)}),
-    "qneed":  (RESERVE, {"l": (_S, 1), "q_gen": (_I, None), "since": (_S, 32)}),
-    "qshare": (GATEWAY, {"l": (_S, 1), "q_gen": (_I, None), "x": (_I, None), "y": (_S, 64)}),
+    "qneed":  (RESERVE, {"l": (_S, 1), "q_gen": (_I, None), "since": (_S, 32), "qf": (_S, 16)}),
+    "qshare": (GATEWAY, {"l": (_S, 1), "q_gen": (_I, None), "x": (_I, None), "y": (_S, 64), "qf": (_S, 16)}),
     "qpause": (RESERVE, {"l": (_S, 1), "until": (_S, 32), "dur": (_I, None)}),
     "qstate": (RESERVE, {"l": (_S, 1), "e": (_I, None), "holder": (_S, 8), "r": (_S, 8)}),
 }
@@ -203,8 +205,10 @@ OPTIONAL: dict[str, frozenset] = {"st": frozenset({"healthy", "can_return", "in_
                                   "state": frozenset({"reason", "e"}), "qview": frozenset({"i"}),
                                   "go": frozenset({"ttl", "k", "sealed", "oid"}), "go_req": frozenset({"ttl"}),
                                   "pkg": frozenset({"jrn", "mf", "db_size"}), "released": frozenset({"epoch", "last"}),
-                                  "qkeys": frozenset({"q_gen", "thr", "y", "qbox", "mf"}),   # многочлен — пока кворум линии решает
-                                  "qkeys_ok": frozenset({"mf"}),
+                                  "qkeys": frozenset({"q_gen", "thr", "y", "qbox", "mf", "qf"}),   # многочлен — пока кворум линии решает
+                                  "qkeys_ok": frozenset({"mf", "qf"}),
+                                  # qf — отпечаток многочлена рядом с q_gen; шлюз прежней версии его не шлёт
+                                  "qneed": frozenset({"qf"}), "qshare": frozenset({"qf"}),
                                   "jstale": frozenset({"F"}), "qpause": frozenset({"dur"}),
                                   # hello обычной сессии несёт только nonce (и seen); поля сопряжения — у hello с pair
                                   "hello": frozenset({"pair", "eph", "name", "version", "caps", "gen", "ports", "seen", "bot", "gw"})}

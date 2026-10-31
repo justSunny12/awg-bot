@@ -622,7 +622,8 @@ def test_the_quorum_section_carries_the_gateways_point_and_passes_its_check(on):
     sec = on.s.gwcfg_quorum(gw)
     q = on.s.reserve_qkeys()
     poly = shamir.Poly(tuple(bytes.fromhex(c) for c in q["poly"]))
-    assert sec["point"] == {"x": 2, "y": poly.point(2)[1].hex(), "q_gen": q["q_gen"]}, sec["point"]
+    assert sec["point"] == {"x": 2, "y": poly.point(2)[1].hex(), "q_gen": q["q_gen"],
+                            "qf": rsvkeys.q_print(poly.secret)}, sec["point"]
     checked = gwcheck.check_quorum(gwcfg.parse({"gen": 1, "hash": "ab" * 8, "quorum": sec})["sections"]["quorum"])
     assert checked["point"] == sec["point"], "шлюз отбросил свою точку при проверке раздела"
     before = gwprints.quorum_print(sec)

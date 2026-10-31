@@ -330,13 +330,17 @@ class ReserveQuorumCandidateMixin:
     def _quorum_need(self, c: Candidate, since: str) -> list[tuple]:
         peer = self.reserve_quorum_peer_keys()
         q_gen = int(peer.get("q_gen") or 0)
+        need = {"l": c.l, "q_gen": q_gen, "since": since}
+        qf = rsvkeys.m_print_of(peer.get("qf"))
+        if qf:
+            need["qf"] = qf                                   # точку именно этого многочлена, не номера
         ex = self.__dict__.get("_quo_exec") or {}
         ex["need_at"] = time.monotonic()
         actions: list[tuple] = []
         for node in c.voters:
             vt = c.votes.get(node)
             if vt is not None and vt.w == "uns":
-                actions += self._quorum_to_gw(node, "qneed", {"l": c.l, "q_gen": q_gen, "since": since})
+                actions += self._quorum_to_gw(node, "qneed", dict(need))
         log.warning("кворум: прошу точки ключа кворума «%s» (поколение %s)", self.reserve_peer_name(), q_gen)
         return actions
 
@@ -348,8 +352,9 @@ class ReserveQuorumCandidateMixin:
             log.info("кворум: точка от шлюза %s без просьбы — не беру", slot)
             return []
         peer = self.reserve_quorum_peer_keys()
-        if int(body.get("q_gen") or 0) != int(peer.get("q_gen") or 0):
-            log.warning("кворум: точка шлюза %s поколения %s, у меня %s", slot, body.get("q_gen"), peer.get("q_gen"))
+        if not rsvkeys.same_q(body, peer):
+            log.warning("кворум: точка шлюза %s поколения %s, у меня %s (или многочлен другой — отпечаток)", slot,
+                        body.get("q_gen"), peer.get("q_gen"))
             return []
         try:
             x, y = int(body.get("x") or 0), str(body.get("y") or "")
