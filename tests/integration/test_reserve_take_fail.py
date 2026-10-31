@@ -1,17 +1,22 @@
-"""Пересылка хвоста прошлого возврата при новом открытии на резерве (inbound_back:
-_relay_yield, _relay_restore, _tick_relay; inbound: _take_fail, отказ запуска _go_launch).
+"""Срыв приёма на резерве: пересылка хвоста прошлого возврата при новом открытии (inbound_back:
+_relay_yield, _relay_restore, _tick_relay; inbound: _take_fail, отказ запуска _go_launch) и
+отметка «срыв идёт» (inbound: _take_fail).
 
 - новое открытие снимает пересылку (DNAT увёл бы пользователей нового клона на основу), но
   помнит её; открытие сорвалось — на любом шаге или уже на запуске — пересылка возвращается
   с прежними сроком и адресом, такт relay перерисовывает файервол и сбрасывает conntrack;
 - открытие без пересылки до него и после неё пересылку не выдумывает: отметка прошлого
-  эпизода не тянется.
+  эпизода не тянется;
+- отметка «срыв идёт» живёт в памяти процесса: процесс, убитый посреди срыва (и отметка
+  прежнего выпуска в базе), не оставляет taking навсегда — новый процесс срыв доделывает;
+  второй срыв, пока идёт первый, — пустой.
 
 Окружение — `host` из test_reserve_hosting (зона, процессы и systemctl подставные).
 
 Цена ошибки: устройства, сидящие после прошлого возврата на адресе резерва, теряют VPN
 при живой основе — из-за чужого срыва переезда (разовый ключ не пришёл, процесс открытия
-упал, основа ушла из сеанса).
+упал, основа ушла из сеанса); отметка срыва в базе — после рестарта посреди срыва резерв
+вечно в taking: зона занята, новые пакеты отвергаются, переезды к нему закрыты.
 """
 from __future__ import annotations
 
@@ -78,3 +83,31 @@ def test_an_open_without_a_tail_relay_brings_none_after_a_failure(host):
     svc.reserve_in_tick()
     assert svc.reserve_in() == "idle" and "relay" not in host.zone.names(), \
         f"пересылка прошлого эпизода вернулась: {host.zone.calls}"
+
+
+# ── отметка «срыв идёт» ─────────────────────────────────────────────────────
+
+def test_a_fail_mark_left_in_the_base_by_a_killed_process_does_not_hold_taking_forever(host):
+    svc = host.svc
+    assert svc.reserve_go_req_in(7, "button") == ""
+    svc.rsv_update("rsv_in", failing=True)                    # процесс убит посреди срыва (прежний выпуск)
+    host.zone.status = {"step": "fail", "reason": "x"}
+    acts = svc.reserve_in_tick()
+    assert svc.reserve_in() == "idle" and rm.sent(acts) == ["down"], f"taking навсегда: {svc.rsv_get('rsv_in')}"
+    assert not svc.rsv_get("rsv_in").get("failing"), "отметка прежнего выпуска осталась в базе"
+    assert {"teardown", "wipe"} <= set(host.zone.names())
+
+
+def test_a_second_fail_while_the_first_runs_is_empty_and_the_mark_is_not_stored(host):
+    svc = host.svc
+    assert svc.reserve_go_req_in(7, "button") == ""
+    seen = {}
+
+    def _stop():
+        seen["inner"] = svc._take_fail("второй")             # обработчик кода видит тот же fail
+        seen["stored"] = svc.rsv_get("rsv_in").get("failing")
+    svc._rsvopen_stop = _stop
+    acts = svc._take_fail("первый")
+    assert seen["inner"] == [] and not seen["stored"], seen
+    assert rm.sent(acts) == ["down"] and svc.reserve_in() == "idle"
+    assert "_rsv_take_failing" not in svc.__dict__, "отметка срыва осталась — следующий срыв не пройдёт"

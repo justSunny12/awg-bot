@@ -288,13 +288,23 @@ class ReserveInboundMixin:
         return int(rsvzone.read_json(rsvzone.WEBHOOK_FILE).get("port") or 0)
 
     def _take_fail(self, reason: str) -> list[tuple]:
+        """Срыв приёма — один раз: обработчик кода и такт видят один и тот же fail. Отметка
+        «срыв идёт» — в памяти процесса, не в `rsv_in`: процесс, убитый посреди срыва, оставил бы
+        её в базе, и после старта taking стоял бы навсегда (каждый срыв — «уже идёт»); новый
+        процесс срыв просто доделывает (юнит стоп, снятие и стирание зоны идемпотентны)."""
+        with _LOCK:
+            inn = self._inn()
+            if str(inn.get("state") or "") != "taking" or self.__dict__.get("_rsv_take_failing"):
+                return []
+            self.__dict__["_rsv_take_failing"] = True
+        try:
+            return self._take_fail_do(reason)
+        finally:
+            self.__dict__.pop("_rsv_take_failing", None)
+
+    def _take_fail_do(self, reason: str) -> list[tuple]:
         from awgbot.infra import rsvzone
         from awgbot.domain.notices import reserve as rn
-        with _LOCK:                                            # обработчик кода и такт видят один и тот же fail: срыв — один раз
-            inn = self._inn()
-            if str(inn.get("state") or "") != "taking" or inn.get("failing"):
-                return []
-            self.rsv_update("rsv_in", failing=True)
         name = self.reserve_peer_name()
         extra: list[tuple] = []
         if str(self._inn().get("kind") or "") == "code" and hasattr(self, "reserve_code_failed"):
@@ -309,7 +319,8 @@ class ReserveInboundMixin:
                 fn()
             except rsvzone.ZoneError as e:
                 log.warning("резерв: зона после отказа: %s", e)
-        # ended_auto — только после состоявшегося переезда; после срыва — короткий демпфер (fail_at)
+        # ended_auto — только после состоявшегося переезда; после срыва — короткий демпфер (fail_at);
+        # failing=False — снять отметку, оставленную в базе прежним выпуском
         self.reserve_set_in("idle", step="", reason=reason, ended_auto=False, fail_at=timeutil.now_iso(), failing=False)
         self._relay_restore()                                 # пересылка хвоста, уступившая открытию, — обратно
         gw_word = self.reserve_gw_state_actions(force=True, reason=reason) if hasattr(self, "reserve_gw_state_actions") else []
