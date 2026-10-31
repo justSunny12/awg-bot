@@ -145,12 +145,16 @@ class SubscriptionMixin:
         # new_end=None → бессрочная (никогда не истекает) → всегда active
         now_expired = new_end is not None and timeutil.elapsed(new_end) >= 0
         status = SubStatus.EXPIRED if now_expired else SubStatus.ACTIVE
-        self.db.update_client_fields(
-            client_id,
-            period_start=timeutil.to_iso(new_start),
-            period_end=timeutil.to_iso(new_end) if new_end else None,
-            status=status,
-        )
+        end_iso = timeutil.to_iso(new_end) if new_end else None
+        if client.pause_mode == PauseMode.ADMIN_OPEN and client.pause_active_since:
+            # Открытая админ-пауза: period_end пуст (временно бессрочная), а
+            # настоящий конец — сохранённый; его и правим, как продление на N
+            # дней. Запись в period_end выход из паузы затёр бы сохранённым.
+            self.db.update_client_fields(client_id, period_start=timeutil.to_iso(new_start),
+                                         pause_saved_end=end_iso, status=status)
+        else:
+            self.db.update_client_fields(client_id, period_start=timeutil.to_iso(new_start),
+                                         period_end=end_iso, status=status)
         self.db.reset_notified(client_id)     # период сменился — пороги истечения заново
 
         notifications: list[Notification] = []

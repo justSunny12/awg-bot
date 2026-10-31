@@ -8,7 +8,9 @@
   публикуется поверх прежнего фида — прежний остаётся, повтор через полчаса; без
   прежнего неполный лучше пустого, но повтор тоже скорый;
 - перевыпуск ключей устройства в окне переезда: у самого и у двойника — свои пары
-  ключей; отказ сервера на втором пире возвращает прежние ключи первому.
+  ключей; отказ сервера на втором пире возвращает прежние ключи первому;
+- «✏️ Период» на открытой админ-паузе правит сохранённый конец подписки, а не
+  period_end (он на паузе пуст — подписка временно бессрочная).
 
 Цена ошибки: дамп, снятый раньше, записывался после более позднего — дельта
 выходила отрицательной, принималась за рестарт awg, и весь счётчик интерфейса
@@ -17,17 +19,22 @@
 VPN в локальной сети до следующего похода (до восьми часов); одна пара ключей на
 оба пира — IntegrityError по public_key посреди перевыпуска: на сервере у
 двойника уже новый ключ, в базе прежний, перепривязка друга к другому владельцу
-в окне переезда не проходит, а сверка видит «чужой пир».
+в окне переезда не проходит, а сверка видит «чужой пир»; правка дат на паузе
+писала period_end, выход из паузы затирал его сохранённым концом — админ ставил
+пользователю двести дней, а после снятия блока у того оставался прежний месяц.
 """
 from __future__ import annotations
 
+import datetime
 import threading
 import time
 
 import pytest
 
 from awgbot.infra import awg
+from awgbot.core.blocks import ClientBlock
 from awgbot.domain.services.types import ServiceError
+from awgbot.util import timeutil
 from tests.integration._migration_common import _twin
 from tests.integration.test_gwlink_lists_role_diag import ITDOG, _Net
 
@@ -173,3 +180,32 @@ def test_rekey_failure_on_the_second_peer_restores_the_first(services, mig, make
     assert {i: services.db.get_device(i).public_key for i in (orig_id, twin_id)} == old
     on_server = {pub for peers in mig.peers_by_iface.values() for pub in peers}
     assert set(old.values()) <= on_server, "прежний ключ не вернулся на сервер"
+
+
+# ── правка дат на открытой админ-паузе ───────────────────────────────────────
+
+def test_period_edit_during_open_admin_pause_survives_unpause(services, make_active_client):
+    """Блок без срока паузы, «✏️ Период» на двести дней, снятие блока: конец —
+    заданный (плюс дни паузы, которые и так прибавляются), а не прежний месяц;
+    на самой паузе подписка остаётся временно бессрочной."""
+    c = make_active_client(name="a", tg_id=7001, period_kind="month")
+    services.block_client_manual(c.id, ClientBlock.ADMIN_SILENT, notify=False, pause_days=0)
+    assert services.db.get_client(c.id).pause_mode == "admin_open"
+    want = timeutil.now() + datetime.timedelta(days=200)
+    services.set_subscription_dates(c.id, timeutil.now(), want)
+    mid = services.db.get_client(c.id)
+    assert mid.period_end is None, "на открытой паузе period_end заполнен — пауза перестала быть бессрочной"
+    assert mid.effective_period_end == timeutil.to_iso(want)
+    services.unblock_client_manual(c.id, ClientBlock.ADMIN_SILENT, notify=False)
+    end = timeutil.parse_iso(services.db.get_client(c.id).period_end)
+    assert datetime.timedelta(0) <= end - want <= datetime.timedelta(days=1), (
+        f"конец после паузы {end}, а задан {want}")
+
+
+def test_period_edit_to_unlimited_during_open_admin_pause(services, make_active_client):
+    """Бессрочная, заданная на паузе, после паузы бессрочной и остаётся."""
+    c = make_active_client(name="a", tg_id=7001, period_kind="month")
+    services.block_client_manual(c.id, ClientBlock.ADMIN_SILENT, notify=False, pause_days=0)
+    services.set_subscription_dates(c.id, timeutil.now(), None)
+    services.unblock_client_manual(c.id, ClientBlock.ADMIN_SILENT, notify=False)
+    assert services.db.get_client(c.id).period_end is None
