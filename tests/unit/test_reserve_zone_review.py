@@ -3,7 +3,7 @@ python состояния — интерпретатор бота (venv), зап
 и при отказе — отказ без затирания состояния; `--plan` сообщает conntrack и
 python; адреса админа основы (набор admin4) — в состоянии и заново при каждой
 перерисовке таблицы; отвергнутая таблица — отказ режима; стороны линков
-шлюзов — `awg setconf` без расширений awg-quick; хранилище — tmpfs без свопа
+шлюзов — `awg setconf` без расширений awg-quick (уже стоящая — `awg syncconf` нового конфига); хранилище — tmpfs без свопа
 или ramfs, но никогда не свопируемый tmpfs; чужой CAKE не трогается;
 resolv.conf гостя — на резолвер зоны; `--relay` снимает записи conntrack по
 портам клонов.
@@ -219,6 +219,47 @@ def test_a_refused_link_side_is_a_warning_and_its_temp_link_is_removed(zone):
     assert any(c.startswith("ip link del awgz") for c in zone.calls("ip link del")), "временный интерфейс остался"
     # срез конфига живёт только на время setconf: при отказе он тоже убирается
     assert not (zone.links / ".awglink1.setconf").exists(), "срез конфига для awg setconf остался после отказа"
+
+
+def test_an_existing_link_side_takes_the_new_config_by_syncconf(zone):
+    """Смена ключей шлюзовой стороны слота: бот переписал конфиг стороны зоны и позвал
+    --shell, а сторона уже стоит. Прежде её пропускали (`ip link show … && continue`) —
+    живая сторона оставалась на прежнем ключе шлюза, линк молчал. Теперь — тот же срез
+    без расширений awg-quick в `awg syncconf` (сессии с неизменными пирами живут), адрес —
+    `ip addr replace`, без пересоздания интерфейса."""
+    fake_cmd(zone.bin / "ip",
+        f'echo "ip $*" >> {zone.log}\n'
+        'if [ "$1 $2" = "netns exec" ]; then shift 3; exec "$@"; fi\n'
+        'if [ "$1 $2 $3" = "link show awglink1" ]; then exit 0; fi\n'
+        'if [ "$1 $2" = "link show" ]; then exit 1; fi\n'
+        'exit 0\n')
+    fake_cmd(zone.bin / "awg", f'echo "awg $*" >> {zone.log}\n'
+                               f'if [ "$1" = syncconf ]; then cat "$3" > {zone.setconfs}/sync.conf; fi\nexit 0\n')
+    zone.links.mkdir()
+    (zone.links / "awglink1.conf").write_text(LINK, encoding="utf-8")
+    r = zone.run("link_sides_up")
+    assert r.returncode == 0 and "ВНИМАНИЕ" not in r.stdout, r.stdout + r.stderr
+    assert [c.split()[:3] for c in zone.calls("awg")] == [["awg", "syncconf", "awglink1"]], zone.calls("awg")
+    text = (zone.setconfs / "sync.conf").read_text(encoding="utf-8")
+    keys = {ln.split("=")[0].strip() for ln in text.splitlines() if "=" in ln}
+    assert not keys & {"Address", "MTU", "DNS", "Table"} and "PublicKey" in keys, sorted(keys)
+    assert "ip addr replace 198.51.100.2/32 dev awglink1" in zone.calls("ip addr"), zone.calls("ip addr")
+    assert not zone.calls("ip link add"), "существующая сторона пересоздана — сессии линка рвутся"
+    assert not (zone.links / ".awglink1.setconf").exists(), "срез конфига остался после syncconf"
+
+
+def test_a_refused_syncconf_is_a_warning_and_the_old_side_stays(zone):
+    fake_cmd(zone.bin / "ip",
+        f'echo "ip $*" >> {zone.log}\n'
+        'if [ "$1 $2" = "netns exec" ]; then shift 3; exec "$@"; fi\n'
+        'if [ "$1 $2" = "link show" ]; then exit 0; fi\n'
+        'exit 0\n')
+    fake_cmd(zone.bin / "awg", f'echo "awg $*" >> {zone.log}\nexit 1\n')
+    zone.links.mkdir()
+    (zone.links / "awglink1.conf").write_text(LINK, encoding="utf-8")
+    r = zone.run("link_sides_up")
+    assert r.returncode == 0 and "ВНИМАНИЕ: новый конфиг стороны линка awglink1 не принят" in r.stdout, r.stdout
+    assert not zone.calls("ip link del") and not (zone.links / ".awglink1.setconf").exists()
 
 
 # ── хранилище ───────────────────────────────────────────────────────────────

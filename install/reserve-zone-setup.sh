@@ -87,8 +87,9 @@
 #                 постоянных линков шлюзов основы из $LINKS_DIR/<имя>.conf
 #                 (интерфейс создаётся у хоста, awg setconf без строк
 #                 Address/MTU/DNS/Table — их setconf не знает, — перенос в
-#                 зону, имя awglink<N>, адрес из Address; уже стоящую сторону не
-#                 трогает); постоянный veth awggx (ZONE_TG_CIDR) и правила
+#                 зону, имя awglink<N>, адрес из Address; уже стоящей стороне —
+#                 тот же срез через awg syncconf (новые ключи шлюза основы без
+#                 пересоздания), адрес — ip addr replace); постоянный veth awggx (ZONE_TG_CIDR) и правила
 #                 `ip rule from <адреса шлюзов /30> lookup TG_TABLE` — выход агентов
 #                 шлюзов основы в Telegram (в состоянии tg=up; не создался —
 #                 строка ВНИМАНИЕ, оболочка встаёт без него; --take, --relay,
@@ -402,19 +403,28 @@ link_sides_up() {   # стороны постоянных линков шлюз�
     for f in "$LINKS_DIR"/*.conf; do
         [ -f "$f" ] || continue
         name="$(basename "$f" .conf)"
-        nsx ip link show "$name" >/dev/null 2>&1 && continue
-        tmp="awgz$$"
-        ip link add "$tmp" type amneziawg || { say "ВНИМАНИЕ: сторона линка $name не создалась"; continue; }
-        # awg setconf не знает расширений awg-quick (Address и др.) — снять их; срез
+        # awg setconf/syncconf не знают расширений awg-quick (Address и др.) — снять их; срез
         # рядом с конфигом (тот же закрытый каталог), живёт только на время setconf
         sc="$LINKS_DIR/.$name.setconf"
+        addr="$(awk -F'[ =]+' '/^Address/{print $2; exit}' "$f")"
+        if nsx ip link show "$name" >/dev/null 2>&1; then
+            # сторона уже стоит: конфиг мог смениться (новые ключи шлюза основы) — syncconf
+            # меняет ключи и пиры на месте, живые сессии с неизменными пирами не рвутся
+            grep -v -E '^[[:space:]]*(Address|MTU|DNS|Table)[[:space:]]*=' "$f" > "$sc"; chmod 0600 "$sc"
+            nsx awg syncconf "$name" "$sc" || say "ВНИМАНИЕ: новый конфиг стороны линка $name не принят — осталась прежняя"
+            rm -f "$sc"
+            [ -n "$addr" ] && nsx ip addr replace "$addr" dev "$name" 2>/dev/null
+            nsx ip link set "$name" up
+            continue
+        fi
+        tmp="awgz$$"
+        ip link add "$tmp" type amneziawg || { say "ВНИМАНИЕ: сторона линка $name не создалась"; continue; }
         grep -v -E '^[[:space:]]*(Address|MTU|DNS|Table)[[:space:]]*=' "$f" > "$sc"; chmod 0600 "$sc"
         awg setconf "$tmp" "$sc" \
             || { rm -f "$sc"; ip link del "$tmp"; say "ВНИМАНИЕ: конфиг стороны линка $name не принят"; continue; }
         rm -f "$sc"
         ip link set "$tmp" netns "$ZONE"
         nsx ip link set "$tmp" name "$name"
-        addr="$(awk -F'[ =]+' '/^Address/{print $2; exit}' "$f")"
         [ -n "$addr" ] && nsx ip addr add "$addr" dev "$name" 2>/dev/null
         nsx ip link set "$name" up
     done
