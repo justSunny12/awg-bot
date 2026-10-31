@@ -44,8 +44,21 @@ class ReserveGwGuestMixin:
         qs = self._quorum_qstate_body()
         if qs is not None:
             actions.append(("gw", int(slot), "qstate", qs))   # эпоха линии первым словом новой сессии (§3.3)
+        actions += self._quorum_retake_on_hello(int(slot))
         actions += self._quorum_gw_view_forget(int(slot), rec.get("caps") or [])
         return actions
+
+    def _quorum_retake_on_hello(self, slot: int) -> list[tuple]:
+        """«Забираю» ещё живо (просьба лидеру, сбор точек, окно кода — `rsv_in` пока idle), а шлюз
+        открыл новую сессию: `state{idle}` первым словом откатывает поднятую по `qtake` эпоху —
+        страховка на потерянный `qrel`; идущую попытку она не отменяет — `qtake{e}` тому же узлу
+        следом, эпоха у него снова e + 1."""
+        took = self.__dict__.get("_quo_took") or {}
+        l = str(took.get("l") or "")
+        if not l or f"{l}{int(slot)}" not in (took.get("nodes") or []):
+            return []
+        log.info("резерв: шлюз %s основы — новая сессия посреди «забираю» под эпоху %s, qtake заново", slot, int(took.get("e") or 0) + 1)
+        return [("gw", int(slot), "qtake", {"l": l, "e": int(took.get("e") or 0)})]
 
     def _quorum_gw_view_forget(self, slot: int, caps: list) -> list[tuple]:
         """Новая сессия шлюза: его прежний взгляд (по гостевому каналу) — неизвестен до свежего
