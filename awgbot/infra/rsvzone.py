@@ -61,6 +61,8 @@ PHASES = ("idle", "taking", "serving", "relay")
 _MB = 1024 * 1024
 OPEN_MEM_FLOOR_MB = 192          # процесс открытия: прежний потолок — нижняя граница
 GUEST_MEM_FLOOR_MB = 160         # гость: прежний потолок — нижняя граница (скрипт зоны ниже не ставит)
+STORE_FLOOR_MB = 32              # хранилище гостя: прежний размер tmpfs — нижняя граница (скрипт зоны ниже не ставит)
+STORE_CEIL_MB = 4096             # и верх: больше — заведомо мусор (база бота столько не весит)
 PKG_MEM_WARN_BYTES = 64 * _MB    # пакет больше — карточка резерва предупреждает о памяти
 
 
@@ -74,10 +76,23 @@ def open_memory_mb(pkg_bytes: int) -> int:
     return max(OPEN_MEM_FLOOR_MB, 128 + 3 * _mb_up(pkg_bytes))
 
 
+def store_mb(db_bytes: int) -> int:
+    """Размер хранилища гостя (tmpfs `RUN_DIR`): до трёх копий базы сразу — `bot.db`,
+    `bot.db.prev` (база, подменённая снимком `rep.bin` на старте гостя, остаётся рядом) и
+    временная (`rsv-snap-*.db` — копия для снимка `rep.bin`; `.tmp` записи при подмене базы),
+    плюс 16 МБ на WAL, списки РФ-доступа, конфиги и сертификат вебхука — 16 МБ + 3 × размер
+    базы, не меньше прежних 32 и не больше 4096. `rep.bin` и журнал данных гостя — на диске
+    (`VAR_DIR`), в хранилище их нет."""
+    return min(STORE_CEIL_MB, max(STORE_FLOOR_MB, 16 + 3 * _mb_up(db_bytes)))
+
+
 def guest_memory_mb(db_bytes: int) -> int:
-    """Потолок памяти бота основы на резерве: база в tmpfs и её копия в памяти —
-    96 МБ + 2 × размер базы, не меньше прежних 160."""
-    return max(GUEST_MEM_FLOOR_MB, 96 + 2 * _mb_up(db_bytes))
+    """Потолок памяти бота основы на резерве: процесс — 96 МБ и копия базы в памяти, плюс
+    хранилище гостя целиком (`store_mb`): страницы tmpfs числятся в memory cgroup того, кто
+    их записал, — всё, что гость пишет в хранилище (подмена базы, `.prev`, копия снимка, WAL),
+    входит в MemoryMax его юнита и без свопа не вытесняется. 96 МБ + размер базы +
+    `store_mb`, не меньше прежних 160."""
+    return max(GUEST_MEM_FLOOR_MB, 96 + _mb_up(db_bytes) + store_mb(db_bytes))
 
 
 ZONE_TOOLS = ("dnsmasq", "conntrack")            # пакеты, без которых зона не полна (резолвер зоны, сброс хвоста)
@@ -235,23 +250,28 @@ def shell() -> str:
     return run("shell", env={"GUEST_CHANNEL_PORT": str(port)})
 
 
-def store() -> str:
-    """Смонтировать хранилище гостя (до записи в него)."""
-    return run("store", timeout=60)
+def store(size_mb: int = 0) -> str:
+    """Смонтировать хранилище гостя (до записи в него); size_mb — его размер (`store_mb`):
+    уже смонтированный tmpfs скрипт перемонтирует этим размером; 0 — умолчание скрипта
+    (32 МБ), смонтированное не трогается."""
+    return run("store", env={"GUEST_STORE_MB": str(int(size_mb))} if size_mb else None, timeout=60)
 
 
 def take(conf_text: str, *, iface: str, addr: str, dns: list[str], upstreams: list[str], admin: list[str],
          channel_port: int = 0, extra: list[tuple[str, str]] | None = None, probe_addr: str = "",
-         probe_port: int = 0, memory_mb: int = 0) -> str:
+         probe_port: int = 0, memory_mb: int = 0, store_size_mb: int = 0) -> str:
     """Клон из конфига (stdin), veth, dnsmasq и юниты гостя. extra — (имя, cidr)
     дополнительных интерфейсов основы (окно переезда профилей): их конфиги уже
     лежат в хранилище (`RUN_DIR/awg/<имя>.conf`), скрипт поднимает их следом.
     probe_addr — второй адрес клона (cidr) для ответчика кворума бота основы.
-    memory_mb — потолок памяти юнита гостя (`guest_memory_mb`); 0 — умолчание скрипта."""
+    memory_mb — потолок памяти юнита гостя (`guest_memory_mb`), store_size_mb — размер
+    хранилища гостя (`store_mb`, скрипт перемонтирует tmpfs); 0 — умолчание скрипта."""
     env = {"GUEST_IF": iface, "GUEST_ADDR": addr, "GUEST_DNS": " ".join(dns), "GUEST_UPSTREAMS": " ".join(upstreams),
            "GUEST_ADMIN": " ".join(admin), "GUEST_EXTRA": " ".join(f"{n}={a}" for n, a in (extra or []))}
     if memory_mb:
         env["GUEST_MEMORY_MB"] = str(int(memory_mb))
+    if store_size_mb:
+        env["GUEST_STORE_MB"] = str(int(store_size_mb))
     if channel_port:
         env["GUEST_CHANNEL_PORT"] = str(int(channel_port))
     if probe_addr:

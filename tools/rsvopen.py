@@ -13,7 +13,9 @@ NoNewPrivileges, запись — только хранилище гостя, /v
 BOT_TOKEN/ADMIN_ID резерва, AWG_BOT_ENV=/dev/null). Хранилище гостя бот
 монтирует сам до запуска юнита (в пространстве хоста: смонтированное внутри
 песочницы хосту и юнитам гостя не видно) и создаёт каталоги записи; шаг
-`store` здесь монтирует его, только если этого ещё нет (ручной запуск). Ход
+`store` здесь монтирует его, только если этого ещё нет (ручной запуск), и
+растит под базу (rsvzone.store_mb — до записи и при --take по базе после
+журнала: бот знает только размер сжатого пакета). Ход
 бот читает по /run/awg-bot/rsv/open.status (шаг, время, причина — без
 секретов; до запуска бот пишет туда `launching`, после — `launched`), stderr
 процесса — в /run/awg-bot/rsv/rsvopen.err: кончился без `done`/`fail` —
@@ -460,7 +462,7 @@ def run(data: dict) -> int:
     if not db_bytes:
         return _fail("реплика пуста")
     try:
-        rsvzone.store()
+        rsvzone.store(rsvzone.store_mb(len(db_bytes)))       # хранилище — под эту базу, до записи в него
         data["_pkg_gen"] = head.pkg_gen
         fill_store(data, k, parts, db_bytes, iface["name"], extra)
         jinfo = _journal(k, jrn, button=sealed_path) if jrn is not None else {}
@@ -475,7 +477,7 @@ def run(data: dict) -> int:
                      upstreams=list(vpn.get("upstreams") or []), admin=list(vpn.get("admin") or []),
                      channel_port=int(data.get("channel_port") or 0), extra=[(x["name"], x["addr"]) for x in extra],
                      probe_addr=str(iface.get("probe_resp") or ""), probe_port=int(data.get("probe_port") or 0),
-                     memory_mb=rsvzone.guest_memory_mb(db_size))
+                     memory_mb=rsvzone.guest_memory_mb(db_size), store_size_mb=rsvzone.store_mb(db_size))
         _step("clone_up", iface=iface["name"], port=iface["port"], ifaces=",".join([iface["name"]] + [x["name"] for x in extra]), **jinfo)
     except (rsvzone.ZoneError, OpenError, OSError) as e:
         return _fail(f"зона: {e}")

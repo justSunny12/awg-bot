@@ -75,7 +75,9 @@ class ReserveScreenMixin:
 
     def _reserve_pkg_mem_view(self) -> dict:
         """Пакет второй стороны больше PKG_MEM_WARN_BYTES — объём и сколько памяти возьмёт переезд
-        сюда (процесс открытия и бот второй стороны в зоне — одновременно); иначе пусто."""
+        сюда (процесс открытия и бот второй стороны в зоне с его хранилищем — одновременно); иначе
+        пусто. Базу в пакете (сжата, закрыта K) резерв не видит — она оценена размером пакета,
+        поэтому «около»: сама база обычно больше сжатой."""
         from awgbot.infra import rsvzone
         from awgbot.util.textfmt import human_bytes
         size = int(self.rsv_get("rsv_pkg_in").get("size") or 0)

@@ -55,11 +55,13 @@ class Zone:
         self.take = tmp_path / "run" / "tg_take"
         self.webhook = tmp_path / "run" / "webhook.json"
         self.events: list[str] = []                       # общий порядок: монтирование хранилища и запуск процесса
+        self.store_sizes: list[int] = []
 
-    def store(self) -> str:
+    def store(self, size_mb: int = 0) -> str:
         """Хранилище гостя монтирует бот до запуска юнита открытия (не в z.calls:
-        те сверяют ход зоны после открытия)."""
+        те сверяют ход зоны после открытия); размер — в store_sizes."""
         self.events.append("store")
+        self.store_sizes.append(size_mb)
         if "store" in self.fail_on:
             raise rsvzone.ZoneError(self.fail_on["store"])
         return ""
@@ -235,6 +237,15 @@ def test_go_req_is_refused_when_the_zone_is_busy_or_the_reserve_is_not_ready(hos
 def test_go_with_a_key_that_is_not_hex_is_refused_from_an_old_primary(host):
     legacy_primary(host)
     assert "hex" in host.svc.reserve_go_in("zz", 7, "button") and host.svc.reserve_in() == "idle"
+
+
+def test_the_bot_mounts_the_store_sized_by_the_package_before_the_open_process(host, monkeypatch):
+    """Хранилище гостя бот монтирует до процесса открытия — размером по пакету (базу внутри
+    он не видит), а не прежними 32 МБ на любой пакет."""
+    monkeypatch.setattr(rsvzone, "store_mb", lambda n: 1000 + n)
+    assert host.svc.reserve_go_req_in(7, "button") == ""
+    assert host.zone.store_sizes == [1000 + len(b"DUMMY-package")], host.zone.store_sizes
+    assert host.zone.events.index("store") < host.zone.events.index("popen"), "хранилище — после запуска процесса"
 
 
 def test_go_req_launches_the_open_process_waiting_for_the_key_and_keeps_its_stdin_open(host):

@@ -82,7 +82,13 @@ class ReserveOpenProcMixin:
         if not os.path.exists(argv[0]):
             argv[0] = "python3"
         try:
-            rsvzone.store()                                   # tmpfs — у хоста, юнит его видит
+            pkg_size = os.path.getsize(str(config.DATA_DIR / "reserve" / "guest.pkg"))
+        except OSError:
+            pkg_size = 0
+        try:
+            # tmpfs — у хоста, юнит его видит; размер — по пакету (база внутри него сжата и
+            # закрыта K), процесс открытия перемонтирует хранилище под настоящую базу
+            rsvzone.store(rsvzone.store_mb(pkg_size))
         except rsvzone.ZoneError as e:
             raise ServiceError(f"хранилище гостя не смонтировано: {e}")
         for d in (rsvzone.VAR_DIR, rsvzone.STATE_DIR):
