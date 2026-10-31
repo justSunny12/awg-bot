@@ -92,6 +92,7 @@ async def test_confirming_runs_the_lever_and_redraws_the_card(ui):
 async def test_a_confirmation_that_came_too_late_is_refused_loudly(ui):
     _gone(ui)
     ui.svc.rsv_update("rsv_peer_state", session=True)          # резерв вышел на связь, пока диалог висел
+    ui.svc._lv.state = "ok"                                     # живым словом, не одним флагом сеанса
     t = _toast(await ui.run.press(RsvCB(action="force_yes")))
     assert t.show_alert and "на связи" in t.text
     assert not ui.svc.rsv_get("rsv_out").get("await_merge")
