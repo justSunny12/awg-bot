@@ -29,6 +29,11 @@ class PairClient(InboundMixin):
     def online(self) -> bool:
         return self._sess is not None and self._sess.hello
 
+    @property
+    def dead(self) -> bool:
+        """Сопряжение кончилось отказом или срывом pair_admin — цикл вышел насовсем."""
+        return self._dead
+
     def start(self) -> None:
         if self._task is None or self._task.done():
             self._task = asyncio.get_running_loop().create_task(self._run())

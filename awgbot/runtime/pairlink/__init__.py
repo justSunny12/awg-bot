@@ -62,6 +62,12 @@ async def ensure(services) -> None:
             _link = PairServer(services)
         await _link.ensure()
     elif want == "client":
+        if _link is not None and _link.dead:
+            # прежнее сопряжение кончилось отказом, а роль снова «принявший» — новое
+            # принятие (в ту же минуту, до такта): цикл прежнего клиента вышел насовсем
+            with contextlib.suppress(Exception):
+                await _link.stop()
+            _link = None
         if _link is None:
             from .client import PairClient
             _link = PairClient(services)
