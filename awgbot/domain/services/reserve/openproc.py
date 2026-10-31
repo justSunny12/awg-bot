@@ -3,7 +3,7 @@ openproc.py — часть пакета reserve (см. __init__): запуск �
 пакета (tools/rsvopen) на резерве — выделено из inbound (там автомат приёма).
 
 Процесс идёт временным юнитом systemd-run с песочницей (`rsvopen_sandbox_props`):
-память (от размера пакета), PrivateTmp, ProtectSystem=strict, каталог данных подменён пустым и виден
+память (от размера базы основы, без него — пакета), PrivateTmp, ProtectSystem=strict, каталог данных подменён пустым и виден
 только пакет второй стороны, запись — хранилище гостя, его каталог на диске,
 состояние зоны и /etc/systemd. Хранилище гостя монтирует бот до запуска (в
 пространстве хоста), секреты идут только в stdin, хвост stderr — в
@@ -24,11 +24,12 @@ from ..gateway_link.common import log
 OPEN_UNIT = "awg-bot-rsvopen"
 
 
-def rsvopen_sandbox_props(base: str) -> list[str]:
+def rsvopen_sandbox_props(base: str, db_size: int = 0) -> list[str]:
     """Свойства systemd-run для процесса открытия — одним списком, чтобы стенд
     запускал его ровно так же. Хранилище гостя и каталоги из ReadWritePaths
     должны существовать до запуска (`_rsvopen_launch` их создаёт). Потолок памяти —
-    от размера пакета (`rsvzone.open_memory_mb`: пакет, его части и база — в памяти)."""
+    `rsvzone.open_memory_mb`: от размера пакета и базы основы (`db_size` — из слова
+    `pkg`, несжатой; 0 — не известен, пакет прежней основы: только от пакета)."""
     from awgbot.infra import rsvzone
     pkg = str(config.DATA_DIR / "reserve" / "guest.pkg")
     jrn = str(config.DATA_DIR / "reserve" / "jrn")
@@ -36,7 +37,7 @@ def rsvopen_sandbox_props(base: str) -> list[str]:
         pkg_size = os.path.getsize(pkg)
     except OSError:
         pkg_size = 0
-    return ["-p", f"MemoryMax={rsvzone.open_memory_mb(pkg_size)}M", "-p", "MemorySwapMax=0", "-p", "LimitCORE=0", "-p", "Nice=5",
+    return ["-p", f"MemoryMax={rsvzone.open_memory_mb(pkg_size, db_size)}M", "-p", "MemorySwapMax=0", "-p", "LimitCORE=0", "-p", "Nice=5",
             "-p", "PrivateTmp=yes", "-p", "ProtectHome=yes", "-p", "ProtectSystem=strict",
             "-p", "NoNewPrivileges=yes",
             "-p", f"InaccessiblePaths=-{config.ENV_PATH or '/etc/awg-bot/env'}",
@@ -85,10 +86,12 @@ class ReserveOpenProcMixin:
             pkg_size = os.path.getsize(str(config.DATA_DIR / "reserve" / "guest.pkg"))
         except OSError:
             pkg_size = 0
+        db_size = rsvzone.db_size_of(self.rsv_get("rsv_pkg_in").get("db_size"))
         try:
-            # tmpfs — у хоста, юнит его видит; размер — по пакету (база внутри него сжата и
-            # закрыта K), процесс открытия перемонтирует хранилище под настоящую базу
-            rsvzone.store(rsvzone.store_mb(pkg_size))
+            # tmpfs — у хоста, юнит его видит; размер — по базе основы из слова `pkg`, у пакета
+            # прежней основы — по пакету (база внутри него сжата и закрыта K); процесс открытия
+            # перемонтирует хранилище под настоящую базу (после журнала она больше)
+            rsvzone.store(rsvzone.store_mb(db_size or pkg_size))
         except rsvzone.ZoneError as e:
             raise ServiceError(f"хранилище гостя не смонтировано: {e}")
         for d in (rsvzone.VAR_DIR, rsvzone.STATE_DIR):
@@ -102,7 +105,7 @@ class ReserveOpenProcMixin:
         env.update({"AWG_BOT_CONF_DIR": str(config.CONF_DIR), "AWG_BOT_DATA_DIR": str(config.DATA_DIR),
                     "AWG_BOT_ENV": "/dev/null"})
         if shutil.which("systemd-run"):
-            props = rsvopen_sandbox_props(base)
+            props = rsvopen_sandbox_props(base, db_size=db_size)
             setenv = [f"--setenv={k}={env[k]}" for k in ("AWG_BOT_CONF_DIR", "AWG_BOT_DATA_DIR", "AWG_BOT_ENV") if k in env]
             cmd = ["systemd-run", "--collect", "--quiet", "--pipe", f"--unit={OPEN_UNIT}", *props, *setenv, *argv]
         else:

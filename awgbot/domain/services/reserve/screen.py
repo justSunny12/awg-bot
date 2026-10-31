@@ -74,16 +74,20 @@ class ReserveScreenMixin:
                 "quorum": self._quorum_card_safe()}
 
     def _reserve_pkg_mem_view(self) -> dict:
-        """Пакет второй стороны больше PKG_MEM_WARN_BYTES — объём и сколько памяти возьмёт переезд
+        """База второй стороны больше PKG_MEM_WARN_BYTES — объём и сколько памяти возьмёт переезд
         сюда (процесс открытия и бот второй стороны в зоне с его хранилищем — одновременно); иначе
-        пусто. Базу в пакете (сжата, закрыта K) резерв не видит — она оценена размером пакета,
-        поэтому «около»: сама база обычно больше сжатой."""
+        пусто. Размер базы (несжатой) основа шлёт с пакетом (`db_size`); у прежней основы его нет —
+        база оценена размером пакета (сжата, закрыта K). «Около» в обоих случаях: это потолки, а
+        база после журнала больше той, что ушла в пакете."""
         from awgbot.infra import rsvzone
         from awgbot.util.textfmt import human_bytes
-        size = int(self.rsv_get("rsv_pkg_in").get("size") or 0)
+        pkg_in = self.rsv_get("rsv_pkg_in")
+        pkg = int(pkg_in.get("size") or 0)
+        db = rsvzone.db_size_of(pkg_in.get("db_size"))
+        size = db or pkg
         if size <= rsvzone.PKG_MEM_WARN_BYTES:
             return {}
-        need = (rsvzone.open_memory_mb(size) + rsvzone.guest_memory_mb(size)) * 1024 * 1024
+        need = (rsvzone.open_memory_mb(pkg, db) + rsvzone.guest_memory_mb(size)) * 1024 * 1024
         return {"size": human_bytes(size), "need": human_bytes(need)}
 
     def _quorum_card_safe(self) -> dict:

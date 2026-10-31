@@ -402,10 +402,10 @@ def test_the_package_carries_no_point_of_m_and_its_key_generation_only_in_the_he
     полем. Точка в пакете — резерв сам собирал бы `M` с одной точкой шлюза мимо
     большинства; поколение — только в заголовке, с ним сверяется ящик кода. Рядом —
     лишь отпечаток `M` (8 байт хеша, не точка): номер поколения после восстановления из
-    копии не уникален."""
+    копии не уникален, — и размер базы (по нему резерв ставит потолки зоны)."""
     make_active_client(name="Профиль", tg_id=7001)
     built = _tick(paired, clock)
-    assert set(built) <= {"gen", "fp", "blob", "jrn", "mf"}, f"с пакетом уходит лишнее: {sorted(built)}"
+    assert set(built) <= {"gen", "fp", "blob", "jrn", "mf", "db_size"}, f"с пакетом уходит лишнее: {sorted(built)}"
     keys = paired.reserve_keys()
     assert built["mf"] == rsvkeys.m_print(bytes.fromhex(keys["m"])) and keys["m"] not in built["mf"], \
         "рядом с пакетом не отпечаток M"

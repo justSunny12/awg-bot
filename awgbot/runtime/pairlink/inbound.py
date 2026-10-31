@@ -90,9 +90,11 @@ class InboundMixin:
         except ValueError:
             await send_line(sess, "pkg_bad", {"gen": gen, "reason": "части не склеились"})
             return
-        mf = {"mf": str(body["mf"])} if body.get("mf") else {}     # прежняя основа отпечатка `M` не шлёт
+        extra = {"mf": str(body["mf"])} if body.get("mf") else {}  # прежняя основа отпечатка `M` не шлёт
+        if body.get("db_size"):
+            extra["db_size"] = int(body["db_size"])          # и размера базы — тоже: потолки зоны по пакету
         reply, why = await asyncio.to_thread(self.services.reserve_pkg_in, gen, str(body["fp"]), blob,
-                                             body.get("jrn") or None, **mf)
+                                             body.get("jrn") or None, **extra)
         if reply == "pkg_ok":
             await send_line(sess, "pkg_ok", {"gen": gen, "fp": str(body["fp"])})
             await send_line(sess, "st", await asyncio.to_thread(self.services.reserve_st_body))

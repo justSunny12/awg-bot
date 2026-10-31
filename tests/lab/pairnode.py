@@ -216,11 +216,11 @@ def lab_world(svc, shared: Path) -> None:
     venv = os.environ.get("LAB_VENV", "")
     netns = os.environ.get("LAB_NETNS", "")
 
-    def props(base: str) -> list[str]:
+    def props(base: str, **kw) -> list[str]:
         extra = ["-p", "ProtectHome=tmpfs", "-p", f"BindReadOnlyPaths={venv}"] if venv else []
         if netns:
             extra += ["-p", f"NetworkNamespacePath=/run/netns/{netns}"]
-        return real_props(base) + extra
+        return real_props(base, **kw) + extra
     openproc.rsvopen_sandbox_props = props
 
 
