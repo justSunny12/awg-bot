@@ -40,8 +40,9 @@ HOST_ONLY: tuple[str, ...] = (
     "routing_provision", "routing_update_lists", "check_resource_alerts", "private_dns_decision",
     "gwcfg_doc", "gwlink_lan_feeds_update",
     "make_backup", "backup_set_passphrase", "restore_wait_start",
-    "fleet_start", "fleet_run", "apply_update", "migration_prepare", "migration_start", "migration_finish",
-    "reserve_invite_issue", "reserve_accept_go", "reserve_unpair", "reserve_new_generation",
+    "fleet_start", "fleet_run", "fleet_gw_retry", "apply_update", "migration_prepare", "migration_start",
+    "migration_finish", "reserve_invite_issue", "reserve_accept_go", "reserve_unpair", "reserve_new_generation",
+    "reserve_record_return",
 )
 
 

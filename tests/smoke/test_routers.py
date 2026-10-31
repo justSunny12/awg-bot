@@ -64,8 +64,11 @@ def test_routers_for_lists_both_roles_in_the_documented_order():
     from awgbot.bot.routers import routers_for
     main_names = [r.name for r in routers_for("client")]
     gw_names = [r.name for r in routers_for("gateway")]
-    # fenced — загородка лишённого кворума лидера (4.2.0): раньше общих разделов, они тоже за ней
-    assert main_names[:7] == ["paging", "lists", "hide", "cancel", "reply_commands", "fenced", "sections"] and main_names[-1] == "stale", main_names
+    # fenced — загородка лишённого кворума лидера: раньше кнопок уведомлений (reply_commands —
+    # «🔁 Повторить» и «↩️ Вернуть запись» действуют на шлюзы и запись DNS) и общих разделов
+    assert main_names[:7] == ["paging", "lists", "hide", "cancel", "fenced", "reply_commands", "sections"] and main_names[-1] == "stale", main_names
+    guest_names = [r.name for r in routers_for("guest")]
+    assert guest_names.index("fenced") < guest_names.index("reply_commands") < guest_names.index("sections"), guest_names
     assert gw_names[:5] == ["paging", "lists", "hide", "cancel", "sections"] and gw_names[-1] == "stale", gw_names
     assert main_names.index("sections") < main_names.index("settings"), "общие разделы — раньше настроек роли"
     assert main_names.index("routing") < main_names.index("client"), main_names

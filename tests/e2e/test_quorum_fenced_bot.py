@@ -15,12 +15,20 @@ Telegram. «Лишён кворума» — отметка сервисов, к�
 ограждения); админ не может открыть «🛟 Резерв», чтобы перевести
 пользователей кнопкой; Т-К9 на каждое сообщение — флуд в чате человека;
 загородка, не снятая после возврата кворума, — бот молчит, когда его все видят.
+Загородка-перечень пропускала кнопки, которых в перечне не было: «🗑 Удалить»
+снимал пир на хосте, а строку в базе под следованием уже не удалял (пир снят,
+устройство в списке, спиннер); «🔁 Повторить» на уведомлении запускал догон
+шлюзов, «↩️ Вернуть запись» переводил запись DNS на сервер без кворума — поэтому
+загородка — белый список, и стоит она раньше кнопок уведомлений.
 """
 from __future__ import annotations
 
 import pytest
 
-from awgbot.bot.callbacks import ClientCB, GwSlotCB, Menu, SetCB, UpdateCB
+from awgbot.bot import callbacks as cbs
+from awgbot.bot.callbacks import (AdminSelfCB, BlockCB, ClientCB, DelDeviceCB, GraceCB, GwSlotCB, HelpCB, Menu, NoteCB,
+                                  PauseCB, PresetCB, ReassignCB, RsvCB, SetCB, UpdateCB)
+from awgbot.bot.handlers import fenced
 from awgbot.bot.middleware import AccessMiddleware
 from awgbot.bot.routers import make_dispatcher
 from awgbot.bot.texts.reserve import quorum as qt
@@ -125,13 +133,88 @@ async def test_the_fence_lifted_lets_the_user_in_again(world):
 
 # ── админ ───────────────────────────────────────────────────────────────────
 
-@pytest.mark.parametrize("cb", [SetCB(sec="gw"), Menu(action="clients"), ClientCB(action="open", id=1),
-                                GwSlotCB(action="list")])
+OUTSIDE = [SetCB(sec="gw"), Menu(action="clients"), ClientCB(action="open", client_id=1), GwSlotCB(action="list"),
+           DelDeviceCB(device_id=1, stage="confirm"), BlockCB(target="dev", action="block", ref=1, kind="silent"),
+           PauseCB(action="pick", ref=1, days=7), PresetCB(kind="devlimit", ref=1, val=5),
+           ReassignCB(device_id=1, client_id=1), AdminSelfCB(action="add"), GraceCB(action="take", ref=1),
+           HelpCB(platform="apple"), NoteCB(kind="gw_retry", ref=1), NoteCB(kind="rsv_record_back"),
+           NoteCB(kind="extend", ref=1), NoteCB(kind="unassigned"), "zz:old:button"]
+
+
+@pytest.mark.parametrize("cb", OUTSIDE, ids=lambda c: c if isinstance(c, str) else c.pack())
 async def test_the_admin_outside_the_reserve_section_gets_the_t_k10_alert(world, cb):
     _fence(world)
     calls = await _press(world, config.ADMIN_ID, cb)
     assert _toasts(calls) == [f"~! {qt.ADMIN_FENCED}"], [c.head for c in calls]
-    assert not [c for c in calls if c.head.startswith(("= edit", "+ send"))], "за загородкой нарисован экран"
+    assert not [c for c in calls if c.head.startswith(("= edit", "+ send", "= markup"))], \
+        "за загородкой нарисован экран или сняты кнопки уведомления"
+
+
+async def test_the_notification_buttons_do_not_reach_the_gateways_or_the_record(world, monkeypatch):
+    """«🔁 Повторить» и «↩️ Вернуть запись» лишённого кворума: ни сброса
+    расписания догона и такта набора, ни смены записи DNS."""
+    hits = []
+    monkeypatch.setattr(type(world), "fleet_gw_retry", lambda self, slot: hits.append(("retry", slot)) or "")
+    monkeypatch.setattr(type(world), "reserve_dns_switch", lambda self, ip: hits.append(("dns", ip)))
+    from awgbot.runtime.linkserver import upd as fleet_upd
+
+    async def tick(services):
+        hits.append(("tick",))
+    monkeypatch.setattr(fleet_upd, "fleet_run_tick", tick)
+    _fence(world)
+    for cb in (NoteCB(kind="gw_retry", ref=1), NoteCB(kind="rsv_record_back")):
+        calls = await _press(world, config.ADMIN_ID, cb)
+        assert _toasts(calls) == [f"~! {qt.ADMIN_FENCED}"], [c.head for c in calls]
+    assert hits == [], f"кнопка уведомления прошла загородку: {hits}"
+
+
+async def test_deleting_a_device_while_fenced_leaves_the_peer_and_the_row(world, fake_awg):
+    """Ровно то, что было: пир снимался на хосте, строка под следованием
+    оставалась. Теперь до хоста кнопка не доходит."""
+    client = world.db.get_client_by_tg(USER)
+    dev = world.add_device(client.id, "Телефон")
+    peers = dict(fake_awg.peers)
+    _fence(world)
+    calls = await _press(world, config.ADMIN_ID, DelDeviceCB(device_id=dev.device_id, stage="confirm"))
+    assert _toasts(calls) == [f"~! {qt.ADMIN_FENCED}"], [c.head for c in calls]
+    assert world.db.get_device(dev.device_id) is not None, "устройство удалено за загородкой"
+    assert fake_awg.peers == peers, "пир снят на хосте за загородкой"
+
+
+def _sample(cls):
+    """Экземпляр колбэка с заполненными обязательными полями."""
+    vals = {}
+    for name, f in cls.model_fields.items():
+        if f.is_required():
+            vals[name] = 1 if f.annotation is int else "x"
+    return cls(**vals)
+
+
+_ALL_CB = sorted((c for c in vars(cbs).values()
+                  if isinstance(c, type) and issubclass(c, cbs.CallbackData) and c is not cbs.CallbackData),
+                 key=lambda c: c.__name__)
+
+
+@pytest.mark.parametrize("cls", _ALL_CB, ids=lambda c: c.__name__)
+def test_every_button_class_is_closed_unless_it_is_on_the_white_list(cls):
+    """Новый класс кнопок закрыт сам: открыты только раздел «🛟 Резерв», экран
+    админа второго сервера и служебные (листание, «весь список», «Скрыть»,
+    «✖️ Отмена»); из настроек — корень и «🛟 Резерв», из меню — главная."""
+    if cls in fenced.FREE:
+        assert fenced.allowed(_sample(cls).pack())
+        return
+    assert not fenced.allowed(_sample(cls).pack()), f"{cls.__name__} открыт лишённому кворума"
+    if cls is SetCB:
+        assert fenced.allowed(SetCB(sec="rsv", act="do", key="x").pack()) and fenced.allowed(SetCB(sec="root").pack())
+    if cls is Menu:
+        assert fenced.allowed(Menu(action="main").pack()) and fenced.allowed(Menu(action="refresh").pack())
+
+
+async def test_the_reserve_card_buttons_pass_the_fence(world):
+    """Действия карточки резерва (RsvCB) — к своим обработчикам, не Т-К10."""
+    _fence(world)
+    calls = await _press(world, config.ADMIN_ID, RsvCB(action="refresh"))
+    assert f"~! {qt.ADMIN_FENCED}" not in _toasts(calls), [c.head for c in calls]
 
 
 @pytest.mark.parametrize("cb", [SetCB(sec="svc"), SetCB(sec="backup"), SetCB(sec="notify"),
