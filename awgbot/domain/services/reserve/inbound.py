@@ -211,7 +211,14 @@ class ReserveInboundMixin:
         if step != "done":
             rc, tail = self._rsvopen_exit()                   # юнит не стартовал (226) или процесс убит (OOM): сразу, не через 35 мин
             if rc is not None:
-                return self._take_fail(f"процесс открытия завершился без итога (код {rc})" + (f": {tail}" if tail else ""))
+                # итог мог лечь между чтением open.status и кодом завершения (done и выход с кодом 0) —
+                # решает перечитанный итог, а не код
+                st = rsvzone.open_status()
+                step = str(st.get("step") or "")
+                if step == "fail":
+                    return self._take_fail(str(st.get("reason") or "процесс открытия отказал"), pre_m=open_fail_pre_m(st))
+                if step != "done":
+                    return self._take_fail(f"процесс открытия завершился без итога (код {rc})" + (f": {tail}" if tail else ""))
         now = time.monotonic()
         if step == "eph" and inn.get("sealed") and not inn.get("k_passed") and livestep.mono_due(inn.get("eph_sent"), now, EPH_RESEND_S):
             # процесс ждёт конверт: разовый ключ — основе (повтор, пока ждёт: сессия могла оборваться)
