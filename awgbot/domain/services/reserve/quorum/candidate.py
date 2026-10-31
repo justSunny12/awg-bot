@@ -97,10 +97,11 @@ class ReserveQuorumCandidateMixin:
     # ── такт ────────────────────────────────────────────────────────────────
     def reserve_quorum_candidate_tick(self, now: float | None = None) -> list[tuple]:
         now = time.monotonic() if now is None else now
+        took = self._quorum_took_tick()
         c = self._quorum_candidate_setup()
         if c is None:
             self.__dict__.pop("_quo_exec", None)
-            return []
+            return took
         self._quorum_candidate_feed(c, now)
         if c.v < 2:
             # голосующий один (я): автоматического взятия, опроса и ничьей нет — только окно кода
@@ -126,7 +127,34 @@ class ReserveQuorumCandidateMixin:
                 actions += self.reserve_quorum_tie_over(c)
         actions += self._quorum_exec_tick(c, now)
         actions += self._quorum_code_watch(c)
-        return actions
+        return took + actions
+
+    def _quorum_took_tick(self) -> list[tuple]:
+        """Исход отданного `qtake`: переезд состоялся (serving, releasing) — эпоха e + 1 у шлюзов
+        верна, память прочь; открытие идёт или исполнение ещё живо — ждать; иначе (срыв
+        открытия, кандидата больше нет) — `qrel{e}` тем, кому ушёл `qtake`."""
+        took = self.__dict__.get("_quo_took")
+        if not took:
+            return []
+        inn = self.reserve_in()
+        if inn in ("serving", "releasing"):
+            self.__dict__.pop("_quo_took", None)
+            return []
+        if inn == "taking" or self.__dict__.get("_quo_exec"):
+            return []
+        return self._quorum_took_release()
+
+    def _quorum_took_release(self) -> list[tuple]:
+        """Исполнение снято после отданного `qtake`: `qrel{e}` под той же эпохой тем же узлам —
+        шлюзы откатывают поднятую им эпоху (исход не случился)."""
+        took = self.__dict__.pop("_quo_took", None) or {}
+        out: list[tuple] = []
+        for node in took.get("nodes") or []:
+            out += self._quorum_to_gw(node, "qrel", {"l": str(took.get("l") or ""), "e": int(took.get("e") or 0)})
+        if out:
+            log.info("кворум: «забираю» под эпоху %s не исполнено — qrel %s", int(took.get("e") or 0) + 1,
+                     ",".join(took.get("nodes") or []))
+        return out
 
     def _quorum_code_watch(self, c: Candidate) -> list[tuple]:
         """Окно кода вне решения: свой взгляд «не вижу», никто из голосующих не видит
@@ -137,7 +165,7 @@ class ReserveQuorumCandidateMixin:
             return []
         cw = dict(self.rsv_get("rsv_view").get("code") or {})
         maj = qm.majority(len(c.no_nodes()), c.v) if c.v >= 2 else False   # при v = 1 большинства как решения нет
-        want = c.own == "uns" and not c.see_nodes() and not maj and self.reserve_in() == "idle"
+        want = c.own == "uns" and not c.see_nodes() and not maj and self.reserve_zone_free()   # relay — зона свободна
         if want and not cw.get("open"):
             return self.reserve_code_window_set(True, since=self._quorum_no_since(c), n=len(c.no_nodes()), v=c.v, t=qm.threshold(c.v))
         if not want and cw.get("open") and cw.get("by") == "quorum":
@@ -166,8 +194,11 @@ class ReserveQuorumCandidateMixin:
         e = self._quorum_known_e(c)
         out: list[tuple] = []
         pledged = c.pledged()
+        took = list((self.__dict__.get("_quo_took") or {}).get("nodes") or [])
         for node in pledged:
-            out += self._quorum_to_gw(node, "qrel", {"l": c.l, "e": e})
+            if node not in took:
+                out += self._quorum_to_gw(node, "qrel", {"l": c.l, "e": e})
+        out += self._quorum_took_release()
         c.unpledge(pledged)
         self.__dict__.pop("_quo_exec", None)
         cw = dict(self.rsv_get("rsv_view").get("code") or {})
@@ -203,6 +234,13 @@ class ReserveQuorumCandidateMixin:
                 actions += self._quorum_to_gw(node, "qtake", {"l": c.l, "e": e})
                 sent.append(node)
         c.unpledge(sent)                                      # qtake снимает обязательство на шлюзе
+        if sent:
+            # кому ушёл qtake — до исхода: снятие исполнения без переезда отдаст им qrel{e}
+            prev = self.__dict__.get("_quo_took") or {}
+            if prev and (int(prev.get("e") or 0) != e or str(prev.get("l") or "") != c.l):
+                actions = self._quorum_took_release() + actions   # прежнее «забираю» другой эпохи — снять
+                prev = {}
+            self.__dict__["_quo_took"] = {"l": c.l, "e": e, "nodes": sorted(set(prev.get("nodes") or []) | set(sent))}
         v = self._qvoters.get(f"awgq{c.l}h")
         if v is not None:
             v.raise_to(e + 1)                                 # исход знаю сам: прежнему лидеру под e больше не «да»
@@ -293,11 +331,18 @@ class ReserveQuorumCandidateMixin:
         ex = self.__dict__.get("_quo_exec")
         if not ex:
             return []
-        if self.reserve_in() != "idle":
+        if self.reserve_hosting():
             self.__dict__.pop("_quo_exec", None)             # пошло открытие (просьба или точки) — счёт кандидата заново
             c.reset()
             return []
         stage = str(ex.get("stage") or "")
+        if stage == "opened":
+            # открытие по точкам не пошло (предусловия к моменту точек, отказ запуска, срыв раньше
+            # этого такта): решение снято, счёт заново — демпфер, повтор и окно кода обычным путём
+            self.__dict__.pop("_quo_exec", None)
+            c.reset()
+            log.info("кворум: открытие «%s» по точкам не состоялось — решение снято", self.reserve_peer_name())
+            return self._quorum_took_release()
         if c.own != "uns" and str(ex.get("own") or "") == "uns" and stage in ("ask", "points", "code"):
             # решение было при своём «не вижу», а взгляд вернулся: исполнение снято, окно кода закрыто, счёт
             # заново (случай 3 — своим длинным таймером; его исполнение при своём «вижу» идёт по точкам шлюзов)

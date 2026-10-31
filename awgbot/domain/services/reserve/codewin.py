@@ -42,7 +42,7 @@ class ReserveCodeWindowMixin:
         primary = self.reserve_peer_name()
         rn = self._rn()
         if open_:
-            if cw.get("open") or self.reserve_in() != "idle":
+            if cw.get("open") or not self.reserve_zone_free():   # relay уступает открытию
                 return []
             since = str(since or timeutil.now_iso())
             pid = self.reserve_peer_admin_id()
@@ -108,7 +108,7 @@ class ReserveCodeWindowMixin:
         quorum/tie (Т-К5в несёт кнопку кода), отбой — Т-К6."""
         view = self.rsv_get("rsv_view")
         cw = dict(view.get("code") or {})
-        if open_ and self.reserve_in() == "idle":
+        if open_ and self.reserve_zone_free():
             if not cw.get("open"):
                 since = timeutil.now_iso()
                 self.rsv_update("rsv_view", code={"open": True, "since": since, "told": False, "tries": [],

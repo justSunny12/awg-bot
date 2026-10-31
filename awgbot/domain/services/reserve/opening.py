@@ -57,15 +57,16 @@ class ReserveOpeningMixin:
         if why:
             return why
         inn = self.rsv_get("rsv_in")
+        free = str(inn.get("state") or "idle") in ("idle", "relay")   # relay (хвост прошлого возврата) — зона свободна, паузы те же
         fail_at = str(inn.get("fail_at") or "")
-        if fail_at and str(inn.get("state") or "idle") == "idle":
+        if fail_at and free:
             try:
                 if timeutil.elapsed(timeutil.parse_iso(fail_at)) < FAIL_DAMPER_S:
                     return "после отказа открытия — пауза две минуты"
             except ValueError:
                 pass
         last = str(inn.get("since") or "")
-        if last and str(inn.get("state") or "idle") == "idle" and inn.get("ended_auto"):
+        if last and free and inn.get("ended_auto"):
             try:
                 mins = settings.get_int("app.reserve.min_interval_minutes", 30)
                 if timeutil.elapsed(timeutil.parse_iso(last)) < mins * 60:
