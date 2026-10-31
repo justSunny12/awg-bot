@@ -203,3 +203,60 @@ def test_an_epoch_far_beyond_mine_is_not_adopted(q):
     assert q.meta() == ("self", "holder", e) and not q.s.reserve_quorum_adopted()
     q.s.reserve_quorum_pair_in("qstate", {"l": "a", "e": e + 1001, "holder": "self", "r": "holder"})
     assert q.meta() == ("self", "holder", e)
+
+
+# ── «забираю сорвалось» — только пока резерв моих не нёс ────────────────────
+
+def _peer_hosting_now(q, monkeypatch, inn: str = "serving") -> None:
+    monkeypatch.setattr(q.s, "reserve_peer_seen", lambda: "ok")
+    q.s.rsv_update("rsv_peer_state", session=True, inn=inn, st_stale=False,
+                   at=timeutil.to_iso(timeutil.shift(timeutil.now(), 5)), at_ts=time.time() + 5)
+
+
+def test_an_away_by_the_serving_fact_is_not_undone_by_a_later_idle_word(q, monkeypatch):
+    """Резерв НЕСЁТ моих (переезд мимо меня: живой `in = serving` после перехода домой) — позже
+    его idle (зона снята после обслуживания, запись DNS на его адресе, вебхук гостя) — это
+    не «забираю сорвалось»: домой по одному слову нельзя, только обычный возврат."""
+    _lead(q)
+    _peer_hosting_now(q, monkeypatch)
+    q.s.reserve_out_tick()
+    assert q.s.reserve_out() == "away" and q.s.rsv_get("rsv_out").get("by") == "share"
+    _peer_idle_now(q, monkeypatch)
+    q.s.reserve_out_tick()
+    assert q.s.reserve_out() == "away", "idle после обслуживания увёл домой без возврата записи и Telegram"
+
+
+def test_an_adopted_epoch_followed_by_serving_closes_the_share_exit(q, monkeypatch):
+    _share_away(q, monkeypatch)
+    _peer_hosting_now(q, monkeypatch)                          # кандидат открыл: несёт моих
+    q.s.reserve_out_tick()
+    assert (q.s.rsv_get("rsv_qlog").get("adopted") or {}).get("hosting_seen"), "факт обслуживания не запомнен"
+    _peer_idle_now(q, monkeypatch)                             # обслужил и снял зону
+    q.s.reserve_out_tick()
+    assert q.s.reserve_out() == "away", "после обслуживания слово idle увело домой мимо возврата"
+
+
+def test_the_share_exit_rotates_the_generation_when_the_peer_saw_the_points(q, monkeypatch):
+    """Кандидат собрал точки (его st.exposed → compromised), открытие сорвалось: выход домой по
+    «забираю сорвалось» меняет поколение сразу, а не ждёт следующего st резерва."""
+    _share_away(q, monkeypatch)
+    m0 = int(q.s.reserve_keys().get("m_gen") or 0)
+    q.s.reserve_mark_compromised("точки у второй стороны", by="share")
+    _peer_idle_now(q, monkeypatch)
+    q.s.reserve_out_tick()
+    assert q.s.reserve_out() == "home"
+    assert int(q.s.reserve_keys().get("m_gen") or 0) == m0 + 1, "поколение не сменилось при выходе домой"
+    assert not q.s.reserve_compromised()
+
+
+def test_with_a_single_voter_the_adopted_epoch_comes_back_without_the_leader_rule(q, monkeypatch):
+    """v = 1: правило лидера `unfence` не выдаёт — ждать его роль дома не может; живая idle вторая
+    сторона после принятия — эпоха возвращается ролью дома."""
+    _share_away(q, monkeypatch)
+    _peer_idle_now(q, monkeypatch)
+    q.s.reserve_out_tick()
+    assert q.s.reserve_out() == "home" and q.meta()[0] == "peer"
+    q.members(["a", "b"])                                      # шлюзы ушли из состава: голосующий один
+    q.tick()
+    q.s.reserve_epoch_check()
+    assert q.meta()[:2] == ("self", "holder"), f"при одном голосующем эпоха не вернулась: {q.meta()}"

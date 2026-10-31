@@ -163,3 +163,14 @@ def test_the_link_back_after_a_loss_sends_my_st_again(mv):
     assert svc.reserve_st_if_changed() is None, "подготовка: тело то же — не уходит"
     svc._liveness_up()
     assert svc.reserve_st_if_changed() is not None, "st после возврата связи не ушёл"
+
+
+def test_the_start_of_the_process_drops_the_health_mark_of_the_previous_boot(mv):
+    """Отметка здоровья по monotonic прежней загрузки меньше нынешнего времени сошла бы за
+    пять минут здоровья подряд — автовозврат «сразу» без них; старт процесса её снимает."""
+    svc = mv.svc
+    rm.go_away(svc)
+    svc.rsv_update("rsv_out", healthy_mono=100.0, healthy_since=timeutil.now_iso())
+    svc.reserve_session_reset()
+    out = svc.rsv_get("rsv_out")
+    assert not out.get("healthy_mono") and not out.get("healthy_since")

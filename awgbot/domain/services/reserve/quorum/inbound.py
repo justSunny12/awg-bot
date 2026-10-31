@@ -170,6 +170,11 @@ class ReserveQuorumInboundMixin:
             ex["busy"] = int(ex.get("busy") or 0) + 1
             ex["at"] = time.monotonic()
             log.info("кворум: «%s» занят — переспрошу через ask_seconds", self.reserve_peer_name())
+        elif ex and str(ex.get("stage") or "") == "ask" and str(reason or "") == "quorum":
+            # у лидера большинство «да» — ответ окончательный: ждать ask_seconds незачем, путь по точкам сразу
+            # (точки дадут только шлюзы, которые его сами не видят)
+            ex["at"] = time.monotonic() - 10 ** 6
+            log.info("кворум: «%s» отказал — у него кворум; путь по точкам без ожидания", self.reserve_peer_name())
         return []
 
     def reserve_quorum_gw_views(self, l: str, t: str = "h") -> dict:

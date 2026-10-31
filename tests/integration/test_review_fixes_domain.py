@@ -242,3 +242,20 @@ def test_liveness_tick_takes_the_active_slot_from_the_same_slot_list(services, f
         return real(services)
     monkeypatch.setattr(services, "rt_slots", rt_slots)
     assert isinstance(services.routing_liveness_tick(), list)   # KeyError здесь — дефект
+
+
+def test_a_source_missing_for_long_does_not_freeze_the_feeds(lan_slot, monkeypatch):
+    """Источник пропал надолго (список убран): после трёх неполных сборов подряд фид
+    публикуется без него — иначе фид не обновлялся бы никогда, а запросы шли каждые полчаса."""
+    services = lan_slot
+    net = _Net(monkeypatch)
+    assert services.gwlink_lan_feeds_update(force=True) is True
+    net.body[f"{ITDOG}/Subnets/IPv4/meta.lst"] = "31.13.24.0/21\n157.240.0.0/16\n"
+    del net.body[f"{ITDOG}/Subnets/IPv4/twitter.lst"]
+    assert services.gwlink_lan_feeds_update(force=True) is False
+    assert services.gwlink_lan_feeds_update(force=True) is False
+    assert "157.240.0.0/16" not in services.gwlink_lan_feeds()["nets"], "неполный сбор опубликован раньше срока"
+    assert services.gwlink_lan_feeds_update(force=True) is True, "третий неполный сбор подряд не опубликован"
+    assert "157.240.0.0/16" in services.gwlink_lan_feeds()["nets"]
+    assert services.gwlink_lan_feeds_checked(), "сверка после публикации неполного не засчитана"
+    assert not services.db.get_state(services._LAN_FEEDS_MISS_KEY), "счёт неполных сборов не сброшен"

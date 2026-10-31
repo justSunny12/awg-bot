@@ -373,6 +373,11 @@ class ReserveSessionMixin:
         `st` второй стороны — из прошлого: флаг снят, `st` устаревший до нового (journal/epoch)."""
         if self.rsv_get("rsv_peer_state"):
             self.rsv_update("rsv_peer_state", session=False, st_stale=True)
+        out = self.rsv_get("rsv_out")
+        if out.get("healthy_mono") or out.get("healthy_since"):
+            # отметка здоровья по monotonic прежней загрузки: меньше нынешнего времени она сошла бы за
+            # пять минут здоровья подряд (автовозврат «сразу» без пяти минут) — счёт заново
+            self.rsv_update("rsv_out", healthy_mono=0, healthy_since="")
 
     def reserve_last_word(self) -> list[Notification]:
         return self.reserve_liveness_word()

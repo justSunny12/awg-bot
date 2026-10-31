@@ -22,6 +22,8 @@ class FeedsMixin:
     # момент последней удачной сверки с источниками — и когда фиды не изменились:
     # по нему канал заново подтверждает шлюзам «у тебя актуальные» (deliver_lists)
     _LAN_FEEDS_CHECKED_KEY = "gwlink_lan_feeds_checked"
+    _LAN_FEEDS_MISS_KEY = "gwlink_lan_feeds_miss"      # неполных сборов подряд при прежнем фиде
+    _LAN_FEEDS_MISS_MAX = 3                             # столько подряд — публикуем неполный: источник пропал надолго
     _GWLINK_LISTS_KEY = "gwlink_lists"
 
     def _lan_feeds_path(self):
@@ -111,10 +113,20 @@ class FeedsMixin:
         if missed and self.gwlink_lan_feeds_digest():
             # Часть источников не ответила: такой сбор — не фид. Опубликуй его —
             # и подсети сервиса, чей список не пришёл, ушли бы со шлюзов до
-            # следующего похода (часы). Прежний фид остаётся, повтор — скоро.
-            log.warning("канал линка: подсети %s не получены — прежний фид остаётся", ", ".join(missed))
-            retry_soon()
-            return False
+            # следующего похода (часы). Прежний фид остаётся, повтор — скоро. Но не
+            # бессрочно: источник, пропавший навсегда (список убран, узел недоступен с
+            # ВПС), иначе остановил бы обновление фида целиком — после MISS_MAX
+            # неполных сборов подряд неполный публикуется, повтор по обычному периоду
+            miss = int(self.db.get_state(self._LAN_FEEDS_MISS_KEY) or 0) + 1
+            if miss < self._LAN_FEEDS_MISS_MAX:
+                self.db.set_state(self._LAN_FEEDS_MISS_KEY, str(miss))
+                log.warning("канал линка: подсети %s не получены — прежний фид остаётся (%d из %d)", ", ".join(missed),
+                            miss, self._LAN_FEEDS_MISS_MAX)
+                retry_soon()
+                return False
+            log.warning("канал линка: подсети %s не получены %d раз подряд — публикую фид без них", ", ".join(missed), miss)
+            missed = []                                       # дальше — как полный сбор: сверка засчитана, повтор по периоду
+        self.db.set_state(self._LAN_FEEDS_MISS_KEY, "")
         nets_text = "\n".join(sorted(set(nets))) + "\n"
         from awgbot.util import gwlink
         digest = gwlink.feeds_hash(body, nets_text)

@@ -139,7 +139,7 @@ def test_qtake_before_the_first_tick_is_kept_on_disk(ag):
     _restart_before_tick(ag)
     assert NAME not in ag.svc._gw_qvoters
     ag.word("qtake", e=E)
-    assert ag.section().get("e_known") == E + 1, "qtake до первого такта потерян — эпоха не поднята"
+    assert ag.section().get("e_take") == E + 1, "qtake до первого такта потерян — эпоха не поднята"
     assert NAME not in ag.pledges(), "qtake до первого такта не снял обязательство"
     ag.tick()
     assert ag.v.epoch == E + 1 and ag.v.pledge is None, "голосующий не взял с диска эпоху qtake"

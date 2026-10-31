@@ -62,7 +62,7 @@ from awgbot.util.rsvpkg import bot as pkgbot, seal
 
 from ..types import Notification, ServiceError
 from ..gateway_link.common import log
-from .state import _LOCK
+from .state import HOSTING, _LOCK
 
 PKG_WAIT_S = 120          # свежий пакет до `go_req`
 EPH_WAIT_S = 60           # разовый ключ процесса открытия (`open_eph`) после `go_req`
@@ -220,8 +220,11 @@ class ReserveOutboundMixin:
             return self._tick_await_merge(out)
         if self.reserve_poll() == "away" and self._webhook_stuck(out, time.monotonic()):
             return [("take_home",)]                           # дома: вебхук не здесь, запись на мне, резерв молчит
-        fact = self._peer_serving_after_home(out, peer) or self._quorum_adopted_past_me(out)
+        serving = self._peer_serving_after_home(out, peer)
+        fact = serving or self._quorum_adopted_past_me(out)
         if fact or self._webhook_away_past_me(out, peer):
+            if serving:
+                self._quorum_adopted_hosting_seen()           # резерв НЕСЁТ моих: это не «забираю сорвалось» — возврат только обычным путём
             # переезд прошёл мимо меня (то же правило, что у роли, journal/epoch; и по принятой эпохе
             # кворума, и по слову Telegram «вебхук у резерва») — пакет открыт не моим K (своего `go` не
             # было): по долям или по коду; слово резерва (in_by) здесь не слушаем — поколение после
@@ -479,16 +482,33 @@ class ReserveOutboundMixin:
         cache.update(at=now, ok=ok)
         return ok
 
+    def _quorum_adopted_hosting_seen(self) -> None:
+        """Резерв после принятия эпохи несёт (нёс) моих пользователей — отметка в записи принятия:
+        его позднейшее «idle» — уже не «забираю сорвалось», а возврат, который идёт обычным путём
+        (запись DNS на его адресе, вебхук гостя, его правки) — домой по одному слову idle нельзя."""
+        adopted = dict(self.rsv_get("rsv_qlog").get("adopted") or {})
+        if adopted and not adopted.get("hosting_seen"):
+            self.rsv_update("rsv_qlog", adopted={**adopted, "hosting_seen": True})
+
     def _share_remainder(self, out: dict) -> bool:
         """В away по принятой эпохе кворума (кандидат сказал голосующим «забираю»), а живая вторая
         сторона после принятия говорит, что моих не несёт: «забираю» сорвалось (своё «вижу»
-        вернулось, открытие не пошло) — пользователи никуда не уезжали."""
+        вернулось, открытие не пошло) — пользователи никуда не уезжали. Только пока резерв после
+        принятия моих не нёс (`hosting_seen`): нёс — его idle означает снятую зону после обслуживания,
+        запись на его адресе, и домой ведёт обычный возврат. Без отметки принятия — не этот случай."""
         if str(out.get("by") or "") != "share" or not hasattr(self, "_quorum_adopted_idle_fact"):
             return False
         adopted = dict(self.rsv_get("rsv_qlog").get("adopted") or {})
-        if adopted:
-            return self._quorum_adopted_idle_fact(adopted)
-        return self._quorum_peer_idle_fact(str(out.get("since") or ""), out.get("at_ts"))   # эпоха уже вернулась рычагом
+        if not adopted or adopted.get("hosting_seen"):
+            return False
+        peer = self.reserve_peer_state()
+        hosting = str(peer.get("inn") or "idle") in HOSTING
+        if hosting and (peer.get("at_ts") is None or adopted.get("at_ts") is None or float(peer["at_ts"]) > float(adopted["at_ts"])):
+            self._quorum_adopted_hosting_seen()               # несёт моих — отметка, выхода по idle больше нет
+            return False
+        if hasattr(self, "reserve_disk_waiting") and self.reserve_disk_waiting():
+            return False                                      # на диске резерва журнал гостя новее — переезд был
+        return self._quorum_adopted_idle_fact(adopted)
 
     def _tick_away(self, out: dict) -> list[tuple]:
         now = time.monotonic()
@@ -510,7 +530,8 @@ class ReserveOutboundMixin:
             self.reserve_set_poll("mine")
             self.reserve_epoch_sync()
             log.warning("резерв: «%s» на связи без моих пользователей — «забираю» сорвалось, я дома", self.reserve_peer_name())
-            return [("live",), ("wake_poll",)]
+            notes = self.reserve_compromised_settle()         # точки ключа были у него (st.exposed) — поколение сейчас
+            return [("live",), ("wake_poll",)] + ([("notify", notes)] if notes else [])
         if str(out.get("by") or "") == "webhook" and self._webhook_remainder(out, self.reserve_peer_state()):
             # в away по одному слову Telegram, а живой резерв после перехода говорит, что моих не несёт:
             # остаток вебхука — домой, запись здесь; сам вебхук снимет проверка зависшего (outbound_stuck)

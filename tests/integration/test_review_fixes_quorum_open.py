@@ -319,16 +319,20 @@ def test_a_leader_without_a_yes_majority_or_fenced_hands_over(lead_world, yes, f
     assert acts == [("live",)] and moves == [{"kind": "dead", "dead_since": SINCE}], f"лидер без кворума не отдал: {acts}"
 
 
-def test_the_candidate_refused_with_quorum_goes_by_points_after_ask_seconds(c):
-    """Отказ «у лидера кворум» — не «занят»: просьба не повторяется, через ask_seconds — точки
-    (их дадут только шлюзы, которые сами лидера не видят); цикла просьб нет."""
+def test_the_candidate_refused_with_quorum_goes_by_points_at_once(c):
+    """Отказ «у лидера кворум» — не «занят» и ответ окончательный: просьба не повторяется, ждать
+    ask_seconds незачем — точки в ближайшем такте (их дадут только шлюзы, которые сами лидера не
+    видят); цикла просьб нет."""
     from tests.integration._reserve_vote_common import sent
     acts = _majority(c) + c.run(T_UP)
     assert len(sent(acts, "ask")) == 1, "подготовка: просьба лидеру не ушла"
     assert c.s.reserve_ask_no_in("quorum") == []
-    acts = c.run(ASK + 5)
+    acts = c.run(10)
     assert not sent(acts, "ask"), "после отказа «у лидера кворум» просьба повторена"
-    assert sorted({s for s, _ in gw_sent(acts, "qneed")}) == [1, 2] and c.stage() == "points"
+    assert sorted({s for s, _ in gw_sent(acts, "qneed")}) == [1, 2] and c.stage() == "points", \
+        "после окончательного отказа кандидат ждал ask_seconds, а не пошёл по точкам"
+    acts = c.run(ASK)
+    assert not sent(acts, "ask")
 
 
 # ── цифры кворума лидера и кандидата (Q8-6) ─────────────────────────────────

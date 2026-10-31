@@ -307,6 +307,8 @@ class ReserveStoreMixin:
             self._quorum_epoch_in(int(e))                     # эпоха линии от резерва (кворум) — голосующим
         if state == "idle" and hasattr(self, "_quorum_epoch_settle"):
             self._quorum_epoch_settle()                       # моих у него нет: поднятая по qtake эпоха — назад к факту
+            if hasattr(self, "_quorum_take_unpersist"):
+                self._quorum_take_unpersist()                 # и на диске (голосующего ещё может не быть)
         with STORE_LOCK:
             actions = self._state_in_locked(state, move, reason)
             if actions is None:
