@@ -128,7 +128,9 @@ class ReserveReturnMixin:
         self.reserve_new_k()
         self.reserve_pkg_mark()
         log.warning("резерв: «%s» на связи без моего гостя — реплики не будет", self.reserve_peer_name())
-        return [("live",), ("notify", [Notification(tg_id=int(config.ADMIN_ID), text=rn.forced_no_merge(self.reserve_peer_name()))])]
+        notes = [Notification(tg_id=int(config.ADMIN_ID), text=rn.forced_no_merge(self.reserve_peer_name()))]
+        notes += self.reserve_keys_after_foreign_open(out, by_out=True, why="возврат после аварийного переезда")
+        return [("live",), ("notify", notes)]
 
     def reserve_return_start(self, why: str) -> list[tuple]:
         """Начать возврат: returning/back_req → `back_req` резерву."""
@@ -325,24 +327,9 @@ class ReserveReturnMixin:
         self.reserve_tail_keys_clear()
         notes += self.reserve_c9_notes()                      # и правки бота на резерве после «вернуть без резерва»
         # чем открыт пакет — по СВОЕЙ отметке: K отдан мной (`go`) — прямая цела; иначе
-        # резерв собрал M по долям или по коду, и слово резерва тут не спрашивается
-        kind = str(out.get("kind") or "")
-        own_go = out.get("go_sent")
-        if own_go is None:                                    # отметки нет (состояние до этой линии) — по виду переезда
-            own_go = kind in ("button", "rf")
-        by = "k" if own_go else "share"
-        if by in ("share", "code"):
-            # процесс открытия держал вторую точку прямой (или видел код) и конверт
-            # DNS: новое поколение и код (Т-РУ14 — тактом планировщика), просьба сменить токен —
-            # только если токен был (запись вручную — конверта DNS в пакете нет)
-            # резерв узнал Mq и M (по точкам) — многочлен и M заново, код прежний; по коду — узнал Mc:
-            # и прямая кода с кодом заново
-            by_code = str(self.reserve_peer_state().get("in_by") or "") == "code" or kind == "code"
-            self.reserve_new_generation("возврат после аварийного переезда", code=by_code)
-            if by_code:
-                self.rsv_update("rsv_keys", code_notify_why="возврат после аварийного переезда")
-            if self.reserve_dns_automatic():
-                notes.append(Notification(tg_id=int(config.ADMIN_ID), text=rn.dns_token_rotate(name)))
+        # резерв собрал M по точкам или по коду (и отметка compromised по его `st.exposed`):
+        # новое поколение, по коду — и код (Т-РУ14 тактом), просьба сменить токен DNS
+        notes += self.reserve_keys_after_foreign_open(out, by_out=True, why="возврат после аварийного переезда")
         log.info("резерв: пользователи и бот вернулись с «%s»", name)
         return actions + [("live",), ("notify", notes)]
 

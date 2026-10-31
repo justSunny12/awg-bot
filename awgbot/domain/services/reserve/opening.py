@@ -76,7 +76,11 @@ class ReserveOpeningMixin:
 
     def reserve_open_by_points(self, secret: dict, kind: str, case: str) -> list[tuple]:
         """Процесс открытия по точкам или по коду: как `go` основы, но без K;
-        вид — dead | rf | code; итог админу — после захвата Telegram гостем."""
+        вид — dead | rf | code; итог админу — после захвата Telegram гостем. Точки ключа
+        кворума уже у меня — ключ основы мне известен, запущу я процесс или нет: отметка
+        основе (`st.exposed`), её поколение сменится."""
+        if secret.get("qpoints") and hasattr(self, "reserve_exposed_mark"):
+            self.reserve_exposed_mark("share")
         why = self.reserve_auto_block() if kind != "code" else self._code_block()
         if why:
             log.warning("резерв: процесс открытия (%s) не запущен: %s", kind, why)

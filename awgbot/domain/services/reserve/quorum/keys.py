@@ -6,15 +6,17 @@ keys.py — часть пакета quorum (см. __init__): ключи вокр
 документа (util/rsvkeys).
 
 У основы: `{"on", "c_gen", "mc", "ma", "q_gen", "t", "poly": [hex…], "acked":
-{m_gen, q_gen, c_gen}}` — коэффициенты многочлена и прямая кода живут только
-здесь. У второго сервера: `{"peer": {l, m_gen, c_gen, cy, cbox, q_gen, t, x, y,
+{m_gen, q_gen, c_gen}, "holders": {m_gen, nodes}}` — коэффициенты многочлена и
+прямая кода живут только здесь; `holders` — шлюзы, получавшие точку при этом
+поколении `M`. У второго сервера: `{"peer": {l, m_gen, c_gen, cy, cbox, q_gen, t, x, y,
 qbox, at}}` — его точки и ящики рядом с пакетом (`rsv_pkg_in`); часть
 многочлена пуста, пока кворум линии не решает.
 
 Включение кворума (шлюз `quo1` в составе) — только новый многочлен и ящик
 кворума: `M`, `K`, пакет, прямая кода и код прежние (Т-К12 без звука).
-Смена порога — новый многочлен. Снятие или замена держателя точки и возврат
-после переезда по точкам — новое поколение `M` и `K` (keys.reserve_new_generation),
+Смена порога — новый многочлен. Снятие или замена держателя точки, уход его
+из состава без снятия слота (откат агента ниже `quo1`) и возврат после
+переезда по точкам — новое поколение `M` и `K` (keys.reserve_new_generation),
 оба ящика заново, код прежний; после переезда по коду и по «🔄 Сменить код» —
 ещё новая прямая и новый код. Выключение (шлюзов `quo1` в составе не
 осталось) — многочлен и ящик кворума прочь, код прежний.
@@ -125,6 +127,43 @@ class ReserveQuorumKeysMixin:
         poly_on = self.reserve_quorum_poly_on()
         decisions_on = bool(want_on and m is not None and m.enabled)
         actions: list[tuple] = []
+        gone = self._quorum_holders_gone(m)
+        last_gone = poly_on and not decisions_on and (m is None or not m.enabled)
+        if gone and not last_gone:
+            # держатель точки ушёл из состава без снятия слота (откат агента ниже quo1, hello без него):
+            # его точка и точка резерва при прежнем пороге открывали бы текущий ящик — `M` и `K` заново
+            self.reserve_new_generation(f"держатель точки ушёл из состава: {', '.join(sorted(gone))}", code=False)
+            log.warning("кворум: %s ушли из состава с точкой ключа кворума — M и K новые, код прежний",
+                        ", ".join(sorted(gone)))
+            poly_on = self.reserve_quorum_poly_on()
+        try:
+            return self._quorum_keys_sync_on(m, poly_on, decisions_on, gone, actions)
+        finally:
+            self._quorum_holders_note(m)
+
+    def _quorum_holders_gone(self, m: qm.Members | None) -> set[str]:
+        """Шлюзы, получавшие точку многочлена при текущем поколении `M` и ушедшие из состава."""
+        h = dict(self.reserve_qkeys().get("holders") or {})
+        if int(h.get("m_gen") or 0) != int(self.reserve_keys().get("m_gen") or 0):
+            return set()
+        return set(h.get("nodes") or []) - (set(m.gateways) if m is not None else set())
+
+    def _quorum_holders_note(self, m: qm.Members | None) -> None:
+        """Держатели точек текущего поколения `M`: все шлюзы состава, пока многочлен есть
+        (точку они получают документом); новое поколение `M` — список заново."""
+        q = self.reserve_qkeys()
+        m_gen = int(self.reserve_keys().get("m_gen") or 0)
+        h = dict(q.get("holders") or {})
+        nodes = set(h.get("nodes") or []) if int(h.get("m_gen") or 0) == m_gen else set()
+        if self.reserve_quorum_poly_on() and m is not None:
+            nodes |= set(m.gateways)
+        new = {"m_gen": m_gen, "nodes": sorted(nodes)}
+        if new != h:
+            with _LOCK:
+                self.rsv_update("rsv_qkeys", holders=new)
+
+    def _quorum_keys_sync_on(self, m: qm.Members | None, poly_on: bool, decisions_on: bool, gone: set[str],
+                             actions: list[tuple]) -> list[tuple]:
         if decisions_on and not poly_on:
             self._quorum_new_poly(m.t(m.l), f"включение голосования о сервере (состав {m.g})")
             actions += self._quorum_enabled_notes(m)
@@ -134,9 +173,10 @@ class ReserveQuorumKeysMixin:
         if poly_on and not decisions_on:
             with _LOCK:
                 self.rsv_update("rsv_qkeys", poly=[], t=0, disabled_at=timeutil.now_iso(), confirmed=False)
-            if m is None or not m.enabled:
+            if (m is None or not m.enabled) and (gone or "holders" not in self.reserve_qkeys()):
                 # держатели точек (шлюзы) из состава ушли — их точки могли остаться у чужого: `M` и `K`
-                # заново (ящик кода пересобирается вокруг нового `M`), код прежний
+                # заново (ящик кода пересобирается вокруг нового `M`), код прежний; снятие слота уже
+                # сменило поколение (держателей текущего `M` нет) — второй раз не нужно
                 self.reserve_new_generation("выключение голосования о сервере: держатели точек сняты", code=False)
                 log.warning("кворум: голосование о «%s» выключено — многочлен и ящик кворума прочь, M и K новые, код прежний",
                             str(config.SERVER_NAME or ""))

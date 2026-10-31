@@ -516,7 +516,8 @@ class ReserveOutboundMixin:
                 self.rsv_put("rsv_out", cur)
             self.reserve_epoch_sync()
             log.warning("резерв: «%s» на связи без моего гостя — вебхук у него остаток, я дома", self.reserve_peer_name())
-            return [("live",)]
+            notes = self.reserve_compromised_settle()         # открывал без моего K (его st.exposed) — поколение сейчас
+            return [("live",)] + ([("notify", notes)] if notes else [])
         if self.reserve_poll() == "away" and self._webhook_stuck(out, now):
             return [("take_home",)]
         if self.reserve_healthy():

@@ -11,7 +11,8 @@ quorum.py — часть пакета reserve агента (см. __init__): к�
 Зонд к основе (`awgq<l>h`) стоит всегда, пока есть раздел; зонд к клону
 (`awgq<l>r`) — пока пользователи основы у резерва (слово `away` основы или
 `serving` резерва в reserve.json). Свои отметки хода (`_KEEP_KEYS`) новый
-документ не стирает.
+документ не стирает; точка прежнего поколения (`point_prev`) живёт до
+следующей смены — её просит второй сервер, пока ключи нового до него не дошли.
 """
 from __future__ import annotations
 
@@ -51,6 +52,30 @@ def _write(data: dict, path: Path = STORE_PATH) -> None:
     os.replace(str(tmp), str(path))
 
 
+def _point_prev(cur: dict, new_point: dict) -> dict:
+    """Точка прежнего многочлена — после смены поколения точки: второй сервер получает свои
+    точки и ящики (`qkeys`) только по живому линку, документ шлюзу приходит раньше; кандидат
+    в этом окне просит точку своего (прежнего) поколения. Держится одно прежнее поколение;
+    без точки (голосование выключено) — и прежней нет."""
+    if not new_point.get("y"):
+        return {}
+    old = dict(cur.get("point") or {})
+    if old.get("y") and int(old.get("q_gen") or 0) != int(new_point.get("q_gen") or 0):
+        return old
+    prev = dict(cur.get("point_prev") or {})
+    return prev if prev.get("y") and int(prev.get("q_gen") or 0) != int(new_point.get("q_gen") or 0) else {}
+
+
+def _point_of_gen(sec: dict, q_gen: int) -> dict:
+    """Точка того поколения, которое просит кандидат: текущая или прежняя; иначе — текущая
+    (отказ по несовпадению скажет, какое у меня)."""
+    point = dict(sec.get("point") or {})
+    prev = dict(sec.get("point_prev") or {})
+    if int(point.get("q_gen") or 0) != int(q_gen) and prev.get("y") and int(prev.get("q_gen") or 0) == int(q_gen):
+        return prev
+    return point
+
+
 class GatewayQuorumMixin:
     _QUO_STORE = STORE_PATH
 
@@ -82,6 +107,9 @@ class GatewayQuorumMixin:
         for k in _KEEP_KEYS:
             if k in cur:
                 new[k] = cur[k]
+        prev = _point_prev(cur, new["point"])
+        if prev:
+            new["point_prev"] = prev
         changed = any(cur.get(k) != new[k] for k in ("l", "g", "members", "t", "port", "probes", "point"))
         _write(new, self._QUO_STORE)
         if int(cur.get("e") or 0) < new["e"]:
@@ -391,7 +419,7 @@ class GatewayQuorumMixin:
         return ([("guest", "qview", body)] if rec.get("target") != "r" else []) + [("link", "qview", body)]
 
     def _quorum_need_in(self, sec: dict, v: Voter, q_gen: int, since: str) -> list[tuple]:
-        point = sec.get("point") or {}
+        point = _point_of_gen(sec, q_gen)
         if v.view != "uns":
             log.info("quorum: кандидат просит точку (с %s), а сервер AWG виден — отказ", since)
             return []
