@@ -152,6 +152,8 @@ def test_the_optional_fields_are_only_the_listed_ones_of_st_and_state():
     assert pp.OPTIONAL == {"st": frozenset({"healthy", "can_return", "in_kind", "mem_free", "online", "in_by", "zone",
                                             "jrn", "quo", "rfp", "exposed"}),   # exposed — ключ основы известен без её K
                            "ask": frozenset({"kind"}),
+                           # ret1: к какому открытию слово — у стороны прежнего выпуска поля нет
+                           "up": frozenset({"oid"}), "taken": frozenset({"oid"}),
                            # кворум (4.2.0): состав в st, эпоха в state, справка в qview
                            "state": frozenset({"reason", "e"}), "qview": frozenset({"i"}),
                            "go": frozenset({"ttl", "k", "sealed", "oid"}), "go_req": frozenset({"ttl"}),

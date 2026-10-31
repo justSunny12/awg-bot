@@ -322,9 +322,13 @@ class ReserveReturnMixin:
                                  merge_blocked=reason if same else "",
                                  healthy_mono=0, healthy_since="", can_return=False, last_switch=timeutil.now_iso())
             from awgbot.domain.notices import reserve as rn
+            from . import compat
+            # гость на резерве остановлен на back_req, мой поллинг стоит: резерву — `resume` (ret1), чтобы он
+            # поднял гостя сразу; прежний резерв поднимет его сам по моему `away` в st через срок
+            resume = [("send", "resume", {})] if compat.peer_can(self.reserve_peer_state(), "ret1") else []
             # повтор той же причины — молча (громко один раз), автоматический возврат дальше не идёт
-            return [("notify", [Notification(tg_id=int(config.ADMIN_ID), force_sound=not same, silent=same,
-                                             text=rn.return_failed(self.reserve_peer_name(), reason, final=same))])]
+            return resume + [("notify", [Notification(tg_id=int(config.ADMIN_ID), force_sound=not same, silent=same,
+                                                      text=rn.return_failed(self.reserve_peer_name(), reason, final=same))])]
         self.rsv_update("rsv_out", merge_report=report, merged_fp=fp, merge_error="", merge_blocked="")
         self.reserve_monthly_settle()
         self._out_step("restart", restart_at=0)

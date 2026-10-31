@@ -175,6 +175,10 @@ class InboundMixin:
     async def _in_evict(self, sess: _Session, body: dict) -> None:
         await self._actions(await asyncio.to_thread(self.services.reserve_evict_in))
 
+    async def _in_resume(self, sess: _Session, body: dict) -> None:
+        """Возврат сорвался у основы (слияние): гость, остановленный на back_req, — снова."""
+        await self._actions(await asyncio.to_thread(self.services.reserve_resume_in))
+
     async def _in_blocks(self, sess: _Session, body: dict) -> None:
         """`blocks` в обе стороны. Я несу пользователей основы — её блокировки гостю в зону
         (основа 4.0.x решает их сама); мои пользователи у резерва и я следую — блокировки

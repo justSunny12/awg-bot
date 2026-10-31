@@ -3,7 +3,10 @@ inbound_back.py — часть пакета reserve (см. __init__): «поль
 меня» — их возврат основе и пересылка хвоста (вынесено из inbound).
 
 Ожидание реплики гостя после `stop` (`_tick_releasing`: молчит — `rep.bin` с
-диска или `released` без реплики). `back` основы: пересылка хвоста (`--relay`, файервол с DNAT, `relay_flush`;
+диска или `released` без реплики). После `released` без `back`: основа сказала `away`
+(слияние у неё сорвалось) или прислала `resume` — гость снова у меня
+(`reserve_resume`: юнит гостя, serving), иначе бот нем с обеих сторон.
+`back` основы: пересылка хвоста (`--relay`, файервол с DNAT, `relay_flush`;
 адрес основы — IP, имя резолвится сейчас; срыв открытия до смены записи — без
 хвоста, сразу idle), учёт, `relay{until}`, `--wipe`, прежний пакет и доля —
 прочь, `wiped`, Т-РУ5 → relay до `relay_max_days` или тишины
@@ -13,6 +16,7 @@ inbound_back.py — часть пакета reserve (см. __init__): «поль
 """
 from __future__ import annotations
 
+import subprocess
 import time
 
 from awgbot.core import config, settings
@@ -20,7 +24,11 @@ from awgbot.util import livestep, timeutil
 
 from ..types import Notification
 from ..gateway_link.common import log
+from .outbound import RELEASED_WAIT_S
 from .state import _LOCK
+
+RESUME_AFTER_S = RELEASED_WAIT_S + 60   # released отдан, back нет, основа в away — слияние у неё сорвалось
+RESUME_RETRY_S = 60                     # юнит гостя не поднялся — повтор не чаще
 
 
 class ReserveInboundBackMixin:
@@ -91,7 +99,7 @@ class ReserveInboundBackMixin:
     def _tick_releasing(self, inn: dict) -> list[tuple]:
         from awgbot.infra import rsvzone
         if inn.get("released_at"):
-            return []
+            return self._tick_released_wait(inn)
         if livestep.mono_expired(inn.get("deadline"), time.monotonic()):
             # гость не ответил — отдать последний снимок с диска
             try:
@@ -104,6 +112,63 @@ class ReserveInboundBackMixin:
             self.rsv_update("rsv_in", released_at=timeutil.now_iso())
             return [("send_released", {"gen": int(inn.get("gen") or 0), "blob": ""})]
         return []
+
+    def _tick_released_wait(self, inn: dict) -> list[tuple]:
+        """Реплика отдана, `back` нет. Живой `st` основы после released говорит `away` —
+        слияние у неё сорвалось (её поллинг стоит, гость здесь остановлен: бот нем с обеих
+        сторон) — гость снова у меня. `home`/`returning` — потерянный `back`: его повторяет
+        сама основа (`_home_back_resend`), здесь ждать. Срока releasing нет: истечение увело бы
+        зону в idle при основе в away — пользователей не нёс бы никто."""
+        if inn.get("jrn_back"):
+            return []                                         # с журналом слияния нет — срыва такого вида нет
+        try:
+            if timeutil.elapsed(timeutil.parse_iso(str(inn.get("released_at") or ""))) < RESUME_AFTER_S:
+                return []
+        except ValueError:
+            return []
+        peer = self.reserve_peer_state()
+        if str(peer.get("out") or "") != "away" or not self._peer_alive(peer):
+            return []
+        if str(peer.get("at") or "") <= str(inn.get("released_at") or ""):
+            return []                                         # st до released — о прежнем away, не о сорванном возврате
+        return self.reserve_resume("основа в away после реплики")
+
+    def reserve_resume_in(self) -> list[tuple]:
+        """`resume` основы (ret1): слияние у неё сорвалось — гость снова у меня, не дожидаясь срока."""
+        return self.reserve_resume("слово основы")
+
+    def reserve_resume(self, why: str) -> list[tuple]:
+        """Возврат не состоялся: гость, остановленный на `back_req`, — снова (его данные в
+        хранилище зоны целы: `wipe` — только в `reserve_back_in`), состояние serving, админу
+        резерва — уведомление. Вне releasing после released — нечего возобновлять; юнит не
+        поднялся — повтор не чаще RESUME_RETRY_S."""
+        from awgbot.infra import rsvzone
+        from awgbot.domain.notices import reserve as rn
+        now = time.monotonic()
+        with _LOCK:
+            inn = self._inn()
+            if str(inn.get("state") or "") != "releasing" or not inn.get("released_at") or inn.get("jrn_back"):
+                return []
+            if not livestep.mono_due(inn.get("resume_mono"), now, RESUME_RETRY_S):
+                return []
+            self.rsv_update("rsv_in", resume_mono=now)
+        name = self.reserve_peer_name()
+        try:
+            proc = subprocess.run(["systemctl", "start", rsvzone.GUEST_UNIT], capture_output=True, timeout=60)
+            if proc.returncode != 0:
+                raise subprocess.SubprocessError(f"код {proc.returncode}")
+        except (OSError, subprocess.SubprocessError) as e:
+            log.warning("резерв: возврат «%s» не состоялся (%s), а гость не поднялся: %s", name, why, e)
+            return []
+        with _LOCK:
+            inn = self._inn()
+            if str(inn.get("state") or "") != "releasing":
+                return []
+            self.reserve_set_in("serving", kind=str(inn.get("kind") or "button"), gen=int(inn.get("gen") or 0),
+                                tg_taken=True, served=True, taken_at=str(inn.get("taken_at") or timeutil.now_iso()),
+                                step="", released_at="", replica_at="", deadline=None, resume_mono=None)
+        log.warning("резерв: возврат «%s» не состоялся (%s) — бот основы снова у меня", name, why)
+        return [("fw",), ("notify", [Notification(tg_id=int(config.ADMIN_ID), text=rn.return_resumed(name))])]
 
     def reserve_back_in(self) -> list[tuple]:
         """`back` основы: пересылка хвоста, учёт, `relay{until}`, снятие, `wiped`, Т-РУ5."""

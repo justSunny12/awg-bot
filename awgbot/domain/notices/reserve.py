@@ -93,6 +93,12 @@ def hosting_failed(primary: str, reason: str) -> str:
     return f"⚠️ Пользователей {_n(primary)} принять не удалось: {_e(reason)}"
 
 
+def return_resumed(primary: str) -> str:
+    """Возврат сорвался у основы (слияние не прошло): бот основы снова работает здесь."""
+    return (f"⚠️ Возврат пользователей {_n(primary)} не состоялся: слияние данных у {_n(primary)} не прошло — "
+            f"пользователи и бот {_n(primary)} снова у тебя; возврат повторит админ {_n(primary)}")
+
+
 # ── админу основы (из бота основы на резерве) ───────────────────────────────
 
 def moved_to_reserve(reserve: str, kind: str, since: str, dead_since: str = "", reserve_ip: str = "") -> str:

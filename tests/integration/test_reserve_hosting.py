@@ -27,7 +27,7 @@ import types
 import pytest
 
 from awgbot.core import settings
-from awgbot.domain.services.reserve import compat, inbound, openproc
+from awgbot.domain.services.reserve import compat, inbound, inbound_back, openproc
 from awgbot.infra import nftguard, rsvzone
 from awgbot.util import netns, timeutil
 from awgbot.util.rsvpkg import seal
@@ -142,6 +142,7 @@ def host(mv, tmp_path, monkeypatch):
     monkeypatch.setattr(nftguard, "relay_packets", lambda: None)       # счётчик хвоста — не из таблицы хоста прогона
     spawn = Spawn(z.events)
     monkeypatch.setattr(inbound, "subprocess", spawn)                  # systemctl гостя при реплике
+    monkeypatch.setattr(inbound_back, "subprocess", spawn)             # и при возобновлении гостя после сорванного возврата
     monkeypatch.setattr(openproc, "subprocess", spawn)                 # systemd-run / Popen процесса открытия
     monkeypatch.setattr(openproc.shutil, "which", lambda name: "/usr/bin/systemd-run" if name == "systemd-run" else None)
     z.webhook.parent.mkdir(parents=True, exist_ok=True)
