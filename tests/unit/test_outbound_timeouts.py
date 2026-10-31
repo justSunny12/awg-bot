@@ -1,6 +1,8 @@
 """Unit: сторож правила «сетевой запрос наружу — не дольше 10 секунд».
 
-Проходит по awgbot/**/*.py и по awg-bot.sh, install/*.sh, install/lib/*.sh:
+Проходит по awgbot/**/*.py, tools/*.py (их зовут установщик и awg-bot.sh —
+tools/pair.py ходит в Bot API) и по awg-bot.sh, install/*.sh, install/lib/*.sh,
+tools/*.sh:
 у каждого вызова наружу (urlopen, create_connection, smtplib.SMTP,
 IMAP4_SSL, aiohttp.ClientTimeout, curl) числовой предел должен быть ≤ 10 с,
 а у curl-скачивания без --max-time — --connect-timeout ≤ 5 и
@@ -30,9 +32,9 @@ import pytest
 pytestmark = pytest.mark.unit
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
-PY_FILES = sorted((REPO / "awgbot").rglob("*.py"))
+PY_FILES = sorted((REPO / "awgbot").rglob("*.py")) + sorted((REPO / "tools").glob("*.py"))
 SH_FILES = ([REPO / "awg-bot.sh"] + sorted((REPO / "install").glob("*.sh"))
-            + sorted((REPO / "install" / "lib").glob("*.sh")))
+            + sorted((REPO / "install" / "lib").glob("*.sh")) + sorted((REPO / "tools").glob("*.sh")))
 
 LIMIT = 10                       # с — предел запроса наружу
 CURL_CONNECT_LIMIT = 5           # с — --connect-timeout у скачиваний без --max-time
@@ -52,13 +54,16 @@ NET_CALLS: dict[str, tuple[str, Optional[int]]] = {
 }
 # Свои обёртки над сетью: предел по умолчанию ловится у вызова наружу внутри
 # них, а здесь — явный timeout= у вызывающего (feeds.py когда-то передавал 60).
-WRAPPERS = {"fetch", "check_imap", "check_smtp", "send_mail", "http"}
+WRAPPERS = {"fetch", "check_imap", "check_smtp", "send_mail", "http", "api"}
 
 # (файл, вызов, кусок строки) → почему предел не выводится из исходника
 ALLOWED_PY: dict[tuple[str, str, str], str] = {
     ("awgbot/runtime/tgsession.py", "ClientTimeout", "total=float(total)"):
         "предел — TOTAL_S (test_the_default_total_limit_is_ten_seconds) либо явный "
         "timeout aiogram для long polling getUpdates: единственное законное исключение",
+    ("tools/pair.py", "api", 'resp = api(token, "getUpdates"'):
+        "длинный опрос getUpdates установщика (Telegram держит его POLL_TIMEOUT) — "
+        "то же законное исключение; прочие запросы — умолчание TIMEOUT = 10",
 }
 # (файл, кусок строки) → почему это не вызов curl
 ALLOWED_SH: dict[tuple[str, str], str] = {
@@ -127,6 +132,11 @@ def _resolve(node: ast.AST, consts: dict[str, float], fn: Optional[ast.AST]) -> 
     if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in ("float", "int") \
             and len(node.args) == 1:
         return _resolve(node.args[0], consts, fn)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Sub)):
+        # POLL_TIMEOUT + 10 — сумма тоже предел, и её видно из исходника
+        a, b = _resolve(node.left, consts, fn), _resolve(node.right, consts, fn)
+        if a is not None and b is not None:
+            return a + b if isinstance(node.op, ast.Add) else a - b
     return None
 
 
@@ -463,6 +473,18 @@ def test_the_default_timeouts_of_the_wrappers_are_ten_seconds():
     for fn in (mail.check_imap, mail.check_smtp, mail.send_mail):
         assert inspect.signature(fn).parameters["timeout"].default == 10.0, \
             f"{fn.__name__}: умолчание не 10 с"
+
+
+def test_the_installer_pairing_asks_telegram_within_ten_seconds():
+    """Опознание админа кодом при установке: deleteWebhook, getMe, ответ в
+    чат и подтверждение апдейта — по умолчанию api(), 10 с (было 35: при
+    вялом аплинке установщик висел на каждом запросе по полминуты); дольше —
+    только длинный опрос, явным пределом."""
+    from tools import pair
+    assert pair.TIMEOUT == 10
+    assert inspect.signature(pair.api).parameters["timeout"].default == pair.TIMEOUT
+    long_poll = _py_hits(REPO / "tools" / "pair.py", "tools/pair.py")
+    assert [(h[2], h[5]) for h in long_poll] == [('resp = api(token, "getUpdates",', pair.POLL_TIMEOUT + 10)], long_poll
 
 
 def test_the_mailbox_poll_connects_with_a_ten_second_limit(monkeypatch):

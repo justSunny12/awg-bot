@@ -36,6 +36,7 @@ API = "https://api.telegram.org"
 ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
 CODE_LEN = 8
 POLL_TIMEOUT = 25                      # длинный опрос: одно соединение на 25 с
+TIMEOUT = 10                           # прочие запросы к Bot API — по правилу ≤ 10 с
 
 
 def say(*args) -> None:
@@ -52,7 +53,7 @@ def normalize(text: str) -> str:
     return "".join(ch for ch in (text or "").upper() if ch.isalnum())
 
 
-def api(token: str, method: str, params: dict | None = None, timeout: int = 35) -> dict:
+def api(token: str, method: str, params: dict | None = None, timeout: int = TIMEOUT) -> dict:
     url = f"{API}/bot{token}/{method}"
     data = urllib.parse.urlencode(params or {}).encode()
     req = urllib.request.Request(url, data=data, method="POST")
@@ -104,6 +105,8 @@ def main(argv: list[str]) -> int:
     want = normalize(code)
     while time.time() < deadline:
         try:
+            # длинный опрос — единственный запрос дольше 10 с: Telegram держит
+            # его POLL_TIMEOUT, ответ «ничего нового» приходит к концу срока
             resp = api(token, "getUpdates",
                        {"offset": offset, "timeout": POLL_TIMEOUT,
                         "allowed_updates": json.dumps(["message"])},
@@ -139,7 +142,7 @@ def main(argv: list[str]) -> int:
             # ЗАПУЩЕННОМУ боту, и первым, что админ увидит в чате, будет
             # реакция на собственный установочный код.
             try:
-                api(token, "getUpdates", {"offset": offset, "timeout": 0}, timeout=10)
+                api(token, "getUpdates", {"offset": offset, "timeout": 0})
             except (urllib.error.HTTPError, urllib.error.URLError, OSError, ValueError):
                 pass
             say(f"[pair] код принял {who} (id {frm['id']})")

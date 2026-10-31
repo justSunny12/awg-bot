@@ -78,11 +78,16 @@ def test_the_kit_refuses_sources_that_do_not_match_the_lock(tmp_path):
         gwkit.build(root, cache)
 
 
-def _run_kit(tmp_path, *args):
+def _run_kit(tmp_path, *args, spoil: str = ""):
+    """spoil — имя блока, чьё содержимое вырезано (поставка повреждена)."""
     root, _cache = _tree(tmp_path)
     gw_cache = tmp_path / "gw-awg-src"
     kit = gwkit.build(root, _cache).decode("utf-8").replace(f'_cache="{_cache}"', f'_cache="{gw_cache}"', 1)
     kit = kit.replace('[ "$(id -u)" = "0" ] ||', "true ||", 1)          # тест не под root
+    if spoil:
+        head = f"{gwkit.MARK}{spoil}\n"
+        start = kit.index(head) + len(head)
+        kit = kit[:start] + kit[kit.index(gwkit.END, start):]
     path = tmp_path / "awg-gw-kit.sh"
     path.write_text(kit, encoding="utf-8")
     out = tmp_path / "args"
@@ -101,6 +106,19 @@ def test_the_kit_unpacks_the_sources_and_hands_the_token_to_the_installer(tmp_pa
     assert out.read_text(encoding="utf-8").split() == ["--skip-verify", "--join", "TOK=AWGJ1.DUMMYTOKEN"]
     assert (gw_cache / "amneziawg-tools-3.1.20260812.tar.gz").read_bytes() == TOOLS
     assert (gw_cache / "amneziawg-linux-kernel-module-3.1.20260906.tar.gz").read_bytes() == MODULE
+
+
+@pytest.mark.parametrize("spoil", ["amneziawg-linux-kernel-module-3.1.20260906.tar.gz",
+                                   "amneziawg-tools-3.1.20260812.tar.gz"])
+def test_a_spoiled_source_block_stops_the_kit_before_the_installer(tmp_path, spoil):
+    """`_take … && mv …` под set -e: провал или пустой блок не останавливал
+    кит — кэш оставался без исходников, установщик шёл дальше, и сборка ядра на
+    шлюзе без GitHub падала далеко от причины. Теперь — отказ со строкой,
+    без недописанного файла в кэше и без установщика."""
+    r, out, gw_cache = _run_kit(tmp_path, "--join", "AWGJ1.DUMMYTOKEN", spoil=spoil)
+    assert r.returncode == 1 and f"исходники {spoil} не распаковались" in r.stdout, r.stdout + r.stderr
+    assert not out.exists(), "установщик позван с повреждённой поставкой"
+    assert not list(gw_cache.glob("*.part")) and not (gw_cache / spoil).exists()
 
 
 def test_the_kit_finds_the_token_in_a_whole_pasted_command(tmp_path):

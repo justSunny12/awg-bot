@@ -357,6 +357,8 @@ def test_update_does_not_build_twice_and_wipe_ends_cleanly(script):
 
 
 def test_the_link_script_copy_on_the_server_is_refreshed_by_updates(script):
+    # копии скриптов — общим списком роли (sbin_copies); поведение — test_cli_script
     fn = script.split("ensure_host_autostart() {", 1)[1].split("\n}\n", 1)[0]
-    assert '_rls="/usr/local/sbin/routing-link-setup.sh"' in fn
-    assert 'install -m 0755 "$INSTALL_DIR/install/routing-link-setup.sh" "$_rls"' in fn
+    roles = script.split("sbin_copies() {", 1)[1].split("\n}\n", 1)[0]
+    assert "for _n in $(sbin_copies); do" in fn and 'sbin_copy_sync "$_n"' in fn
+    assert "routing-link-setup.sh" in roles.split("else", 1)[1]

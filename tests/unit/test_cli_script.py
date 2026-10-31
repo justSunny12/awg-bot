@@ -271,13 +271,24 @@ _DELIVERY_HOST = "#!/bin/sh\n# обвязка ВПС из поставки\n"
 _OLD = 1_600_000_000            # заведомо прошлое время правки копии
 
 
+_SBIN_COPIES = {"gateway": ("routing-gw-setup.sh", "reserve-gw-setup.sh"),
+                "client": ("routing-host-setup.sh", "routing-link-setup.sh", "reserve-pair-setup.sh")}
+
+
+def _delivery(name: str) -> str:
+    return {"routing-gw-setup.sh": _DELIVERY_GW,
+            "routing-host-setup.sh": _DELIVERY_HOST}.get(name, f"#!/bin/sh\n# {name} из поставки\n")
+
+
 def _run_autostart(tmp_path, script: str, *, role: str,
-                   gw_copy: str | None = None, host_copy: str | None = None):
+                   gw_copy: str | None = None, host_copy: str | None = None,
+                   copies: dict[str, str] | None = None):
     """Прогоняет НАСТОЯЩУЮ ensure_host_autostart и отдаёт (вывод, каталог sbin).
 
     Пути /usr/local/sbin и /etc/systemd/system в теле функции абсолютные —
     подменяем их временными каталогами, иначе тест правил бы машину, на которой
     идёт прогон. Всё остальное настоящее: и сравнение cmp, и install.
+    copies — прочие копии в sbin (имя → текст).
     """
     import os
     import subprocess
@@ -286,9 +297,10 @@ def _run_autostart(tmp_path, script: str, *, role: str,
     sbin = tmp_path / "sbin"; sbin.mkdir()
     units = tmp_path / "units"; units.mkdir()
     inst = tmp_path / "opt"; (inst / "install").mkdir(parents=True)
-    (inst / "install" / "routing-gw-setup.sh").write_text(_DELIVERY_GW, encoding="utf-8")
-    (inst / "install" / "routing-host-setup.sh").write_text(_DELIVERY_HOST, encoding="utf-8")
-    for name, body in (("routing-gw-setup.sh", gw_copy), ("routing-host-setup.sh", host_copy)):
+    for name in {n for names in _SBIN_COPIES.values() for n in names}:
+        (inst / "install" / name).write_text(_delivery(name), encoding="utf-8")
+    have = {"routing-gw-setup.sh": gw_copy, "routing-host-setup.sh": host_copy, **(copies or {})}
+    for name, body in have.items():
         if body is None:
             continue
         p = sbin / name
@@ -298,7 +310,7 @@ def _run_autostart(tmp_path, script: str, *, role: str,
     (conf / "app.yaml").write_text(
         f'role: "{role}"\nawg:\n  interface: "awg0"\n', encoding="utf-8")
 
-    body = ((_extract_func(script, "gw_plumbing_sync") + "\n" + _extract_func(script, "ensure_host_autostart"))
+    body = ("\n".join(_extract_func(script, f) for f in ("sbin_copies", "sbin_copy_sync", "ensure_host_autostart"))
             .replace("/usr/local/sbin", str(sbin))
             .replace("/etc/systemd/system", str(units)))
     harness = "\n".join([
@@ -363,6 +375,58 @@ def test_roles_do_not_touch_each_others_plumbing(tmp_path, script):
                                gw_copy=_DELIVERY_GW,
                                host_copy="#!/bin/sh\n# версия времён установки\n")
     assert (sbin / "routing-host-setup.sh").read_text(encoding="utf-8") == "#!/bin/sh\n# версия времён установки\n"
+
+
+@pytest.mark.parametrize("role", ["gateway", "client"])
+def test_update_refreshes_every_script_copy_of_the_role(tmp_path, script, role):
+    """Копии линка к резерву (reserve-gw-setup.sh у шлюза) и линка пары
+    (reserve-pair-setup.sh у ВПС) выполняют юниты после загрузки (--reassert),
+    а кладут их только --up/--stage/--join/--adopt. Обновление их не трогало:
+    после ребута линк вставал старой копией — у шлюза без блока обхода
+    Telegram. Теперь освежаются все копии роли, что уже лежат в sbin."""
+    stale = "#!/bin/sh\n# копия времён развёртывания\n"
+    out, sbin = _run_autostart(tmp_path, script, role=role,
+                               copies={n: stale for n in _SBIN_COPIES[role]})
+    for name in _SBIN_COPIES[role]:
+        copy = sbin / name
+        assert copy.read_text(encoding="utf-8") == _delivery(name), f"{name}: копия осталась старой"
+        assert copy.stat().st_mode & 0o777 == 0o755, f"{name}: копию запускает юнит — нужен бит исполнения"
+        assert f"ok: обновлена копия {sbin}/{name}" in out, out
+
+
+@pytest.mark.parametrize("role", ["gateway", "client"])
+def test_update_puts_no_script_copy_that_was_never_deployed(tmp_path, script, role):
+    """Линк к резерву или пары тут не поднимали — в sbin его копии нет, и
+    обновление её не создаёт."""
+    out, sbin = _run_autostart(tmp_path, script, role=role)
+    assert not any((sbin / n).exists() for n in _SBIN_COPIES[role]), sorted(p.name for p in sbin.iterdir())
+
+
+def test_script_copies_are_the_ones_uninstall_and_wipe_take_down(script):
+    """Набор копий для обновления и отката (sbin_copies) — тот же, что снимают
+    хвост uninstall и снос установщиком: каждый скрипт поставки, чью копию в
+    /usr/local/sbin они убирают, освежается и возвращается вместе с кодом.
+    Скрипт, забытый в одном из списков, после обновления жил бы старой копией
+    до ребута и дальше."""
+    from tests.unit.test_reserve_uninstall import CLI, INSTALLER, _func
+    install = SCRIPT.parent / "install"
+    listed = set()
+    for role in ("gateway", "client"):
+        listed |= set(_SBIN_COPIES[role])
+    body = _extract_func(script, "sbin_copies")
+    assert all(n in body for n in listed), body
+    for where in (_func(CLI, "cmd_post_uninstall"), _func(INSTALLER, "wipe_previous")):
+        removed = set(re.findall(r"/usr/local/sbin/([\w.-]+\.sh)", where))
+        ours = {n for n in removed if (install / n).is_file()}
+        assert ours == listed, f"расходятся: {sorted(ours ^ listed)}"
+
+
+def test_script_copies_follow_the_config_check(script):
+    """Автозагрузка и копии скриптов — после проверки конфигурации: её отказ
+    откатывает код, и копии новой версии, положенные раньше, были бы лишней
+    работой отката (а прежде откат возвращал только одну из них)."""
+    steps = _extract_func(script, "update_env_steps")
+    assert steps.index("validate_config") < steps.index("ensure_host_autostart")
 
 
 def test_update_stops_the_service_only_when_nothing_can_fail_anymore(script):

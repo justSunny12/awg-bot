@@ -35,6 +35,8 @@
 #   records FILE|-     поставить файл записей (FILE) или снять его (-):
 #                      dnsmasq --test, рестарт экземпляра, при отказе — прежний
 #                      файл назад; строки файла проверяет бот (gwservices.lines_ok)
+#                      и вторым рубежом сам скрипт (тот же белый список, адреса
+#                      host-record — IPv4): не прошёл — код 2, ничего не тронуто
 #   status             ADDR=… ACTIVE=0|1 UPSTREAM=… RECORDS=0|1; код 0 — жив
 #   remove             остановить, снять юнит, конфиг и интерфейс
 #
@@ -68,6 +70,34 @@ log()  { printf '[admin-dns] %s\n' "$*"; }
 die()  { printf '[admin-dns:ОШИБКА] %s\n' "$*" >&2; exit 1; }
 PLAN=0
 valid_addr() { [[ "$1" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; }
+ipv4_ok() {  # ipv4_ok A — четыре октета 0…255
+    local IFS=. o
+    valid_addr "$1" || return 1
+    for o in $1; do (( 10#$o <= 255 )) || return 1; done
+}
+records_ok() {  # records_ok FILE — каждая строка из белого списка, адреса host-record — IPv4
+    # Второй рубеж после бота (gwservices.lines_ok — те же шаблоны, что у
+    # помощника записей на шлюзе): файл ложится в conf-dir экземпляра, и
+    # server=/address=/conf-file= в нём увели бы DNS устройств админа
+    local d='awg\.internal' n='[A-Za-z0-9 _-]{1,63}' line
+    if LC_ALL=C grep -Ev -e '^#.*$' -e '^$' \
+        -e "^local=/$d/\$" \
+        -e "^ptr-record=l?b\\._dns-sd\\._udp\\.([0-9]{1,3}\\.){4}in-addr\\.arpa,$d\$" \
+        -e "^ptr-record=l?b\\._dns-sd\\._udp\\.$d,$d\$" \
+        -e "^ptr-record=_services\\._dns-sd\\._udp\\.$d,_smb\\._tcp\\.$d\$" \
+        -e "^ptr-record=_smb\\._tcp\\.$d,\"$n\\._smb\\._tcp\\.$d\"\$" \
+        -e "^srv-host=\"$n\\._smb\\._tcp\\.$d\",[A-Za-z0-9-]{1,63}\\.$d,[0-9]{1,5}\$" \
+        -e "^txt-record=\"$n\\._smb\\._tcp\\.$d\",\"\"\$" \
+        -e "^host-record=[A-Za-z0-9-]{1,63}\\.$d,[0-9]{1,3}(\\.[0-9]{1,3}){3}\$" \
+        "$1" >/dev/null; then
+        return 1
+    fi
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        [[ "$line" == host-record=* ]] || continue
+        ipv4_ok "${line##*,}" || return 1
+    done < "$1"
+    return 0
+}
 
 render_conf() {  # render_conf UPSTREAM — конфиг экземпляра в stdout
     cat <<EOF
@@ -201,6 +231,10 @@ case "$MODE" in
         [[ -n "$ARG" ]] || { echo "нужен файл записей или «-»: $0 records <файл>|-" >&2; exit 2; }
         [[ "${EUID:-$(id -u)}" -eq 0 ]] || die "нужен root"
         [[ -f "$CONF" ]] || die "резолвера админа нет — сначала install"
+        if [[ "$ARG" != "-" ]]; then
+            [[ -f "$ARG" ]] || { echo "нет файла $ARG" >&2; exit 2; }
+            records_ok "$ARG" || { echo "в файле записей есть строка вне белого списка или не IPv4 — не применяю" >&2; exit 2; }
+        fi
         take_lock
         mkdir -p "$RECORDS_DIR"
         prev=""

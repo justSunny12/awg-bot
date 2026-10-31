@@ -110,7 +110,14 @@ _take() {{  # _take ИМЯ — блок кита в stdout
 _cache="{cache}"
 mkdir -p "$_cache"; chmod 700 "$_cache"
 for _n in {sources}; do
-    _take "$_n" > "$_cache/$_n.part" && mv -f "$_cache/$_n.part" "$_cache/$_n"
+    # if, а не «&&»: провал первой части списка set -e не ловит — битый блок
+    # молча оставлял кэш без исходников, и сборка ядра шла бы за ними в сеть
+    if _take "$_n" > "$_cache/$_n.part" && [ -s "$_cache/$_n.part" ]; then
+        mv -f "$_cache/$_n.part" "$_cache/$_n"
+    else
+        rm -f "$_cache/$_n.part"
+        echo "поставка повреждена: исходники $_n не распаковались"; exit 1
+    fi
 done
 _d="$(mktemp -d /tmp/awg-bot-install.XXXXXX)"
 trap 'rm -rf "$_d"' EXIT

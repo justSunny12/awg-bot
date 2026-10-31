@@ -237,6 +237,53 @@ def test_refused_records_put_the_previous_ones_back(host):
     assert host.records() == REC
 
 
+@pytest.mark.parametrize("bad", [
+    "server=/awg.internal/203.0.113.5",
+    "address=/awg.internal/203.0.113.5",
+    "conf-file=/tmp/evil.conf",
+    "host-record=nas.awg.internal,192.168.1.300",
+    "host-record=nas.awg.internal,999.999.999.999",
+    "host-record=nas.awg.internal,fe80::1",
+])
+def test_records_outside_the_whitelist_or_not_ipv4_are_refused_untouched(host, bad):
+    """Второй рубеж после бота: файл ложится в conf-dir экземпляра, и
+    server=/address=/conf-file= увели бы DNS устройств админа, а host-record с
+    адресом не IPv4 — на ничей адрес. Отказ — код 2 до замка: прежние записи
+    на месте, dnsmasq и рестарт не звались."""
+    assert host.run("install", UPSTREAM).returncode == 0
+    assert host.run("records", str(_records_file(host, REC))).returncode == 0
+    host.reset_log()
+    r = host.run("records", str(_records_file(host, REC + bad + "\n")))
+    assert r.returncode == 2 and "не применяю" in r.stderr, r.stdout + r.stderr
+    assert host.records() == REC
+    assert host.log() == "", host.log()
+
+
+def test_the_records_whitelist_agrees_with_the_bot():
+    """Шаблоны скрипта и LINE_RES бота — один белый список: файл, собранный
+    ботом, проходит, каждая строка, которую бот считает чужой, — нет. Разойдись
+    они — записи SMB не лягут никогда или скрипт пропустит лишнее."""
+    from awgbot.domain import gwservices as gs
+    from tests.unit._gw_lan_common import _svc_file
+    from tests.unit.test_gw_lan_script_services import _FOREIGN_LINES
+    fn = re.search(r"^ipv4_ok\(\) \{.*?^\}$\n^records_ok\(\) \{.*?^\}$", SCRIPT.read_text(encoding="utf-8"),
+                   re.S | re.M).group(0)
+    prog = 'valid_addr() { [[ "$1" =~ ^[0-9]{1,3}(\\.[0-9]{1,3}){3}$ ]]; }\n' + fn + '\nrecords_ok "$1"'
+
+    def ok(text: str, tmp: Path) -> bool:
+        tmp.write_text(text, encoding="utf-8")
+        return subprocess.run(["bash", "-c", prog, "x", str(tmp)], capture_output=True,
+                              env={"PATH": "/usr/bin:/bin", "LC_ALL": "en_US.UTF-8"}).returncode == 0
+
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        f = Path(d) / "rec.conf"
+        assert gs.lines_ok(_svc_file()) and ok(_svc_file(), f), "собранный ботом файл отвергнут скриптом"
+        assert ok(_svc_file().rstrip("\n"), f), "последняя строка без перевода строки не проверена"
+        let_in = [ln for ln in _FOREIGN_LINES if ok(_svc_file() + ln + "\n", f)]
+        assert let_in == [], f"скрипт пропускает чужие строки: {let_in}"
+
+
 def test_refused_first_records_leave_no_file(host):
     assert host.run("install", UPSTREAM).returncode == 0
     r = host.run("records", str(_records_file(host, REC)), RESTART_RC="1")

@@ -121,11 +121,15 @@ state_get() { sed -n "s/^$1=//p" "$RSV_STATE" 2>/dev/null | head -n1; }
 ipv4_list() { _first=1; for n in "$@"; do if [ $_first -eq 1 ]; then printf '%s' "$n"; _first=0; else printf ', %s' "$n"; fi; done; }
 
 conf_check() {   # конфиг линка к резерву: только Interface/Peer с известными ключами, без PostUp
+    # второй рубеж после проверки агента; ведущие пробелы awg-quick срезает,
+    # регистр ключа не различает — « postup = …» такая же команда от root
     [ -f "$1" ] || return 1
-    grep -q '^PrivateKey' "$1" || return 1
-    grep -q '^\[Peer\]' "$1" || return 1
-    ! grep -Eqi '^(PostUp|PostDown|PreUp|PreDown|SaveConfig|DNS)' "$1" || return 1
-    grep -q '^Table *= *off' "$1" || return 1
+    grep -q '^[[:space:]]*PrivateKey' "$1" || return 1
+    grep -q '^[[:space:]]*\[Peer\]' "$1" || return 1
+    ! grep -Eqi '^[[:space:]]*(PostUp|PostDown|PreUp|PreDown|SaveConfig|DNS)' "$1" || return 1
+    # Table — каждая строка off (последняя строка ключа у awg-quick перекрывает прежние)
+    grep -Eqi '^[[:space:]]*Table[[:space:]]*=' "$1" || return 1
+    ! grep -Ei '^[[:space:]]*Table[[:space:]]*=' "$1" | grep -Eqiv '=[[:space:]]*off[[:space:]]*$' || return 1
     return 0
 }
 

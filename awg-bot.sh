@@ -92,11 +92,14 @@
 #                          && sudo awg-bot update /tmp/awg-bot.tgz (репозиторий —
 #                          repo из updates.yaml; шагов перехода с версий ниже
 #                          минимума в поставке нет).
-#                          Копии обвязки (routing-host-setup.sh или
-#                          routing-gw-setup.sh) и скрипта линка в
-#                          /usr/local/sbin освежаются, если они там уже есть;
-#                          откат неудачного обновления шлюза возвращает и
-#                          прежнюю копию routing-gw-setup.sh (gw_plumbing_sync).
+#                          Копии скриптов в /usr/local/sbin (у ВПС —
+#                          routing-host-setup.sh, routing-link-setup.sh,
+#                          reserve-pair-setup.sh; у шлюза — routing-gw-setup.sh,
+#                          reserve-gw-setup.sh) освежаются после проверки
+#                          конфигурации, если они там уже есть; откат
+#                          неудачного обновления возвращает прежние копии
+#                          (sbin_copies, sbin_copy_sync), а ядро AmneziaWG и
+#                          утилиты awg не откатывает — говорит об этом строкой.
 #                          Pid апдейтера под замком — в
 #                          $DATA_DIR/update-running (по нему бот видит, что
 #                          обновление ещё идёт); файл убирают и конец
@@ -977,24 +980,25 @@ ensure_host_autostart() {
     # Дыра, найденная ребутом ВПС: интерфейс поднимает awg-quick@<iface> — и
     # его никто не включал. Ребут оставлял хост без туннелей. Включаем на
     # каждом обновлении: idempotent.
-    if [[ "$(yaml_get "$CONF_DIR/app.yaml" role)" == "gateway" ]]; then
-        # Та же дыра, что и на ВПС, только на другой стороне: копию
-        # routing-gw-setup.sh в /usr/local/sbin кладёт файл конфигурации, её выполняет
-        # awg-link-gw.service при каждой загрузке, и обновление агента её не
-        # трогало — исправление обвязки, приехавшее в поставке, доезжало до
-        # шлюза только новым файлом конфигурации с ВПС. Обновляем, если копия уже есть:
-        # нет — значит обвязку тут не разворачивали, и класть нечего.
-        # Применится со следующим запуском юнита (реассерт агента или ребут):
-        # дёргать обвязку из обновления значит рвать линк без спроса. Откат
-        # обновления возвращает и её (restore_prev_code).
-        local _rc=0
-        gw_plumbing_sync || _rc=$?
+    # Копии скриптов поставки в /usr/local/sbin (sbin_copies: у шлюза —
+    # обвязка и линк к резерву, у ВПС — обвязка, скрипт линка и линк пары)
+    # выполняют юниты при каждой загрузке и режимы --reassert. Кладут их сами
+    # скрипты при развёртывании, и обновления их не трогали: исправление,
+    # приехавшее в поставке, применялось руками из /opt или новым файлом
+    # конфигурации с ВПС, а после ребута хост поднимался по версии времён
+    # установки. Обновляем, если копия уже есть: нет — значит тут её не
+    # разворачивали, и класть нечего. Применится со следующим запуском юнита
+    # (реассерт или ребут): дёргать обвязку из обновления значит рвать линк без
+    # спроса. Откат обновления возвращает прежние копии (restore_prev_code).
+    local _n _rc
+    for _n in $(sbin_copies); do
+        _rc=0; sbin_copy_sync "$_n" || _rc=$?
         case "$_rc" in
-            0) ok "обновлена копия обвязки в /usr/local/sbin/routing-gw-setup.sh (её выполняет юнит при загрузке)" ;;
-            1) warn "не удалось обновить /usr/local/sbin/routing-gw-setup.sh — обвязка останется прежней версии" ;;
+            0) ok "обновлена копия /usr/local/sbin/$_n (её выполняет юнит при загрузке)" ;;
+            1) warn "не удалось обновить /usr/local/sbin/$_n — после ребута встанет прежняя версия" ;;
         esac
-        return 0
-    fi
+    done
+    [[ "$(yaml_get "$CONF_DIR/app.yaml" role)" == "gateway" ]] && return 0
     local iface; iface="$(yaml_get "$CONF_DIR/app.yaml" interface)"
     if [[ -n "$iface" ]] && systemctl list-unit-files 'awg-quick@.service' 2>/dev/null | grep -q awg-quick; then
         if [[ "$(systemctl is-enabled "awg-quick@$iface" 2>/dev/null)" != "enabled" ]]; then
@@ -1002,28 +1006,6 @@ ensure_host_autostart() {
                 && ok "awg-quick@$iface включён на автозагрузку." \
                 || warn "не удалось включить awg-quick@$iface — после ребута туннели не поднимутся."
         fi
-    fi
-    # Копия routing-host-setup.sh в /usr/local/sbin — это то, что юнит
-    # awg-bot-routing.service выполняет ПРИ КАЖДОЙ ЗАГРУЗКЕ. Её кладут один раз,
-    # при развёртывании обвязки, и обновления её не трогали: исправление,
-    # приехавшее в поставке, применялось руками из /opt, а после ребута хост
-    # поднимался по версии времён установки.
-    local _rhs="/usr/local/sbin/routing-host-setup.sh"
-    if [[ -f "$_rhs" && -f "$INSTALL_DIR/install/routing-host-setup.sh" ]] \
-       && ! cmp -s "$INSTALL_DIR/install/routing-host-setup.sh" "$_rhs"; then
-        install -m 0755 "$INSTALL_DIR/install/routing-host-setup.sh" "$_rhs" \
-            && ok "обновлена копия обвязки в $_rhs (её выполняет юнит при загрузке)" \
-            || warn "не удалось обновить $_rhs — после ребута обвязка встанет по старой версии"
-    fi
-    # Та же копия у скрипта линка: её выполняет awg-link@ при загрузке и
-    # --reassert/--down из юнита; освежал её только --apply/--rekey, и правки
-    # этих режимов не доезжали до ребута.
-    local _rls="/usr/local/sbin/routing-link-setup.sh"
-    if [[ -f "$_rls" && -f "$INSTALL_DIR/install/routing-link-setup.sh" ]] \
-       && ! cmp -s "$INSTALL_DIR/install/routing-link-setup.sh" "$_rls"; then
-        install -m 0755 "$INSTALL_DIR/install/routing-link-setup.sh" "$_rls" \
-            && ok "обновлена копия скрипта линка в $_rls (её выполняет юнит линка при загрузке)" \
-            || warn "не удалось обновить $_rls — после ребута линк встанет по старой версии"
     fi
     return 0
 }

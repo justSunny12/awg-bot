@@ -47,7 +47,7 @@ def _stubs(log: Path, *, env_fails: bool = False, real=()) -> list[str]:
     (real — эти остаются настоящими)."""
     names = ("update_guard_disarm", "ensure_python", "ensure_ping", "install_unit", "ensure_host_autostart",
              "ensure_awg_module_loaded", "ensure_awg_generation", "adopt_resolver", "seed_conf", "validate_config",
-             "venv_rollback", "venv_prune", "prune_old_kernel_builds", "gw_plumbing_sync")
+             "venv_rollback", "venv_prune", "prune_old_kernel_builds", "sbin_copies", "sbin_copy_sync")
     out = [f'{n}() {{ echo "{n}" >> "{log}"; return 0; }}' for n in names if n not in real]
     out.append(f'build_venv() {{ echo "build_venv" >> "{log}"; '
                + ('die "pip: нет сети"; ' if env_fails else "") + "}")
