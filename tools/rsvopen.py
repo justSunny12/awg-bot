@@ -208,10 +208,17 @@ def recover_keys(data: dict, blob: bytes) -> tuple[bytes | None, bytes]:
         pts = [_point(p) for p in list(data["qpoints"])]
         if len(pts) < 2 or len({x for x, _ in pts}) != len(pts):
             raise OpenError("точек ключа кворума мало или они одной точки")
+        odd: list[int] = []
         try:
-            m = rsvkeys.recover_m_quorum(pts, bytes.fromhex(str(data["qbox"])))
+            # порог известен (поле thr) и точек больше — сборка по t точкам с проверкой ящиком:
+            # одна битая точка среди лишних открытие не срывает
+            m = rsvkeys.recover_m_quorum(pts, bytes.fromhex(str(data["qbox"])), int(data.get("thr") or 0), odd)
         except ValueError as e:
             raise OpenError(f"ключ кворума не собрался: {e}") from e
+        for x in odd:
+            # x точки шлюза — слот + 1 (rsvkeys.gateway_x); точка x = 1 — второго сервера; stderr — в rsvopen.err
+            who = f"шлюза {x - 1}" if x != rsvkeys.RESERVE_X else "второго сервера"
+            print(f"точка {who} не сходится с многочленом ключа кворума — ключ собран без неё", file=sys.stderr, flush=True)
         try:
             return m, seal.open_k(blob, m)
         except seal.PackageError as e:

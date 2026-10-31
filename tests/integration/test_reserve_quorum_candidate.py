@@ -149,6 +149,7 @@ def test_a_gateway_point_and_my_own_open_by_the_quorum_box(c):
     assert p["kind"] == "dead", p
     assert p["qpoints"] == [[rsvkeys.RESERVE_X, RSV_Y], [rsvkeys.gateway_x(1), GW1_Y]], p
     assert p["qbox"] == QBOX
+    assert p["thr"] == 2, "порог многочлена процессу открытия не передан — лишняя битая точка срывала бы сборку"
     assert c.s.reserve_in() == "taking"
     assert c.s.rsv_get("rsv_view").get("moved_by", {}).get("quorum") is True
 

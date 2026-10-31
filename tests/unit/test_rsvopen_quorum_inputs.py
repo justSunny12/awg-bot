@@ -59,6 +59,19 @@ def test_fewer_points_than_the_threshold_are_a_clean_failure(t):
         rsvopen.recover_keys({"qpoints": pts, "qbox": w.qbox}, w.blob)
 
 
+def test_a_damaged_point_among_more_than_t_does_not_break_the_opening_when_the_threshold_is_given(capsys):
+    """Порог 3, точек 4 (qshare из потока канала посреди такта), одна испорчена: с `thr`
+    процесс собирает по t точкам с проверкой ящиком и открывает пакет, битую называет в
+    stderr (rsvopen.err); без `thr` — Лагранж по всем и отказ."""
+    w = _World(3)
+    pts = [w.qpoint(1)] + [w.qpoint(rsvkeys.gateway_x(s)) for s in (1, 2, 3)]
+    pts[2] = [pts[2][0], ("ff" * 16)]
+    with pytest.raises(rsvopen.OpenError, match="ключ кворума не собрался"):
+        rsvopen.recover_keys({"qpoints": pts, "qbox": w.qbox}, w.blob)
+    assert rsvopen.recover_keys({"qpoints": pts, "qbox": w.qbox, "thr": 3}, w.blob) == (w.m, w.k)
+    assert "точка шлюза 2 не сходится" in capsys.readouterr().err
+
+
 @pytest.mark.parametrize("pts", [[[1, "ab" * 16]], [[2, "ab" * 16], [2, "cd" * 16]]], ids=["one_point", "same_x"])
 def test_one_point_or_a_repeated_point_is_refused_before_any_math(pts):
     w = _World()
