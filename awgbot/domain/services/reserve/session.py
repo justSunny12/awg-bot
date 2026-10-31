@@ -114,7 +114,8 @@ class ReserveSessionMixin:
                 "in_by": str(self.rsv_get("rsv_in").get("by") or ""), "zone": str(self._my_side().get("zone") or ""),
                 **({"jrn": jrn} if (jrn := self._jrn_st_part()) else {}),
                 **({"quo": quo} if (quo := self._quo_st_part()) else {}),
-                **({"rfp": rfp} if (rfp := self._rfp_st_part()) else {})}
+                **({"rfp": rfp} if (rfp := self._rfp_st_part()) else {}),
+                **({"exposed": ex} if (ex := self.reserve_exposed_st_part()) else {})}
 
     def _rfp_st_part(self) -> dict:
         """РФ-доступ через второй сервер в `st`: согласие и факт пользования (reserve/rfpeer)."""
@@ -271,6 +272,8 @@ class ReserveSessionMixin:
             if fields:
                 self.db.reserve_peer_update(**fields)
             notes.extend(self._reserve_compat_notes(peer))
+        # мой ключ мог стать известен второму серверу без моего K (точки, код) — поколение сменить
+        notes.extend(self.reserve_exposed_in(body.get("exposed")))
         return notes
 
     def _reserve_compat_notes(self, peer: dict) -> list[Notification]:

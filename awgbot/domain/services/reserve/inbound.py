@@ -67,6 +67,10 @@ EPH_RESEND_S = 10                # `open_eph` основе — повтор, п�
 TAKEN_WAIT_S = 10 * 60          # после done: гость должен поднять бота и поставить вебхук
 DONE_BUTTON_WAIT_S = 1800 + 300 + 120   # кнопка: основе на запись (30 мин) и передачу бота (5 мин) с запасом
 REPLICA_WAIT_S = 90              # реплика от гостя после stop
+# шаги процесса открытия после сборки ключа основы (tools/rsvopen) и причины отказа до неё (код не подошёл
+# или не проверен): по ним резерв говорит основе, что её ключ мог стать ему известен (`st.exposed`)
+M_STEPS = frozenset({"m", "k", "parts", "journal", "store", "clone_up", "record_set", "record_fact", "done"})
+CODE_PRE_M = ("аварийный код", "пакета нет", "пакет:", "нет ни точек", "точка не того вида", "доля не того вида")
 
 class ReserveInboundMixin:
     def _inn(self) -> dict:
@@ -191,6 +195,8 @@ class ReserveInboundMixin:
         st = rsvzone.open_status()
         step = str(st.get("step") or "")
         actions: list[tuple] = []
+        if step in M_STEPS and str(inn.get("by") or "") == "code":
+            self.reserve_exposed_mark("code")                 # код подошёл: ключ основы собран — основе отметка
         if step == "fail":
             return self._take_fail(str(st.get("reason") or "процесс открытия отказал"))
         if step != "done":
@@ -296,6 +302,8 @@ class ReserveInboundMixin:
             self.rsv_update("rsv_in", failing=True)
         name = self.reserve_peer_name()
         extra: list[tuple] = []
+        if str(self._inn().get("by") or "") == "code" and not reason.startswith(CODE_PRE_M):
+            self.reserve_exposed_mark("code")                 # срыв после сборки ключа (или неизвестно где) — ключ мог быть у меня
         if str(self._inn().get("kind") or "") == "code" and hasattr(self, "reserve_code_failed"):
             extra = self.reserve_code_failed(reason)             # Н4: не подошёл — окно снова открыто
         try:

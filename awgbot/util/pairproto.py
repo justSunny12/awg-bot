@@ -92,7 +92,8 @@ PAIR_KINDS: dict[str, tuple[str, dict]] = {
                             "in": (_S, 16), "pkg": (_D, None), "admin_id": (_I, None),
                             "admin_opened": (_B, None), "gw": (_B, None),
                             "healthy": (_B, None), "can_return": (_B, None), "in_kind": (_S, 16), "mem_free": (_I, None), "online": (_I, None), "in_by": (_S, 8),
-                            "zone": (_S, 120), "jrn": (_D, None), "quo": (_D, None), "rfp": (_D, None)}),
+                            "zone": (_S, 120), "jrn": (_D, None), "quo": (_D, None), "rfp": (_D, None),
+                            "exposed": (_D, None)}),   # {share|code: m_gen} — ключ основы мне известен без её K
     "ping":         (BOTH, {"n": (_S, 32)}),
     "pong":         (BOTH, {"n": (_S, 32)}),
     "slots":        (BOTH, {"slots": (_L, MAX_LIST)}),
@@ -190,7 +191,7 @@ def kinds_for(proto: str) -> dict[str, tuple[str, dict]]:
 
 # поля, которых может не быть (добавлены внутри линии; отсутствие — ложь/пусто)
 OPTIONAL: dict[str, frozenset] = {"st": frozenset({"healthy", "can_return", "in_kind", "mem_free", "online", "in_by", "zone",
-                                                     "jrn", "quo", "rfp"}),
+                                                     "jrn", "quo", "rfp", "exposed"}),
                                    "ask": frozenset({"kind"}),
                                   "state": frozenset({"reason", "e"}), "qview": frozenset({"i"}),
                                   "go": frozenset({"ttl", "k", "sealed", "oid"}), "go_req": frozenset({"ttl"}),
