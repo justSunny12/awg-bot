@@ -128,15 +128,24 @@ async def device_add_limit_preset(cb: CallbackQuery, callback_data: PresetCB, cl
                                   state: FSMContext):
     data = await state.get_data()
     name = data.get("dev_name") or ""
-    plimit = await call(services.profile_traffic_limit, client.id)
     if callback_data.val < 0:
+        plimit = await call(services.profile_traffic_limit, client.id)
         await state.set_state(AddDevice.traffic)
         await ask_here(cb, services, state, texts.device_limit_other_prompt(plimit),
                        data.get("ctx_kind") or "main")
         await cb.answer()
         return
+    # Одноразовый маркер — до первого настоящего await (данные FSM в памяти,
+    # чтение и запись не уступают цикл): повторный колбэк пресета, пришедший
+    # параллельно, иначе создавал второе устройство
+    if data.get("add_done"):
+        await cb.answer(ui.Toast.stale, show_alert=True)
+        return
+    await state.update_data(add_done=True)
+    plimit = await call(services.profile_traffic_limit, client.id)
     gb_value = int(callback_data.val)
     if plimit and gb_value * BYTES_PER_GB > plimit:
+        await state.update_data(add_done=False)        # другой пресет выбрать можно
         await cb.answer(texts.device_limit_over(plimit), show_alert=True)
         return
     await state.clear()

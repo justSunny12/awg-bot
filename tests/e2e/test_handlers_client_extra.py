@@ -63,6 +63,52 @@ async def test_device_add_friend_creates_device_only_after_limit(
     assert dev.friend_code, "приглашению нечего нести — кода друга нет"
 
 
+async def test_a_repeated_limit_preset_creates_one_device(services, fake_bot, make_active_client, monkeypatch):
+    """Двойное нажатие пресета лимита другу (aiogram ведёт колбэки параллельно):
+    устройство одно, повтор — всплывашка «кнопка устарела». Без одноразового
+    маркера оба колбэка проходили фильтр состояния и создавали два устройства."""
+    import asyncio
+    import time
+    from awgbot.bot import ui
+    from awgbot.bot.callbacks import PresetCB
+    from awgbot.bot.states import AddDevice
+    client = make_active_client(tg_id=5107, device_limit=3)
+    cl = _fresh(services, client)
+    st = FakeState()
+    await st.set_state(AddDevice.traffic)
+    await st.update_data(for_friend=True, dev_name="Планшет", ctx_kind="main")
+    slow = services.profile_traffic_limit
+
+    def profile_traffic_limit(client_id):
+        time.sleep(0.05)                                   # второе нажатие успевает в это окно
+        return slow(client_id)
+    monkeypatch.setattr(services, "profile_traffic_limit", profile_traffic_limit)
+    cbs = [_cb(fake_bot, 5107)[0] for _ in range(2)]
+    await asyncio.gather(*(ch.device_add_limit_preset(cb, PresetCB(kind="devlimit", ref=0, val=50), cl, services, st)
+                           for cb in cbs))
+    assert len(services.db.list_devices(client.id)) == 1, "повтор пресета создал второе устройство"
+    toasts = [a[0] for cb in cbs for a in cb.answers if a[0]]
+    assert toasts == [ui.Toast.stale], toasts
+
+
+async def test_a_preset_over_the_profile_limit_can_be_chosen_again(services, fake_bot, make_active_client):
+    """Пресет выше лимита профиля — отказ всплывашкой, маркер снят: следующий
+    пресет создаёт устройство, а не отвечает «кнопка устарела»."""
+    from awgbot.bot.callbacks import PresetCB
+    from awgbot.bot.states import AddDevice
+    client = make_active_client(tg_id=5108, device_limit=3, traffic_limit=20 * 1024 ** 3)
+    cl = _fresh(services, client)
+    st = FakeState()
+    await st.set_state(AddDevice.traffic)
+    await st.update_data(for_friend=True, dev_name="Планшет", ctx_kind="main")
+    cb, _ = _cb(fake_bot, 5108)
+    await ch.device_add_limit_preset(cb, PresetCB(kind="devlimit", ref=0, val=50), cl, services, st)
+    assert services.db.list_devices(client.id) == [] and cb.answers[-1][1] is True
+    cb2, _ = _cb(fake_bot, 5108)
+    await ch.device_add_limit_preset(cb2, PresetCB(kind="devlimit", ref=0, val=10), cl, services, st)
+    assert len(services.db.list_devices(client.id)) == 1
+
+
 async def test_device_add_friend_other_limit_refuses_above_profile(services, fake_bot, make_active_client):
     """«✏️ Другое» больше лимита профиля не примет: устройства нет."""
     from awgbot.bot.callbacks import PresetCB
