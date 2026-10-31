@@ -370,3 +370,44 @@ async def test_broadcast_retry_after_at_the_cap_still_waits_in_place(sleeps):
     ok, failed = await notifier.broadcast(bot, [1, 2, 3], "t", [])
     assert (ok, failed) == (3, []) and sleeps.count(notifier._RETRY_AFTER_CAP) == 1
     assert all(s <= notifier._RETRY_AFTER_CAP for s in sleeps), sleeps
+
+
+# on_message: кому нужно само сообщение (финишер self-update — его id), тот
+# получает его и после отложенного повтора, когда notify_one уже вернул None.
+
+async def test_notify_one_hands_the_message_of_a_deferred_retry_to_on_message(sleeps):
+    settings.set_value("quiet_hours.quiet_hours_enabled", False)
+    got = []
+
+    async def on_message(m):
+        got.append(m.message_id)
+    bot = ScriptedBot({555: [_ra(300)]})
+    sent = await notifier.notify_one(bot, 555, "hi", on_message=on_message)
+    assert sent is None and got == [], "ждали паузу на месте"
+    await _drain_deferred()
+    assert got == [101], "сообщение отложенного повтора не отдано вызывающему"
+
+
+async def test_notify_one_on_message_once_on_direct_and_short_retry(sleeps):
+    settings.set_value("quiet_hours.quiet_hours_enabled", False)
+    got = []
+
+    async def on_message(m):
+        got.append(m.message_id)
+    bot = ScriptedBot({556: [_ra(2)]})
+    s1 = await notifier.notify_one(bot, 555, "a", on_message=on_message)
+    s2 = await notifier.notify_one(bot, 556, "b", on_message=on_message)
+    assert got == [s1.message_id, s2.message_id], got
+
+
+async def test_notify_one_on_message_not_called_when_undelivered_and_its_error_is_swallowed(sleeps):
+    settings.set_value("quiet_hours.quiet_hours_enabled", False)
+    calls = []
+
+    async def broken(m):
+        calls.append(m)
+        raise RuntimeError("база недоступна")
+    bot = ScriptedBot({555: [RuntimeError("bot was blocked")]})
+    assert await notifier.notify_one(bot, 555, "x", on_message=broken) is None and calls == []
+    sent = await notifier.notify_one(bot, 555, "y", on_message=broken)
+    assert sent is not None and len(calls) == 1, "сбой обработчика сорвал доставку"

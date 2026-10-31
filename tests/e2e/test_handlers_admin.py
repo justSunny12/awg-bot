@@ -173,6 +173,62 @@ async def test_only_the_last_update_finisher_keeps_its_menu_button(
     assert len(remaining) == 1 and remaining[0][1] not in stripped
 
 
+async def test_a_finisher_delivered_by_a_deferred_retry_still_loses_its_button(
+        services, fake_bot, monkeypatch):
+    """Финишер ступени, которому Telegram ответил 429 дольше предела: отправка
+    вернула None, сообщение дошло отложенным повтором позже. Его id всё равно
+    попадает в историю окон обновления — иначе следующая ступень кнопку «В
+    меню» у него не снимет и в чате останутся две живые."""
+    import asyncio
+    import types
+    from aiogram.exceptions import TelegramRetryAfter
+    from aiogram.methods import SendMessage
+    from awgbot.bot import notifier
+    from awgbot.runtime.main import report_update_result
+    from awgbot.domain.services import Notification
+    from awgbot.bot import keyboards as kb
+    import awgbot.core.config as cfg
+
+    fake_asyncio = types.ModuleType("asyncio")
+    fake_asyncio.__dict__.update(vars(asyncio))
+    real_sleep = asyncio.sleep
+
+    async def no_sleep(sec, *a, **k):
+        await real_sleep(0)
+    fake_asyncio.sleep = no_sleep
+    monkeypatch.setattr(notifier, "asyncio", fake_asyncio)     # пауза 429 не ждётся
+    flood = [TelegramRetryAfter(method=SendMessage(chat_id=1, text="x"),
+                                message="Too Many Requests", retry_after=300)]
+    plain_send = fake_bot.send_message
+
+    async def send_message(chat_id, text, **kw):
+        if flood:
+            raise flood.pop()
+        return await plain_send(chat_id, text, **kw)
+    monkeypatch.setattr(fake_bot, "send_message", send_message)
+
+    step = {"n": 0}
+
+    def fake_confirm():
+        step["n"] += 1
+        return Notification(cfg.ADMIN_ID, f"обновлён, ступень {step['n']}",
+                            reply_markup=kb.update_done_menu())
+    monkeypatch.setattr(services, "confirm_applied_update", fake_confirm)
+    monkeypatch.setattr(services, "pop_update_wait", lambda: None)
+
+    await report_update_result(fake_bot, services)       # ступень 1: 429 на 300 с
+    assert not [r for r in fake_bot.records if r[0] == "send_message"], "ждали паузу на месте"
+    while notifier._deferred:
+        await asyncio.gather(*list(notifier._deferred), return_exceptions=True)
+    first = services.pop_update_reports()
+    assert len(first) == 1, "сообщение отложенного повтора не запомнено как окно обновления"
+    services.remember_update_report(*first[0])
+
+    await report_update_result(fake_bot, services)       # ступень 2
+    stripped = [mid for kind, chat, mid in fake_bot.records if kind == "edit_markup"]
+    assert stripped == [first[0][1]], "кнопка у финишера с отложенной доставкой не снята"
+
+
 async def test_admin_start_purges_menu_history(services, fake_bot):
     """/start админа удаляет все прошлые меню чата (история ведётся send_menu/edit_nav)."""
     from awgbot.bot.handlers import admin as admin_h
