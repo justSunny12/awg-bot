@@ -119,6 +119,30 @@ class ReserveStateMixin:
         self.reserve_epoch_sync()                         # право записи — по новому состоянию
         return out
 
+    def _out_is(self, state: str, steps=()) -> bool:
+        """`rsv_out` сейчас в состоянии `state` (и на одном из шагов `steps`, если даны).
+        Звать под `_LOCK` — иначе ответ устаревает к моменту записи."""
+        out = self.rsv_get("rsv_out")
+        if str(out.get("state") or "home") != state:
+            return False
+        return not steps or str(out.get("step") or "") in steps
+
+    def _out_cas(self, state: str, steps=(), *, to: str = "", **fields) -> bool:
+        """Переход автомата «мои пользователи» «проверил — записал» одним замком: обработчики
+        слов канала пары (to_thread) и такт читают `rsv_out`, решают и пишут из разных потоков —
+        без перечитывания под замком второй писал бы свой переход поверх чужого (`taken` и
+        срыв по сроку: away и home разом). `to` — новое состояние (`reserve_set_out`), без
+        него — правка полей. Ложь — автомат уже не там, где ожидалось: переход не мой,
+        ничего не делать."""
+        with _LOCK:
+            if not self._out_is(state, steps):
+                return False
+            if to and to != state:
+                self.reserve_set_out(to, **fields)
+            else:
+                self.rsv_update("rsv_out", **fields)
+            return True
+
     def reserve_set_in(self, state: str, **why) -> dict:
         if state not in IN_STATES:
             raise ValueError(f"не состояние направления: {state}")
