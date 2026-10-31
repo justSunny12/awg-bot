@@ -105,8 +105,30 @@ class CfgUplinkTxnMixin:
         except _Busy as e:
             return {"ok": False, "error": str(e), "state": "busy"}
 
+    def _cfg_uplink_drop_stale_before(self, iface: str) -> None:
+        """Копия прежнего от сорванной транзакции (commit не убрал её, revert не
+        вернул) старше стоящего конфига: прерви следующую транзакцию перезапуск
+        до --uplink — откат по журналу поставил бы её поверх нынешнего. Журнала
+        уже нет (восстановление прошло под теми же замками) — копию прочь."""
+        from awgbot.infra import gwguard
+        conf = gwguard.uplink_conf_path(iface)
+        before = f"{conf}.before"
+        try:
+            stale = os.stat(before).st_mtime_ns <= os.stat(conf).st_mtime_ns
+        except OSError:
+            return                                  # копии нет или стоящего нет — трогать нечего
+        if not stale:
+            return
+        try:
+            os.unlink(before)
+        except OSError as e:
+            log.warning("gateway: устаревшая копия прежнего аплинка %s не убрана: %s", before, e)
+            return
+        log.warning("gateway: копия прежнего аплинка %s старше стоящего конфига — убрана перед транзакцией", before)
+
     def _cfg_uplink_txn(self, value: dict, iface: str, nxt: str, txn: str) -> dict:
         from awgbot.infra import gwguard
+        self._cfg_uplink_drop_stale_before(iface)
         try:
             unit_before = gwguard.unit_path().read_text(encoding="utf-8")
             conf = wgconf.parse(value.get("conf", ""))

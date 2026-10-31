@@ -535,6 +535,51 @@ def test_a_restart_in_the_middle_of_the_transaction_puts_the_old_uplink_back(svc
     assert fresh.cfg_questions() == ["uplink"], "вопрос пропал — человеку не на что ответить снова"
 
 
+def _stale_before(host, text: str = "[Interface]\n# конфиг до сорванной транзакции\n") -> None:
+    """Копия прежнего от сорванной транзакции (commit её не убрал), старше стоящего конфига."""
+    host.before.write_text(text, encoding="utf-8")
+    st = host.uplink.stat()
+    os.utime(host.before, ns=(st.st_atime_ns, st.st_mtime_ns - 60_000_000_000))
+
+
+def test_a_stale_copy_of_an_older_uplink_is_not_put_back_by_the_next_interrupted_transaction(
+        svc, host, monkeypatch):
+    """Прежняя транзакция сорвалась так, что копия .before осталась (commit не
+    убрал); следующую прервал перезапуск до --uplink. Откат по журналу не
+    ставит древнюю копию поверх стоящего конфига: её убирают перед транзакцией."""
+    _Clock(monkeypatch)
+    _stale_before(host)
+    svc.apply_cfg(_doc(uplink=_value(host, text=_moved(host))))
+
+    def die(path, iface, *a, **kw):
+        raise _Killed()
+    monkeypatch.setattr(gwguard, "uplink_apply", die)
+    with pytest.raises(_Killed):
+        svc.cfg_answer("uplink", True)
+    assert (host.etc / "uplink.txn").exists(), "сценарий не тот"
+    assert not host.before.exists(), "устаревшая копия прежнего аплинка пережила начало транзакции"
+    fresh = GatewayServices(svc.db)
+    fresh.cfg_uplink_tick()
+    assert host.uplink.read_bytes() == host.uplink_bytes, "откат поставил древнюю копию поверх стоящего конфига"
+
+
+def test_a_stale_copy_is_dropped_and_the_transaction_goes_on(svc, host, monkeypatch):
+    _Clock(monkeypatch)
+    _stale_before(host)
+    svc.apply_cfg(_doc(uplink=_value(host, text=_moved(host))))
+    assert svc.cfg_answer("uplink", True)["accepted"]
+    assert host.uplink.read_text(encoding="utf-8") == _installed_as(host, _moved(host))
+    assert host.finishes == ["commit"] and not host.before.exists()
+
+
+def test_a_copy_newer_than_the_standing_conf_is_left_alone(svc, host):
+    host.before.write_text("[Interface]\n", encoding="utf-8")
+    st = host.uplink.stat()
+    os.utime(host.before, ns=(st.st_atime_ns, st.st_mtime_ns + 60_000_000_000))
+    svc._cfg_uplink_drop_stale_before("awg0")
+    assert host.before.exists()
+
+
 def test_a_document_after_an_interrupted_transaction_is_compared_with_the_restored_uplink(
         svc, host, monkeypatch):
     """Документ пришёл раньше тика после перезапуска: прерванная транзакция
