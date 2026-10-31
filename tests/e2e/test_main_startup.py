@@ -124,12 +124,16 @@ async def test_bot_identity_is_synced_once_per_fingerprint(db, monkeypatch):
         async def get_my_short_description(self): calls.append("get_short"); return SimpleNamespace(short_description="s")
         async def set_my_short_description(self, d): calls.append(("set_short", d))
         async def delete_my_commands(self): calls.append("del_cmds")
+        async def set_my_commands(self, cmds): calls.append(("set_cmds", [(c.command, c.description) for c in cmds]))
 
     monkeypatch.setattr(config, "BOT_NAME", "Very Oblivious")
     monkeypatch.setattr(config, "BOT_DESCRIPTION", "d")
     monkeypatch.setattr(config, "BOT_SHORT_DESCRIPTION", "s")
     assert await rt._sync_bot_identity(Bot(), db) is True
-    assert calls == ["get_name", ("set_name", "Very Oblivious"), "get_desc", "get_short", "del_cmds"]
+    # стирание старого меню команд — и сразу «Меню» заново: блок идёт после её
+    # регистрации на старте, голое стирание оставляло чат без кнопки до рестарта
+    assert calls == ["get_name", ("set_name", "Very Oblivious"), "get_desc", "get_short", "del_cmds",
+                     ("set_cmds", [("start", "Меню")])]
     calls.clear()
     assert await rt._sync_bot_identity(Bot(), db) is False
     assert calls == [], "отпечаток совпал, а к Bot API всё равно сходили"

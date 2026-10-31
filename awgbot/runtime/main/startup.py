@@ -111,8 +111,10 @@ async def _sync_bot_identity(bot: Bot, db: Database) -> bool:
     наблюдателю профиля). Правки, вбитые вручную в BotFather, переживут только
     до следующего рестарта — дальше их перетрёт этот блок.
 
-    Меню команд (кнопка «/») НЕ регистрируем и явно СТИРАЕМ: раньше сюда уже
-    отправлялся /code, Bot API хранит это до явной перезаписи.
+    Меню команд стираем (раньше сюда уже отправлялся /code, Bot API хранит
+    это до явной перезаписи) и тут же ставим заново одну «Меню» (_menu_command):
+    этот блок идёт после её регистрации на старте, и голое стирание оставляло
+    чат без кнопки «Меню» после каждого обновления до следующего перезапуска.
 
     Отпечаток (имя, описания, версия) — в state: совпал — ни одного запроса к
     Bot API (раньше каждый старт стоил три-четыре, а set_my_name Telegram
@@ -131,6 +133,7 @@ async def _sync_bot_identity(bot: Bot, db: Database) -> bool:
             (await bot.get_my_short_description()).short_description != config.BOT_SHORT_DESCRIPTION:
         await bot.set_my_short_description(config.BOT_SHORT_DESCRIPTION)
     await bot.delete_my_commands()
+    await pkg._menu_command(bot)
     db.set_state("bot_identity", ident)
     return True
 
