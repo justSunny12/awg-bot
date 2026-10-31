@@ -15,7 +15,8 @@ Telegram забирается (deleteWebhook не прошёл — повтор 
 данных на диске резерва новее перенесённого (`reserve_disk_waiting`), возврат
 ждёт его, а не считает гостя пустым. Резерв на связи без гостя (по `st` после
 начала возврата) или пустая реплика — возврат без слияния (сразу take_tg).
-Та же реплика (по отпечатку, `merged_fp`) второй раз не сливается. Повтор той
+Реплика уже слитого эпизода (поколение пакета — отметка `rsv_merged_gen` в базе той же
+транзакцией, что слияние; тот же шифротекст — `merged_fp`) второй раз не сливается. Повтор той
 же ошибки слияния — молча и без автоматического возврата (`merge_blocked`).
 Повторы: `back_req` по сроку (резерв на повтор отдаёт реплику из rep.bin),
 merge по сроку и после рестарта посреди — снова back_req, restart — не чаще
@@ -35,6 +36,7 @@ from awgbot.util import livestep, timeutil
 
 from ..types import Notification, ServiceError
 from ..gateway_link.common import log
+from .merge_ops import MERGED_KEY, ReplicaMerged
 from .outbound import FORCE_OFFLINE_S, RECORD_WAIT_S, RELAY_WAIT_S, RELEASED_WAIT_S
 from .state import HOSTING, _LOCK
 
@@ -314,6 +316,12 @@ class ReserveReturnMixin:
         self._out_step("merge", RELEASED_WAIT_S)
         try:
             report = self._return_merge(blob, int(out.get("gen") or 0))
+        except ReplicaMerged as e:
+            # реплика этого поколения уже слита (отметка легла той же транзакцией, что и слияние):
+            # повтор back_req после COMMIT — сразу к перезапуску
+            log.info("резерв: реплика поколения %s уже слита — к перезапуску", e)
+            self._out_step("restart")
+            return [("restart",)]
         except Exception as e:                                # noqa: BLE001
             reason = str(e)[:200]
             same = reason == str(out.get("merge_error") or "")
@@ -381,6 +389,7 @@ class ReserveReturnMixin:
                              back_fact_at=str(out.get("record_fact_at") or timeutil.now_iso()), notified=False,
                              merge_report=dict(out.get("merge_report") or {}), go_sent=False, await_merge=False,
                              merged_fp="", merge_error="", merge_blocked="")
+        self.db.set_state(MERGED_KEY, "")                   # отметка слитого эпизода — до следующего возврата
         self.db.set_state("move_notified", "")              # «переподключи VPN» — заново на следующий переезд
         tr = self._reserve_traffic_view().get("out") or ""
         notes = [Notification(tg_id=int(config.ADMIN_ID), text=rn.returned_home(name, dict(out.get("merge_report") or {}), tr))]

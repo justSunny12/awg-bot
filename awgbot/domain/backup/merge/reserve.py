@@ -86,11 +86,14 @@ def _counter(base, cur, rep) -> tuple[int, int | None]:
     return c + (r - b), None
 
 
-def merge(cur_db: str, base_db: str, rep_db: str, *, admin_tg: int = 0, no_delete: bool = False) -> Report:
+def merge(cur_db: str, base_db: str, rep_db: str, *, admin_tg: int = 0, no_delete: bool = False,
+          mark: tuple[str, str] | None = None) -> Report:
     """Слить реплику в живую базу основы на месте. Бот основы — остановлен.
     `no_delete` — база не настоящий снимок (его нет: основа восстановлена из
     копии), удалённое на резерве не выводится, строки только добавляются и
-    обновляются."""
+    обновляются. `mark` — (ключ, значение) `server_state`, которые ложатся той же
+    транзакцией, что и слияние: отметка «эпизод слит» не может отстать от COMMIT
+    (крах между ними сливал бы реплику дважды — счётчики и архивы удваивались)."""
     rpt = Report()
     con = sqlite3.connect(cur_db)
     con.row_factory = sqlite3.Row
@@ -112,6 +115,8 @@ def merge(cur_db: str, base_db: str, rep_db: str, *, admin_tg: int = 0, no_delet
                 _replace_table(con, table, rpt)
             for table in P.TABLE_APPEND:
                 _append_table(con, table, rpt, id_map)
+            if mark is not None:
+                con.execute("INSERT OR REPLACE INTO server_state (key, value) VALUES (?, ?)", (str(mark[0]), str(mark[1])))
             con.execute("COMMIT")
         except Exception:
             con.execute("ROLLBACK")
