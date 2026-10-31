@@ -120,7 +120,7 @@ async def flush_outbox() -> None:
 
 
 async def send_package(built: dict) -> bool:
-    """Пакет частями: pkg{gen, fp, i, n, blob, jrn?, mf}; False — сессии нет или обрыв."""
+    """Пакет частями: pkg{gen, fp, i, n, blob, jrn?, mf, db_size}; False — сессии нет или обрыв."""
     from awgbot.util import pairproto
     parts = pairproto.chunks(str(built["blob"]))
     for i, blob in enumerate(parts):
@@ -129,6 +129,8 @@ async def send_package(built: dict) -> bool:
             body["jrn"] = dict(built["jrn"])                  # снимок журнала: что в нём учтено (открыто)
         if built.get("mf"):
             body["mf"] = str(built["mf"])                     # отпечаток `M` пакета: с ним резерв сверяет ящики
+        if built.get("db_size"):
+            body["db_size"] = int(built["db_size"])           # размер базы (несжатой): по нему резерв ставит потолки зоны
         ok = await send("pkg", body)
         if not ok:
             return False

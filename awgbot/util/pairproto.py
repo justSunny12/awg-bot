@@ -101,7 +101,8 @@ PAIR_KINDS: dict[str, tuple[str, dict]] = {
     "slots":        (BOTH, {"slots": (_L, MAX_LIST)}),
     "slots_ok":     (BOTH, {"slots": (_L, MAX_LIST)}),
     "pkg":          (BOTH, {"gen": (_I, None), "fp": (_S, 64), "i": (_I, None), "n": (_I, None),
-                            "blob": (_S, MAX_BLOB), "jrn": (_D, None), "mf": (_S, 16)}),
+                            "blob": (_S, MAX_BLOB), "jrn": (_D, None), "mf": (_S, 16),
+                            "db_size": (_I, None)}),   # размер базы основы (несжатой) — потолки зоны
     "pkg_ok":       (BOTH, {"gen": (_I, None), "fp": (_S, 64)}),
     "pkg_bad":      (BOTH, {"gen": (_I, None), "reason": (_S, MAX_REASON)}),
     "ask":          (BOTH, {"case": (_S, 8), "since": (_S, 32), "kind": (_S, 8)}),   # кандидат кворума: case = "q",
@@ -201,7 +202,7 @@ OPTIONAL: dict[str, frozenset] = {"st": frozenset({"healthy", "can_return", "in_
                                    "ask": frozenset({"kind"}), "up": frozenset({"oid"}), "taken": frozenset({"oid"}),
                                   "state": frozenset({"reason", "e"}), "qview": frozenset({"i"}),
                                   "go": frozenset({"ttl", "k", "sealed", "oid"}), "go_req": frozenset({"ttl"}),
-                                  "pkg": frozenset({"jrn", "mf"}), "released": frozenset({"epoch", "last"}),
+                                  "pkg": frozenset({"jrn", "mf", "db_size"}), "released": frozenset({"epoch", "last"}),
                                   "qkeys": frozenset({"q_gen", "thr", "y", "qbox", "mf"}),   # многочлен — пока кворум линии решает
                                   "qkeys_ok": frozenset({"mf"}),
                                   "jstale": frozenset({"F"}), "qpause": frozenset({"dur"}),

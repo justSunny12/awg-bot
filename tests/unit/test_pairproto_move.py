@@ -158,8 +158,9 @@ def test_the_optional_fields_are_only_the_listed_ones_of_st_and_state():
                            # кворум (4.2.0): состав в st, эпоха в state, справка в qview
                            "state": frozenset({"reason", "e"}), "qview": frozenset({"i"}),
                            "go": frozenset({"ttl", "k", "sealed", "oid"}), "go_req": frozenset({"ttl"}),
-                           # отпечаток M (mf) рядом с номером поколения — у прежней стороны его нет
-                           "pkg": frozenset({"jrn", "mf"}), "released": frozenset({"epoch", "last"}),
+                           # отпечаток M (mf) рядом с номером поколения и размер базы (db_size) — у
+                           # прежней стороны их нет
+                           "pkg": frozenset({"jrn", "mf", "db_size"}), "released": frozenset({"epoch", "last"}),
                            # часть многочлена в qkeys — пока кворум линии решает (с сопряжения — только ящик кода)
                            "qkeys": frozenset({"q_gen", "thr", "y", "qbox", "mf"}), "qkeys_ok": frozenset({"mf"}),
                            # точка расхождения в jstale — у выпуска с хвостом старой эпохи

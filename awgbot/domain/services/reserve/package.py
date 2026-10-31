@@ -260,7 +260,10 @@ class ReservePackageMixin:
             log.info("резерв: %s %s собран (%d КБ%s)", "снимок" if journal else "пакет", gen, len(blob) // 1024,
                      f", журнал по {marks['i']}" if journal else "")
             # отпечаток `M` пакета — рядом с поколением: резерв сверяет с ним ящики (`qkeys`)
-            built = {"gen": gen, "fp": fp, "blob": blob.hex(), "mf": rsvkeys.m_print(bytes.fromhex(keys["m"]))}
+            # размер базы (несжатой) — резерву: по нему потолок памяти процесса открытия и хранилище
+            # гостя (сжатый пакет о базе почти ничего не говорит); прежний резерв поле отбрасывает
+            built = {"gen": gen, "fp": fp, "blob": blob.hex(), "mf": rsvkeys.m_print(bytes.fromhex(keys["m"])),
+                     "db_size": len(db_bytes)}
             if jrn:
                 # открыто — только то, что резерву нужно для снятия учтённого (номер строки счётчиков
                 # cs — внутри: по нему видно, сколько раз устройства были активны)
@@ -400,10 +403,13 @@ class ReservePackageMixin:
 
     # ── приём (резерв) ──────────────────────────────────────────────────────
 
-    def reserve_pkg_in(self, gen: int, fp: str, blob: bytes, jrn: dict | None = None, mf: str = "") -> tuple[str, str]:
+    def reserve_pkg_in(self, gen: int, fp: str, blob: bytes, jrn: dict | None = None, mf: str = "",
+                       db_size: int = 0) -> tuple[str, str]:
         """Целый пакет от основы: проверка, запись на диск; поколение `M` — из заголовка, его
         отпечаток `mf` — из слова `pkg` (у прежней основы его нет: сверка по номеру); с ними
-        сверяется ящик кода, `qkeys`. Возвращает (ответ: pkg_ok | pkg_bad, причина)."""
+        сверяется ящик кода, `qkeys`. `db_size` — размер базы основы (несжатой) из того же слова:
+        по нему потолки зоны (`rsvzone.open_memory_mb`, `store_mb`) и строка памяти в карточке;
+        у прежней основы его нет (0) — они по размеру пакета. Возвращает (ответ: pkg_ok | pkg_bad, причина)."""
         if self.reserve_in() in HOSTING:
             return "pkg_bad", "зона занята"                  # гость стартовал с прежнего пакета — новый сбил бы поколение слияния
         try:
@@ -421,8 +427,10 @@ class ReservePackageMixin:
             f.flush()
             os.fsync(f.fileno())                              # пакет — опора переезда после смерти основы: на диск
         os.replace(tmp, path)
+        from awgbot.infra import rsvzone
         self.rsv_put("rsv_pkg_in", {"gen": int(gen), "fp": str(fp), "size": len(blob), "at": timeutil.now_iso(),
-                                    "m_gen": int(head.m_gen), "mf": rsvkeys.m_print_of(mf), "has_dns": head.has_dns})
+                                    "m_gen": int(head.m_gen), "mf": rsvkeys.m_print_of(mf), "has_dns": head.has_dns,
+                                    "db_size": rsvzone.db_size_of(db_size)})
         if jrn:
             self.reserve_keep_snapshot_in(dict(jrn))          # учтённое снимком — из сегментов прочь
         elif self.reserve_keep_line():

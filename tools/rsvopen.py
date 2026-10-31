@@ -5,7 +5,7 @@ tools/rsvopen.py — процесс открытия: пакет переезд�
 `M`, `K` и части пакета; бот резерва его только запускает (временным юнитом
 awg-bot-rsvopen с песочницей — свойства в одном месте,
 domain/services/reserve/openproc.py `rsvopen_sandbox_props`: MemoryMax от
-размера пакета (rsvzone.open_memory_mb, не меньше 192M), без swap и дампов, PrivateTmp, ProtectHome, ProtectSystem=strict,
+размера базы основы и пакета (rsvzone.open_memory_mb, не меньше 192M), без swap и дампов, PrivateTmp, ProtectHome, ProtectSystem=strict,
 NoNewPrivileges, запись — только хранилище гостя, /var/lib/awg-bot-guest,
 /run/awg-bot/rsv, /run/netns и /etc/systemd; каталог данных резерва подменён
 пустым (TemporaryFileSystem), виден только reserve/guest.pkg
@@ -15,7 +15,8 @@ BOT_TOKEN/ADMIN_ID резерва, AWG_BOT_ENV=/dev/null). Хранилище г
 песочницы хосту и юнитам гостя не видно) и создаёт каталоги записи; шаг
 `store` здесь монтирует его, только если этого ещё нет (ручной запуск), и
 растит под базу (rsvzone.store_mb — до записи и при --take по базе после
-журнала: бот знает только размер сжатого пакета). Ход
+журнала: бот знает размер базы, ушедшей в пакет, а прежняя основа его не
+шлёт — только размер сжатого пакета). Ход
 бот читает по /run/awg-bot/rsv/open.status (шаг, время, причина — без
 секретов; до запуска бот пишет туда `launching`, после — `launched`), stderr
 процесса — в /run/awg-bot/rsv/rsvopen.err: кончился без `done`/`fail` —
