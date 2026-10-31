@@ -25,8 +25,9 @@ away` в документе) или по `state{serving}` от резерва в
 Уведомления агента о резерве (Т-РА3, Т-РА5, обход Telegram) не теряются: Telegram
 агента идёт по аплинку, а в момент события он может молчать. `reserve_note`
 кладёт текст в очередь `pending_notes` reserve.json, доставка снимает его,
-такт повторяет недоставленное раз в минуту, пока оно ещё верно (`cond`:
-пересылка открыта) и не старше суток; Т-РА3 со звуком — ещё и
+такт повторяет недоставленное раз в минуту (первая попытка — сразу, повтор —
+не раньше минуты), пока оно ещё верно (`cond`: пересылка открыта — проверяется
+в момент повтора) и не старше суток; Т-РА3 со звуком — ещё и
 почтой (`critical`). Такт и слова резерва правят reserve.json по очереди
 (замок в runtime/guestlink.py).
 """
@@ -81,12 +82,15 @@ class ReserveStoreMixin:
         в очередь, Notification с on_sent — доставлено, снято; такт повторяет
         недоставленные, пока условие (`cond`) верно и не вышли сутки."""
         import secrets as _s
+        import time as _t
         from awgbot.core import config
         from awgbot.domain.services import Notification
         nid = _s.token_hex(4)
         notes = [n for n in (cur.get("pending_notes") or []) if isinstance(n, dict)]
+        # первая попытка — возвращаемое уведомление (уходит сейчас): повтор — не раньше NOTE_RETRY_S,
+        # иначе такт слал бы второе, пока первое ещё в пути
         notes.append({"id": nid, "text": text, "sound": bool(sound), "silent": bool(silent), "critical": bool(critical),
-                      "cond": dict(cond or {}), "at": timeutil.now_iso(), "tried": 0.0})
+                      "cond": dict(cond or {}), "at": timeutil.now_iso(), "tried": _t.monotonic()})
         cur["pending_notes"] = notes[-32:]
         return Notification(tg_id=int(config.ADMIN_ID), text=text, force_sound=sound, silent=silent, critical=critical,
                             on_sent=lambda nid=nid: self.reserve_note_sent(nid))
@@ -114,16 +118,23 @@ class ReserveStoreMixin:
                 age = timeutil.elapsed(timeutil.parse_iso(str(n.get("at") or "")))
             except ValueError:
                 age = NOTE_TTL_S + 1
-            if age > NOTE_TTL_S or not self._note_still_true(cur, n.get("cond") or {}):
+            if age > NOTE_TTL_S:
                 changed = True
-                continue                                      # устарело или уже не так — не слать
+                continue                                      # устарело — не слать
+            if not livestep.mono_due(n.get("tried"), now, NOTE_RETRY_S):
+                keep.append(n)
+                continue
+            # условие — только при попытке: Т-РА3 ставится в очередь до того, как runtime
+            # откроет пересылку, — проверка в том же такте выбросила бы его до доставки
+            if not self._note_still_true(cur, n.get("cond") or {}):
+                changed = True
+                continue                                      # уже не так — не слать
             keep.append(n)
-            if livestep.mono_due(n.get("tried"), now, NOTE_RETRY_S):
-                n["tried"] = now                              # отметка попытки — в файл: иначе повтор каждый такт
-                changed = True
-                out.append(Notification(tg_id=int(config.ADMIN_ID), text=str(n["text"]), force_sound=bool(n.get("sound")),
-                                        silent=bool(n.get("silent")), critical=bool(n.get("critical")),
-                                        on_sent=lambda nid=str(n["id"]): self.reserve_note_sent(nid)))
+            n["tried"] = now                                  # отметка попытки — в файл: иначе повтор каждый такт
+            changed = True
+            out.append(Notification(tg_id=int(config.ADMIN_ID), text=str(n["text"]), force_sound=bool(n.get("sound")),
+                                    silent=bool(n.get("silent")), critical=bool(n.get("critical")),
+                                    on_sent=lambda nid=str(n["id"]): self.reserve_note_sent(nid)))
         if changed:
             cur["pending_notes"] = keep
             _write(cur, self._RSV_STORE)
@@ -201,7 +212,8 @@ class ReserveStoreMixin:
                 note = f"⚠️ Линк к резерву не поднялся: {str(e)[:120]} — повторю"
                 log.warning("reserve: линк к резерву не поднялся: %s — повтор тактом", e)
         _write(new, self._RSV_STORE)
-        self.reserve_forward_decide()
+        # пересылку по новому разделу решает такт (≤ 5 с): здесь её действия исполнить некому —
+        # решение отсюда записало бы «открыта» и «Т-РА3 объявлено» без открытия и без уведомления
         return {"changed": changed, "note": note}
 
     def reserve_link_retry_tick(self, now: float | None = None) -> list[tuple]:
