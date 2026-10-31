@@ -186,6 +186,9 @@ def _uninstall(tmp: Path, *, with_zone: bool) -> subprocess.CompletedProcess:
         (inst / "install" / "reserve-zone-setup.sh").write_text("# DUMMY zone script\n", encoding="utf-8")
     seen = tmp / "seen.txt"
     self_path = tmp / "awg-bot.sh"
+    # части скрипта — рядом, как в поставке: хвост уезжает во временный каталог вместе с ними
+    (tmp / "install" / "lib").mkdir(parents=True)
+    (tmp / "install" / "lib" / "update.sh").write_text("# DUMMY lib\n", encoding="utf-8")
     # «хвост» — запоминает, что ему передали, и убирает за собой обе временные копии
     self_path.write_text('#!/bin/bash\n'
                          f'{{ echo "args=$*"; echo "role=$AWG_ROLE"; echo "zone=${{AWG_ZONE_SCRIPT:-}}"; '
@@ -197,7 +200,7 @@ def _uninstall(tmp: Path, *, with_zone: bool) -> subprocess.CompletedProcess:
     (tmp / "etc" / "conf" / "app.yaml").write_text('role: "client"\n', encoding="utf-8")
     prog = "\n".join([
         "set -euo pipefail",
-        f'INSTALL_DIR="{inst}"; ETC_DIR="{tmp / "etc"}"; SELF_PATH="{self_path}"; SERVICE=awg-bot',
+        f'INSTALL_DIR="{inst}"; ETC_DIR="{tmp / "etc"}"; SELF_PATH="{self_path}"; SELF_DIR="{tmp}"; SERVICE=awg-bot',
         f'UNIT_PATH="{tmp / "unit"}"; SELF_LINK="{tmp / "link"}"',
         "require_root() { :; }; confirm() { return 0; }; systemctl() { :; }; update_guard_disarm() { :; }",
         'warn() { :; }; ok() { :; }; log() { :; }',
@@ -237,6 +240,7 @@ def _wipe(h: _Host, *, role: str = "main", with_zone: bool = True) -> subprocess
     prog = "\n".join(["set -uo pipefail", h.stubs(),
                       f'INSTALL_DIR="{inst}"; ETC_DIR="{h.tmp / "etc"}"; DATA_DIR="{h.tmp / "data"}"',
                       f'SELF_LINK="{h.tmp / "link"}"',
+                      _func(INSTALLER, "installed_role"),
                       _rooted(_func(INSTALLER, "wipe_previous")), "wipe_previous"])
     return subprocess.run(["bash", "-c", prog], capture_output=True, text=True, timeout=30,
                           env={"PATH": "/usr/bin:/bin"})

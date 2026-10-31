@@ -58,6 +58,14 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
                     await pkg.send_notifications(bot, drift_notes)
             except Exception as e:                       # noqa: BLE001
                 log.warning("ssh_port_drift_notes: %s", e)
+            # список адресов из одних имён, DNS молчит, прежних адресов нет —
+            # фильтр открыл SSH снаружи всем: сказать админу, не молчать
+            try:
+                open_notes = await asyncio.to_thread(services.firewall_open_notes)
+                if open_notes:
+                    await pkg.send_notifications(bot, open_notes)
+            except Exception as e:                       # noqa: BLE001
+                log.warning("firewall_open_notes: %s", e)
             # ребайнд вотчдога — только после перезагрузки или если наблюдатель умер.
             if watcher is not None and (restarted or not watcher.alive()):
                 await asyncio.to_thread(watcher.ensure_watching)

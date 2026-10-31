@@ -35,7 +35,7 @@ DEVICE_CONFIG_LATER = ("📄 Конфигурацию этого устройс�
 
 # методы Services, которые действуют на хост и в гостевом режиме отказывают
 HOST_ONLY: tuple[str, ...] = (
-    "reconcile_ssh_access", "ssh_port_change", "ssh_port_drift_notes", "firewall_enable", "firewall_disable",
+    "reconcile_ssh_access", "ssh_port_change", "ssh_port_drift_notes", "firewall_open_notes", "firewall_enable", "firewall_disable",
     "firewall_confirm", "firewall_allow_add", "firewall_allow_remove", "retire_legacy_ssh_gate",
     "routing_provision", "routing_update_lists", "check_resource_alerts", "private_dns_decision",
     "gwcfg_doc", "gwlink_lan_feeds_update",

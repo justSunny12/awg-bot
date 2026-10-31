@@ -82,7 +82,8 @@ restore_die() {  # restore_die ПРИЧИНА — отказ с причиной
 restore_stage() {  # restore_stage SRC TARGET MODE — подготовить TARGET.restore-new, если отличается
     cmp -s "$1" "$2" 2>/dev/null && return 0
     mkdir -p "$(dirname "$2")" || return 1
-    cp "$1" "$2.restore-new" && chmod "$3" "$2.restore-new" || { rm -f "$2.restore-new"; return 1; }
+    # umask 077: секреты (env, конфиги awg) не лежат 0644 между cp и chmod
+    ( umask 077; cp "$1" "$2.restore-new" ) && chmod "$3" "$2.restore-new" || { rm -f "$2.restore-new"; return 1; }
     RESTORE_TARGETS+=("$2")
 }
 

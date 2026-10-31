@@ -39,7 +39,8 @@ class FirewallMixin:
                 "sshd_down": drift["listening"] is None,
                 "ssh_port": spec.ssh_port, "allow": list(spec.ssh_allow4) + list(spec.ssh_allow6),
                 "raw_allow": list(settings.get("app.firewall.ssh_allow", []) or []),
-                "unresolved": list(spec.unresolved), "admin_ips": list(spec.tunnel_admin4),
+                "unresolved": list(spec.unresolved), "held": list(spec.ssh_held),
+                "admin_ips": list(spec.tunnel_admin4),
                 "nat": spec.nat, "bot_username": self.bot_username or ""}
 
     # ── порт SSH (кнопка «Изменить порт») ────────────────────────────────────
@@ -138,11 +139,16 @@ class FirewallMixin:
 
     def firewall_allow_remove(self, entry: str) -> list[str]:
         """Убрать адрес — сразу, без таймера: из чата любое действие
-        отменяется здесь же, а чат от SSH не зависит."""
+        отменяется здесь же, а чат от SSH не зависит. Последний адрес при
+        включённом фильтре — отказ: пустой список открывает SSH снаружи всем
+        (как и включение без адресов, которого нет)."""
+        from awgbot.infra import nftguard
         cur = [v for v in (settings.get("app.firewall.ssh_allow", []) or []) if v != entry]
+        if not cur and nftguard.enabled():
+            raise ServiceError("это последний адрес: без адресов фильтр открывает SSH снаружи всем. "
+                               "Сначала выключи «Фильтр снаружи»")
         with self._own_settings_change():
             settings.set_value("app.firewall.ssh_allow", cur)
-        from awgbot.infra import nftguard
         if nftguard.enabled():
             self._firewall_apply(rollback=False)
         self._channel_touch()                              # ADMIN_IPS — шлюзам сразу
@@ -260,6 +266,39 @@ class FirewallMixin:
                              f"⚠️ <code>sshd</code> слушает порт <code>{d['listening']}</code>, а фильтр держит "
                              f"<code>{d['conf']}</code> — вход снаружи и из туннеля закрыт. Нажми «🅿️ Изменить порт» → "
                              f"<code>{d['listening']}</code> или верни <code>sshd</code> на <code>{d['conf']}</code>", critical=True)]
+
+    _SSH_OPEN_KEY = "ssh_open_unresolved_seen"
+
+    def firewall_open_notes(self) -> list:
+        """Тик: фильтр включён, в списке только имена, ни одно не резолвится,
+        и прежних адресов в файле таблицы нет — таблица открыла SSH снаружи
+        всем (запереть админа хуже, чем открыть). Сказать один раз на состав
+        имён; адреса появились — отметку снять. Резолв — тот же, что у
+        сверки таблицы (кэш), остального файервола не собираем."""
+        from awgbot.domain.services import Notification
+        from awgbot.infra import nftguard
+        raw = list(settings.get("app.firewall.ssh_allow", []) or [])
+        bad: list[str] = []
+        if raw and nftguard.enabled():
+            a = nftguard.ssh_allow(raw)
+            if not a["v4"] and not a["v6"]:
+                bad = list(a["bad"])
+        seen = self.db.get_state(self._SSH_OPEN_KEY) or ""
+        if not bad:
+            if seen:
+                self.db.set_state(self._SSH_OPEN_KEY, "")
+            return []
+        key = ",".join(sorted(bad))
+        if seen == key:
+            return []
+        self.db.set_state(self._SSH_OPEN_KEY, key)
+        log.warning("firewall: ни одно имя списка SSH не резолвится (%s), прежних адресов нет — SSH снаружи открыт всем",
+                    ", ".join(bad))
+        names = ", ".join(f"<code>{n}</code>" for n in bad[:5]) + (f" [+{len(bad) - 5}]" if len(bad) > 5 else "")
+        return [Notification(config.ADMIN_ID,
+                             f"⚠️ SSH-фильтр: имена из списка адресов не резолвятся ({names}), прежних адресов нет — "
+                             "снаружи SSH открыт всем. Проверь DNS сервера или добавь адрес: ⚙️ Настройки → "
+                             "🛡 SSH-доступ → «➕ Адрес»", critical=False)]
 
     def retire_legacy_ssh_gate(self) -> None:
         """Разово снять прежние ворота (цепочка AWGBOT_SSH + PostUp-страж) —

@@ -96,8 +96,31 @@ gen_obf() {
     H3=$(h_range 1000000001 1500000000); H4=$(h_range 1500000001 2000000000)
 }
 
+# Значения от второго сервера (ключи, обфускация, адрес) — строками в конфиг:
+# перевод строки в значении стал бы своей строкой конфига (`PostUp = …` от
+# root). Бот проверяет их до вызова; здесь — второй рубеж, до записи файла.
+valid_key() { case "$1" in *[!A-Za-z0-9+/=]*|*=?*|*[!=]) return 1 ;; esac; [ "${#1}" -eq 44 ]; }   # 43 base64 и «=»
+valid_num() { case "$1" in ''|*[!0-9]*) return 1 ;; esac; [ "${#1}" -le 10 ]; }
+valid_obf() { case "$1" in *-*) valid_num "${1%%-*}" && valid_num "${1#*-}" ;; *) valid_num "$1" ;; esac; }
+valid_ep() { case "$1" in ''|*[!]A-Za-z0-9.:[-]*) return 1 ;; esac; }
+valid_addr() { case "$1" in ''|*[!0-9.]*) return 1 ;; esac; }
+check_values() { # check_values SELF_ADDR PRIV PEER_PUB PEER_ADDR [PSK] [ENDPOINT] — и JC…H4, порт, keepalive
+    valid_addr "$1" && valid_addr "$4" || die "адрес линка пары не того вида"
+    valid_key "$2" && valid_key "$3" || die "ключ линка пары не того вида"
+    [ -z "${5:-}" ] || valid_key "$5" || die "PSK линка пары не того вида"
+    [ -z "${6:-}" ] || valid_ep "$6" || die "адрес второго сервера не того вида"
+    valid_num "$PAIR_PORT" || die "порт линка пары не того вида"
+    for v in JC JMIN JMAX S1 S2 S3 S4 H1 H2 H3 H4; do
+        eval "_x=\${$v:-}"
+        valid_obf "$_x" || die "$v не того вида"
+    done
+}
+
 write_conf() {   # write_conf FILE SELF_ADDR PRIV PEER_PUB PEER_ADDR [PSK] [ENDPOINT] [STAMP]
     _f="$1"; _addr="$2"; _priv="$3"; _ppub="$4"; _paddr="$5"; _psk="${6:-}"; _ep="${7:-}"; _stamp="${8:-}"
+    check_values "$_addr" "$_priv" "$_ppub" "$_paddr" "$_psk" "$_ep"
+    case "$_stamp" in *[!A-Za-z0-9_.-]*) die "id приглашения не того вида" ;; esac
+    _um="$(umask)"; umask 077                     # приватный ключ — файл 0600 с рождения, не после chmod
     {
         say "# Линк пары серверов AWG (резерв). Сгенерировано reserve-pair-setup.sh."
         [ -n "$_stamp" ] && say "${STAMP_PREFIX}${_stamp}"
@@ -116,6 +139,7 @@ write_conf() {   # write_conf FILE SELF_ADDR PRIV PEER_PUB PEER_ADDR [PSK] [ENDP
         [ -n "$_ep" ] && say "Endpoint = $_ep"
         say "PersistentKeepalive = $PAIR_KEEPALIVE"
     } > "$_f"
+    umask "$_um"
     chmod 600 "$_f"
 }
 
@@ -228,6 +252,7 @@ case "$mode" in
         _addr="$(awk -F'[ /]+' '/^Address/{print $3; exit}' "$CONF")"
         _paddr="$(awk -F'[ /]+' '/^AllowedIPs/{print $3; exit}' "$CONF")"
         _ep="$(awk '/^Endpoint/{print $3; exit}' "$CONF")"
+        check_values "$_addr" "$PAIR_PRIV" "$PAIR_PEER_PUB" "$_paddr" "${PAIR_PSK:-}" "$_ep"   # до .prev: отказ — файлы как были
         cp -p "$CONF" "$CONF.prev"
         write_conf "$CONF" "$_addr" "$PAIR_PRIV" "$PAIR_PEER_PUB" "$_paddr" "${PAIR_PSK:-}" "$_ep" ""
         link_up || { mv "$CONF.prev" "$CONF"; link_up; die "линк на новых ключах не поднялся — прежние возвращены"; }

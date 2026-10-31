@@ -263,3 +263,30 @@ def test_adopting_the_routing_config_drops_bind_interfaces(host):
     assert "bind-interfaces" in ours and "cache-size=10000" in ours, "ключи переехали к нам"
     assert host.run("add", "10.255.53.1").returncode == 0
     assert "listen-address=10.255.53.1" not in base.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("how", ["inactive", "test-fails"])
+def test_a_rollback_returns_the_routing_config_it_adopted(host, how):
+    """Усыновление правит конфиг обвязки до рестарта (снимает bind-interfaces,
+    cache-size и наши адреса). Отказ проверки или рестарта возвращал только
+    наш файл — dnsmasq прежней схемы поднимался без bind-interfaces на
+    0.0.0.0 и перекрывал systemd-resolved."""
+    base = host.confd / "awgbot-base.conf"
+    before = "bind-interfaces\nlisten-address=10.255.53.1\nlisten-address=10.9.1.1\nno-resolv\ncache-size=10000\n"
+    base.write_text(before, encoding="utf-8")
+    if how == "inactive":
+        (host.dir / "active").unlink()
+    else:
+        fake_cmd(host.dir / "bin" / "dnsmasq", '#!/bin/sh\necho "illegal repeated keyword" >&2; exit 1\n')
+    r = host.run("install", "10.9.1.1")
+    assert r.returncode == 1, r.stdout + r.stderr
+    assert base.read_text(encoding="utf-8") == before, "конфиг обвязки остался усыновлённым после отката"
+    assert host.conf() == "", "новый конфиг снят"
+    assert "конфиг обвязки" in r.stdout and "возвращён" in r.stdout, r.stdout
+
+
+def test_a_successful_adoption_is_not_undone(host):
+    base = host.confd / "awgbot-base.conf"
+    base.write_text("bind-interfaces\nlisten-address=10.255.53.1\n", encoding="utf-8")
+    assert host.run("install", "10.9.1.1").returncode == 0
+    assert "bind-interfaces" not in base.read_text(encoding="utf-8")

@@ -11,6 +11,7 @@ def _set_block(name: str, typ: str, elems: list[str], interval: bool) -> str:
     lines = [f"    set {name} {{", f"        type {typ}"]
     if interval:
         lines.append("        flags interval")
+        elems = pkg.noverlap(elems)                # пересечение — «conflicting intervals», таблица целиком мимо
     if elems:
         lines.append("        elements = { " + ", ".join(elems) + " }")
     lines.append("    }")
@@ -92,7 +93,7 @@ def render(spec: pkg.GuardSpec) -> str:
             *_guest_sets(spec),
         ] + nat_chain + block + ["}"]
         return "\n".join(out) + "\n"
-    out: list[str] = head + [
+    out: list[str] = head + pkg.host_lines(spec.ssh_hosts) + [
         f"table {pkg.TABLE}",
         f"delete table {pkg.TABLE}",
         f"table {pkg.TABLE} {{",

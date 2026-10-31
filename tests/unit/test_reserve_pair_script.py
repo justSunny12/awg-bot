@@ -4,7 +4,8 @@
 `install` — подставные команды с журналом; поднятость линка — файл-флаг,
 который ведут подставные `awg-quick` и `ip link show`. Конфиг, юнит и копия
 скрипта — во временном каталоге (CONF_DIR, UNIT, SELF_PATH). Ключи —
-заглушки DUMMY-… по счётчику.
+заглушки DUMMY… по счётчику, вида ключа WireGuard (44 символа base64): иное
+скрипт не пишет в конфиг.
 
 Цена ошибки: конфиг пары с `Table = off` или с широким AllowedIPs —
 пересылка через линк пары (второй сервер ходит к моим пользователям); штамп не
@@ -30,6 +31,16 @@ PID = "0123456789abcdef"
 OBF = {"JC": "5", "JMIN": "10", "JMAX": "50", "S1": "20", "S2": "30", "S3": "40", "S4": "50",
        "H1": "100-200", "H2": "600000000-600100000", "H3": "1100000000-1100100000",
        "H4": "1600000000-1600100000"}
+
+
+def _k(name: str) -> str:
+    """Заглушка ключа вида WireGuard: DUMMY<имя>, добитая до 43 символов, и «=»."""
+    return f"DUMMY{name}".ljust(43, "A") + "="
+
+
+def _pub_of(priv: str) -> str:
+    """Что «выводит» подставной `awg pubkey` для ключа."""
+    return "DUMMYPUB" + priv[5:40] + "="
 
 
 def _kv(text: str) -> dict:
@@ -60,8 +71,9 @@ class _Host:
         fake_cmd(self.bin / "awg",
                  f'echo "awg $*" >> {self.log}\n'
                  f'case "$1" in\n'
-                 f'  genkey|genpsk) i=$(( $(cat {n}) + 1 )); echo $i > {n}; echo "DUMMY-$1-$i=" ;;\n'
-                 f'  pubkey) read k; echo "DUMMY-PUB-OF-$k" ;;\n'
+                 f'  genkey|genpsk) i=$(( $(cat {n}) + 1 )); echo $i > {n}; k="DUMMY$1$i"; '
+                 f'while [ ${{#k}} -lt 43 ]; do k="${{k}}A"; done; echo "$k=" ;;\n'
+                 f'  pubkey) read k; echo "DUMMYPUB$(printf %s "$k" | cut -c6-40)=" ;;\n'
                  f'esac\nexit 0\n')
         fake_cmd(self.bin / "awg-quick",
                  f'echo "awg-quick $*" >> {self.log}\n'
@@ -106,7 +118,7 @@ def _stage(host) -> dict:
 
 
 def _join(host, **over) -> subprocess.CompletedProcess:
-    env = {"PAIR_ID": PID, "PAIR_PRIV": "DUMMY-ACC-PRIV=", "PAIR_PEER_PUB": "DUMMY-INV-PUB=",
+    env = {"PAIR_ID": PID, "PAIR_PRIV": _k("ACCPRIV"), "PAIR_PEER_PUB": _k("INVPUB"),
            "PAIR_ENDPOINT": "vpn-a.example.org:47101", **OBF}
     env.update(over)
     return host.run("--join", **env)
@@ -124,7 +136,7 @@ def test_stage_prints_both_keypairs_and_the_obfuscation_for_the_invitation(host)
               "S1", "S2", "S3", "S4", "H1", "H2", "H3", "H4"):
         assert kv.get(k), f"бот не соберёт приглашение: нет {k} в выводе"
     assert "PAIR_PSK" not in kv, "PSK до кода — его не должно быть вовсе"
-    assert kv["PAIR_VPS_PUB"] == f"DUMMY-PUB-OF-{kv['PAIR_VPS_PRIV']}"
+    assert kv["PAIR_VPS_PUB"] == _pub_of(kv['PAIR_VPS_PRIV'])
     assert int(kv["S2"]) != int(kv["S1"]) + 56, "S2 = S1 + 56 — сигнатура обфускации"
     lows = [int(kv[f"H{i}"].split("-")[0]) for i in range(1, 5)]
     highs = [int(kv[f"H{i}"].split("-")[1]) for i in range(1, 5)]
@@ -180,9 +192,9 @@ def test_join_writes_the_invitation_keys_and_the_endpoint(host):
     assert text.splitlines()[1] == f"# awg-bot: пара {PID}"
     conf = _kv(text)
     assert conf["Address"] == "10.99.98.1/30", "принявший — первый адрес /30"
-    assert conf["PrivateKey"] == "DUMMY-ACC-PRIV="
+    assert conf["PrivateKey"] == _k("ACCPRIV")
     peer = _peer_block(text)
-    assert "PublicKey = DUMMY-INV-PUB=" in peer and "Endpoint = vpn-a.example.org:47101" in peer
+    assert f"PublicKey = {_k('INVPUB')}" in peer and "Endpoint = vpn-a.example.org:47101" in peer
     assert re.search(r"(?m)^AllowedIPs = 10\.99\.98\.2/32$", peer)
     assert all(f"{k[0] + k[1:].lower() if k.startswith('J') else k} = {v}" in text for k, v in OBF.items()), \
         "обфускация из приглашения не легла в конфиг — линк не встанет"
@@ -248,14 +260,14 @@ def test_rekey_revert_and_drop(host):
 
 def test_set_peer_puts_the_new_keys_and_psk_and_keeps_the_endpoint(host):
     _join(host)
-    r = host.run("--set-peer", PAIR_PRIV="DUMMY-ACC-NEW=", PAIR_PEER_PUB="DUMMY-INV-NEW=", PAIR_PSK="DUMMY-PSK=",
+    r = host.run("--set-peer", PAIR_PRIV=_k("ACCNEW"), PAIR_PEER_PUB=_k("INVNEW"), PAIR_PSK=_k("PSK"),
                  **{**OBF, "JC": "7"})
     assert r.returncode == 0 and r.stdout.strip().endswith("peer: set"), r.stdout
     text = host.text()
     assert "# awg-bot: пара" not in text, "штамп карантина остался — канал пары закрыт файерволом"
     conf = _kv(text)
-    assert (conf["PrivateKey"], conf["PublicKey"], conf["PresharedKey"]) == ("DUMMY-ACC-NEW=", "DUMMY-INV-NEW=",
-                                                                             "DUMMY-PSK=")
+    assert (conf["PrivateKey"], conf["PublicKey"], conf["PresharedKey"]) == (_k("ACCNEW"), _k("INVNEW"),
+                                                                             _k("PSK"))
     assert conf["Endpoint"] == "vpn-a.example.org:47101" and conf["Address"] == "10.99.98.1/30"
     assert conf["Jc"] == "7", "новая обфускация не легла"
     assert not host.p(".prev").exists()
@@ -265,9 +277,38 @@ def test_set_peer_that_cannot_come_up_returns_the_invitation_keys(host):
     _join(host)
     live = host.text()
     host.up_fail(1)
-    r = host.run("--set-peer", PAIR_PRIV="DUMMY-ACC-NEW=", PAIR_PEER_PUB="DUMMY-INV-NEW=", PAIR_PSK="DUMMY-PSK=", **OBF)
+    r = host.run("--set-peer", PAIR_PRIV=_k("ACCNEW"), PAIR_PEER_PUB=_k("INVNEW"), PAIR_PSK=_k("PSK"), **OBF)
     assert r.returncode != 0 and "прежние возвращены" in r.stdout
     assert host.text() == live
+
+
+_INJECT = "\nPostUp = touch /tmp/awg-pair-injected"
+
+
+@pytest.mark.parametrize("field", ["PAIR_PRIV", "PAIR_PEER_PUB", "PAIR_PSK", "H1", "JC"])
+def test_set_peer_refuses_a_value_that_would_become_a_config_line(host, field):
+    """Значения `--set-peer` — от второго сервера (pair_ok): перевод строки в
+    любом из них стал бы своей строкой awgpair.conf, `PostUp` — командой от
+    root при подъёме линка. Отказ — до записи и до .prev."""
+    _join(host)
+    live = host.text()
+    env = {"PAIR_PRIV": _k("ACCNEW"), "PAIR_PEER_PUB": _k("INVNEW"), "PAIR_PSK": _k("PSK"), **OBF}
+    env[field] = env[field].rstrip("=") + _INJECT if field.startswith("PAIR") else env[field] + _INJECT
+    r = host.run("--set-peer", **env)
+    assert r.returncode != 0 and "не того вида" in r.stdout, r.stdout + r.stderr
+    assert host.text() == live and "PostUp" not in host.text()
+    assert not host.p(".prev").exists()
+    assert not [c for c in host.calls() if c.startswith("awg-quick")], "линк переподнимали с отвергнутыми значениями"
+
+
+@pytest.mark.parametrize("field,value", [("PAIR_ENDPOINT", "vpn-a.example.org:47101" + _INJECT),
+                                         ("PAIR_PRIV", "DUMMY-short="), ("S3", "20 30")])
+def test_join_refuses_values_of_the_wrong_shape(host, field, value):
+    env = {"PAIR_ID": PID, "PAIR_PRIV": _k("ACCPRIV"), "PAIR_PEER_PUB": _k("INVPUB"),
+           "PAIR_ENDPOINT": "vpn-a.example.org:47101", **OBF, field: value}
+    r = host.run("--join", **env)
+    assert r.returncode != 0 and "не того вида" in r.stdout, r.stdout
+    assert not host.conf.exists(), "конфиг записан с отвергнутым значением"
 
 
 # ── снятие, подъём, состояние ───────────────────────────────────────────────
@@ -317,3 +358,12 @@ def test_status_reports_the_stamp_and_the_link(host):
 def test_an_unknown_mode_prints_usage(host):
     r = host.run("--bogus")
     assert r.returncode == 2 and "использование" in r.stdout
+
+
+def test_the_config_with_the_private_key_is_born_owner_only(host):
+    """chmod 600 после записи — окно, в котором приватный ключ линка читает
+    любой; файл обязан родиться 0600 (chmod здесь — пустышка)."""
+    fake_cmd(host.bin / "chmod", "exit 0\n")
+    r = _join(host)
+    assert r.returncode == 0, r.stdout
+    assert (host.conf.stat().st_mode & 0o077) == 0, oct(host.conf.stat().st_mode)
