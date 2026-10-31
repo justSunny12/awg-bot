@@ -24,25 +24,35 @@ def _said(acts) -> list[dict]:
     return [a[2] for a in acts if a[0] == "guest" and a[1] == "qview"]
 
 
+def _live(gw, clock) -> list[tuple]:
+    """Такт, на каждую пробу которого лидер отвечает: взгляд «вижу» держится (без джиттерных пропусков)."""
+    from awgbot.util.quorum.probe import Reply
+    from tests.unit.test_quorum_cov_gw_agent import _probes
+    acts = _tick(gw, clock)
+    for p in _probes(acts):
+        gw.quorum_reply_in(NAME, Reply("a", 4, 12, "lead", p.s, 2, 3).encode())
+    return acts
+
+
 def test_a_session_reopened_between_ticks_gets_the_current_view(gw, clock):
     _seeing(gw, clock)
     gw._quo_reserve_online, gw._quo_guest_session = True, 1
-    first = _said(_tick(gw, clock))
+    first = _said(_live(gw, clock))
     assert len(first) == 1 and first[0]["w"] == "see", "подготовка: первая сессия без взгляда"
-    assert not _said(_tick(gw, clock)), "взгляд повторяется в той же сессии"
+    assert not _said(_live(gw, clock)), "взгляд повторяется в той же сессии"
     gw._quo_guest_session = 2                                 # обрыв и подъём за один такт: online снова True
-    again = _said(_tick(gw, clock))
+    again = _said(_live(gw, clock))
     assert len(again) == 1 and again[0]["w"] == "see" and again[0]["tgt"] == "h", \
         "новая сессия между тактами не замечена — резерв держит прежний взгляд шлюза"
-    assert not _said(_tick(gw, clock))
+    assert not _said(_live(gw, clock))
 
 
 def test_a_session_number_seen_while_offline_is_said_once_online(gw, clock):
     _seeing(gw, clock)
     gw._quo_reserve_online, gw._quo_guest_session = False, 5
-    assert not _said(_tick(gw, clock)), "взгляд ушёл без сессии"
+    assert not _said(_live(gw, clock)), "взгляд ушёл без сессии"
     gw._quo_reserve_online = True
-    assert len(_said(_tick(gw, clock))) == 1
+    assert len(_said(_live(gw, clock))) == 1
     assert gw._gw_qvoters[NAME].view == "see"
 
 
