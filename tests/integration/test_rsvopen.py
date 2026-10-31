@@ -103,7 +103,8 @@ class Box:
         for name, val in (("RUN_DIR", self.run_dir), ("VAR_DIR", self.var_dir), ("STATE_DIR", self.state_dir),
                           ("OPEN_STATUS", self.state_dir / "open.status"), ("REP_PATH", self.var_dir / "rep.bin"),
                           ("K_FILE", self.run_dir / "k"), ("WEBHOOK_FILE", self.run_dir / "webhook.json"),
-                          ("TG_POOL_FILE", self.run_dir / "tg_pool.json"), ("TG_TAKE_FILE", self.run_dir / "tg_take")):
+                          ("TG_POOL_FILE", self.run_dir / "tg_pool.json"), ("TG_TAKE_FILE", self.run_dir / "tg_take"),
+                          ("HOOK_FOREIGN_FILE", self.run_dir / "hook_foreign")):
             mp.setattr(rsvzone, name, val)
         mp.setattr(rsvzone, "store", self._store)
         mp.setattr(rsvzone, "take", self._take)
@@ -374,6 +375,14 @@ def test_a_stale_webhook_mark_from_an_earlier_opening_is_removed_before_the_new_
     rsvzone.TG_TAKE_FILE.write_text("1")
     box.open(**box.points(1), set_record=False)
     assert not rsvzone.TG_TAKE_FILE.exists(), "отметка прежнего открытия разрешила бы вебхук до факта"
+
+
+def test_a_foreign_webhook_mark_of_an_earlier_episode_is_removed_with_the_new_storage(box):
+    """Отметка «вебхук не здесь» прошлого эпизода в новом держала бы бот основы на резерве немым."""
+    box.run_dir.mkdir(parents=True)
+    rsvzone.HOOK_FOREIGN_FILE.write_text("2026-11-01T10:00:00+05:00")
+    box.open(**box.points(1), set_record=False)
+    assert not rsvzone.HOOK_FOREIGN_FILE.exists()
 
 
 # ── ничего открытого наружу ──────────────────────────────────────────────────

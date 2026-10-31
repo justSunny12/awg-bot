@@ -48,6 +48,7 @@ K_FILE = RUN_DIR / "k"                          # ключ пакета в хр�
 WEBHOOK_FILE = RUN_DIR / "webhook.json"         # порт, путь, секрет, сертификат вебхука
 TG_POOL_FILE = RUN_DIR / "tg_pool.json"         # пул адресов Telegram для слушателя
 TG_TAKE_FILE = RUN_DIR / "tg_take"              # отметка: ставить вебхук (факт записи)
+HOOK_FOREIGN_FILE = RUN_DIR / "hook_foreign"    # отметка гостя: вебхук не здесь — Telegram у основы (переживает рестарт юнита)
 
 
 def links_dir(data_dir=None) -> Path:

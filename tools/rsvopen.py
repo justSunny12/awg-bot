@@ -376,10 +376,11 @@ def fill_store(data: dict, k: bytes, parts: dict, db_bytes: bytes, iface: str, e
     rsvzone.write_private(rsvzone.WEBHOOK_FILE, json.dumps(webhook))
     pool = [str(p) for p in (data.get("tg_pool") or _host_pool())]
     rsvzone.write_private(rsvzone.TG_POOL_FILE, json.dumps({"pool": pool}))
-    try:
-        rsvzone.TG_TAKE_FILE.unlink()
-    except OSError:
-        pass
+    for mark in (rsvzone.TG_TAKE_FILE, rsvzone.HOOK_FOREIGN_FILE):   # отметки прошлого эпизода — не этому
+        try:
+            mark.unlink()
+        except OSError:
+            pass
 
 
 def _host_pool() -> list[str]:

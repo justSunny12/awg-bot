@@ -176,6 +176,7 @@ class ReserveInboundMixin:
             self.reserve_set_in("taking", kind=str(kind or "button"), gen=int(gen), why=str(kind or "button"), by="k",
                                 open_started=timeutil.now_iso(), deadline=time.monotonic() + OPEN_WAIT_S,
                                 up_sent=False, tg_taken=False, tg_take_forced=False, tg_wait="",
+                                webhook_foreign=False, peer_tg_taken="", jrn_released=None,   # о прошлом эпизоде, не об этом
                                 sealed=not k_hex, k_passed=False, oid="", eph_sent=0,
                                 ended_auto=str(kind or "button") != "button")   # по просьбе кворума (dead | rf) — автоматический
             self._in_step("open")

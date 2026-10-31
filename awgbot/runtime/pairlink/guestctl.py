@@ -11,11 +11,15 @@ guestctl.py — локальный канал между основным бот
 отдаёт число устройств на связи, нажатие кнопки возврата и шифротексты
 реплики. По сети гость с основой не говорит — всё через бот резерва.
 
-Гость → резерв: hello{online}, online{n}, tg_taken{}, back_req{}, replica{blob}, blocks{addrs}, bye{}
+Гость → резерв: hello{online, hook_foreign?}, online{n}, tg_taken{}, back_req{}, replica{blob},
+blocks{addrs}, webhook{stalled, foreign, ours}, bye{}
 (blocks — адреса заблокированных устройств по решениям гостя: резерв шлёт их основе, та
-держит DROP своим оставшимся сессиям).
-Резерв → гость: state{name, since, reason, primary, return, self_host},
-take_tg{}, blocks{addrs}, stop{} (гость пишет финальный снимок, шлёт replica и выходит).
+держит DROP своим оставшимся сессиям; hook_foreign — отметка «вебхук не здесь» в хранилище
+гостя с прошлого запуска).
+Резерв → гость: state{name, since, reason, primary, return, self_host}, tg{go, foreign}
+(ставить ли вебхук: пользователи у резерва и основа Telegram не забирала — на hello и по
+смене; без `go` гость вебхук не ставит), take_tg{}, blocks{addrs}, stop{} (гость пишет
+финальный снимок, шлёт replica и выходит).
 
 Журнал (jrn1, services/reserve/journal): гость → резерв — свои записи `jev`,
 `jcnt` (уходят основе как есть), `jneed` (событий основы не хватает —
@@ -88,6 +92,7 @@ class GuestCtlServer:
         self.replica: bytes | None = None          # последняя реплика от гостя (шифротекст)
         self.back_requested_at: float = 0.0
         self._state_sent: str = ""
+        self._tg_sent: str = ""
         self._words: list[tuple] = []           # слова гостя для такта: (вид, тело)
 
     def take_words(self) -> list[tuple]:
@@ -130,6 +135,7 @@ class GuestCtlServer:
                 self._writer.close()
         self._writer = writer
         self._state_sent = ""
+        self._tg_sent = ""
         try:
             while True:
                 line = await reader.readline()
@@ -157,7 +163,12 @@ class GuestCtlServer:
             if isinstance(msg.get("jrn"), dict):
                 await asyncio.to_thread(self.services.reserve_guest_jrn_seen, msg["jrn"])
             if kind == "hello":
+                if msg.get("hook_foreign"):
+                    # отметка «вебхук не здесь» пережила рестарт гостя — та же правда, что слово надзора
+                    from awgbot.runtime import rsvactions
+                    await rsvactions.run(await asyncio.to_thread(self.services.reserve_guest_webhook_in, {"foreign": True}))
                 await self.push_state(force=True)
+                await self.push_tg(force=True)
                 await self.push_quorum(force=True)
                 from awgbot.runtime import rsvactions      # передача бота, пришедшая, пока гостя не было на связи
                 await rsvactions.run(await asyncio.to_thread(self.services.reserve_guest_hello_jrn))
@@ -169,7 +180,8 @@ class GuestCtlServer:
             await self.send("ack", {"of": "tg_taken"})      # гость повторяет слово, пока не подтверждено
         elif kind == "webhook":
             self._words.append(("webhook", {"stalled": bool(msg.get("stalled")), "since": str(msg.get("since") or ""),
-                                            "error": str(msg.get("error") or ""), "foreign": bool(msg.get("foreign"))}))
+                                            "error": str(msg.get("error") or ""), "foreign": bool(msg.get("foreign")),
+                                            "ours": bool(msg.get("ours"))}))
         elif kind == "replica":
             try:
                 self.replica = bytes.fromhex(str(msg.get("blob") or ""))
@@ -216,6 +228,24 @@ class GuestCtlServer:
             return True
         return False
 
+    async def push_tg(self, force: bool = False) -> bool:
+        """Слово «ставить ли вебхук» — гостю; по смене или force (hello). Решает бот резерва:
+        пользователи у меня и основа Telegram не забирала (reserve_guest_tg_view)."""
+        if not hasattr(self.services, "reserve_guest_tg_view"):
+            return False
+        try:
+            view = await asyncio.to_thread(self.services.reserve_guest_tg_view)
+        except Exception as e:                               # noqa: BLE001
+            log.warning("локальный канал гостя: слово о Telegram не собралось: %s", e)
+            return False
+        packed = json.dumps(view, sort_keys=True)
+        if not force and packed == self._tg_sent:
+            return True
+        if await self.send("tg", view):
+            self._tg_sent = packed
+            return True
+        return False
+
     async def push_state(self, force: bool = False) -> bool:
         """Состояние основы глазами резерва — гостю; по смене или force."""
         try:
@@ -245,6 +275,8 @@ class GuestCtlClient:
         self._writer: asyncio.StreamWriter | None = None
         self._task: asyncio.Task | None = None
         self.take_tg = asyncio.Event()
+        self.tg_go = False                                   # последнее слово резерва «ставь вебхук» в этой сессии
+        self.tg_foreign_ack = False                          # …и он знает об отметке «вебхук не здесь»
         self.tg_acked = asyncio.Event()                      # резерв подтвердил tg_taken
         self.stop_req = asyncio.Event()
         self.blocks: list[str] | None = None    # последние блокировки от основы (через резерв)
@@ -281,8 +313,11 @@ class GuestCtlClient:
             self._writer = writer
             try:
                 # число устройств — awg show в потоке, журнал — база: не в цикле событий
-                await self.send("hello", {"online": await asyncio.to_thread(self.services.guest_devices_online),
-                                          "jrn": await asyncio.to_thread(self._jrn_status)})
+                hello = {"online": await asyncio.to_thread(self.services.guest_devices_online),
+                         "jrn": await asyncio.to_thread(self._jrn_status)}
+                if hasattr(self.services, "guest_hook_foreign") and self.services.guest_hook_foreign():
+                    hello["hook_foreign"] = True              # отметка «вебхук не здесь» с прошлого запуска
+                await self.send("hello", hello)
                 while True:
                     line = await reader.readline()
                     if not line:
@@ -296,6 +331,7 @@ class GuestCtlClient:
                 log.warning("гость: локальный канал: обработчик упал (%s) — переподключаюсь", e)
             finally:
                 self._writer = None
+                self.tg_go = self.tg_foreign_ack = False     # слово прежней сессии — не в силе: новое придёт на hello
                 with contextlib.suppress(Exception):
                     writer.close()
             await asyncio.sleep(2)
@@ -309,6 +345,8 @@ class GuestCtlClient:
                 self.tg_acked.set()
         elif kind == "take_tg":
             self.take_tg.set()
+        elif kind == "tg":
+            self.tg_go, self.tg_foreign_ack = bool(msg.get("go")), bool(msg.get("foreign"))
         elif kind == "stop":
             self.stop_req.set()
         elif kind == "blocks":

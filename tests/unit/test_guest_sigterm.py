@@ -62,6 +62,9 @@ class _Services:
     def ensure_admin_client(self):
         pass
 
+    def guest_hook_foreign_load(self):
+        return False
+
     def gwlink_sessions_reset(self):
         pass
 

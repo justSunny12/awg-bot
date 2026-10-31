@@ -184,6 +184,8 @@ def setup_reserve_jobs(scheduler, services, bot) -> None:
                         # блокировки по решениям бота основы у меня — основе: её оставшимся сессиям
                         await rsvactions.run([("send", "blocks", {"addrs": word[1]})])
                 await asyncio.to_thread(services.reserve_guest_online_set, srv.online_count if srv.connected() else 0)
+                if srv.connected():
+                    await srv.push_tg()                   # ставить ли гостю вебхук — по смене (запись, taken, st основы)
         except Exception as e:                           # noqa: BLE001
             log.warning("резерв: слова гостя: %s", e)
         try:
