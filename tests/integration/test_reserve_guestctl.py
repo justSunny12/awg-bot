@@ -221,10 +221,13 @@ async def test_the_webhook_word_of_the_guest_is_kept_for_the_reserve_with_typed_
     assert await pair.client.send("webhook", {"stalled": True, "since": "2026-10-21T03:12:00+05:00",
                                               "error": "Connection timed out"}) is True
     assert await pair.client.send("webhook", {"stalled": False}) is True
+    assert await pair.client.send("webhook", {"foreign": True, "url": "https://203.0.113.9/x"}) is True
     words = []
-    assert await _until(lambda: (words.extend(pair.server.take_words()) or True) and len(words) >= 2)
-    assert words == [("webhook", {"stalled": True, "since": "2026-10-21T03:12:00+05:00", "error": "Connection timed out"}),
-                     ("webhook", {"stalled": False, "since": "", "error": ""})], words
+    assert await _until(lambda: (words.extend(pair.server.take_words()) or True) and len(words) >= 3)
+    assert words == [("webhook", {"stalled": True, "since": "2026-10-21T03:12:00+05:00", "error": "Connection timed out",
+                                  "foreign": False}),
+                     ("webhook", {"stalled": False, "since": "", "error": "", "foreign": False}),
+                     ("webhook", {"stalled": False, "since": "", "error": "", "foreign": True})], words
 
 
 async def test_the_reserve_acknowledges_tg_taken_and_the_guest_knows_it(pair):

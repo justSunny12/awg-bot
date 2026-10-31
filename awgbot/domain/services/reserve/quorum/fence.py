@@ -69,6 +69,8 @@ class ReserveQuorumFenceMixin:
                                                  text=rn.quorum_fenced(name, y, v, fenced["since"]))])]
             return []
         if act == "unfence":
+            if self.__dict__.get("_guest_hook_foreign"):
+                return []                                     # гость: вебхук у основы — «да» голосов права записи не вернут
             why_u = "кворум: да %d из %d" % (y, v)
             meta_now = self.db.jrn_meta()
             adopted = dict(qlog.get("adopted") or {})
@@ -117,7 +119,7 @@ class ReserveQuorumFenceMixin:
             # решать. Цифры (`timing:`) — не ненадолго: линия в `st.quo` выключена, кандидат второй стороны
             # без `active` не решает, и снять ограждение было бы некому — снимаю, как при структурном выключении
             return
-        if self._quorum_jrn_fenced():
+        if self._quorum_jrn_fenced() and not self.__dict__.get("_guest_hook_foreign"):   # гость: вебхук у основы
             self.db.jrn_unfence(why="кворум выключен")
             log.info("кворум: ограждение снято — кворум выключен или лидер не здесь")
         self.__dict__["_quo_fenced"] = False

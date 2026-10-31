@@ -113,9 +113,28 @@ async def force_ask(cb: CallbackQuery, services, **_):
     await cb.answer()
 
 
+async def _webhook_info(bot) -> dict | None:
+    """getWebhookInfo для рычага С9 (вебхук не снимается); не ответил за 10 с — None."""
+    import asyncio
+    try:
+        info = await asyncio.wait_for(bot.get_webhook_info(), 10)
+        err = getattr(info, "last_error_date", None)
+        err_ts = err.timestamp() if hasattr(err, "timestamp") else float(err or 0)   # aiogram 3 — datetime
+        return {"url": str(info.url or ""), "pending_update_count": int(info.pending_update_count or 0),
+                "last_error_date": err_ts}
+    except Exception as e:                                   # noqa: BLE001
+        log.warning("резерв: рычаг «вернуть без резерва»: getWebhookInfo не прошёл: %s", e)
+        return None
+
+
 @router.callback_query(RsvCB.filter(F.action == "force_yes"))
 async def force_go(cb: CallbackQuery, services, **_):
+    why = await call(services.reserve_force_check)          # рычаг вообще возможен — до запроса Telegram
+    if why:
+        await cb.answer(ui.toast_cap(why), show_alert=True)
+        return
     try:
+        await call(services.reserve_force_webhook_check, await _webhook_info(cb.bot))
         actions = await call(services.reserve_force_home)
     except ServiceError as e:
         await cb.answer(ui.toast_cap(e, html=getattr(e, "html", False)), show_alert=True)

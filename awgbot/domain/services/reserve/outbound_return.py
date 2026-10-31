@@ -42,6 +42,24 @@ from .state import HOSTING, _LOCK
 
 FORCE_TAKE_RETRY_S = 60          # возврат без резерва: повтор deleteWebhook
 FORCE_TAKE_TELL_S = 5 * 60       # столько отказов — админу
+FORCE_HOOK_PENDING_MAX = 5       # рычаг: очередь вебхука не больше — Telegram доставляет боту на резерве
+FORCE_HOOK_ERR_S = 10 * 60       # рычаг: ошибка доставки свежее — бот на резерве не отвечает
+
+
+def webhook_answers(info: dict, now: float) -> bool:
+    """Вердикт по getWebhookInfo (вебхук не снимается): вебхук стоит, очередь мала и ошибки
+    доставки за FORCE_HOOK_ERR_S нет — бот на резерве отвечает в Telegram (рвётся только линк
+    пары). Адреса нет, очередь растёт или ошибка свежая — не отвечает (резерв мёртв)."""
+    if not str(info.get("url") or ""):
+        return False
+    try:
+        pending = int(info.get("pending_update_count") or 0)
+        err = float(info.get("last_error_date") or 0)
+    except (TypeError, ValueError):
+        return False
+    if err and now - err < FORCE_HOOK_ERR_S:
+        return False
+    return pending <= FORCE_HOOK_PENDING_MAX
 
 
 class ReserveReturnMixin:
@@ -81,6 +99,18 @@ class ReserveReturnMixin:
         except ValueError:
             return "момент потери связи не известен"
         return ""
+
+    def reserve_force_webhook_check(self, info: dict | None) -> None:
+        """Вторая проверка рычага — словом Telegram (без кворума — единственная): линк пары
+        мёртв, а бот на резерве по getWebhookInfo отвечает — отказ, иначе два бота на один
+        токен. Telegram не ответил (`None`) — не отказ: рычаг аварийный, а deleteWebhook
+        рычага тогда тоже повторяется. Кворумный возврат (`check=False`) идёт тактом без Bot API."""
+        if info is None or not webhook_answers(info, timeutil.now().timestamp()):
+            return
+        name = self.reserve_peer_name()
+        log.warning("резерв: рычаг «вернуть без «%s»» отклонён — Telegram доставляет боту на нём (очередь %s)",
+                    name, info.get("pending_update_count"))
+        raise ServiceError(f"бот на «{name}» отвечает в Telegram — верни пользователей обычным путём")
 
     def reserve_force_dialog_data(self) -> dict:
         back = self.reserve_quorum_back_view() if hasattr(self, "reserve_quorum_back_view") else {}

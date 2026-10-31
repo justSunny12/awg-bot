@@ -282,12 +282,19 @@ async def _primary_back_notice(bot, services, told: dict) -> None:
 
 
 async def _watch(wh, bot, services, ctl) -> None:
-    """Надзор вебхука: застой доставки → Т-РУ19 админу основы и строка в журнал."""
+    """Надзор вебхука: застой доставки → Т-РУ19 админу основы и строка в журнал. Чужой
+    вебхук (основа забрала Telegram: «вернуть без резерва», снятый зависший вебхук) — решений
+    здесь больше не пишу (`guest_webhook_foreign`), боту резерва — слово для его админа
+    (повтор на каждом надзоре — канал мог быть не подключён); адрес снова мой — снято."""
     res = await wh.watch(bot)
+    if getattr(wh, "url_ours", None):
+        await asyncio.to_thread(services.guest_webhook_ours)
     if not res:
         return
     if res.get("foreign"):
         log.warning("гость: вебхук указывает не сюда (%s) — право отвечать не у меня", res.get("url"))
+        await asyncio.to_thread(services.guest_webhook_foreign)
+        await ctl.send("webhook", {"foreign": True, "url": str(res.get("url") or "")[:200]})
         return
     from awgbot.bot.notifier import notify_one
     from awgbot.bot.texts.reserve import guest as gt

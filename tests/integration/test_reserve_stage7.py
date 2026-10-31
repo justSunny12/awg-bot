@@ -3,7 +3,8 @@
 чем открыт пакет (`in_by`) — от отправки через словарь канала до записи в
 `rsv_peer_state`; надзор вебхука гостя — Т-РУ19 админу резерва один раз на
 расхождение и 🟢 при восстановлении; сторона гостя шлёт слово о застое
-один раз на результат надзора.
+один раз на результат надзора, о чужом вебхуке — на каждом надзоре (тест
+приёма — test_reserve_force_ui).
 
 Цена ошибки: `st` прежней стороны без новых полей, который отвергается, —
 пара «недоступна» после обновления одной стороны; «там M», не сброшенное
@@ -165,9 +166,10 @@ async def test_the_guest_tells_its_reserve_about_a_stall_and_the_recovery(servic
               {"restored": True}, {"foreign": True, "url": "https://203.0.113.9/x"}])
     for _ in range(5):
         await guest_main._watch(wh, fake_bot, services, ctl)
-    assert [k for k, _b in ctl.sent] == ["webhook", "webhook"], ctl.sent
+    assert [k for k, _b in ctl.sent] == ["webhook", "webhook", "webhook"], ctl.sent
     assert ctl.sent[0][1]["stalled"] is True and len(ctl.sent[0][1]["error"]) == 200, "ошибка без потолка в слове"
     assert ctl.sent[1][1] == {"stalled": False}
+    assert ctl.sent[2][1] == {"foreign": True, "url": "https://203.0.113.9/x"}, "чужой вебхук — молча, только в журнал"
     admin_msgs = [r for r in fake_bot.records if r[0] == "send_message" and r[1] == ADMIN]
     assert len(admin_msgs) == 2, f"админу основы — застой и восстановление по одному разу: {admin_msgs}"
 

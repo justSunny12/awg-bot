@@ -451,6 +451,12 @@ def webhook_stalled_reserve(primary: str, since: str, error: str, port: int) -> 
             f"<code>{_e(error)}</code> — проверь, открыт ли у хостинга порт <code>{int(port)}</code>")
 
 
+def webhook_foreign_reserve(primary: str) -> str:
+    """Админу резерва: вебхук бота основы больше не у её бота здесь — Telegram забрала основа."""
+    return (f"⚠️ Вебхук бота {_n(primary)} указывает не на этот сервер — Telegram у основы, бот основы здесь "
+            "решения больше не принимает")
+
+
 def webhook_restored_reserve(primary: str) -> str:
     return f"🟢 Доставка обновлений бота {_n(primary)} восстановлена"
 
