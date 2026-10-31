@@ -152,12 +152,26 @@ async def _jrn_drain(svc) -> bool:
 async def _release(bot, svc, pc) -> None:
     """Передача бота резерву: поллинг стоп, пачка подтверждена, опрос вне
     очереди (свежие рукопожатия адресатам Т-РК1), финальная реплика → released."""
-    from awgbot.runtime import pairlink
     if pc is not None and not await pc.release():
         log.warning("резерв: пачка обновлений не подтверждена — передачу бота откладываю, поллинг обратно")
         await asyncio.to_thread(svc.rsv_update, "rsv_out", step="release")
         pc.wake()
         return
+    try:
+        await _release_after_stop(svc, pc)
+    except Exception as e:                                   # noqa: BLE001
+        # поллинг уже остановлен: без возврата бот молчал бы до перепроверки права (минуты)
+        log.warning("резерв: передача бота сорвалась (%s) — поллинг обратно", e)
+        try:
+            await asyncio.to_thread(svc.rsv_update, "rsv_out", step="release")
+            await asyncio.to_thread(svc.reserve_set_poll, "mine")
+        finally:
+            if pc is not None:
+                pc.wake()
+
+
+async def _release_after_stop(svc, pc) -> None:
+    from awgbot.runtime import pairlink
     try:
         await asyncio.to_thread(svc.poll_traffic)
     except Exception as e:                                   # noqa: BLE001
