@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import collections
 import contextlib
 import random
 import time
@@ -34,6 +35,8 @@ class SessionMixin:
         self._own_lock = asyncio.Lock()
         self._push_lock = asyncio.Lock()
         self._fill_task: asyncio.Task | None = None   # наполнение набора после sync — фоном
+        self._inbox: collections.deque = collections.deque()   # входящие на обработку (dispatch._take)
+        self._inbox_task: asyncio.Task | None = None
 
     # ── соединение ───────────────────────────────────────────────────────────
 
@@ -163,8 +166,9 @@ class SessionMixin:
                     break
                 last_seq = int(msg.get("seq") or 0)
                 self.services.channel.last_word = time.time()   # слово сервера: сессия свежая
-                await self._handle(msg)
+                await self._take(msg)
         finally:
+            await self._inbox_drain()
             self._writer = None
             self._set_online(False)
             self._rst_broken()                  # передача бэкапа серверу посреди — оборвалась
@@ -232,6 +236,13 @@ class SessionMixin:
                 lambda t: t.exception() if not t.cancelled() else None)
 
     async def stop(self) -> None:
+        if self._inbox_task is not None and not self._inbox_task.done():
+            # обработчик первым: иначе конец сессии ждал бы, пока он доработает очередь
+            self._inbox.clear()
+            self._inbox_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await self._inbox_task
+        self._inbox_task = None
         if self._task is not None:
             self._task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
