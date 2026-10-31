@@ -160,11 +160,14 @@ PAIR_KINDS: dict[str, tuple[str, dict]] = {
     "jtail_ok":     (BOTH, {"line": (_S, 16), "e": (_I, None), "F": (_I, None), "moved": (_I, None),
                             "disputed_n": (_I, None), "more": (_I, None), "part": (_I, None), "parts": (_I, None),
                             "blob": (_S, MAX_BLOB)}),
+    # резерв → основа, ждущей правки бота на резерве после «вернуть без резерва» (С9, st.jrn.mine.c9):
+    # журнала гостя эпохи e у меня после last нет (last — последняя его запись этой эпохи на диске, 0 — нет ни одной)
+    "jc9none":      (BOTH, {"line": (_S, 16), "e": (_I, None), "last": (_I, None)}),
 }
 
 # виды журнала: по каналу пары разбирает journal/route (`reserve_jrn_in`), по локальному каналу
 # гостя — те же имена (guestctl)
-JRN_KINDS: tuple[str, ...] = ("jev", "jcnt", "jack", "jneed", "jstale", "jcack", "jtail", "jtail_ok")
+JRN_KINDS: tuple[str, ...] = ("jev", "jcnt", "jack", "jneed", "jstale", "jcack", "jtail", "jtail_ok", "jc9none")
 
 GUEST_KINDS: dict[str, tuple[str, dict]] = {
     "hello":  (GATEWAY, {"slot": (_I, None), "caps": (_L, 16), "nonce": (_S, 32)}),
