@@ -80,7 +80,10 @@ def core_jobs(services, bot, db) -> dict:
             await asyncio.to_thread(services.reserve_monthly_defer, ym)
             return
         try:
-            reset_notes = await asyncio.to_thread(services.reset_monthly_traffic)
+            # отметка месяца — в транзакции сброса: крон и догон на старте не сбросят дважды
+            reset_notes = await asyncio.to_thread(services.reset_monthly_traffic, ym)
+            if reset_notes is None:
+                return                               # месяц сбросил параллельный запуск
             await asyncio.to_thread(db.set_state, "last_monthly_reset", ym)
             await pkg.send_notifications(bot, reset_notes)
             log.info("Месячный трафик сброшен (catch-up или cron) за %s", ym)

@@ -19,12 +19,16 @@ log = logging.getLogger("awgbot.services")
 class ResetsMixin:
     # ── Сбросы ───────────────────────────────────────────────────────────────
 
-    def reset_monthly_traffic(self) -> list["Notification"]:
+    def reset_monthly_traffic(self, ym: str | None = None) -> list["Notification"] | None:
         """1-е число: обнулить месячные счётчики + доп.квоту + трафик-метки, и
         снять причину TRAFFIC со всех пользователей и устройств (разблокировать, если
         не осталось других причин). Причину EXPIRY НЕ трогаем — подписка живёт
         своим циклом. Возвращает уведомления о сбросе (профилям и друзьям);
-        безлимитные позиции не показываем, пустые уведомления не шлём."""
+        безлимитные позиции не показываем, пустые уведомления не шлём.
+
+        ym — месяц сброса (задание): отметка last_monthly_reset проверяется в
+        той же транзакции, что сброс и запись отметки; месяц уже сброшен (крон
+        и догон на старте сошлись) — None, второго сброса и рассылки нет."""
         # аудит-метрика: снимок потребления завершившегося месяца ПЕРЕД обнулением.
         # Метка месяца — предыдущий календарный (сброс идёт 1-го числа за прошлый).
         _now = timeutil.now()
@@ -36,12 +40,16 @@ class ResetsMixin:
         # замок записи с первого чтения: блок лимита по счётчикам, прочитанным до
         # сброса, не ляжет после него
         with self.db.transaction(immediate=True):
+          if ym is not None:
+              last = self.db.get_state("last_monthly_reset")
+              if last and last >= ym:
+                  return None
           self.db.snapshot_monthly_traffic(_prev_month)
           rf = self.rf_month_total()
           self.db.snapshot_server_rf(_prev_month, rf["rx"], rf["tx"])
           self.db.set_state(self._RF_MONTH_RX_KEY, "0")
           self.db.set_state(self._RF_MONTH_TX_KEY, "0")
-          self.db.reset_month_traffic_all()
+          self.db.reset_month_traffic_all(ym or "")      # и отметка месяца — тем же коммитом
           twins = self.db.twins_by_origin()
           for client in self.db.list_clients(include_service=False):
             self.db.update_client_fields(
