@@ -63,7 +63,11 @@ async def send_line(sess: _Session, kind: str, body: dict | None = None, *, pad:
         await asyncio.wait_for(sess.writer.drain(), SEND_TIMEOUT)
         return True
     except (ConnectionError, OSError, asyncio.TimeoutError) as e:
-        log.info("канал пары: «%s» не ушло (%s)", kind, e)
+        # недописанное в буфере может дойти позже и перемешаться со словами новой сессии
+        # (часть пакета прежнего поколения, реплика после «не ушла») — сессия мертва,
+        # следующая начнётся с st
+        log.info("канал пары: «%s» не ушло (%s) — сессия закрыта", kind, e)
+        await close_session(sess)
         return False
 
 
