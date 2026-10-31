@@ -49,7 +49,7 @@ class _GitHub:
                               "name": tag})
 
     def request(self, url: str, accept: str) -> bytes:
-        if url.endswith("/releases"):
+        if url.endswith("/releases?per_page=100"):
             return json.dumps(self.releases).encode()
         if url in self.blobs:
             self.meta_hits.append(url)

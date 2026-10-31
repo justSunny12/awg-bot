@@ -128,7 +128,9 @@ class RoutingLivenessMixin:
         # тому же ритму), второй раз за такт не надо
         self.lan_map_tick(slot_policy=not engaged)
         slots = self.rt_slots()
-        active = self.active_gateway()
+        # активный — из того же прочитанного состава: второе чтение могло
+        # увидеть первый шлюз или слот 29, которых нет в slots (ups[akey] ниже)
+        active = self.active_gateway(slots)
         raw_active = str(self.db.get_state(self._RT_ACTIVE_KEY) or "")   # записанный активный — для слота 29 (пропал?)
         # Зонды СНАРУЖИ замка и до транзакции: они длятся секунды (сеть), и
         # держать на это время БД или реконсиляцию значило бы менять один отказ

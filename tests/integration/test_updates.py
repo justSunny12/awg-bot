@@ -27,7 +27,7 @@ def _release_json(tag, body="", asset=True, digest_hex=None, name=None, draft=Fa
 def _patch_releases(monkeypatch, releases_json):
     """Подменяет сеть: /releases → releases_json; assets/<url> → по карте blobs."""
     def fake_request(url, accept):
-        if url.endswith("/releases"):
+        if url.endswith("/releases?per_page=100"):
             return json.dumps(releases_json).encode()
         raise updates.UpdateError(f"unexpected url {url}")
     monkeypatch.setattr(updates, "_request", fake_request)

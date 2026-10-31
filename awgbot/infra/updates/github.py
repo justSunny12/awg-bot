@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import hashlib
+import http.client
 import json
 import os
 import tempfile
@@ -53,7 +54,9 @@ def _request(url: str, accept: str) -> bytes:
                 return resp.read()
         except urllib.error.HTTPError as e:
             raise UpdateError(_http_error(e, host))
-        except (urllib.error.URLError, TimeoutError, OSError) as e:
+        except (urllib.error.URLError, TimeoutError, OSError, http.client.HTTPException) as e:
+            # HTTPException — обрыв посреди тела (IncompleteRead) и битый ответ:
+            # не OSError, а сетевой сбой ровно того же рода
             last = e
             if attempt < _ATTEMPTS:
                 time.sleep(_RETRY_PAUSE)
@@ -103,7 +106,9 @@ def list_releases(meta_cache: Optional[dict] = None, fetch_meta: bool = True,
     meta_tag — метаданные этого тега читаются всегда (переход на выпуск
     бэкапа): установка может быть и не релизной сборкой (предрелизная
     X.Y.Z.N), а без метаданных выпуск бэкапа ложно «не прочитан»."""
-    raw = _up()._request(f"{_API}/repos/{config.UPDATES_REPO}/releases",
+    # per_page=100 — потолок API: без него 30 последних, и установка, отставшая
+    # больше чем на 30 выпусков, не нашла бы своей версии («нерелизная сборка»)
+    raw = _up()._request(f"{_API}/repos/{config.UPDATES_REPO}/releases?per_page=100",
                          "application/vnd.github+json")
     try:
         data = json.loads(raw.decode("utf-8"))

@@ -22,8 +22,11 @@ def _call(cfg: dict, method: str, path: str, body: dict | None = None) -> dict:
         data = json.loads(text)
     except ValueError as e:
         raise DnsError(f"Cloudflare ответил не JSON (код {code})") from e
+    if not isinstance(data, dict):                    # список, строка, число — не ответ API
+        raise DnsError(f"Cloudflare ответил не объектом JSON (код {code})")
     if code != 200 or not data.get("success"):
-        errs = "; ".join(str(e.get("message", e)) for e in (data.get("errors") or [])[:2]) or f"код {code}"
+        errors = data.get("errors") if isinstance(data.get("errors"), list) else []
+        errs = "; ".join(str(e.get("message", e) if isinstance(e, dict) else e) for e in errors[:2]) or f"код {code}"
         raise DnsError(f"Cloudflare: {errs}"[:200])
     return data
 

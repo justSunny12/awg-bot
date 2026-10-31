@@ -131,7 +131,11 @@ async def gw_slot_pref(cb: CallbackQuery, callback_data: GwSlotCB, services):
     if gw is None:
         await cb.answer(texts.GATEWAY_GONE, show_alert=True)
         return
-    await call(services.gateway_set_preferred, None if gw.preferred else gw.id)
+    try:
+        await call(services.gateway_set_preferred, None if gw.preferred else gw.id)
+    except ServiceError as e:                     # слот удалили между нажатием и записью
+        await cb.answer(ui.toast(e), show_alert=True)
+        return
     st = await _slot_state(cb, services, gw.id, lazy_ping=False)
     if st is not None:
         await edit(cb, texts.gateway_edit_text(st), kb.gateway_edit_kb(st, two_slots=len(st["states"]) > 1))
@@ -152,7 +156,9 @@ async def gw_slot_ping(cb: CallbackQuery, callback_data: GwSlotCB, services):
         await cb.answer(texts.GATEWAY_GONE, show_alert=True)
         return
     ms = await call(services.gateway_ping, gw.id)
-    st = await call(services.gateway_screen_state, gw.id, lazy_ping=False)
+    st = await _slot_state(cb, services, gw.id, lazy_ping=False)
+    if st is None:
+        return
     st["ping_ms"] = ms
     await edit(cb, texts.gateway_card_text(st, st["states"]), card_kb(st, cb.message.chat.id))
     await cb.answer(texts.ping_line(ms).replace("<code>", "").replace("</code>", "") if ms is not None
@@ -183,9 +189,11 @@ async def gw_slot_switch_yes(cb: CallbackQuery, callback_data: GwSlotCB, service
         return
     if callback_data.val == "l":
         await _render_list(cb, services)
-    else:
-        await _render_card(cb, services, gw.id)
-    st = await call(services.gateway_screen_state, gw.id, lazy_ping=False)
+    elif not await _render_card(cb, services, gw.id):
+        return                                    # слота уже нет — alert дан
+    st = await _slot_state(cb, services, gw.id, lazy_ping=False)
+    if st is None:
+        return
     await cb.answer(ui.toast(f"Трафик идёт через {st['display']}".replace("«", "").replace("»", "")))
 
 

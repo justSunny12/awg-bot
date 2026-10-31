@@ -27,6 +27,8 @@ def _call(cfg: dict, method: str, path: str, body: dict | None = None, headers: 
         data = json.loads(text)
     except ValueError as e:
         raise DnsError(f"DigitalPlat ответил не JSON (код {code})") from e
+    if not isinstance(data, dict):                    # список, строка, число — не ответ API
+        raise DnsError(f"DigitalPlat ответил не объектом JSON (код {code})")
     if code // 100 != 2 or not data.get("success"):
         err = data.get("error") or {}
         why = str(err.get("message") or err.get("code") or "") if isinstance(err, dict) else str(err)

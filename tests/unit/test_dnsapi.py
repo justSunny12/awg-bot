@@ -192,6 +192,18 @@ def test_a_truncated_answer_is_a_dns_error_not_a_crash(dns, cut):
         dnsapi.read_authoritative("vpn.example.net")
 
 
+def test_a_broken_ns_name_is_a_dns_error_not_a_crash(dns):
+    """Ответ про NS цел, а имя сервера в его rdata — указатель за конец
+    сообщения: разбор имени идёт уже после query, и IndexError уронил бы
+    задачу надзора записи. Такой ответ — как неответивший резолвер."""
+    def bad_ns(server, name, qtype, query):
+        if server == "192.0.2.53" and qtype == 2 and name == "example.net":
+            return _answer(query, [(2, b"\x03ns1\xc3\xff")])
+    dns.override = bad_ns
+    with pytest.raises(dnsapi.DnsError):
+        dnsapi.read_authoritative("vpn.example.net")
+
+
 def test_a_query_carries_the_name_and_type_asked(dns):
     recs = common.query("203.0.113.53", "vpn.example.net", 1)
     assert [(t, rdata) for _n, t, rdata, _m, _o, _ttl in recs] == [(1, socket.inet_aton("198.51.100.7"))]
@@ -216,6 +228,32 @@ def test_the_system_resolver_view_and_its_failure(monkeypatch):
         raise socket.gaierror("нет")
     monkeypatch.setattr(common.socket, "getaddrinfo", fail)
     assert dnsapi.read_system("vpn.example.net") == []
+
+
+def test_a_hung_system_resolver_is_cut_at_the_timeout_and_the_default_stays(monkeypatch):
+    """getaddrinfo своего таймаута не знает, а socket.setdefaulttimeout на него
+    не действует и меняет умолчание всему процессу (параллельный вызов мог
+    оставить его чужим). Повисший резолвер — пустой ответ к сроку, умолчание
+    процесса не тронуто."""
+    import threading
+    import time
+    release = threading.Event()
+    seen = []
+
+    def hung(*a, **kw):
+        seen.append(socket.getdefaulttimeout())
+        release.wait(5)
+        return [(2, 1, 6, "", ("203.0.113.9", 0))]
+    monkeypatch.setattr(common.socket, "getaddrinfo", hung)
+    before = socket.getdefaulttimeout()
+    t0 = time.monotonic()
+    try:
+        assert dnsapi.read_system("vpn.example.net", timeout=0.3) == []
+        took = time.monotonic() - t0
+    finally:
+        release.set()
+    assert took < 2, f"ожидание {took:.1f} с вместо потолка"
+    assert seen == [before] and socket.getdefaulttimeout() == before, "умолчание таймаута процесса тронуто"
 
 
 def test_ipv4_accepts_only_an_ipv4_address():
@@ -337,6 +375,10 @@ def test_cloudflare_set_refuses_a_non_ipv4_before_the_patch(monkeypatch):
         {"code": 10000, "message": "Authentication error"}]}))}, "Authentication error"),
     ({("PATCH", "/zones/Z1/dns_records/R1"): (200, json.dumps({"success": False, "errors": []}))}, "код 200"),
     ({("PATCH", "/zones/Z1/dns_records/R1"): (502, "<html>Bad gateway</html>")}, "не JSON"),
+    # JSON, но не объект (прокси, заглушка) — DnsError, а не AttributeError на .get
+    ({("PATCH", "/zones/Z1/dns_records/R1"): (200, json.dumps(["ok"]))}, "не объектом JSON"),
+    ({("PATCH", "/zones/Z1/dns_records/R1"): (500, "null")}, "не объектом JSON"),
+    ({("PATCH", "/zones/Z1/dns_records/R1"): (403, json.dumps({"success": False, "errors": ["denied"]}))}, "denied"),
     ({("GET", "/zones?name=example.net&"): (200, json.dumps({"success": True, "result": []}))}, "зона"),
     ({("GET", "/zones/Z1/dns_records?type=A&name=vpn.example.net"):
         (200, json.dumps({"success": True, "result": []}))}, "A-записи"),
@@ -535,6 +577,9 @@ def test_digitalplat_set_refuses_a_non_ipv4_before_the_patch(monkeypatch):
         "code": "unauthorized", "message": "Invalid API key"}}))}, "Invalid API key"),
     ({("PATCH", "/domains/example.dpdns.org/dns/records/R7"): (200, json.dumps({"success": False}))}, "код 200"),
     ({("PATCH", "/domains/example.dpdns.org/dns/records/R7"): (502, "<html>Bad gateway</html>")}, "не JSON"),
+    # JSON, но не объект — DnsError, а не AttributeError на .get
+    ({("GET", "/domains"): (200, json.dumps([{"domain": "example.dpdns.org"}]))}, "не объектом JSON"),
+    ({("PATCH", "/domains/example.dpdns.org/dns/records/R7"): (200, '"ok"')}, "не объектом JSON"),
 ])
 def test_digitalplat_api_failures_are_dns_errors(monkeypatch, over, words):
     _Http(monkeypatch, digitalplat, _dp_routes(over))

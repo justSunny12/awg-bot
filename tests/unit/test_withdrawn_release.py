@@ -38,7 +38,7 @@ class _GitHub:
                                           "digest": "sha256:" + hashlib.sha256(meta).hexdigest()}]})
 
     def request(self, url: str, accept: str) -> bytes:
-        if url.endswith("/releases"):
+        if url.endswith("/releases?per_page=100"):
             return json.dumps(self.releases).encode()
         return self.blobs[url]
 
