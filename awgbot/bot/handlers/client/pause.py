@@ -14,6 +14,7 @@ from awgbot.bot import ui
 from awgbot.bot import texts
 from awgbot.bot.callbacks import BlockCB, GraceCB, HelpCB, PauseCB
 from awgbot.bot.filters import RoleFilter
+from awgbot.bot.inputs import parse_uint
 from awgbot.bot.notifier import notify_one, send_notifications
 from awgbot.bot.handlers.common import (
     call, cleanup_content, edit, ask_here, ask_tracked, back_to_context, mine_or_held)
@@ -184,11 +185,12 @@ async def pause_other_apply(message: Message, client, services, state: FSMContex
     raw = (message.text or "").strip()
     await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
     avail = await call(services.pause_available_days, client.id)
-    if not raw.isdigit() or not (1 <= int(raw) <= avail):
+    days = parse_uint(raw, 1, avail)
+    if days is None:
         await ask_tracked(message, services, texts.pause_days_bad(avail))
         return
     await state.clear()
-    await _enter_pause(message, services, client, int(raw), via_cb=None)
+    await _enter_pause(message, services, client, days, via_cb=None)
 
 
 async def _user_pause_guard(cb, client, services) -> bool:

@@ -10,6 +10,7 @@ from awgbot.bot.roles import GATEWAY
 from awgbot.bot.callbacks import GwCB
 from awgbot.bot.handlers import settingscore as core
 from awgbot.bot.handlers.common import call, edit_nav, send_menu, ask_here, ask_tracked
+from awgbot.bot.inputs import parse_uint
 from awgbot.bot.states import SshPort, GwSshAllow
 from awgbot.domain.services import ServiceError
 from .panel import router
@@ -153,8 +154,8 @@ async def gw_ssh_action(cb: CallbackQuery, callback_data: GwCB, services, state:
             st = await call(services.ssh_screen)
             allow = st.get("allow") or []
             num, _dot, tag = (callback_data.val or "").partition(".")
-            idx = int(num) if num.isdigit() else -1
-            if not 0 <= idx < len(allow) or tag != kb.entry_tag(allow[idx]):
+            idx = parse_uint(num)
+            if idx is None or idx >= len(allow) or tag != kb.entry_tag(allow[idx]):
                 await cb.answer(ui.Toast.list_changed, show_alert=True)
             else:
                 await call(services.ssh_allow_remove, allow[idx])

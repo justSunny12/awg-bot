@@ -12,6 +12,7 @@ from awgbot.bot import texts, ui
 from awgbot.bot.callbacks import GwCB
 from awgbot.bot.states import GatewayTransitDomain
 from awgbot.bot.handlers.common import call, edit_nav, send_menu, cleanup_content, ask_here, ask_tracked
+from awgbot.bot.inputs import parse_uint
 from .panel import router
 from awgbot.bot.handlers import gateway as pkg       # имена пакета — через него: их подменяют тесты
 
@@ -111,8 +112,8 @@ async def gw_transit_remove(cb: CallbackQuery, callback_data: GwCB, services):
     список успел измениться — переспрос, не чужой домен."""
     items = kb.lan_own_sorted(await call(services.lan_own_lists))
     num, _dot, tag = (callback_data.val or "").partition(".")
-    idx = int(num) if num.isdigit() else -1
-    if not 0 <= idx < len(items) or tag != kb.lan_own_tag(*items[idx]):   # без метки — не наша кнопка
+    idx = parse_uint(num)
+    if idx is None or idx >= len(items) or tag != kb.lan_own_tag(*items[idx]):   # без метки — не наша кнопка
         await cb.answer(ui.Toast.list_changed, show_alert=True)
         await edit_nav(cb, services, *await pkg._transit_screen(services, cb.message.chat.id))
         return

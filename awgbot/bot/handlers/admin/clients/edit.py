@@ -14,6 +14,7 @@ from aiogram import F
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 from awgbot.bot.callbacks import ClientCB, PresetCB
+from awgbot.bot.inputs import TRAFFIC_GB_MAX, parse_uint
 from awgbot.bot.handlers.common import call, edit, ask_here, ask_tracked, back_to_context
 from awgbot.bot.notifier import send_notifications
 from awgbot.domain.services import BYTES_PER_GB, ServiceError
@@ -75,11 +76,13 @@ async def edit_limit_start(cb: CallbackQuery, callback_data: ClientCB, services,
 
 
 async def _apply_devs_limit(cb_or_msg, services, client, new_limit: int, *, via_cb: CallbackQuery | None,
-                            data: dict | None = None, notify: bool = True) -> None:
+                            data: dict | None = None, notify: bool = True, state: FSMContext | None = None) -> None:
     """Применить лимит устройств: без подтверждения, итог первой строкой
     «✏️ Изменить», пользователю — уведомление по тумблеру."""
     old_limit = int(client.device_limit)
     used = await call(services.set_device_limit, client.id, new_limit)
+    if state is not None:
+        await state.clear()          # диалог ввода закрыт записью, а не до неё
     note = texts.devs_limit_note(old_limit, new_limit, used)
     if old_limit != new_limit:
         await send_notifications(cb_or_msg.bot, client_notes(client, notify, texts.limit_changed_notice(old_limit, new_limit)))
@@ -112,17 +115,18 @@ async def edit_limit_preset(cb: CallbackQuery, callback_data: PresetCB, services
 async def edit_limit_apply(message: Message, services, state: FSMContext):
     raw = (message.text or "").strip()
     await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
-    if not raw.isdigit():
+    limit = parse_uint(raw)
+    if limit is None:
         await ask_tracked(message, services, texts.NUMBER_BAD_LIMIT)
         return
     data = await state.get_data()
-    await state.clear()
     client = await call(services.db.get_client, data.get("client_id"))
     if client is None:
+        await state.clear()
         await back_to_context(message, services, {}, "admin")
         return
-    await _apply_devs_limit(message, services, client, int(raw), via_cb=None, data=data,
-                            notify=bool(data.get("notify", True)))
+    await _apply_devs_limit(message, services, client, limit, via_cb=None, data=data,
+                            notify=bool(data.get("notify", True)), state=state)
 
 
 @router.callback_query(ClientCB.filter(F.action == "edit_traffic"))
@@ -137,10 +141,12 @@ async def edit_client_traffic_start(cb: CallbackQuery, callback_data: ClientCB, 
 
 
 async def _apply_traffic_limit(cb_or_msg, services, client, gb_value: int, *, via_cb: CallbackQuery | None,
-                               data: dict | None = None, notify: bool = True) -> None:
+                               data: dict | None = None, notify: bool = True, state: FSMContext | None = None) -> None:
     old_b = int(client.traffic_limit)
     new_b = gb_value * BYTES_PER_GB
     await call(services.set_client_traffic_limit, client.id, new_b)
+    if state is not None:
+        await state.clear()          # диалог ввода закрыт записью, а не до неё: отказ записи — повтор ввода
     note = texts.traffic_limit_note(old_b, new_b)
     if old_b != new_b:
         await send_notifications(cb_or_msg.bot, client_notes(client, notify, texts.traffic_limit_changed_notice(old_b, new_b)))
@@ -175,21 +181,22 @@ async def edit_traffic_apply(message: Message, services, state: FSMContext):
     raw = (message.text or "").strip()
     await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
     data = await state.get_data()
-    if not raw.isdigit():
+    gb_value = parse_uint(raw, 0, TRAFFIC_GB_MAX)
+    if gb_value is None:
         await ask_tracked(message, services,
                           texts.NUMBER_BAD if data.get("target") == "device" else texts.NUMBER_BAD_TRAFFIC)
         return
     if data.get("target") == "device":
         from awgbot.bot.handlers.admin.devices import apply_device_limit_typed
-        await apply_device_limit_typed(message, services, state, data, int(raw))
+        await apply_device_limit_typed(message, services, state, data, gb_value)
         return
-    await state.clear()
     client = await call(services.db.get_client, data.get("client_id"))
     if client is None:
+        await state.clear()
         await back_to_context(message, services, {}, "admin")
         return
-    await _apply_traffic_limit(message, services, client, int(raw), via_cb=None, data=data,
-                               notify=bool(data.get("notify", True)))
+    await _apply_traffic_limit(message, services, client, gb_value, via_cb=None, data=data,
+                               notify=bool(data.get("notify", True)), state=state)
 
 
 # ── период вручную ───────────────────────────────────────────────────────────

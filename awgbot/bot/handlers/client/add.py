@@ -10,6 +10,7 @@ from awgbot.bot import texts
 from awgbot.bot import screens
 from awgbot.bot.callbacks import CancelCB, DelDeviceCB, DeviceCB, PresetCB
 from awgbot.bot.filters import RoleFilter
+from awgbot.bot.inputs import TRAFFIC_GB_MAX, parse_uint
 from awgbot.bot.notifier import notify_one
 from awgbot.bot.handlers.common import (
     call, cleanup_content, drop_message, edit, ask_here, ask_tracked, back_to_context, mine_or_held,
@@ -147,11 +148,11 @@ async def device_add_limit_preset(cb: CallbackQuery, callback_data: PresetCB, cl
 async def device_add_traffic(message: Message, client, services, state: FSMContext):
     raw = (message.text or "").strip()
     await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
-    if not raw.isdigit():
+    gb_value = parse_uint(raw, 0, TRAFFIC_GB_MAX)
+    if gb_value is None:
         await ask_tracked(message, services, texts.NUMBER_BAD)
         return
     plimit = await call(services.profile_traffic_limit, client.id)
-    gb_value = int(raw)
     if plimit and gb_value * BYTES_PER_GB > plimit:
         await ask_tracked(message, services, texts.device_limit_over(plimit))
         return

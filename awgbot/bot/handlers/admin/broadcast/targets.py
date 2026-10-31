@@ -9,6 +9,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 from awgbot.bot.callbacks import BroadcastCB, PresetCB
 from awgbot.bot.handlers.common import edit, ask_tracked, cleanup_content, send_menu
+from awgbot.bot.inputs import parse_uint
 from awgbot.bot.states import Broadcast
 from awgbot.bot.handlers.admin import broadcast as pkg       # имена пакета — через него: их подменяют тесты
 
@@ -189,7 +190,8 @@ async def broadcast_days(message: Message, state: FSMContext, services):
     """Своё число дней («✏️ Другое»)."""
     await pkg.call(services.db.add_content_msg_id, message.chat.id, message.message_id)
     raw = (message.text or "").strip()
-    if not raw.isdigit() or not 1 <= int(raw) <= 365:
+    days = parse_uint(raw, 1, 365)
+    if days is None:
         await ask_tracked(message, services, texts.BROADCAST_DAYS_BAD, reply_markup=kb.broadcast_cancel())
         return
-    await _days_chosen(message, state, services, int(raw))
+    await _days_chosen(message, state, services, days)

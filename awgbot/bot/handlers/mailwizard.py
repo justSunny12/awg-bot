@@ -15,6 +15,7 @@ from aiogram.types import Message
 
 from awgbot.bot import texts
 from awgbot.bot.handlers.common import call, ask_tracked
+from awgbot.bot.inputs import PORT_MAX, parse_uint
 from awgbot.bot.states import EmailSetup
 from awgbot.infra import mail
 
@@ -36,7 +37,7 @@ def _host_port(v: str) -> tuple[str, int] | None:
 
 
 def _port_ok(v: str) -> bool:
-    return v.strip().isdigit() and 1 <= int(v.strip()) <= 65535
+    return parse_uint(v, 1, PORT_MAX) is not None
 
 
 def register(router, *, cancel_kb, done) -> dict:

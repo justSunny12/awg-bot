@@ -15,6 +15,7 @@ from awgbot.bot.states import MigrationPort, SshPort
 from awgbot.bot.handlers import settingscore as core
 from awgbot.domain.services import ServiceError
 from awgbot.bot.handlers.common import call, edit, send_menu, ask_here, ask_tracked, cleanup_content
+from awgbot.bot.inputs import PORT_MAX, parse_uint
 
 log = logging.getLogger("awgbot.handlers.settings")
 from ._router import router
@@ -133,8 +134,7 @@ async def _migration_prepare(cb: CallbackQuery, services, want_port: str = "") -
     await cb.answer("Поднимаю интерфейс…")
     await edit(cb, texts.MIGRATION_PREPARING, None)
     try:
-        res = await call(services.migration_prepare,
-                         int(want_port) if str(want_port).isdigit() else None)
+        res = await call(services.migration_prepare, parse_uint(want_port, 1, PORT_MAX))
     except Exception as e:                                # noqa: BLE001
         # живое меню уже заменено строкой «поднимаю…» — отказ приходит новым
         # живым меню с выходом в раздел, иначе из чата некуда нажать
@@ -149,14 +149,15 @@ async def _migration_prepare(cb: CallbackQuery, services, want_port: str = "") -
 async def migration_port_received(message: Message, state: FSMContext, services):
     raw = (message.text or "").strip()
     await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
-    if not raw.isdigit() or not 1 <= int(raw) <= 65535:
+    port = parse_uint(raw, 1, PORT_MAX)
+    if port is None:
         await ask_tracked(message, services, "⚠️ Порт — число от 1 до 65535, попробуй ещё раз")
         return
     await state.clear()
-    d = await call(services.migration_prepare_data, int(raw))
+    d = await call(services.migration_prepare_data, port)
     await cleanup_content(message.bot, services, message.chat.id)
     await send_menu(message, services, texts.migration_prepare_intro(d),
-                    kb.migration_prepare_confirm(int(raw)))
+                    kb.migration_prepare_confirm(port))
 
 
 async def _routing_provision(cb: CallbackQuery, services) -> None:
@@ -203,8 +204,8 @@ async def _firewall_action(cb: CallbackQuery, callback_data: SetCB, services) ->
             # а не удалим соседа по сдвинувшемуся номеру.
             allow = (await call(services.firewall_screen)).get("raw_allow", [])
             num, _dot, tag = (val or "").partition(".")
-            idx = int(num) if num.isdigit() else -1
-            if not 0 <= idx < len(allow) or tag != kb.entry_tag(allow[idx]):   # без метки — не наша кнопка
+            idx = parse_uint(num)
+            if idx is None or idx >= len(allow) or tag != kb.entry_tag(allow[idx]):   # без метки — не наша кнопка
                 await cb.answer(ui.Toast.list_changed, show_alert=True)
                 text, markup = await _screen("fw", services)
                 await edit(cb, text, markup)

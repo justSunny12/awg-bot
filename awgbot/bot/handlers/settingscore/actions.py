@@ -12,6 +12,7 @@ from awgbot.bot import ui
 from awgbot.bot import texts
 from awgbot.bot.states import BackupPassphrase
 from awgbot.bot.handlers.common import call, ask_tracked, cleanup_content, send_menu
+from awgbot.bot.inputs import PORT_MAX, parse_uint
 from awgbot.domain.services import ServiceError
 from .base import Hooks, ask, after_input
 
@@ -74,10 +75,10 @@ async def port_received(message: Message, state: FSMContext, services, hooks: Ho
     from awgbot.domain.gwssh import SshOwnerRefusal
     raw = (message.text or "").strip()
     await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
-    if not raw.isdigit() or not sshd.valid_port(int(raw)):
+    port = parse_uint(raw, 1, PORT_MAX)
+    if port is None or not sshd.valid_port(port):
         await ask_tracked(message, services, "⚠️ Порт — число от 1 до 65535, попробуй ещё раз")
         return
-    port = int(raw)
     st = await call(spec.screen)
     if st.get("owner"):
         await state.clear()
