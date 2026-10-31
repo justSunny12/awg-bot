@@ -23,10 +23,11 @@ from awgbot.bot import ui
 from awgbot.bot import texts
 from awgbot.bot import keyboards as kb
 from awgbot.bot.callbacks import DeviceCB, GuideCB, HelpCB
+from awgbot.bot.errors import error_line
 from awgbot.bot.filters import RoleFilter
 from awgbot.bot.handlers.common import (call, drop_message, own_device, held_device,
                                         send_link, send_conf, send_qr, ask_here, ask_tracked,
-                                        back_to_context)
+                                        back_to_context, role_of, show_main_menu)
 from awgbot.domain.services import LimitReached, ServiceError
 from awgbot.infra.awg import AwgError
 from awgbot.bot.states import AddDeviceGuide
@@ -174,6 +175,8 @@ async def guide_connect_deliver(cb: CallbackQuery, callback_data: GuideCB, servi
         await _send_captioned(cb.message, services, dev, callback_data.kind)
     except (ServiceError, AwgError) as e:              # AwgError — сбой сервера AWG, не отказ по условию
         await cb.message.answer(texts.issue_failed(e))
+        # сообщение с выбором уже снято — без главной чат остался бы без живого меню
+        await show_main_menu(cb.message, services, role_of(client), client)
         await cb.answer()
         return
     variant = callback_data.guide
@@ -254,7 +257,7 @@ async def guide_add_device_name(message: Message, services, client, state: FSMCo
     try:
         created = await call(services.add_device, client.id, name, 0)
     except (LimitReached, ServiceError) as e:
-        await back_to_context(message, services, {}, "client", client, note=f"⚠️ {texts._e(str(e))}")
+        await back_to_context(message, services, {}, "client", client, note=error_line(e))
         return
     plimit = await call(services.profile_traffic_limit, client.id)
     from awgbot.bot.handlers.common import cleanup_content

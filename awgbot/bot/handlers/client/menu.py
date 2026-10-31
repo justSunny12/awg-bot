@@ -8,7 +8,9 @@ from awgbot.bot import keyboards as kb
 from awgbot.bot import ui
 from awgbot.bot import texts
 from awgbot.bot.callbacks import DeviceCB, Menu, PresetCB
+from awgbot.bot.errors import error_line
 from awgbot.bot.filters import RoleFilter
+from awgbot.bot.inputs import TRAFFIC_GB_MAX, parse_uint
 from awgbot.bot.handlers.common import (
     call, drop_message, edit, ask_here, ask_tracked, back_to_context, own_device, mine_or_held,
     send_device_config, content_finisher)
@@ -176,7 +178,7 @@ async def client_device_edit_name_apply(message: Message, client, services, stat
     try:
         await call(services.rename_device, dev.id, name)
     except ServiceError as e:
-        await back_to_context(message, services, data, "client", client, note=f"⚠️ {texts._e(str(e))}")
+        await back_to_context(message, services, data, "client", client, note=error_line(e))
         return
     await back_to_context(message, services, data, "client", client,
                           note=texts.name_note(old_name, name))
@@ -243,7 +245,8 @@ async def device_limit_preset(cb: CallbackQuery, callback_data: PresetCB, client
 async def client_edit_traffic_apply(message: Message, client, services, state: FSMContext):
     raw = (message.text or "").strip()
     await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
-    if not raw.isdigit():
+    gb_value = parse_uint(raw, 0, TRAFFIC_GB_MAX)
+    if gb_value is None:
         await ask_tracked(message, services, texts.NUMBER_BAD)
         return
     data = await state.get_data()
@@ -253,7 +256,7 @@ async def client_edit_traffic_apply(message: Message, client, services, state: F
         await state.clear()
         await back_to_context(message, services, {}, "client", client)
         return
-    note, ok = await devcore.apply_device_limit(services, dev, int(raw))
+    note, ok = await devcore.apply_device_limit(services, dev, gb_value)
     if not ok:
         await ask_tracked(message, services, note)
         return

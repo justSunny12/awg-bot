@@ -22,6 +22,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from awgbot.bot import keyboards as kb
+from awgbot.bot import ui
 from awgbot.bot.callbacks import CancelCB, NoteCB
 from awgbot.bot.handlers.common import call, edit_nav, show_main_menu
 from awgbot.bot.texts.reserve import quorum as qt
@@ -94,7 +95,7 @@ async def on_note_action(cb: CallbackQuery, callback_data: NoteCB, state: FSMCon
         try:
             why = await asyncio.to_thread(services.fleet_gw_retry, int(ref))
         except ServiceError as e:
-            await cb.answer(str(e)[:200], show_alert=True)
+            await cb.answer(ui.toast_cap(e), show_alert=True)
             return
         if why == "fenced":
             await cb.answer(qt.ADMIN_FENCED, show_alert=True)

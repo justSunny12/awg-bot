@@ -8,7 +8,6 @@ restore.py — восстановление сервера AWG из бэкапа
 """
 from __future__ import annotations
 
-import base64
 import io
 
 from aiogram.types import CallbackQuery, Message
@@ -79,9 +78,11 @@ async def ask_restore(bot, services, state, chat_id: int, blob: bytes, info: dic
     from awgbot.domain.backup.plan import Plan
     text = texts.restore_offer_plan(Plan.from_dict(info["plan"]), getattr(services, "bot_username", "") or "")
     text = (source + "\n\n" + text) if source else text
+    # файл и план — на диске под отпечатком (срок час): данные диалога стирает любой
+    # state.clear(), а кнопка должна работать и после /start; в FSM — только отпечаток
+    await call(services.restore_stash, fp, blob, info["plan"], str(info.get("created_at") or ""))
     qmid = await send_menu_to(bot, services, chat_id, text, _backup.restore_confirm_kb(roles.MAIN, fp))
-    await state.update_data(restore_blob=base64.b64encode(blob).decode(), restore_at=info["created_at"],
-                            restore_plan=info["plan"], restore_fp=fp, restore_qmid=qmid, restore_qtext=text)
+    await state.update_data(restore_fp=fp, restore_qmid=qmid, restore_qtext=text)
 
 
 async def relay_restore(bot, services, state, blob: bytes, name: str, slot_id: int = 0) -> str:
@@ -112,49 +113,64 @@ async def relay_restore(bot, services, state, blob: bytes, name: str, slot_id: i
 
 async def run_restore(cb: CallbackQuery, services, state, fp: str = "") -> None:
     """«♻️ Восстановить»: кнопка — того самого файла (отпечаток в кнопке и в
-    данных вопроса); повтор, пока идёт подготовка, — «уже восстанавливаю»."""
+    данных вопроса); повтор, пока идёт подготовка, — «уже восстанавливаю».
+    Файл — по отпечатку с диска (restore_stashed): сброс диалога между вопросом
+    и кнопкой восстановлению не мешает."""
     if getattr(services, "_restore_running", False):     # запущено в этом процессе
         await cb.answer(ui.toast(texts.RESTORE_ALREADY), show_alert=True)
         return
-    data = await state.get_data()
-    raw = data.get("restore_blob")
-    if not raw:
-        await cb.answer(ui.Toast.no_file, show_alert=True)
-        return
-    if fp and data.get("restore_fp") and fp != data["restore_fp"]:
-        await cb.answer(ui.toast(texts.RESTORE_OTHER_FILE), show_alert=True)   # вопрос о прежнем файле
-        return
-    from awgbot.domain.selfupdate.marks import install_busy
-    if await call(install_busy):
-        # замок установки занят (обновление, фиксация, откат): restore отказал
-        # бы сам и перезапустил бота ради отчёта — отвечаем здесь, вопрос жив
-        from awgbot.domain.notices import fleet as nf
-        await cb.answer()
-        await cb.message.answer(nf.restore_not_launched(texts.RESTORE_INSTALL_BUSY))
-        return
-    await state.clear()
+    # флаг — до первого await: aiogram ведёт апдейты параллельно, и двойное нажатие
+    # иначе проходило проверку дважды; ранние выходы ниже флаг снимают
     services._restore_running = True
+    launched = False
+    try:
+        data = await state.get_data()
+        fp = fp or str(data.get("restore_fp") or "")
+        if fp and data.get("restore_fp") and fp != data["restore_fp"]:
+            await cb.answer(ui.toast(texts.RESTORE_OTHER_FILE), show_alert=True)   # вопрос о прежнем файле
+            return
+        stash = await call(services.restore_stashed, fp)
+        if stash is None:
+            await cb.answer(ui.Toast.no_file, show_alert=True)
+            return
+        from awgbot.domain.selfupdate.marks import install_busy
+        if await call(install_busy):
+            # замок установки занят (обновление, фиксация, откат): restore отказал
+            # бы сам и перезапустил бота ради отчёта — отвечаем здесь, вопрос жив
+            from awgbot.domain.notices import fleet as nf
+            await cb.answer()
+            await cb.message.answer(nf.restore_not_launched(texts.RESTORE_INSTALL_BUSY))
+            return
+        launched = await _launch(cb, services, state, fp, stash)
+    finally:
+        if not launched:
+            services._restore_running = False         # не запустилось — кнопку можно нажать снова
+
+
+async def _launch(cb: CallbackQuery, services, state, fp: str, stash: dict) -> bool:
+    """Подготовка и запуск; False — не запустилось, кнопку можно нажать снова."""
     await cb.answer()
+    plan = stash.get("plan") or {}
     release = ""
     try:
         try:
             # другая версия — выпуск бэкапа с GitHub, до запуска (sha256 = digest метки)
-            release = await call(services.prepare_restore_release, data.get("restore_plan"))
+            release = await call(services.prepare_restore_release, plan)
         except Exception as e:                         # noqa: BLE001 — сеть, sha256
-            services._restore_running = False
-            await state.update_data(**data)            # вопрос остаётся живым: кнопку можно нажать снова
             from awgbot.domain.notices import fleet as nf
-            await cb.message.answer(nf.restore_not_launched(str(e)))
-            return
-        path = await call(services.prepare_restore, base64.b64decode(raw), data.get("restore_plan"))
+            await cb.message.answer(nf.restore_not_launched(str(e)))   # вопрос остаётся живым
+            return False
+        path = await call(services.prepare_restore, stash["blob"], plan)
+        await state.clear()                            # диалог закрыт фактом подготовки, не раньше
         try:
             await cb.message.edit_reply_markup(reply_markup=None)
         except Exception:                              # noqa: BLE001
             pass
         await cb.message.answer(texts.RESTORE_STARTED)
         await call(services.launch_restore, path, release)
+        await call(services.restore_unstash, fp)
+        return True
     except Exception:
-        services._restore_running = False             # не запустилось — кнопку можно нажать снова
         if release:
             import os
             try:
@@ -166,6 +182,9 @@ async def run_restore(cb: CallbackQuery, services, state, fp: str = "") -> None:
 
 async def drop_restore(cb: CallbackQuery, services, state, hooks) -> None:
     """Отказ: на месте вопроса — главный экран роли, одно живое меню в чате."""
+    fp = str((await state.get_data()).get("restore_fp") or "")
+    if fp:
+        await call(services.restore_unstash, fp)       # файл с ключами на диске не задерживается
     await state.clear()
     await cb.answer(ui.Toast.file_dropped)
     parts = await hooks.main(services, cb.message.chat.id)

@@ -11,6 +11,7 @@ from awgbot.bot import texts
 from awgbot.bot import ui
 from awgbot.bot import keyboards as kb
 from awgbot.bot.callbacks import GwMarkCB, GwSlotCB
+from awgbot.bot.errors import error_line
 from awgbot.bot.states import GatewayLanSubnets, GatewayLabel
 from awgbot.domain.services import ServiceError
 from awgbot.bot.handlers.common import call, edit, send_menu, card_from_main, ask_here, ask_tracked, cleanup_content
@@ -362,7 +363,7 @@ async def gateway_label_received(message: Message, state: FSMContext, services):
         await call(services.gateway_set_label, slot, message.text or "")
         gw = await call(services.db.gateway, slot)
     except ServiceError as e:
-        await ask_tracked(message, services, f"⚠️ {texts._e(str(e))}")
+        await ask_tracked(message, services, error_line(e))
         return
     await state.clear()
     await back_to_context(message, services, data, "admin",
@@ -406,14 +407,22 @@ async def gateway_remove_ask(cb: CallbackQuery, callback_data: GwMarkCB, service
 
 @router.callback_query(GwSlotCB.filter(F.action == "remove_yes"))
 async def gw_slot_remove_yes(cb: CallbackQuery, callback_data: GwSlotCB, services):
+    from awgbot.bot import screens
+    from awgbot.infra.routing import RoutingError
     await cb.answer("Снимаю…")
-    prev = await call(services.gateway_remove, callback_data.slot or None)
+    try:
+        prev = await call(services.gateway_remove, callback_data.slot or None)
+    except (ServiceError, RoutingError) as e:
+        # перекладка трафика на другой слот (gateway_switch) отказала — слот на
+        # месте: причина и экран слотов, а не упавший обработчик без ответа
+        text, markup = await gateways_screen(services)
+        await edit(cb, screens.with_note(text, error_line(e)), markup)
+        return
     if prev is None:
         await edit(cb, "Шлюз и так не назначен", kb.settings_back("rt"))
         return
     states = await call(services.gateway_states)
     now_active = next((x for x in states if x.get("active")), None)
-    from awgbot.bot import screens
     card_from_main(cb.message.chat.id, False)
     text, markup = await gateways_screen(services)
     note = texts.gateway_removed(prev, now_active)

@@ -69,11 +69,15 @@ def make_dispatcher(role: str, services, db, *, reattach: bool = False) -> Dispa
     (outer — до фильтров роутеров: RoleFilter читает data['role'], который
     кладёт именно он) и роутеры роли по порядку. reattach — для тестов: модульный
     роутер, уже включённый в другой диспетчер, отцепляется и включается сюда."""
+    from awgbot.bot.errors import on_error
     dp = Dispatcher(storage=MemoryStorage())
     dp["services"] = services
     access = AccessMiddleware(db, fenced=getattr(services, "reserve_quorum_fenced", None) if role in ("client", "guest") else None)
     dp.message.outer_middleware(access)
     dp.callback_query.outer_middleware(access)
+    # упавший обработчик — всплывашка или строка «⚠️ …» человеку и трасса в журнал,
+    # а не тишина (bot/errors.py); точечные except по-прежнему возвращают живое меню
+    dp.errors.register(on_error)
     for r in routers_for(role):
         if reattach:
             r._parent_router = None

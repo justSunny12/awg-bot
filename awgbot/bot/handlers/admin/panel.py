@@ -3,7 +3,7 @@ handlers/admin/panel.py — панель администратора.
 
 /start админа (в том числе ссылки на экраны панели), главная, списки онлайн,
 истекающих, без профиля, трафик списком; общие помощники панели
-(_panel_parts / _return_panel / _main_menu_markup / restore_panel_after_restart),
+(_panel_parts / _return_panel / restore_panel_after_restart),
 которыми пользуются остальные роутеры пакета.
 """
 
@@ -53,10 +53,6 @@ async def _panel_parts(services):
     """(текст, клавиатура) главной — из ОДНОГО снимка в одном потоке."""
     snap = await call(services.admin_panel_snapshot)
     return _panel_text_from(services, snap), _menu_markup_from(snap)
-
-
-async def _main_menu_markup(services):
-    return _menu_markup_from(await call(services.admin_panel_snapshot))
 
 
 async def _return_panel(message, services, keep_id=None) -> None:
@@ -216,6 +212,7 @@ async def _traffic_deep_link(message: Message, services, payload: str,
 async def admin_start(message: Message, services, state: FSMContext,
                       command: CommandObject | None = None):
     await state.clear()
+    card_from_main(message.chat.id, False)         # /start — заново: пометка «карточка с главной» снята
     payload = ((command.args if command is not None else "") or "").strip()
     if payload and await _traffic_deep_link(message, services, payload, state):
         return

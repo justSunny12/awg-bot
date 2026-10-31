@@ -67,6 +67,33 @@ async def test_single_dns_is_written_to_both_fields(services, fake_bot, monkeypa
     assert written["app.client_config.dns2"] == "10.8.1.1"
 
 
+async def test_a_refused_dns1_write_rolls_dns2_back(services, fake_bot, monkeypatch):
+    """Две записи DNS — одна операция: dns2 записан, dns1 отказан → dns2
+    возвращён к прежнему, пара не остаётся разнородной (прежде dns2 писался
+    вне try и оставался новым при отказе dns1)."""
+    written: dict = {"app.client_config.dns1": "1.1.1.1", "app.client_config.dns2": "1.0.0.1"}
+    real_get = settings.get
+    monkeypatch.setattr(settings, "get", lambda k, d=None: written.get(k, real_get(k, d)))
+
+    def set_value(k, v):
+        if k == "app.client_config.dns1":
+            raise settings.SettingsWriteError("диск только для чтения")
+        written[k] = v
+        return [k]
+    monkeypatch.setattr(settings, "set_value", set_value)
+    monkeypatch.setattr(services, "server_screen", lambda: {
+        "host": "h", "name": "n", "dns": "1.1.1.1", "mtu": 1376, "keepalive": "25",
+        "iface": "awg0", "port": 1, "subnet": "s", "kernel": "", "generation": 1})
+    st = FakeState()
+    await st.update_data(key="app.client_config.dns1", sec="srv")
+    msg = FakeMessage(text="10.8.1.1, 10.8.1.2", chat_id=ADMIN, user_id=ADMIN, bot=fake_bot)
+    await sh.receive_value(msg, st, services)
+    assert written["app.client_config.dns2"] == "1.0.0.1", "dns2 остался новым при отказе dns1"
+    assert written["app.client_config.dns1"] == "1.1.1.1"
+    answers = [s[1] for s in msg.sent if s[0] == "answer"]
+    assert answers and "Не сохранено" in answers[-1], answers
+
+
 # ── файервол ─────────────────────────────────────────────────────────────────
 
 def _fw(**kw):

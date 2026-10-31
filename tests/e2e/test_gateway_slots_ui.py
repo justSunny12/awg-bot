@@ -330,6 +330,27 @@ async def test_remove_standby_and_active(services, slots, fake_bot, monkeypatch)
     assert services.db.gateways() == [], "последний шлюз не снят"
 
 
+async def test_removing_the_active_slot_on_a_routing_refusal_keeps_it_and_answers(services, slots, fake_bot,
+                                                                                 monkeypatch):
+    """Снятие активного слота перекладывает трафик на другой (gateway_switch):
+    отказ слоя маршрутизации (RoutingError — не ServiceError) — причина на
+    экране слотов, слот на месте, а не упавший обработчик без ответа."""
+    from awgbot.infra import routing as rt
+    _, pi, pi2 = slots
+    _slot1(services, pi); _slot2(services, pi2)
+    _settled(services)
+
+    def refuse(iface):
+        raise rt.RoutingError("ip route: RTNETLINK answers: No such process")
+    monkeypatch.setattr(rt.marking, "switch_active", refuse)
+    cb, nav = _acb(fake_bot)
+    await sh.gw_slot_remove_yes(cb, GwSlotCB(action="remove_yes", slot=1), services)
+    assert [g.id for g in services.db.gateways()] == [1, 2], "слот снят при отказе перекладки трафика"
+    text, labels = _screen(nav)
+    assert "⚠️ ip route: RTNETLINK answers: No such process" in text, text
+    assert any("Pi2" in x or "NASPi" in x for x in labels), "экран слотов не показан"
+
+
 async def test_params_screen_cycles_probe_window_threshold_and_lists(services, slots, fake_bot, monkeypatch):
     """«⚙️ Параметры»: такт, окно, порог и период списков — циклами по кругу,
     значение пишется в настройки. Экран после цикла, всплывашка без ключа

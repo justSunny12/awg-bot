@@ -8,6 +8,7 @@ from aiogram import F
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 from awgbot.bot.callbacks import Menu, PeriodCB, PresetCB
+from awgbot.bot.inputs import TRAFFIC_GB_MAX, parse_uint
 from awgbot.bot.handlers.common import (
     call, edit, ask_here, ask_tracked, cleanup_content, send_menu, drop_message)
 from awgbot.domain.services import BYTES_PER_GB, ServiceError
@@ -68,11 +69,12 @@ async def _devs_chosen(message: Message, services, state: FSMContext, name: str,
 async def add_client_limit(message: Message, services, state: FSMContext):
     raw = (message.text or "").strip()
     await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
-    if not raw.isdigit():
+    limit = parse_uint(raw)
+    if limit is None:
         await ask_tracked(message, services, texts.NUMBER_BAD_LIMIT)
         return
     name = (await state.get_data()).get("name") or ""
-    await _devs_chosen(message, services, state, name, int(raw))
+    await _devs_chosen(message, services, state, name, limit)
 
 
 @router.callback_query(PresetCB.filter(F.kind == "new_traffic"), CreateClient.traffic)
@@ -104,10 +106,11 @@ async def _traffic_chosen(message: Message, services, state: FSMContext, data: d
 async def add_client_traffic(message: Message, services, state: FSMContext):
     raw = (message.text or "").strip()
     await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
-    if not raw.isdigit():
+    gb_value = parse_uint(raw, 0, TRAFFIC_GB_MAX)
+    if gb_value is None:
         await ask_tracked(message, services, texts.NUMBER_BAD_TRAFFIC)
         return
-    await _traffic_chosen(message, services, state, await state.get_data(), int(raw))
+    await _traffic_chosen(message, services, state, await state.get_data(), gb_value)
 
 
 @router.callback_query(PeriodCB.filter(F.ctx == "create"))
@@ -116,8 +119,8 @@ async def add_client_period(cb: CallbackQuery, callback_data: PeriodCB, services
     name = data.get("name")
     limit = data.get("limit")
     traffic_gb = data.get("traffic_gb")
-    await state.clear()
     if not name or limit is None or traffic_gb is None:  # limit/traffic=0 валидны
+        await state.clear()
         await cb.answer("Диалог устарел — открой создание профиля заново", show_alert=True)
         try:
             await cb.message.edit_reply_markup(reply_markup=None)
@@ -129,8 +132,9 @@ async def add_client_period(cb: CallbackQuery, callback_data: PeriodCB, services
         created = await call(services.create_client, name, int(limit), callback_data.kind,
                              int(traffic_gb) * BYTES_PER_GB)
     except ServiceError as e:
-        await cb.answer(ui.toast(e), show_alert=True)
+        await cb.answer(ui.toast(e), show_alert=True)   # диалог жив: срок можно выбрать снова
         return
+    await state.clear()
     client = await call(services.db.get_client, created.client_id)
     await cb.answer()
     await drop_message(cb, services)

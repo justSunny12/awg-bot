@@ -211,18 +211,21 @@ def test_another_admin_command_is_monospace():
 async def test_the_button_is_of_its_own_file_and_a_second_tap_is_refused(services):
     from awgbot.bot.handlers import restore as rs
     state = FakeState()
-    await state.update_data(restore_blob="RFVNTVk=", restore_plan={}, restore_fp="aaaaaaaaaaaa")
+    services.restore_stash("aaaaaaaaaaaa", b"DUMMY", {}, "")       # файл вопроса — на диске, в FSM — отпечаток
+    await state.update_data(restore_fp="aaaaaaaaaaaa")
     bot = FakeBot()
     msg = FakeMessage(chat_id=config.ADMIN_ID, user_id=config.ADMIN_ID, bot=bot)
     cb = FakeCallback(message=msg, user_id=config.ADMIN_ID, bot=bot)
     await rs.run_restore(cb, services, state, "bbbbbbbbbbbb")
-    assert cb.answers[-1][0] == texts.RESTORE_OTHER_FILE and (await state.get_data())["restore_blob"]
+    assert cb.answers[-1][0] == texts.RESTORE_OTHER_FILE and (await state.get_data())["restore_fp"]
+    assert not getattr(services, "_restore_running", False), "отказ «другой файл» оставил флаг"
     launched = []
     services.prepare_restore = lambda blob, plan=None: "/tmp/DUMMY"
     services.launch_restore = lambda path, release="": launched.append(path)
     await rs.run_restore(cb, services, state, "aaaaaaaaaaaa")
     assert launched == ["/tmp/DUMMY"]
-    await state.update_data(restore_blob="RFVNTVk=", restore_fp="aaaaaaaaaaaa")
+    services.restore_stash("aaaaaaaaaaaa", b"DUMMY", {}, "")
+    await state.update_data(restore_fp="aaaaaaaaaaaa")
     await rs.run_restore(cb, services, state, "aaaaaaaaaaaa")
     assert cb.answers[-1][0] == texts.RESTORE_ALREADY and launched == ["/tmp/DUMMY"]
 

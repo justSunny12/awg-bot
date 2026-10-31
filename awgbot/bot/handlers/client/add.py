@@ -9,7 +9,9 @@ from awgbot.bot import ui
 from awgbot.bot import texts
 from awgbot.bot import screens
 from awgbot.bot.callbacks import CancelCB, DelDeviceCB, DeviceCB, PresetCB
+from awgbot.bot.errors import error_line
 from awgbot.bot.filters import RoleFilter
+from awgbot.bot.inputs import TRAFFIC_GB_MAX, parse_uint
 from awgbot.bot.notifier import notify_one
 from awgbot.bot.handlers.common import (
     call, cleanup_content, drop_message, edit, ask_here, ask_tracked, back_to_context, mine_or_held,
@@ -97,7 +99,7 @@ async def _create_own(message: Message, services, client, name: str) -> None:
         await back_to_context(message, services, {}, "client", client, note=await _limit_note(services, client))
         return
     except ServiceError as e:
-        await back_to_context(message, services, {}, "client", client, note=f"⚠️ {texts._e(str(e))}")
+        await back_to_context(message, services, {}, "client", client, note=error_line(e))
         return
     plimit = await call(services.profile_traffic_limit, client.id)
     await cleanup_content(message.bot, services, message.chat.id)
@@ -113,7 +115,7 @@ async def _create_for_friend(target: Message, services, client, name: str, tlimi
         await back_to_context(target, services, {}, "client", client, note=await _limit_note(services, client))
         return
     except ServiceError as e:
-        await back_to_context(target, services, {}, "client", client, note=f"⚠️ {texts._e(str(e))}")
+        await back_to_context(target, services, {}, "client", client, note=error_line(e))
         return
     code = await call(services.make_device_friendly, created.device_id)
     dev = await call(services.db.get_device, created.device_id)
@@ -126,15 +128,24 @@ async def device_add_limit_preset(cb: CallbackQuery, callback_data: PresetCB, cl
                                   state: FSMContext):
     data = await state.get_data()
     name = data.get("dev_name") or ""
-    plimit = await call(services.profile_traffic_limit, client.id)
     if callback_data.val < 0:
+        plimit = await call(services.profile_traffic_limit, client.id)
         await state.set_state(AddDevice.traffic)
         await ask_here(cb, services, state, texts.device_limit_other_prompt(plimit),
                        data.get("ctx_kind") or "main")
         await cb.answer()
         return
+    # Одноразовый маркер — до первого настоящего await (данные FSM в памяти,
+    # чтение и запись не уступают цикл): повторный колбэк пресета, пришедший
+    # параллельно, иначе создавал второе устройство
+    if data.get("add_done"):
+        await cb.answer(ui.Toast.stale, show_alert=True)
+        return
+    await state.update_data(add_done=True)
+    plimit = await call(services.profile_traffic_limit, client.id)
     gb_value = int(callback_data.val)
     if plimit and gb_value * BYTES_PER_GB > plimit:
+        await state.update_data(add_done=False)        # другой пресет выбрать можно
         await cb.answer(texts.device_limit_over(plimit), show_alert=True)
         return
     await state.clear()
@@ -147,11 +158,11 @@ async def device_add_limit_preset(cb: CallbackQuery, callback_data: PresetCB, cl
 async def device_add_traffic(message: Message, client, services, state: FSMContext):
     raw = (message.text or "").strip()
     await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
-    if not raw.isdigit():
+    gb_value = parse_uint(raw, 0, TRAFFIC_GB_MAX)
+    if gb_value is None:
         await ask_tracked(message, services, texts.NUMBER_BAD)
         return
     plimit = await call(services.profile_traffic_limit, client.id)
-    gb_value = int(raw)
     if plimit and gb_value * BYTES_PER_GB > plimit:
         await ask_tracked(message, services, texts.device_limit_over(plimit))
         return

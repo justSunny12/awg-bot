@@ -17,11 +17,13 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from awgbot.bot.callbacks import ClientCB, DelDeviceCB, DeviceCB, Menu, PresetCB, ReassignCB
+from awgbot.bot.errors import error_line
 from awgbot.bot.handlers.common import (call, edit, edit_nav, ask_here, ask_tracked, back_to_context,
                                         cleanup_content, drop_message, remove_device_and_notify,
                                         send_device_config)
 from awgbot.bot.notifier import notify_one
 from awgbot.domain.services import LimitReached, ServiceError
+from awgbot.infra.awg import AwgError
 from awgbot.bot.states import AdminAddDevice, EditDeviceName, EditTrafficLimit
 from awgbot.bot.handlers.admin.panel import _return_panel, _bot
 from awgbot.bot.handlers import devcore
@@ -135,7 +137,7 @@ async def admin_add_device_name(message: Message, services, state: FSMContext):
         await back_to_context(message, services, data, "admin", note=texts.LIMIT_REACHED_RACE)
         return
     except ServiceError as e:
-        await back_to_context(message, services, data, "admin", note=f"⚠️ {texts._e(str(e))}")
+        await back_to_context(message, services, data, "admin", note=error_line(e))
         return
     # пользователю — уведомление с рядом выдачи; себе админ добавляет иначе
     if client.tg_id and client.tg_id != config.ADMIN_ID:
@@ -213,8 +215,8 @@ async def admin_dev_gen(cb: CallbackQuery, callback_data: DeviceCB, services):
     try:
         await send_device_config(cb.message, services, dev, kb.gen_kind(callback_data.action),
                                  finisher=kb.to_menu())
-    except ServiceError as e:
-        await cb.message.answer(f"⚠️ {texts._e(str(e))}")
+    except (ServiceError, AwgError) as e:               # AwgError — сбой сервера AWG: меню всё равно нужно
+        await cb.message.answer(texts.issue_failed(e))
         await _return_panel(cb.message, services)
     await cb.answer()
 
@@ -273,7 +275,7 @@ async def device_edit_name_apply(message: Message, services, state: FSMContext):
     try:
         await call(services.rename_device, old_dev.id, name)
     except ServiceError as e:
-        await back_to_context(message, services, data, "admin", note=f"⚠️ {texts._e(str(e))}")
+        await back_to_context(message, services, data, "admin", note=error_line(e))
         return
     await back_to_context(message, services, data, "admin", note=texts.name_note(old_dev.name, name))
 

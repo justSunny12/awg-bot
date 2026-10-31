@@ -12,11 +12,18 @@ from awgbot.bot import texts, ui
 from awgbot.bot.callbacks import GwCB
 from awgbot.bot.states import GatewayTransitDomain
 from awgbot.bot.handlers.common import call, edit_nav, send_menu, cleanup_content, ask_here, ask_tracked
+from awgbot.bot.inputs import parse_uint
+from awgbot.domain import gwownlists
 from .panel import router
 from awgbot.bot.handlers import gateway as pkg       # имена пакета — через него: их подменяют тесты
 
 
 # ── 🔀 VPN-транзит: один экран со своими списками ────────────────────────────
+
+# Доменов за одно сообщение — потолок канона (больше в списках всё равно не
+# бывает): скрипт awg-lan-domain.sh разбирает адреса каждого (dig до 3 с, по
+# шестнадцать разом) — 500 укладываются в его таймаут и при мёртвом резолвере
+LAN_DOMAINS_MAX = gwownlists.MAX_DOMAINS
 
 async def _own_info(services) -> dict:
     info, _checks = await call(services.own_status)
@@ -61,6 +68,11 @@ async def gw_transit_domain_received(message: Message, state: FSMContext, servic
     domains = [t for t in re.split(r"[\s,;]+", message.text or "") if t]
     if not domains:
         await ask_tracked(message, services, "⚠️ Пришли хотя бы один домен")
+        return
+    if len(domains) > LAN_DOMAINS_MAX:
+        # потолок — до вызова скрипта: иначе списки применялись бы наполовину,
+        # а скрипт убивался по таймауту агента; диалог открыт — пришлют частями
+        await ask_tracked(message, services, texts.gateway_transit_too_many(len(domains), LAN_DOMAINS_MAX))
         return
     await state.clear()
     ok, out = await call(services.lan_domains, kind, domains)
@@ -111,8 +123,8 @@ async def gw_transit_remove(cb: CallbackQuery, callback_data: GwCB, services):
     список успел измениться — переспрос, не чужой домен."""
     items = kb.lan_own_sorted(await call(services.lan_own_lists))
     num, _dot, tag = (callback_data.val or "").partition(".")
-    idx = int(num) if num.isdigit() else -1
-    if not 0 <= idx < len(items) or tag != kb.lan_own_tag(*items[idx]):   # без метки — не наша кнопка
+    idx = parse_uint(num)
+    if idx is None or idx >= len(items) or tag != kb.lan_own_tag(*items[idx]):   # без метки — не наша кнопка
         await cb.answer(ui.Toast.list_changed, show_alert=True)
         await edit_nav(cb, services, *await pkg._transit_screen(services, cb.message.chat.id))
         return

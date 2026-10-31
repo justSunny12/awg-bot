@@ -5,6 +5,7 @@ import asyncio
 from awgbot.core import config
 from awgbot.bot import keyboards as kb
 from awgbot.bot import texts
+from awgbot.bot.bgtask import spawn
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
@@ -104,8 +105,9 @@ async def broadcast_receive(message: Message, state: FSMContext, services):
     # пачки, живой остаётся ровно одна таска — последнего финишировавшего.
     if message.photo:
         _bc_cancel_render(chat_id)
-        _bc_render_tasks[chat_id] = asyncio.create_task(
-            _bc_render_later(message, state, services))
+        # под присмотром: упавшее превью — трасса в журнал, а не потерянное исключение
+        _bc_render_tasks[chat_id] = spawn(_bc_render_later(message, state, services),
+                                          name=f"bc-preview-{chat_id}")
     else:
         _bc_cancel_render(chat_id)
         await pkg._bc_preview(message, state, services)

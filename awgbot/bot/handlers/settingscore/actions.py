@@ -11,7 +11,9 @@ from awgbot.bot import keyboards as kb
 from awgbot.bot import ui
 from awgbot.bot import texts
 from awgbot.bot.states import BackupPassphrase
+from awgbot.bot.errors import error_html, error_line, spoken
 from awgbot.bot.handlers.common import call, ask_tracked, cleanup_content, send_menu
+from awgbot.bot.inputs import PORT_MAX, parse_uint
 from awgbot.domain.services import ServiceError
 from .base import Hooks, ask, after_input
 
@@ -74,10 +76,10 @@ async def port_received(message: Message, state: FSMContext, services, hooks: Ho
     from awgbot.domain.gwssh import SshOwnerRefusal
     raw = (message.text or "").strip()
     await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
-    if not raw.isdigit() or not sshd.valid_port(int(raw)):
+    port = parse_uint(raw, 1, PORT_MAX)
+    if port is None or not sshd.valid_port(port):
         await ask_tracked(message, services, "⚠️ Порт — число от 1 до 65535, попробуй ещё раз")
         return
-    port = int(raw)
     st = await call(spec.screen)
     if st.get("owner"):
         await state.clear()
@@ -93,7 +95,7 @@ async def port_received(message: Message, state: FSMContext, services, hooks: Ho
     try:
         busy = await call(services.ssh_port_busy, port)
     except ServiceError as e:
-        await ask_tracked(message, services, f"⚠️ {texts._e(str(e))}")
+        await ask_tracked(message, services, error_line(e))
         return
     if busy:
         await state.clear()
@@ -111,7 +113,7 @@ async def port_received(message: Message, state: FSMContext, services, hooks: Ho
         return
     except ServiceError as e:
         # действие не выполнено, ничего не изменилось — ⚠️ (🔴 — состояние объекта)
-        await after_input(message, services, hooks, spec.sec, f"⚠️ Порт не изменён: {texts._e(str(e))}")
+        await after_input(message, services, hooks, spec.sec, f"⚠️ Порт не изменён: {error_html(e)}")
     else:
         await after_input(message, services, hooks, spec.sec, spec.changed_text(old, port))
 
@@ -140,7 +142,8 @@ async def backup_now(cb: CallbackQuery, services, hooks: Hooks) -> None:
         await cb.message.answer(no_key, reply_markup=kb.hide_only())
         return
     except Exception as e:                            # noqa: BLE001
-        await cb.message.answer(f"⚠️ {texts._e(str(e))}")
+        log.warning("бэкап сейчас: копия не собрана: %s", e, exc_info=not spoken(e))
+        await cb.message.answer(error_line(e))         # сырой текст чужого исключения человеку не идёт
         return
     caption = await call(services.backup_caption)
     if await call(services.backup_channel) == "email":
@@ -151,7 +154,7 @@ async def backup_now(cb: CallbackQuery, services, hooks: Hooks) -> None:
                                     reply_markup=kb.hide_only())
             await call(services.backup_event_covered, made_at)       # копия по событию уже не нужна
         except mail.MailError as e:
-            await cb.message.answer(f"🔴 {texts._e(str(e))}")
+            await cb.message.answer(error_line(e, "🔴"))
         await hooks.render(cb, services, "backup")
         return
     sent = False
