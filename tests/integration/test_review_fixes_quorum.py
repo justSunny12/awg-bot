@@ -414,12 +414,13 @@ def qjob(monkeypatch):
     исполнитель действий — журнал; сервисы — заглушка с отметкой сброса `qprobe`."""
     from awgbot.runtime import pairlink, quorum as quorum_rt, rsvactions
     from awgbot.runtime.scheduler import reserve as jobs
-    w = types.SimpleNamespace(acts=[], ran=[], resets=0, online=False)
+    w = types.SimpleNamespace(acts=[], ran=[], resets=0, unsent=[], online=False)
 
-    def reset():
-        w.resets += 1
+    def unsent(kind):
+        w.unsent.append(kind)                            # отметка «отправлено» снята по виду слова
+        w.resets += kind == "qprobe"
     svc = types.SimpleNamespace(reserve_liveness_tick=lambda: ("", []), reserve_gwguest_tick=lambda: [],
-                                reserve_st_if_changed=lambda: None, reserve_qprobe_reset=reset)
+                                reserve_st_if_changed=lambda: None, reserve_pair_unsent=unsent)
 
     async def run(acts):
         w.ran.append(list(acts))
@@ -450,6 +451,7 @@ async def test_other_dropped_words_do_not_reset_the_qprobe_mark(qjob):
     qjob.acts = [("send", "qkeys", {"l": "a"}), GW]
     await qjob.fn()
     assert qjob.resets == 0, "сброс отметки qprobe без отброшенного qprobe"
+    assert qjob.unsent == ["qkeys"], "отброшенный qkeys оставил свою отметку «отправлено»"
 
 
 async def test_with_the_pair_link_qprobe_goes_and_the_mark_stays(qjob):

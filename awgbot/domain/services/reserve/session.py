@@ -23,7 +23,7 @@ from ..gateway_link.common import log
 from awgbot.domain.notices import reserve as rn
 
 from . import compat
-from .state import _LOCK
+from .state import _LOCK, PAIR_SENT_MEM, PAIR_SENT_NOT_SESSION, PAIR_SENT_VIEW
 
 PAIR_CONFIRM_S = 10 * 60          # пара без первой сессии на новых ключах дольше — снимается
 
@@ -334,14 +334,9 @@ class ReserveSessionMixin:
         ключах), стороны зоны — заново при каждой сессии (резерв мог быть
         восстановлен из копии без них; `slots` идемпотентен)."""
         self.rsv_update("rsv_peer_state", session=True, session_at=timeutil.now_iso(), confirmed=True)
-        self.rsv_update("rsv_view", slots_sent=[], slots_at="")
+        self.reserve_pair_sent_reset()                        # слоты, конфиг зонда, состав, ключи кворума, блокировки, хвост — заново
         self.reserve_pkg_retry_clear()                        # отступ отвергнутого пакета — от прежней сессии
         self._jrn_sess_reset()                                # журнал: ничего не слать до сверки по st резерва
-        if hasattr(self, "reserve_qprobe_reset"):
-            self.reserve_qprobe_reset()                       # кворум: конфиг зонда второй стороне заново
-        if hasattr(self, "reserve_qmem_reset"):
-            self.reserve_qmem_reset()                         # и состав, пока он не подтверждён
-        self.__dict__.pop("_qkeys_sent", None)
         if hasattr(self, "reserve_qkeys_reset"):
             self.reserve_qkeys_reset()                       # и точки с ящиками: резерв мог быть восстановлен из копии
         return self.reserve_liveness_word()
@@ -368,6 +363,27 @@ class ReserveSessionMixin:
             log.warning("резерв: неподтверждённая пара не снята: %s", e)
             return []
         return [Notification(tg_id=int(config.ADMIN_ID), text=rn.pair_unconfirmed(name))]
+
+    def reserve_pair_sent_reset(self) -> None:
+        """Новая сессия пары: отметки «отправлено» всех сессионных слов (перечень — state.py)
+        сняты одним вызовом — прежняя сессия могла умереть с ними в буфере."""
+        for kind, keys in PAIR_SENT_MEM.items():
+            if kind not in PAIR_SENT_NOT_SESSION:
+                for k in keys:
+                    self.__dict__.pop(k, None)
+        view: dict = {}
+        for kind, fields in PAIR_SENT_VIEW.items():
+            if kind not in PAIR_SENT_NOT_SESSION:
+                view.update(fields)
+        self.rsv_update("rsv_view", **view)
+
+    def reserve_pair_unsent(self, kind: str) -> None:
+        """Слово `kind` второй стороне не ушло: его отметка «отправлено» снята — такт соберёт
+        его снова (отметка ставится при сборке, до отправки)."""
+        for k in PAIR_SENT_MEM.get(kind, ()):
+            self.__dict__.pop(k, None)
+        if kind in PAIR_SENT_VIEW:
+            self.rsv_update("rsv_view", **PAIR_SENT_VIEW[kind])
 
     def reserve_session_closed(self) -> None:
         self.rsv_update("rsv_peer_state", session=False)

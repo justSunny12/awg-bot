@@ -71,6 +71,8 @@ async def _one(act: tuple) -> None:
     if kind == "send":
         if not await pairlink.send(act[1], act[2] if len(act) > 2 else None):
             log.info("резерв: «%s» не ушло — канала нет", act[1])
+            if svc is not None and hasattr(svc, "reserve_pair_unsent"):
+                await asyncio.to_thread(svc.reserve_pair_unsent, str(act[1]))   # отметка «отправлено» снята — такт повторит
     elif kind == "send_released":
         await pairlink.send_released(act[1])
     elif kind == "guest":

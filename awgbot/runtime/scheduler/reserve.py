@@ -54,8 +54,9 @@ def setup_reserve_jobs(scheduler, services, bot) -> None:
                 if not pairlink.online():                 # канала пары нет — слова второй стороне подождут
                     dropped = [a for a in (acts or []) if a and a[0] == "send"]
                     acts = [a for a in (acts or []) if a and a[0] != "send"]
-                    if any(a[1] == "qprobe" for a in dropped) and hasattr(services, "reserve_qprobe_reset"):
-                        await asyncio.to_thread(services.reserve_qprobe_reset)   # отметка «отправлено» снята: конфиг уйдёт следующей сессией
+                    if hasattr(services, "reserve_pair_unsent"):
+                        for kind in {str(a[1]) for a in dropped}:
+                            await asyncio.to_thread(services.reserve_pair_unsent, kind)   # отметка «отправлено» снята: слово уйдёт следующей сессией
                 await rsvactions.run(acts)
             await _quorum.tick(services, _qact)
         except Exception as e:                           # noqa: BLE001
