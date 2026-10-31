@@ -54,7 +54,7 @@ q_up() {
     local v=$(( $(echo "${1//,/ }" | wc -w) + 1 ))
     pl_wait A 's.get("jrn_on") and s["jrn"]["capture"] == 1' 120 "журнал A включён" || exit 1
     if ! pl_wait A 's["quo"]["active"]' 180 "кворум линии A включён (ключи подтверждены B и шлюзами)" >"$PL/up.err"; then
-        local q; q="$(grep -m1 "сообщение 'qkeys' не обработано" "$PL/B/node.log")"
+        local q; q="$(grep -m1 -E "сообщение 'qkeys' не (обработано|разобрано)" "$PL/B/node.log")"
         [ -n "$q" ] && pl_fail "кворум не включился: B отвергает qkeys — «${q#*канал пары: }»; причины у A: $(pl_q A 's["quo"]["why"]')"
         cat "$PL/up.err"; exit 1
     fi

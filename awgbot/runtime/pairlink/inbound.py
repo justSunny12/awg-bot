@@ -4,23 +4,41 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import time
 
 from awgbot.util import pairproto
 
 from .common import _Session, log, send_line
 
+FAULTS_MAX = 5           # сбоев обработчика одного вида за FAULTS_WINDOW_S — разрыв сессии
+FAULTS_WINDOW_S = 60.0
+
 
 class InboundMixin:
 
     async def _handle_safe(self, sess: _Session, msg: dict) -> bool:
+        """Разбор одного слова. Не разобралось (подпись прошла, а тело не то) —
+        разрыв: поломка или чужой. Обработчик упал — лог и следующее слово:
+        «ядовитое» слово, рвущее сессию, приходило бы снова на каждом
+        переподключении; повторяется — разрыв с логом."""
+        kind = str(msg.get("t"))[:32]
         try:
             await self._handle(sess, msg)
             return True
         except asyncio.CancelledError:
             raise
-        except Exception as e:                            # noqa: BLE001
-            log.warning("канал пары: сообщение %r не обработано: %s", str(msg.get("t"))[:32], e)
+        except pairproto.ProtocolError as e:
+            log.warning("канал пары: сообщение %r не разобрано: %s — сессия разорвана", kind, e)
             return False
+        except Exception as e:                            # noqa: BLE001
+            log.warning("канал пары: сообщение %r не обработано: %s", kind, e)
+            now = time.monotonic()
+            seen = [t for t in sess.faults.get(kind, []) if now - t < FAULTS_WINDOW_S] + [now]
+            sess.faults[kind] = seen
+            if len(seen) >= FAULTS_MAX:
+                log.warning("канал пары: %d сбоев на «%s» за минуту — сессия разорвана", len(seen), kind)
+                return False
+            return True
 
     def _sender_side(self, sess: _Session) -> str:
         return pairproto.ACCEPTOR if sess.listener else pairproto.INVITER

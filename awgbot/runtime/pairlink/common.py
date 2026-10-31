@@ -48,6 +48,7 @@ class _Session:
         self.sn_sent = False
         self.st_sent: dict | None = None
         self.parts: dict = {}            # сборка пакета частями: {gen: [часть…]}
+        self.faults: dict[str, list[float]] = {}   # сбои обработчиков по видам: отметки monotonic
 
 
 async def send_line(sess: _Session, kind: str, body: dict | None = None, *, pad: int = gwlink.PAD_DELTA) -> bool:
