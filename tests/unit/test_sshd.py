@@ -172,6 +172,48 @@ def test_listen_address_with_port_is_refused_before_writing(cfg, monkeypatch, tm
     assert not any(c[0] == "sshd" for c in host.calls)
 
 
+@pytest.mark.parametrize("line", ["ListenAddress 0.0.0.0:22", "ListenAddress [::]:22",
+                                  "ListenAddress host.example:2200 rdomain vrf1"])
+def test_listen_address_with_port_in_a_dropin_leaves_every_file_as_it_was(cfg, monkeypatch, line):
+    """ListenAddress с портом нашёлся в drop-in'е, а главный файл к тому
+    моменту уже был переписан — и отказ оставлял его таким без отката."""
+    main, dropin, _ = cfg
+    (dropin.parent / "50-listen.conf").write_text(line + "\n")
+    before_main, before_dropin = main.read_text(), dropin.read_text()
+    host = _Host()
+    monkeypatch.setattr(sshd.subprocess, "run", host)
+    with pytest.raises(sshd.SshdError, match="ListenAddress"):
+        sshd.set_port(2222)
+    assert main.read_text() == before_main and dropin.read_text() == before_dropin
+    assert not host.calls, "до проверки всех файлов — ни одной команды"
+
+
+@pytest.mark.parametrize("line", ["ListenAddress 2001:db8::1", "ListenAddress ::", "ListenAddress 0.0.0.0"])
+def test_listen_address_without_a_port_is_not_mistaken_for_one(cfg, monkeypatch, line):
+    """IPv6 без скобок порта не несёт: `2001:db8::1` прежний шаблон `.*:\\d+`
+    принимал за «адрес:порт» и отказывал в смене порта."""
+    main, _dropin, _ = cfg
+    (main.parent / "sshd_config.d" / "50-listen.conf").write_text(line + "\n")
+    monkeypatch.setattr(sshd.subprocess, "run", _Host())
+    sshd.set_port(2222)
+    assert "Port 2222" in main.read_text()
+
+
+def test_an_unexpected_failure_after_writing_restores_the_files(cfg, monkeypatch):
+    main, dropin, _ = cfg
+    before_main, before_dropin = main.read_text(), dropin.read_text()
+    host = _Host()
+
+    def run(args, **kw):
+        if args[:2] == ["sshd", "-T"]:
+            raise OSError("sshd пропал")
+        return host(args, **kw)
+    monkeypatch.setattr(sshd.subprocess, "run", run)
+    with pytest.raises(Exception):
+        sshd.set_port(2222)
+    assert main.read_text() == before_main and dropin.read_text() == before_dropin
+
+
 def test_nobody_listening_after_restart_rolls_back_and_restarts_again(cfg, monkeypatch, tmp_path):
     main, _, _ = cfg
     before = main.read_text()

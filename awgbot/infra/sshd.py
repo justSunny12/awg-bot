@@ -34,7 +34,9 @@ SSHD_DROPIN_DIR = "/etc/ssh/sshd_config.d"
 SOCKET_UNIT = "ssh.socket"
 SOCKET_DROPIN = "/etc/systemd/system/ssh.socket.d/awg-bot.conf"
 _PORT_RE = re.compile(r"^(\s*)Port\s+\S+", re.IGNORECASE)
-_ADDR_PORT_RE = re.compile(r"^\s*ListenAddress\s+.*:\d+\s*$", re.IGNORECASE)
+# ListenAddress с портом: «адрес:порт» (IPv4, имя) или «[IPv6]:порт»; IPv6 без
+# скобок (`ListenAddress 2001:db8::1`, `::`) порта не несёт — не наш случай
+_ADDR_PORT_RE = re.compile(r"^\s*ListenAddress\s+(\[[^\]\s]+\]|[^\s:\[\]]+):\d+(\s|$)", re.IGNORECASE)
 
 
 class SshdError(Exception):
@@ -323,6 +325,10 @@ def set_port(port: int) -> list[str]:
             except FileNotFoundError:
                 pass
 
+    # Сначала все файлы прочитаны и проверены, потом — запись: ListenAddress с
+    # портом в drop-in'е находился, когда главный файл уже был переписан, и
+    # отказ оставлял его таким без отката.
+    plan: list[tuple[str, str, str]] = []
     for path in _config_files():
         try:
             text = Path(path).read_text()
@@ -330,9 +336,10 @@ def set_port(port: int) -> list[str]:
             if path != SSHD_CONFIG:
                 continue
             text = ""
-        new = rewrite_port(text, port, primary=(path == SSHD_CONFIG))
         if any(_ADDR_PORT_RE.match(ln) for ln in text.splitlines()):
             raise SshdError(f"в {path} порт задан через ListenAddress — поправь руками")
+        plan.append((path, text, rewrite_port(text, port, primary=(path == SSHD_CONFIG))))
+    for path, text, new in plan:
         if new != text:
             saved[path] = text
             try:
@@ -351,7 +358,7 @@ def set_port(port: int) -> list[str]:
                 if eff else "порт по умолчанию"
             raise SshdError(f"sshd применил бы {shown}, а не {port} — в конфиге есть "
                             "что-то, чего я не понял; поправь руками")
-    except SshdError:
+    except BaseException:                         # любой отказ после правки файлов — файлы как были
         restore()
         raise
 
