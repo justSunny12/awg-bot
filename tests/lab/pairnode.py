@@ -410,6 +410,7 @@ def _status(svc, w: Path) -> dict:
     from awgbot.runtime import pairlink
     meta = svc.db.jrn_meta()
     st = {"t": time.time(), "online": pairlink.online(), "session": svc.reserve_online(), "seen": svc.reserve_peer_seen(),
+          "alive": svc._peer_alive(svc.reserve_peer_state()),     # то же «на связи», что у кнопки возврата
           "jrn": {k: meta[k] for k in ("epoch", "holder", "role", "capture", "applied", "acked")},
           "last_i": svc.db.jrn_last_i(), "out": svc.rsv_get("rsv_out"), "in": svc.rsv_get("rsv_in"),
           "poll": svc.rsv_get("rsv_poll"), "pkg_sent": {k: v for k, v in svc.rsv_get("rsv_pkg_sent").items()
