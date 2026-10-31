@@ -7,6 +7,7 @@ from awgbot.util.textfmt.base import details, plural_ru
 
 from ..fmt import _e
 from .c9wait import card_line as c9_card_line
+from .pult import card_lines as pult_card_lines, peer_card_line as pult_peer_line
 
 
 LOW_MEM_MB = 400                     # меньше — строка «мало свободной памяти» (решение по в. 56)
@@ -205,6 +206,7 @@ def card_text(d: dict, bot_username: str = "") -> str:
             at = f" · актуальны на {_e(_date(fol['at']))}" if fol.get("at") else ""
             lines.append(f"└ 🟡 данные здесь догоняют бот на {_n(name)}{at}" if fol.get("lag")
                          else f"└ данные здесь следуют за ботом на {_n(name)}{at}")
+        lines += pult_card_lines(d.get("pult") or {}, name)  # Telegram бота здесь, пользователи там
     elif out == "returning":
         lines.append(f"📤 Твои пользователи: возвращаются с {_n(name)}")
     else:
@@ -235,6 +237,8 @@ def card_text(d: dict, bot_username: str = "") -> str:
         since = d.get("in_since") or ""
         lines.append(f"📥 Пользователи {_n(name)}: здесь" + (f" с {_e(_when(since))}" if since else "")
                      + (" — принимаю" if inn == "taking" else " — возвращаю" if inn == "releasing" else ""))
+        if d.get("peer_pult"):                                # её Telegram у неё (пульт), пользователи здесь
+            lines.append(pult_peer_line(name))
         if d.get("in_tg_wait"):                               # VPN здесь, а бот второй стороны Telegram не взял
             lines.append(f"└ ⚠️ бот {_n(name)} здесь не отвечает в Telegram: {_e(d['in_tg_wait'])} — повторяю раз в минуту")
     elif inn == "relay":

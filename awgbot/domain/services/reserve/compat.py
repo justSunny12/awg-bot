@@ -21,7 +21,8 @@ from awgbot.core.compat import COMPAT_FLOOR, version_key
 # процесса открытия (`go_req` → `open_eph` → `go{sealed}`)
 # quo1 — кворум: состав линии, зонды, взгляды и решения по большинству (концепт «кворум», 4.2.0)
 # ret1 — слово `resume` (возврат сорвался у основы — гость снова у резерва) и `oid` в `up`/`taken`
-CAPS: tuple[str, ...] = ("pair1", "pkg2", "zone1", "guest1", "keys1", "peer1", "hook1", "seal1", "quo1", "ret1")
+# pult1 — пульт у основы: поле `tg_pult` в `st` и слово `pult_back` (основа отдаёт Telegram гостю)
+CAPS: tuple[str, ...] = ("pair1", "pkg2", "zone1", "guest1", "keys1", "peer1", "hook1", "seal1", "quo1", "ret1", "pult1")
 
 
 def peer_can(peer: dict, cap: str) -> bool:

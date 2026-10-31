@@ -11,7 +11,10 @@ epoch, last}`: передача права записи по номеру), `("g
 `("live",)` — перерисовать живое
 сообщение хода переезда, `("release",)` — остановить поллинг, подтвердить
 пачку, опрос вне очереди, финальная реплика, `("restart",)` — перезапуск
-бота после слияния, `("take_tg",)` — `deleteWebhook`, поллинг, `taken`.
+бота после слияния, `("take_tg",)` — `deleteWebhook`, поллинг, `taken`,
+`("pult_probe",)` — getWebhookInfo пробы пульта (вебхук не снимается) и ответ
+домену, `("pult_take",)` — `deleteWebhook` без сброса очереди, поллинг, отметка
+пульта (domain reserve/pult).
 
 Контекст (бот, сервисы, управление поллингом) ставит main на старте.
 """
@@ -29,7 +32,7 @@ _ctx: dict = {}
 # tests/unit/test_rsvactions_kinds.py сверяет литералы домена с этим набором.
 ACTION_KINDS = frozenset({
     "send", "send_released", "guest", "guestctl", "gw", "gwlink", "notify", "fw", "relay_flush",
-    "live", "release", "restart", "take_tg", "wake_poll", "take_home",
+    "live", "release", "restart", "take_tg", "wake_poll", "take_home", "pult_probe", "pult_take",
 })
 
 
@@ -128,6 +131,16 @@ async def _one(act: tuple) -> None:
     elif kind == "take_home":
         if pc is not None and await pc.take():
             await run(await asyncio.to_thread(svc.reserve_stuck_home))
+    elif kind == "pult_probe":
+        if bot is not None and svc is not None:
+            from awgbot.runtime import pollctl
+            info = await pollctl.webhook_info(bot, "проба пульта")
+            await run(await asyncio.to_thread(svc.reserve_pult_probe_in, info))
+    elif kind == "pult_take":
+        if pc is not None and await pc.take():
+            await run(await asyncio.to_thread(svc.reserve_pult_taken))
+        else:
+            log.warning("резерв: пульт — deleteWebhook не прошёл, повторю следующей пробой")
     else:
         log.info("резерв: неизвестное действие %s", kind)
 

@@ -114,14 +114,18 @@ async def run_guest() -> None:
                 wh.refresh_pool()                         # хост выучил сеть Telegram — в фильтр без перезапуска
             except Exception as e:                        # noqa: BLE001
                 log.info("гость: пул вебхука не перечитан: %s", e)
+        again = _retake_begin(ctl, tg_set)                # основа отдала Telegram (пульт): вебхук снова
         if not tg_set.is_set() and wh is not None and (ctl.take_tg.is_set() or rsvzone.TG_TAKE_FILE.exists()) \
-                and await asyncio.to_thread(services.guest_can_take_tg):   # с журналом — только держателем
+                and await asyncio.to_thread(services.guest_can_take_tg):   # не при пульте у основы; с журналом — только держателем
             if await wh.set_webhook(bot, dp):
                 tg_set.set()
                 watch_due = asyncio.get_running_loop().time() + webhook.watch_delay()
-                await ctl.send("tg_taken")
-                ttl = int(rsvzone.read_json(rsvzone.RUN_DIR / "pkg.json").get("ttl") or 0)
-                notify_at["t"] = asyncio.get_running_loop().time() + max(MOVE_NOTIFY_DELAY_S, ttl)   # не раньше TTL записи
+                if again:
+                    await _retake_done(ctl, services)
+                else:
+                    await ctl.send("tg_taken")
+                    ttl = int(rsvzone.read_json(rsvzone.RUN_DIR / "pkg.json").get("ttl") or 0)
+                    notify_at["t"] = asyncio.get_running_loop().time() + max(MOVE_NOTIFY_DELAY_S, ttl)   # не раньше TTL записи
         if tg_set.is_set() and not ctl.tg_acked.is_set() and ctl.connected():
             await ctl.send("tg_taken")                    # канал мог быть не подключён в момент вебхука — повтор до ack
         if tg_set.is_set() and notify_at["t"] and asyncio.get_running_loop().time() >= notify_at["t"]:
@@ -213,6 +217,28 @@ async def run_guest() -> None:
         with contextlib.suppress(Exception):
             await bot.session.close()
         db.close()
+
+
+def _retake_begin(ctl, tg_set: asyncio.Event) -> bool:
+    """Слово `tg_retake` бота резерва (основа отдала Telegram — пульт у неё снят): вебхук, который
+    она сняла, поставить снова — отметка «поставлен» прочь. True — идёт повторная постановка
+    (держится, пока вебхук не встал: такт пробует снова)."""
+    retake = getattr(ctl, "retake", None)
+    if retake is None or not retake.is_set():
+        return False
+    if tg_set.is_set():
+        tg_set.clear()
+        log.info("гость: основа отдала Telegram — ставлю вебхук снова")
+    return True
+
+
+async def _retake_done(ctl, services) -> None:
+    """Вебхук снова мой после пульта основы: слово снято, решения снова здесь (отметка «вебхук
+    не здесь» надзора — прошлая). Рассылки «переподключи VPN» второй раз нет: пользователи не
+    переезжали."""
+    ctl.retake.clear()
+    await asyncio.to_thread(services.guest_webhook_ours)
+    log.warning("гость: вебхук снова поставлен — Telegram бота снова здесь")
 
 
 async def _wait_stop(ctl) -> bool:

@@ -56,7 +56,9 @@ reserve — взаимный резерв серверов AWG на сторон
 - `journal` — эпоха линии данных и следование основы, пока её пользователи у
   резерва (пакет);
 - `quorum` — кворум: состав линии, пиры-зонды и конфиги зондов, ответчик и
-  счёт «да», свои пробы и взгляды, слова каналов, данные карточки (пакет).
+  счёт «да», свои пробы и взгляды, слова каналов, данные карточки (пакет);
+- `pult` — пульт у основы: бот на резерве не отвечает в Telegram, линк молчит —
+  основа забирает Telegram себе, пользователи остаются на резерве (пакет).
 """
 from __future__ import annotations
 
@@ -80,6 +82,7 @@ from .outbound_return import ReserveReturnMixin
 from .outbound_stuck import ReserveStuckMixin
 from .outbound_forced import ReserveForcedTakeMixin
 from .package import ReservePackageMixin
+from .pult import ReservePultMixin
 from .pairing import ReservePairingMixin
 from .peeradmin import ReservePeerAdminMixin
 from .quorum import ReserveQuorumMixin
@@ -103,7 +106,7 @@ class ReserveMixin(ReserveStateMixin, ReserveKeysMixin, ReserveInviteMixin, Rese
                    ReserveOpeningMixin, ReserveRfZoneMixin, ReserveRfPeerMixin, ReserveTgPoolMixin, ReserveMergeOpsMixin,
                    ReserveCodeWindowMixin, ReserveReturnMixin, ReserveOpenProcMixin, ReserveJournalMixin,
                    ReserveInboundBackMixin, ReserveInboundTgWaitMixin, ReserveStuckMixin, ReserveForcedTakeMixin,
-                   ReserveQuorumMixin):
+                   ReserveQuorumMixin, ReservePultMixin):
     """Резерв серверов: всё о паре — в одном месте сервисов."""
 
 

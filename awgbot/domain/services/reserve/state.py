@@ -112,8 +112,15 @@ class ReserveStateMixin:
     def reserve_set_out(self, state: str, **why) -> dict:
         if state not in OUT_STATES:
             raise ValueError(f"не состояние направления: {state}")
-        if str(self.rsv_get("rsv_out").get("state") or "home") != state:
+        prev = str(self.rsv_get("rsv_out").get("state") or "home")
+        if prev != state:
             why.setdefault("stuck_since", "")             # счёт зависшего вебхука — заново в новом состоянии (outbound_stuck)
+        if state in ("home", "leaving") or (state == "away" and prev in ("home", "leaving")):
+            # пульт (pult/primary) — только эпизода, где пользователи у резерва: дома и в новом эпизоде его нет;
+            # из returning обратно в away (возврат сорвался) — остаётся
+            why.setdefault("pult_at", "")
+            why.setdefault("pult_bad", {})
+            why.setdefault("pult_give_mono", 0)
         # at_ts — порядок с точностью до долей секунды: роль эпохи сверяет «что было раньше»
         out = self.rsv_update("rsv_out", state=state, since=timeutil.now_iso(), at_ts=time.time(), **why)
         self.reserve_epoch_sync()                         # право записи — по новому состоянию

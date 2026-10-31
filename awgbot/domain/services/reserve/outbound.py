@@ -228,7 +228,7 @@ class ReserveOutboundMixin:
         if state == "away" and out.get("await_merge"):
             return self._tick_force_take(out)                 # возврат без резерва: deleteWebhook ещё не прошёл
         if state == "away":
-            return self._tick_away(out)
+            return self._tick_away(out) + self._tick_pult()   # бот на резерве не отвечает, линк молчит — пульт (pult/primary)
         if state == "returning":
             return self._tick_returning(out)
         acts = self._tick_home(out) + self.reserve_tail_settle() + self._home_back_resend()   # свой хвост при держателе дома — переносить

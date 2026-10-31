@@ -72,7 +72,8 @@ def make_dispatcher(role: str, services, db, *, reattach: bool = False) -> Dispa
     from awgbot.bot.errors import on_error
     dp = Dispatcher(storage=MemoryStorage())
     dp["services"] = services
-    access = AccessMiddleware(db, fenced=getattr(services, "reserve_quorum_fenced", None) if role in ("client", "guest") else None)
+    access = AccessMiddleware(db, fenced=getattr(services, "reserve_quorum_fenced", None) if role in ("client", "guest") else None,
+                              pult=getattr(services, "reserve_pult_on", None) if role == "client" else None)   # пульт — у основы
     dp.message.outer_middleware(access)
     dp.callback_query.outer_middleware(access)
     # упавший обработчик — всплывашка или строка «⚠️ …» человеку и трасса в журнал,

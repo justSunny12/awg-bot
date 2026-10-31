@@ -151,7 +151,8 @@ def test_the_optional_fields_are_only_the_listed_ones_of_st_and_state():
     версии внутри линии); остальное по-прежнему обязательно."""
     assert pp.OPTIONAL == {"st": frozenset({"healthy", "can_return", "in_kind", "mem_free", "online", "in_by", "zone",
                                             "jrn", "quo", "rfp", "exposed",   # exposed — ключ основы известен без её K
-                                            "in_tg"}),   # in_tg — бот второй стороны у меня: forced | wait
+                                            "in_tg",     # in_tg — бот второй стороны у меня: forced | wait
+                                            "tg_pult"}),   # tg_pult — Telegram моего бота у меня, пользователи у второй (пульт)
                            "ask": frozenset({"kind"}),
                            # ret1: к какому открытию слово — у стороны прежнего выпуска поля нет
                            "up": frozenset({"oid"}), "taken": frozenset({"oid"}),
