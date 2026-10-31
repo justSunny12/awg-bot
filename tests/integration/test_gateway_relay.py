@@ -329,7 +329,8 @@ async def test_the_server_asks_in_its_own_chat_and_replaces_a_previous_question(
     fake_bot.edit_message_text = edit
     assert await rs.relay_restore(fake_bot, services, state, b"AWGBK1DUMMY", "b.tgz.enc") == ""
     data = await state.get_data()
-    assert data["restore_blob"] and data["restore_fp"] and data["restore_qmid"] != 4242
+    assert data["restore_fp"] and data["restore_qmid"] != 4242
+    assert services.restore_stashed(data["restore_fp"])["blob"] == b"AWGBK1DUMMY", "файл вопроса не на диске"
     assert len(edits) == 1 and edits[0][0] == 4242
     assert edits[0][1] == ("<b>Не актуально: прислан новый файл бэкапа</b>\n\n<blockquote expandable>"
                            "♻️ Восстановить бэкап от 01.10.26?</blockquote>"), edits

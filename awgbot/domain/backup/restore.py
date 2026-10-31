@@ -15,6 +15,65 @@ class BackupRestoreMixin:
 
     RESTORE_PLAN = "restore-pending.plan.json"
 
+    # Файл вопроса «♻️ Восстановить?» — на диске, а не в данных диалога FSM: любой
+    # state.clear() (другой диалог, /start) стирал бы его, и кнопка отвечала «нет
+    # файла». В FSM и кнопке — только отпечаток; срок — час, один вопрос за раз;
+    # каталог — BACKUP_DIR/restore (рядом с restore-pending, те же права).
+    RESTORE_STASH_DIR = "restore"
+    RESTORE_STASH_TTL = 3600
+
+    @staticmethod
+    def _restore_stash_dir():
+        return config.BACKUP_DIR / BackupRestoreMixin.RESTORE_STASH_DIR
+
+    def restore_stash(self, fp: str, blob: bytes, plan: dict | None, created_at: str) -> None:
+        """Отложить файл вопроса под отпечатком (0600); прежние вопросы — прочь:
+        их сообщения уже помечены «не актуально»."""
+        import json
+        import os
+        d = self._restore_stash_dir()
+        d.mkdir(parents=True, exist_ok=True, mode=0o700)
+        for old in d.glob("pending-*"):
+            if old.name not in (f"pending-{fp}.bin", f"pending-{fp}.json"):
+                try:
+                    old.unlink()
+                except OSError:
+                    pass
+        fd = os.open(d / f"pending-{fp}.bin", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "wb") as f:
+            f.write(blob)
+        meta = {"plan": plan or {}, "created_at": created_at}
+        fd = os.open(d / f"pending-{fp}.json", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(json.dumps(meta, ensure_ascii=False))
+
+    def restore_stashed(self, fp: str) -> dict | None:
+        """Отложенный файл по отпечатку: {blob, plan, created_at}; нет или старше
+        часа (тогда он удаляется) — None."""
+        import json
+        import time
+        if not fp:
+            return None
+        d = self._restore_stash_dir()
+        bin_p, meta_p = d / f"pending-{fp}.bin", d / f"pending-{fp}.json"
+        try:
+            if time.time() - bin_p.stat().st_mtime > self.RESTORE_STASH_TTL:
+                self.restore_unstash(fp)
+                return None
+            blob = bin_p.read_bytes()
+            meta = json.loads(meta_p.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        return {"blob": blob, "plan": meta.get("plan") or {}, "created_at": str(meta.get("created_at") or "")}
+
+    def restore_unstash(self, fp: str) -> None:
+        d = self._restore_stash_dir()
+        for p in (d / f"pending-{fp}.bin", d / f"pending-{fp}.json"):
+            try:
+                p.unlink()
+            except OSError:
+                pass
+
     def prepare_restore(self, blob: bytes, plan: dict | None = None) -> str:
         """Шифрованный файл из чата — на диск, откуда его возьмёт awg-bot
         restore, и рядом — план из вопроса: после остановки сервиса слияние

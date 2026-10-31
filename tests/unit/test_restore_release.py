@@ -360,14 +360,16 @@ async def test_a_busy_install_lock_answers_in_the_chat_and_launches_nothing(serv
     from tests.conftest import FakeBot, FakeCallback, FakeMessage, FakeState
     monkeypatch.setattr(marks, "install_busy", lambda: True)
     state = FakeState()
-    await state.update_data(restore_blob="RFVNTVk=", restore_plan={}, restore_fp="aaaaaaaaaaaa")
+    services.restore_stash("aaaaaaaaaaaa", b"DUMMY", {}, "")
+    await state.update_data(restore_fp="aaaaaaaaaaaa")
     launched = []
     services.launch_restore = lambda path, release="": launched.append(path)
     bot = FakeBot()
     msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=bot)
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=bot)
     await rs.run_restore(cb, services, state, "aaaaaaaaaaaa")
-    assert launched == [] and (await state.get_data())["restore_blob"], "вопрос сброшен"
+    assert launched == [] and (await state.get_data())["restore_fp"], "вопрос сброшен"
+    assert services.restore_stashed("aaaaaaaaaaaa") is not None, "файл вопроса потерян"
     assert msg.sent[-1][1] == "⚠️ Восстановление не запущено: " + texts.RESTORE_INSTALL_BUSY
     assert not getattr(services, "_restore_running", False)
 
@@ -387,7 +389,8 @@ async def test_a_downloaded_release_is_removed_when_the_launch_fails(services, m
         raise OSError("systemd-run: нет")
     services.launch_restore = launch
     state = FakeState()
-    await state.update_data(restore_blob="RFVNTVk=", restore_plan={}, restore_fp="aaaaaaaaaaaa")
+    services.restore_stash("aaaaaaaaaaaa", b"DUMMY", {}, "")
+    await state.update_data(restore_fp="aaaaaaaaaaaa")
     bot = FakeBot()
     msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=bot)
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=bot)
