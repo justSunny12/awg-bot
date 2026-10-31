@@ -57,15 +57,16 @@ class ReserveOpeningMixin:
         if why:
             return why
         inn = self.rsv_get("rsv_in")
+        free = str(inn.get("state") or "idle") in ("idle", "relay")   # relay (хвост прошлого возврата) — зона свободна, паузы те же
         fail_at = str(inn.get("fail_at") or "")
-        if fail_at and str(inn.get("state") or "idle") == "idle":
+        if fail_at and free:
             try:
                 if timeutil.elapsed(timeutil.parse_iso(fail_at)) < FAIL_DAMPER_S:
                     return "после отказа открытия — пауза две минуты"
             except ValueError:
                 pass
         last = str(inn.get("since") or "")
-        if last and str(inn.get("state") or "idle") == "idle" and inn.get("ended_auto"):
+        if last and free and inn.get("ended_auto"):
             try:
                 mins = settings.get_int("app.reserve.min_interval_minutes", 30)
                 if timeutil.elapsed(timeutil.parse_iso(last)) < mins * 60:
@@ -96,16 +97,17 @@ class ReserveOpeningMixin:
             self._relay_yield()
             from awgbot.infra import rsvzone
             rsvzone.open_status_write("launching")
-            self.reserve_set_in("taking", kind=kind, gen=int(pkg_in.get("gen") or 0), why=case, extra="",
+            self.reserve_set_in("taking", kind=kind, gen=int(pkg_in.get("gen") or 0), why=kind, case=case, extra="",   # why — гостю причина
                                 by="code" if "code" in secret else "share",
                                 open_started=timeutil.now_iso(), deadline=time.monotonic() + self._open_wait_s(),
-                                up_sent=False, tg_taken=False, ended_auto=True,
+                                up_sent=False, tg_taken=False, ended_auto="code" not in secret,   # по коду — не автоматический
                                 dead_since=str(self.rsv_get("rsv_view").get("code", {}).get("since") or ""))
             self._in_step("open")
         try:
             self._rsvopen_launch(payload)
         except Exception as e:                                # noqa: BLE001
-            self.reserve_set_in("idle", step="", reason=str(e))
+            # срыв открытия: отметка автоматического переезда прочь, пауза — короткий демпфер (fail_at)
+            self.reserve_set_in("idle", step="", reason=str(e), ended_auto=False, fail_at=timeutil.now_iso())
             self._relay_restore()                             # пересылка хвоста, уступившая открытию, — обратно
             return [("notify", [Notification(tg_id=int(config.ADMIN_ID), text=_fail_text(self.reserve_peer_name(), str(e)))])]
         log.warning("резерв: процесс открытия по %s запущен (%s, пакет %s)", "коду" if kind == "code" else "точкам",

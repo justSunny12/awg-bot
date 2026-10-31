@@ -42,8 +42,8 @@ class ReserveCodeWindowMixin:
         primary = self.reserve_peer_name()
         rn = self._rn()
         if open_:
-            if cw.get("open") or self.reserve_in() != "idle":
-                return []
+            if cw.get("open") or cw.get("pending") or not self.reserve_zone_free():   # relay уступает открытию
+                return []                                     # pending — окно закрыто на время ввода кода: его исход ещё впереди
             since = str(since or timeutil.now_iso())
             pid = self.reserve_peer_admin_id()
             if cw.get("episode") == since:
@@ -58,7 +58,7 @@ class ReserveCodeWindowMixin:
             if pid and opened:
                 notes.append(Notification(tg_id=pid, force_sound=True, keyboard="peer_code",
                                           text=rn.quorum_code_needed_primary(primary, str(config.SERVER_NAME or ""), since, n, v, t, off_why)))
-            self.rsv_update("rsv_view", code={"open": True, "since": since, "told": bool(pid and opened), "tries": [],
+            self.rsv_update("rsv_view", code={"open": True, "since": since, "told": bool(pid and opened), "tries": self._code_tries(cw),
                                               "episode": since, "by": by})
             log.warning("кворум: «%s» не вижу, голосов для переезда не хватает (не видят %d из %d, нужно %d) — приём кода открыт",
                         primary, n, v, t)
@@ -67,7 +67,7 @@ class ReserveCodeWindowMixin:
             return []
         self.rsv_update("rsv_view", code={"open": False, "closed_why": by, "closed_at": timeutil.now_iso(),
                                           "episode": str(cw.get("episode") or ""), "told": bool(cw.get("told")),
-                                          "by": str(cw.get("by") or "")})
+                                          "by": str(cw.get("by") or ""), "tries": self._code_tries(cw)})   # попытки — на час, не на окно
         log.info("кворум: приём аварийного кода закрыт (%s)", by)
         pid = self.reserve_peer_admin_id()
         if cw.get("told") and pid and not quiet:
@@ -82,7 +82,8 @@ class ReserveCodeWindowMixin:
             return []
         line = self.reserve_quorum_peer_line()
         cw = dict(self.rsv_get("rsv_view").get("code") or {})
-        if line.get("active"):
+        tm_off = self.reserve_quorum_peer_timing_off() if hasattr(self, "reserve_quorum_peer_timing_off") else ""
+        if line.get("active") and not tm_off:                 # цифры расходятся — кандидата нет, сигнал по линку
             if cw.get("open") and cw.get("by") == "link":
                 return self.reserve_code_window_set(False, by="link", quiet=True)   # дальше ведёт кандидат (Т-К21 — своим словом)
             return []
@@ -97,7 +98,7 @@ class ReserveCodeWindowMixin:
                     return []
             except ValueError:
                 return []
-            why = [str(c) for c in (line.get("why") or [])]
+            why = ([f"timing:{tm_off}"] if tm_off else []) + [str(c) for c in (line.get("why") or [])]
             return self.reserve_code_window_set(True, since=since, by="link", off_why=rn_off_why(why))
         if not down and cw.get("open") and cw.get("by") == "link":
             return self.reserve_code_window_set(False, by="link")
@@ -108,15 +109,15 @@ class ReserveCodeWindowMixin:
         quorum/tie (Т-К5в несёт кнопку кода), отбой — Т-К6."""
         view = self.rsv_get("rsv_view")
         cw = dict(view.get("code") or {})
-        if open_ and self.reserve_in() == "idle":
-            if not cw.get("open"):
+        if open_ and self.reserve_zone_free():
+            if not cw.get("open") and not cw.get("pending"):
                 since = timeutil.now_iso()
-                self.rsv_update("rsv_view", code={"open": True, "since": since, "told": False, "tries": [],
+                self.rsv_update("rsv_view", code={"open": True, "since": since, "told": False, "tries": self._code_tries(cw),
                                                   "episode": str(cw.get("episode") or since), "by": "tie"})
                 log.warning("резерв: ничья — приём аварийного кода открыт")
         elif not open_ and cw.get("open"):
             self.rsv_update("rsv_view", code={"open": False, "closed_why": "tie_over", "closed_at": timeutil.now_iso(),
-                                              "episode": str(cw.get("episode") or ""), "told": False})
+                                              "episode": str(cw.get("episode") or ""), "told": False, "tries": self._code_tries(cw)})
             log.info("резерв: приём аварийного кода закрыт (ничьей нет)")
         return []
 

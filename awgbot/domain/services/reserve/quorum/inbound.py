@@ -147,6 +147,16 @@ class ReserveQuorumInboundMixin:
         if case != "q":
             log.warning("кворум: просьба «%s» неизвестного вида %r — не отвечаю", name, case)
             return []
+        ld = self.__dict__.get("_rsv_qleader")
+        if ld is not None and int(ld.v) >= 2 and not ld.q2 and not ld.fenced:
+            # у меня большинство «да»: просьба расходится с моим счётом (цифры времени, подмена слова) —
+            # пользователей не отдаю; кандидат, не получив согласия, идёт по точкам — их дадут только
+            # шлюзы, которые сами меня не видят. Ограждён или «да» не больше половины (ничья) — отдаю
+            from awgbot.util.quorum import members as qm
+            y = int(ld.yes_count(time.monotonic()))
+            if qm.majority(y, int(ld.v)):
+                log.warning("кворум: «%s» просит отдать пользователей, а у меня «да» %d из %d — не отдаю", name, y, ld.v)
+                return [("send", "ask_no", {"reason": "quorum"})]
         why = self.reserve_move_check()
         if why:
             log.info("кворум: просьба «%s» по кворуму — занят: %s", name, why)

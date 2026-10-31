@@ -215,6 +215,7 @@ def test_an_emergency_hosting_that_did_not_take_telegram_fails_after_ten_minutes
     svc = host.svc
     monkeypatch.setattr(rsvzone, "guest_unit_active", lambda: active)
     _taking(host, "dead")
+    svc.rsv_update("rsv_in", by="share")                  # аварийный путь — открытие по точкам: запись меняет процесс
     host.zone.status = {"step": "done"}
     svc.reserve_in_tick()
     svc.reserve_in_tick()
@@ -361,3 +362,22 @@ def test_back_without_the_address_of_the_primary_flushes_nothing(host, monkeypat
     _serving(host)
     acts = host.svc.reserve_back_in()
     assert ("relay_flush",) not in acts and "teardown" in host.zone.names(), acts
+
+
+@pytest.mark.parametrize("kind", ["dead", "rf"])
+def test_a_move_by_the_primary_key_on_a_quorum_ask_waits_for_released_like_the_button(host, kind):
+    """Просьба кворума (`ask{q}` → `go_req{dead | rf}`): запись меняет основа, процесс открытия
+    кончает `done record=skipped` — Telegram отдаст её `released`; ждать, как кнопка, а не
+    срывать через TAKEN_WAIT_S «бот основы на резерве не поднялся»."""
+    svc = host.svc
+    _taking(host, kind)
+    host.zone.status = {"step": "done", "record": "skipped"}
+    svc.reserve_in_tick()
+    svc.reserve_in_tick()
+    host.clock.advance(inbound.TAKEN_WAIT_S + 5)
+    acts = svc.reserve_in_tick()
+    assert svc.reserve_in() == "taking" and "down" not in sent(acts), \
+        f"{kind}: путь с K основы сорван через {inbound.TAKEN_WAIT_S} с: {svc._inn().get('reason')}"
+    host.clock.advance(inbound.DONE_BUTTON_WAIT_S)
+    svc.reserve_in_tick()
+    assert svc._inn().get("tg_take_forced") or svc.reserve_in() == "idle", "срок released для пути с K не наступил"

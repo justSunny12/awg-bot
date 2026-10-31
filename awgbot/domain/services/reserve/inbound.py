@@ -29,8 +29,8 @@ env резерва закрыт, каталог данных подменён п
 догоняет и ставит вебхук сам; основа с `released` опоздала — `takeover`.
 Такт проверяет код завершения процесса: кончился без `done`/`fail` — срыв
 сразу, хвост stderr (rsvopen.err) — в причину. После `done` у taking есть
-срок: аварийный путь ждёт `tg_taken` TAKEN_WAIT_S, кнопка — `released`
-DONE_BUTTON_WAIT_S; основа с `released` опоздала и не на связи — `tg_take`
+срок: аварийный путь ждёт `tg_taken` TAKEN_WAIT_S, путь с K основы (кнопка и
+просьба кворума) — `released` DONE_BUTTON_WAIT_S; основа с `released` опоздала и не на связи — `tg_take`
 гостю сам (`tg_take_forced`), ещё TAKEN_WAIT_S, иначе срыв. Отказ процесса —
 один раз под замком: `down{причина}`, юнит открытия стоп, зона снята, шлюзам
 — `state{idle, reason}` (шлюз, отдавший точку ключа кворума, говорит своему
@@ -164,7 +164,8 @@ class ReserveInboundMixin:
             rsvzone.open_status_write("launching")           # прежний open.status не должен сойти за ход этого открытия
             self.reserve_set_in("taking", kind=str(kind or "button"), gen=int(gen), why=str(kind or "button"), by="k",
                                 open_started=timeutil.now_iso(), deadline=time.monotonic() + OPEN_WAIT_S,
-                                up_sent=False, tg_taken=False, sealed=not k_hex, k_passed=False, oid="", eph_sent=0)
+                                up_sent=False, tg_taken=False, sealed=not k_hex, k_passed=False, oid="", eph_sent=0,
+                                ended_auto=str(kind or "button") != "button")   # по просьбе кворума (dead | rf) — автоматический
             self._in_step("open")
         try:
             self._rsvopen_launch(payload, keep_stdin=not k_hex)
@@ -258,7 +259,7 @@ class ReserveInboundMixin:
 
     def _tick_done_wait(self, inn: dict, now: float) -> list[tuple]:
         """После done у taking есть срок: аварийный путь ждёт `tg_taken` гостя
-        (бот основы поднялся и поставил вебхук), кнопка — `released` основы.
+        (бот основы поднялся и поставил вебхук), путь с K основы — `released` основы.
         Гость не стартовал или не взял Telegram — отказ с причиной; основа с
         `released` опоздала и мертва для меня — Telegram берёт гость (клон уже
         несёт пользователей), жива — отказ."""
@@ -268,7 +269,10 @@ class ReserveInboundMixin:
             self.rsv_update("rsv_in", done_mono=now)
             return []
         waited = livestep.mono_since(done_at, now)
-        if str(inn.get("kind") or "") != "button":
+        # ветку ожидания выбирает тот, кто меняет запись: по K основы (кнопка и просьба кворума
+        # dead | rf) — основа, Telegram отдаст её released; по точкам и коду — процесс открытия сам
+        by_k = str(inn.get("by") or ("k" if str(inn.get("kind") or "") == "button" else "")) == "k"
+        if not by_k:
             if waited < TAKEN_WAIT_S:
                 return []
             if not rsvzone.guest_unit_active():

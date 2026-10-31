@@ -128,9 +128,12 @@ def test_a_retake_after_a_failed_opening_goes_under_the_same_epoch(c, monkeypatc
 def test_the_damper_pause_opens_the_code_window_at_once_and_sends_no_qrel(c, monkeypatch):
     """Решение созрело в паузе после срыва открытия: код от паузы не зависит — окно кода
     сразу (Т-К21), исполнение ждёт конца паузы; `qrel` не уходит — обязательства «нет»
-    у шлюзов остаются для того же решения."""
+    у шлюзов остаются для того же решения (откат сорвавшегося «забираю» — `qrel{7}` в первом
+    такте после срыва — не об этом решении)."""
     _failed_open(c, monkeypatch)
-    acts = c.run(T_UP + 5)
+    rollback = c.run(5)
+    assert sorted(s for s, _ in gw_sent(rollback, "qrel")) == [1, 2], f"срыв открытия — без отката qtake: {rollback}"
+    acts = c.run(T_UP)
     assert c.s.reserve_auto_block(), "подготовка: пауза демпфера уже кончилась"
     assert not c.s.reserve_open_block(), "подготовка: мешает не только пауза"
     assert c.s.reserve_code_window()["open"], "пауза после срыва — окно кода не открыто"
