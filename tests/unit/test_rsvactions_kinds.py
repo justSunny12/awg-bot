@@ -36,6 +36,8 @@ def _kinds() -> dict[str, set[str]]:
             cands = []
             if isinstance(n, ast.List):
                 cands = n.elts
+            elif isinstance(n, (ast.ListComp, ast.GeneratorExp)):
+                cands = [n.elt]                               # [("gw", s, "state", body) for s in …] — те же действия
             elif isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr == "append" and n.args:
                 cands = [n.args[0]]
             for e in cands:
