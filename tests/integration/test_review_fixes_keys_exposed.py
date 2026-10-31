@@ -240,6 +240,22 @@ def test_a_failed_code_opening_is_marked_only_after_the_key(host, reason, marked
     assert (host.svc.reserve_st_body().get("exposed") == {"code": 1}) is marked, reason
 
 
+@pytest.mark.parametrize("reason, pre_m, marked", [
+    ("код не принят: ящик не открылся", "1", False),             # текст переформулирован — решает поле
+    ("аварийный код: ящик не открылся", "", True),               # поле говорит «после M» — текст не спасает
+    ("зона: nft не принял правила", "", True),
+])
+def test_the_pre_m_field_of_the_outcome_decides_the_mark_not_the_wording(host, reason, pre_m, marked):
+    """Признак «отказ до сборки M» — поле итога процесса (open.status `pre_m`), не префикс
+    причины: переформулировка строки в rsvopen не должна тихо менять, скажет ли резерв
+    основе о возможно известном ключе. Префиксы CODE_PRE_M — только для итога без поля."""
+    _code_taking(host)
+    host.zone.status = {"step": "fail", "reason": reason, "pre_m": pre_m}
+    host.svc.reserve_in_tick()
+    assert host.svc.reserve_in() == "idle"
+    assert (host.svc.reserve_st_body().get("exposed") == {"code": 1}) is marked, reason
+
+
 def test_a_button_opening_is_never_marked(host):
     host.svc.reserve_set_in("taking", kind="button", by="k", gen=7, open_started=timeutil.now_iso(), deadline=10 ** 12)
     host.zone.status = {"step": "clone_up"}

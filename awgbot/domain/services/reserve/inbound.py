@@ -67,10 +67,17 @@ EPH_RESEND_S = 10                # `open_eph` основе — повтор, п�
 TAKEN_WAIT_S = 10 * 60          # после done: гость должен поднять бота и поставить вебхук
 DONE_BUTTON_WAIT_S = 1800 + 300 + 120   # кнопка: основе на запись (30 мин) и передачу бота (5 мин) с запасом
 REPLICA_WAIT_S = 90              # реплика от гостя после stop
-# шаги процесса открытия после сборки ключа основы (tools/rsvopen) и причины отказа до неё (код не подошёл
-# или не проверен): по ним резерв говорит основе, что её ключ мог стать ему известен (`st.exposed`)
+# шаги процесса открытия после сборки ключа основы (tools/rsvopen): по ним резерв говорит основе, что её
+# ключ мог стать ему известен (`st.exposed`); отказ до сборки процесс помечает полем итога `pre_m`
+# (код не подошёл или не проверен) — CODE_PRE_M лишь запас для итога без поля (прежний процесс)
 M_STEPS = frozenset({"m", "k", "parts", "journal", "store", "clone_up", "record_set", "record_fact", "done"})
 CODE_PRE_M = ("аварийный код", "пакета нет", "пакет:", "нет ни точек", "точка не того вида")
+
+
+def open_fail_pre_m(st: dict) -> bool | None:
+    """Признак «отказ до сборки M» из итога процесса (open.status): None — поля нет."""
+    v = st.get("pre_m")
+    return None if v is None else str(v) == "1"
 
 class ReserveInboundMixin:
     def _inn(self) -> dict:
@@ -200,7 +207,7 @@ class ReserveInboundMixin:
         if step in M_STEPS and str(inn.get("by") or "") == "code":
             self.reserve_exposed_mark("code")                 # код подошёл: ключ основы собран — основе отметка
         if step == "fail":
-            return self._take_fail(str(st.get("reason") or "процесс открытия отказал"))
+            return self._take_fail(str(st.get("reason") or "процесс открытия отказал"), pre_m=open_fail_pre_m(st))
         if step != "done":
             rc, tail = self._rsvopen_exit()                   # юнит не стартовал (226) или процесс убит (OOM): сразу, не через 35 мин
             if rc is not None:
@@ -297,27 +304,30 @@ class ReserveInboundMixin:
         from awgbot.infra import rsvzone
         return int(rsvzone.read_json(rsvzone.WEBHOOK_FILE).get("port") or 0)
 
-    def _take_fail(self, reason: str) -> list[tuple]:
+    def _take_fail(self, reason: str, pre_m: bool | None = None) -> list[tuple]:
         """Срыв приёма — один раз: обработчик кода и такт видят один и тот же fail. Отметка
         «срыв идёт» — в памяти процесса, не в `rsv_in`: процесс, убитый посреди срыва, оставил бы
         её в базе, и после старта taking стоял бы навсегда (каждый срыв — «уже идёт»); новый
-        процесс срыв просто доделывает (юнит стоп, снятие и стирание зоны идемпотентны)."""
+        процесс срыв просто доделывает (юнит стоп, снятие и стирание зоны идемпотентны).
+        `pre_m` — признак процесса «отказ до сборки M» (open.status); None — поля нет."""
         with _LOCK:
             inn = self._inn()
             if str(inn.get("state") or "") != "taking" or self.__dict__.get("_rsv_take_failing"):
                 return []
             self.__dict__["_rsv_take_failing"] = True
         try:
-            return self._take_fail_do(reason)
+            return self._take_fail_do(reason, pre_m)
         finally:
             self.__dict__.pop("_rsv_take_failing", None)
 
-    def _take_fail_do(self, reason: str) -> list[tuple]:
+    def _take_fail_do(self, reason: str, pre_m: bool | None = None) -> list[tuple]:
         from awgbot.infra import rsvzone
         from awgbot.domain.notices import reserve as rn
         name = self.reserve_peer_name()
         extra: list[tuple] = []
-        if str(self._inn().get("by") or "") == "code" and not reason.startswith(CODE_PRE_M):
+        if pre_m is None:
+            pre_m = reason.startswith(CODE_PRE_M)             # итог без поля или причина не от процесса — по тексту
+        if str(self._inn().get("by") or "") == "code" and not pre_m:
             self.reserve_exposed_mark("code")                 # срыв после сборки ключа (или неизвестно где) — ключ мог быть у меня
         if str(self._inn().get("kind") or "") == "code" and hasattr(self, "reserve_code_failed"):
             extra = self.reserve_code_failed(reason)             # Н4: не подошёл — окно снова открыто

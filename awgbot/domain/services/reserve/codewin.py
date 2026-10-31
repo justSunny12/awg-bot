@@ -170,9 +170,11 @@ class ReserveCodeWindowMixin:
         if verdict != "fail":
             return {"ok": True, "pending": verdict != "ok", "actions": actions}
         from awgbot.infra import rsvzone
-        reason = str(rsvzone.open_status().get("reason") or "процесс открытия отказал")
+        from .inbound import open_fail_pre_m
+        st = rsvzone.open_status()
+        reason = str(st.get("reason") or "процесс открытия отказал")
         wrong = self._code_reason_wrong(reason)
-        fail = self._take_fail(reason)                          # окно снова открыто, попытка в счёт (reserve_code_failed)
+        fail = self._take_fail(reason, pre_m=open_fail_pre_m(st))   # окно снова открыто, попытка в счёт (reserve_code_failed)
         pid = self.reserve_peer_admin_id()
         fail = [a for a in fail if not (a and a[0] == "notify" and all(n.tg_id == pid for n in a[1]))]   # ответ — здесь
         left = max(0, CODE_TRIES - len(self._code_tries(dict(self.rsv_get("rsv_view").get("code") or {}))))

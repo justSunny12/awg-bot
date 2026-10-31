@@ -401,19 +401,24 @@ def test_unusable_key_material_is_a_clean_failure_before_anything_is_touched(box
     assert box.steps == ["fail"] and word in box.out, box.out
     assert box.calls == [], "до разбора ключей зона уже тронута"
     assert not box.run_dir.exists() and not rsvzone.TG_TAKE_FILE.exists()
-    assert rsvzone.open_status()["step"] == "fail" and word in rsvzone.open_status()["reason"]
+    st = rsvzone.open_status()
+    assert st["step"] == "fail" and word in st["reason"]
+    assert st.get("pre_m") == "1", f"отказ до сборки M без признака pre_m в итоге: {st}"
 
 
 def test_boxes_of_another_m_do_not_open_the_package(box):
     """Ящики прежнего поколения `M` (резерв не получил новые qkeys): `M` собирается, но не
-    тот — пакет нового поколения не открыт, зона не тронута."""
+    тот — пакет нового поколения не открыт, зона не тронута. `M` при этом собран —
+    признака `pre_m` в итоге нет: резерв скажет основе о возможно известном ключе."""
     old_m = rsvkeys.new_master()
     pts = box.points(1)
     assert box.open(qpoints=pts["qpoints"], qbox=box.q.qbox(old_m).hex()) == 1
     assert "ключ пакета" in box.out and box.calls == []
+    assert rsvzone.open_status().get("pre_m") == "", rsvzone.open_status()
     x, y = box.c.reserve_point()
     assert box.open(code=box.c.code(), cpoint=[x, y.hex()], cbox=box.c.cbox(old_m).hex()) == 1
     assert "ключ пакета" in box.out and box.calls == []
+    assert rsvzone.open_status().get("pre_m") == "", rsvzone.open_status()
 
 
 def test_a_code_of_another_generation_does_not_open_the_package(box):
@@ -428,6 +433,7 @@ def test_a_mistyped_code_is_refused_with_its_own_message(box):
     bad = code[:-1] + ("0" if code[-1] != "0" else "1")
     assert box.open(**box.by_code(bad)) == 1
     assert "аварийный код" in box.out
+    assert rsvzone.open_status().get("pre_m") == "1", "код не подошёл — M не собран, а признака pre_m нет"
 
 
 def test_a_k_that_is_not_the_key_of_the_package_fails_on_the_parts(box):
