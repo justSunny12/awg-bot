@@ -80,6 +80,7 @@ class QuorumRuntime:
         self.services = services
         self.act = act                                         # корутина-исполнитель действий домена
         self._resp: tuple[tuple[str, int], asyncio.DatagramTransport] | None = None
+        self._resp_if: tuple[str, int] = ("", 0)               # интерфейс привязки ответчика и его индекс при создании
         self._probes: dict[str, tuple[dict, asyncio.DatagramTransport]] = {}
         self._failed: dict[str, float] = {}
 
@@ -123,6 +124,13 @@ class QuorumRuntime:
             self._resp[1].close()
             self._resp = None
             log.info("кворум: ответчик закрыт")
+        if self._resp is not None and self._resp_stale(iface):
+            # «перезапуск AmneziaWG» (down/up) — новый индекс интерфейса при тех же адресе и порте:
+            # SO_BINDTODEVICE держит прежний, пробы с нового интерфейса сокету не доставляются
+            self._resp[1].close()
+            self._resp = None
+            await asyncio.sleep(0)                            # сокет закрывает петля следующим шагом — адрес свободен
+            log.info("кворум: интерфейс %s пересоздан — ответчик заново", iface)
         if want is None or self._resp is not None:
             return
         loop = asyncio.get_running_loop()
@@ -143,7 +151,18 @@ class QuorumRuntime:
                 log.warning("кворум: ответчик на %s:%s не поднялся: %s", want[0], want[1], e)
             return
         self._resp = (want, transport)
+        self._resp_if = (iface, _ifindex(iface))
         log.info("кворум: ответчик слушает %s:%s", want[0], want[1])
+
+    def _resp_stale(self, iface: str) -> bool:
+        """Привязка ответчика устарела: другой интерфейс в плане или у того же — новый индекс.
+        Интерфейса сейчас нет (индекс 0) — ждать: сокет без него и так глух, а новый не поднимется."""
+        if iface != self._resp_if[0]:
+            return True
+        if not iface:
+            return False
+        now = _ifindex(iface)
+        return bool(now) and now != self._resp_if[1]
 
     async def _ensure_probes(self, want: dict) -> None:
         for name in list(self._probes):
@@ -188,6 +207,16 @@ class QuorumRuntime:
             self._resp = None
         for name in list(self._probes):
             self._probes.pop(name)[1].close()
+
+
+def _ifindex(iface: str) -> int:
+    """Индекс интерфейса; 0 — интерфейса нет или узнать нечем."""
+    if not iface:
+        return 0
+    try:
+        return int(socket.if_nametoindex(iface))
+    except (AttributeError, OSError, ValueError):
+        return 0
 
 
 _rt: QuorumRuntime | None = None
