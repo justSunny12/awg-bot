@@ -169,6 +169,9 @@ class SessionMixin:
                 last_seq = int(msg.get("seq") or 0)
                 self.services.channel.last_word = time.time()   # слово сервера: сессия свежая
                 await self._take(msg)
+        except asyncio.CancelledError:
+            self._inbox_abandon()               # остановка клиента: документ в работе не ждём
+            raise
         finally:
             await self._inbox_drain()
             self._writer = None
@@ -239,18 +242,19 @@ class SessionMixin:
                 lambda t: t.exception() if not t.cancelled() else None)
 
     async def stop(self) -> None:
-        if self._inbox_task is not None and not self._inbox_task.done():
-            # обработчик первым: иначе конец сессии ждал бы, пока он доработает очередь
-            self._inbox.clear()
-            self._inbox_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError, Exception):
-                await self._inbox_task
-        self._inbox_task = None
         if self._task is not None:
+            # сессия при отмене сама бросает очередь входящих (_inbox_abandon):
+            # конец сессии не ждёт документа, а слово, прочитанное между снятием
+            # обработчика и отменой сессии, не заведёт нового
             self._task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await self._task
             self._task = None
+        if self._inbox_task is not None and not self._inbox_task.done():
+            self._inbox_abandon()               # очередь вне сессии (её нет) — на всякий случай
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await self._inbox_task
+        self._inbox_task = None
         if self._fill_task is not None and not self._fill_task.done():
             # поток с dig не прервать; задача-обёртка отпускается, итог — в журнал
             self._fill_task.cancel()
