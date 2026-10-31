@@ -336,13 +336,19 @@ def test_the_pause_from_sync_code_without_the_quorum_sends_nothing(q, monkeypatc
     assert got == []
 
 
-def test_a_broken_loop_does_not_break_the_update_step(q, monkeypatch):
+def test_a_broken_loop_does_not_break_the_update_step(q, monkeypatch, caplog):
     from awgbot.runtime import rsvactions
 
+    tried = []
+
     def boom(acts):
+        tried.append(acts)
         raise RuntimeError("цикла нет")
     monkeypatch.setattr(rsvactions, "run_threadsafe", boom)
-    q.s.reserve_quorum_pause_sync()                           # не бросает
+    with caplog.at_level("INFO"):
+        q.s.reserve_quorum_pause_sync()                       # не бросает
+    assert tried, "пауза не дошла до отправки — проверка ничего не проверила"
+    assert "qpause не ушла: цикла нет" in caplog.text
 
 
 # ── бот основы на резерве: состав ───────────────────────────────────────────

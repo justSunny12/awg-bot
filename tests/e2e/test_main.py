@@ -18,8 +18,11 @@ async def test_do_reconcile_sends_notifs_and_invalidates(services, fake_bot, mon
     assert any(r[0] == "send_message" for r in fake_bot.records)
 
 
-async def test_do_reconcile_swallows_errors(services, fake_bot, monkeypatch):
+async def test_do_reconcile_swallows_errors(services, fake_bot, monkeypatch, caplog):
     monkeypatch.setattr(awg, "invalidate_server_params", lambda: None)
     monkeypatch.setattr(services, "reconcile_peers",
                         lambda: (_ for _ in ()).throw(RuntimeError("boom")))
-    await m.do_reconcile(services, fake_bot)                # не поднимает
+    with caplog.at_level("WARNING"):
+        await m.do_reconcile(services, fake_bot)            # не поднимает
+    assert "reconcile_peers: boom" in caplog.text, "отказ сверки проглочен молча"
+    assert fake_bot.records == []

@@ -112,8 +112,14 @@ async def test_the_invite_job_closes_an_expired_invitation_and_keeps_the_channel
     assert services.reserve_invite() == {} and rsv.modes[-1] == "--rollback"
 
 
-async def test_a_failing_tick_does_not_break_the_job(services, rsv, wired, monkeypatch):
+async def test_a_failing_tick_does_not_break_the_job(services, rsv, wired, monkeypatch, caplog):
     def boom(now=None):
         raise RuntimeError("awg show упал")
     monkeypatch.setattr(services, "reserve_liveness_tick", boom)
-    await wired.jobs["rsv_liveness"][0]()                 # не бросает: задание живёт дальше
+    with caplog.at_level("WARNING"):
+        await wired.jobs["rsv_liveness"][0]()             # не бросает: задание живёт дальше
+    assert "awg show упал" in caplog.text, "отказ такта проглочен молча"
+    ticks = []
+    monkeypatch.setattr(services, "reserve_liveness_tick", lambda now=None: ticks.append(1) or [])
+    await wired.jobs["rsv_liveness"][0]()
+    assert ticks == [1], "следующий такт после отказа не пошёл"

@@ -144,8 +144,15 @@ async def test_a_failing_action_does_not_stop_the_rest(mv, act, monkeypatch):
     assert [r for r in act.bot.records if r[0] == "send_message"] == [("send_message", rc.ADMIN, "итог")]
 
 
-async def test_an_unknown_action_is_skipped(mv, act):
-    await rsvactions.run([("странное", 1), None, ()])
+async def test_an_unknown_action_is_skipped(mv, act, caplog):
+    """Незнакомое, пустое и None — пропущены с записью в журнал; известное
+    действие за ними всё равно выполняется."""
+    from awgbot.domain.services.types import Notification
+    with caplog.at_level("WARNING"):
+        await rsvactions.run([("странное", 1), None, (), ("notify", [Notification(tg_id=rc.ADMIN, text="после")])])
+    assert [r for r in act.bot.records if r[0] == "send_message"] == [("send_message", rc.ADMIN, "после")]
+    unknown = [r.getMessage() for r in caplog.records if "неизвестное действие" in r.getMessage()]
+    assert len(unknown) == 3 and "'странное'" in unknown[0], unknown
 
 
 async def test_fw_and_restart_actions_call_the_host_layer(mv, act, monkeypatch):

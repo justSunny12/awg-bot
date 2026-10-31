@@ -281,6 +281,11 @@ async def test_an_edit_that_telegram_rejects_does_not_break_the_tick(ui):
     rm.to_step(ui.svc, "up")
     ui.svc.rsv_update("rsv_out", msg=[ADMIN, 555])
     await move_h.refresh_live(Bad(), ui.svc)
+    # ход не кончен — сообщение остаётся живым, следующий такт правит его снова
+    assert ui.svc.rsv_get("rsv_out")["msg"] == [ADMIN, 555], "отказ правки снял живое сообщение хода"
+    bot = FakeBot()
+    await move_h.refresh_live(bot, ui.svc)
+    assert [r[0] for r in bot.records] == ["edit_message_text"], bot.records
 
 
 # ── вернуть пользователей к основе (резерв) ─────────────────────────────────

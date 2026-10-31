@@ -240,18 +240,28 @@ async def test_a_probe_that_left_the_plan_closes_its_socket(made):
     await rt.stop()
 
 
-async def test_a_failing_plan_or_tick_does_not_raise(made):
+async def test_a_failing_plan_or_tick_does_not_raise(made, caplog):
+    """Отказ плана — такт пропущен целиком (сокетов не трогаем); отказ такта
+    домена — сокеты по плану уже стоят; оба — в журнал."""
     class _Bad(_Svc):
         def quorum_runtime_plan(self):
             raise RuntimeError("база недоступна")
     rt = rq.QuorumRuntime(_Bad(), lambda a: asyncio.sleep(0))
-    await rt.tick()
+    with caplog.at_level("WARNING"):
+        await rt.tick()
+    assert "план сокетов не собрался: база недоступна" in caplog.text
+    assert rt._probes == {} and made == []
 
     class _BadTick(_Svc):
         def quorum_tick(self):
             raise RuntimeError("такт упал")
-    rt = rq.QuorumRuntime(_BadTick(), lambda a: asyncio.sleep(0))
-    await rt.tick()
+    svc = _BadTick()
+    svc.plan = {"responder": None, "probes": {"awgqah": {"node_addr": "127.0.0.1", "resp": "127.0.0.1", "port": 9}}}
+    rt = rq.QuorumRuntime(svc, lambda a: asyncio.sleep(0))
+    with caplog.at_level("WARNING"):
+        await rt.tick()
+    assert "кворум: такт: такт упал" in caplog.text
+    assert set(rt._probes) == {"awgqah"}, "отказ такта домена снял сокеты плана"
     await rt.stop()
 
 

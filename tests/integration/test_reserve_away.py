@@ -51,7 +51,8 @@ def test_nothing_is_refused_at_home_or_without_a_pair(mv, services):
 
 
 def test_without_a_pair_nothing_is_refused(services, rsv):
-    services.reserve_refuse_if_away()
+    assert services.reserve_refuse_if_away() is None
+    assert isinstance(services.fleet_start("v9.9.9"), str), "без пары набор отвечает как обычно"
 
 
 # ── Т-Р17 ───────────────────────────────────────────────────────────────────

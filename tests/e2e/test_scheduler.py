@@ -91,10 +91,13 @@ async def test_job_poll_happy_sets_online_count(services, fake_bot, monkeypatch)
     assert services.db.get_state("online_count") == "0"
 
 
-async def test_job_poll_swallows_errors(services, fake_bot, monkeypatch):
+async def test_job_poll_swallows_errors(services, fake_bot, monkeypatch, caplog):
     monkeypatch.setattr(services, "poll_traffic",
                         lambda: (_ for _ in ()).throw(RuntimeError("boom")))
-    await _jobs(services, fake_bot)["poll"]()                # не должно поднять исключение
+    with caplog.at_level("WARNING"):
+        await _jobs(services, fake_bot)["poll"]()            # не должно поднять исключение
+    assert "boom" in caplog.text, "отказ опроса проглочен молча"
+    assert services.db.get_state("online_count") is None, "счёт онлайна записан без опроса"
 
 
 # ── job_expiry: реальная композиция (истечение → уведомления) ────────────────

@@ -138,15 +138,27 @@ _BEFORE = {"4.0.0": {"main": "3.3.0", "gw": "3.3.0"}, "4.0.1": {"main": "3.3.0"}
            "4.0.2": {"main": "3.3.0", "gw": "3.3.0"}}
 
 
+def _green_without_skip(guard) -> None:
+    """Сторож на подставном каталоге зелёный, и не пропуском: skip внутри
+    вызванной функции сделал бы весь тест «пропущен», а не «прошёл» — и
+    ветку равенства никто бы не проверил."""
+    try:
+        guard()
+    except pytest.skip.Exception as e:
+        pytest.fail(f"{guard.__name__}: пропуск вместо проверки ({e})")
+
+
 def test_after_the_release_of_the_shift_the_tree_agrees_with_its_own_file(tmp_path, monkeypatch):
     """Выпуск 4.1.0 записал requires 4.0.0 обеим ролям, дерево — 4.1.0, UPDATE_FROM
     4.0.0: все три сторожа зелёные, и третий идёт веткой равенства, а не
     пропуском «файла ещё нет»."""
     _catalog(tmp_path, monkeypatch, {**_BEFORE, "4.1.0": {"main": "4.0.0", "gw": "4.0.0"}},
              tree="4.1.0", update_from="4.0.0")
+    # подстановка встала: файл версии дерева есть, его requires = UPDATE_FROM (ветка равенства)
+    assert _requires(_releases()[__version__]) == {"main": compat.UPDATE_FROM, "gw": compat.UPDATE_FROM}
     test_update_from_is_a_released_step_addressed_to_both_roles()
     test_update_from_never_falls_below_the_last_released_minimum_and_never_outruns_the_releases()
-    test_the_released_tree_agrees_with_its_own_metadata_or_carries_a_shift_upwards()   # без skip
+    _green_without_skip(test_the_released_tree_agrees_with_its_own_metadata_or_carries_a_shift_upwards)
 
 
 def test_a_release_minimum_above_update_from_is_caught(tmp_path, monkeypatch):
@@ -188,9 +200,17 @@ def test_a_release_to_one_role_with_its_minimum_at_update_from_passes(tmp_path, 
     сторож зелёный — выпуск одной роли не обязан ломать сборку следующей."""
     _catalog(tmp_path, monkeypatch, {**_BEFORE, "4.1.0": {"main": "4.0.0", "gw": "4.0.0"},
                                      "4.1.1": {"main": "4.0.0"}}, tree="4.1.1", update_from="4.0.0")
+    assert _requires(_releases()[__version__]) == {"main": compat.UPDATE_FROM}, "подстановка не встала"
     test_update_from_is_a_released_step_addressed_to_both_roles()
     test_update_from_never_falls_below_the_last_released_minimum_and_never_outruns_the_releases()
-    test_the_released_tree_agrees_with_its_own_metadata_or_carries_a_shift_upwards()   # без skip
+    _green_without_skip(test_the_released_tree_agrees_with_its_own_metadata_or_carries_a_shift_upwards)
+
+
+def test_the_skip_of_the_guard_is_not_taken_for_green(tmp_path, monkeypatch):
+    """Обёртка сама ловит пропуск: дерево без своего файла метаданных."""
+    _catalog(tmp_path, monkeypatch, dict(_BEFORE), tree="4.0.3", update_from="4.0.0")
+    with pytest.raises(pytest.fail.Exception, match="пропуск вместо проверки"):
+        _green_without_skip(test_the_released_tree_agrees_with_its_own_metadata_or_carries_a_shift_upwards)
 
 
 def test_a_release_to_one_role_with_a_minimum_above_update_from_is_caught(tmp_path, monkeypatch):

@@ -50,18 +50,29 @@ async def test_poke_without_the_channel_is_quiet(monkeypatch, tmp_path):
     assert linkclient._client is None
 
 
-async def test_poke_survives_a_dead_socket(gateway_role, conf):
+async def test_poke_survives_a_dead_socket(gateway_role, conf, monkeypatch):
     """Сессия умерла между тиками: итог операции в чате агента важнее снимка на
     ВПС — исключение из poke уронило бы хендлер после успешного применения."""
     agent = _Agent()
     client = _live_client(agent)
     await client.push(full=True)
 
+    tried, reviewed = [], []
+
     def broken(data):
+        tried.append(1)
         raise ConnectionResetError("линк упал")
     client._writer.write = broken
+    real_review = linkclient.services_changed
+
+    async def review(services):
+        reviewed.append(services)
+        return await real_review(services)
+    monkeypatch.setattr(linkclient, "services_changed", review)
     agent.snap["egress_ok"] = False
     await linkclient.poke(agent)                     # не бросает
+    assert tried, "дельта не отправлялась — мёртвый сокет не проверен"
+    assert reviewed == [agent], "отказ отправки сорвал внеочередной обзор сервисов"
 
 
 # ── тик и внеочередной обзор: отказ шага — в журнал, не молча ───────────────
