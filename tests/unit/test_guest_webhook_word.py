@@ -24,7 +24,6 @@ import pytest
 from awgbot.domain.services.reserve.guest import ReserveGuestMixin
 from awgbot.infra import rsvzone
 from awgbot.runtime import main as main_pkg
-from awgbot.runtime.main import guest as guest_mod
 
 from tests.unit import test_guest_sigterm as base
 from tests.unit.test_guest_sigterm import world
