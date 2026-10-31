@@ -393,6 +393,26 @@ def test_the_released_step_without_a_word_of_telegram_wakes_the_poll_three_times
     acts = svc.reserve_out_tick()
     assert svc.reserve_out() == "home" and "back" in sent(acts), acts
     assert "право отвечать не проверено" in " ".join(n.text for n in notices(acts))
+    assert ("wake_poll",) in acts, "срыв после передачи бота не будит поллинг — бот нем до перепроверки (до 7 мин)"
+
+
+@pytest.mark.parametrize("step", ["eph", "up", "record", "release"])
+def test_a_move_failed_after_go_req_wakes_the_poll(mv, step):
+    """Срыв на шагах после go_req: `back` резерву и поллинг будится — право отвечать снова решает
+    Telegram (передача могла остановить поллинг и пометить rsv_poll = away)."""
+    svc = mv.svc
+    rm.to_step(svc, step)
+    mv.clock.advance(600)
+    acts = svc.reserve_out_tick()
+    assert svc.reserve_out() == "home" and "back" in sent(acts) and ("wake_poll",) in acts, acts
+
+
+def test_a_move_failed_before_go_req_does_not_touch_the_poll(mv):
+    svc = mv.svc
+    rm.to_step(svc, "pkg")
+    mv.clock.advance(600)
+    acts = svc.reserve_out_tick()
+    assert svc.reserve_out() == "home" and ("wake_poll",) not in acts and "back" not in sent(acts), acts
 
 
 def test_down_from_the_reserve_aborts_the_move_without_a_second_back(mv):

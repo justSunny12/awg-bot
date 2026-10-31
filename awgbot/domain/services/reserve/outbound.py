@@ -188,7 +188,9 @@ class ReserveOutboundMixin:
                                       text=rn.record_not_changed(self.reserve_dns_name(), record_back, self.reserve_own_ip())))
         actions: list[tuple] = [("live",), ("notify", notes)]
         if released:
-            actions.insert(0, ("send", "back", {}))
+            # передача могла остановить поллинг (`release`, rsv_poll = away): право отвечать снова
+            # решает Telegram — разбудить сразу, а не ждать перепроверки (до 7 мин)
+            actions[:0] = [("send", "back", {}), ("wake_poll",)]
         return actions
 
     def reserve_out_tick(self) -> list[tuple]:
