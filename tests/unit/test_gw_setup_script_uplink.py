@@ -190,7 +190,7 @@ def test_foreign_forward_drop_gets_accepts_for_our_interfaces(script):
     только когда политика DROP, снимаются при откате."""
     sec = script.split('step "3a. Чужая политика FORWARD"', 1)[1].split('step "4.', 1)[0]
     assert "grep -q '^-P FORWARD DROP'" in sec
-    assert 'iptables -w -C FORWARD "$1" "$2" -j ACCEPT' in sec and "iptables -w -I FORWARD 1 $1 $2 -j ACCEPT" in sec
+    assert "fwd_allow -i" in sec and "fwd_allow -o" in sec
     assert '"$LINK_IF" "${UPLINK_IF:-}" "${LAN_IF_PRE:-}"' in sec
     rollback = script.split('MODE" = "rollback"', 1)[1].split("exit 0", 1)[0]
-    assert "iptables -w -D FORWARD" in rollback
+    assert "fwd_rollback " in rollback          # метка и что снимает откат — test_gw_setup_forward_tag

@@ -7141,7 +7141,10 @@ dnsmasq `/etc/systemd/system/dnsmasq.service.d/awg-gw.conf` и настройк�
 systemd-networkd (`/etc/systemd/networkd.conf.d/awg-gw.conf`,
 `/etc/systemd/network/99-awg-gw-unmanaged.network`): перезапуск networkd (любой
 Apply в OMV) иначе сносил бы чужие маршруты и правила и подхватывал
-awg-интерфейсы. Всё это снимает `routing-gw-setup.sh --rollback`; его же,
+awg-интерфейсы. Всё это снимает `routing-gw-setup.sh --rollback`; из чужого
+`ip filter FORWARD` — только свои `ACCEPT` с меткой `-m comment --comment
+awg-bot` (прежние без метки — на линке, аплинке и `awgrsv`; оставшиеся без
+метки откат перечисляет строкой); его же,
 вместе с `/etc/awg-gw` и `/var/lib/awg-gw`, зовёт пункт установщика «Удалить
 прошлую установку…» (§9) и, вопросом после данных, `awg-bot uninstall` (вместе
 с таблицами уходит и SSH-фильтр шлюза; на ВПС тот же вопрос — про линки до
