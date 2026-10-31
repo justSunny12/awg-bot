@@ -365,7 +365,7 @@ class ReserveQuorumCandidateMixin:
         ex = self.__dict__.get("_quo_exec") or {}
         peer = self.reserve_quorum_peer_keys()
         t = int(peer.get("t") or 0)
-        points = {int(k): v for k, v in (ex.get("points") or {}).items()}
+        points = {int(k): v for k, v in list((ex.get("points") or {}).items())}   # qshare вставляет из потока канала
         if c.own == "uns" and peer.get("y"):
             points[int(peer.get("x") or rsvkeys.RESERVE_X)] = str(peer["y"])   # своя точка — только при своём «не вижу»
         if not t or len(points) < t or not peer.get("qbox"):
