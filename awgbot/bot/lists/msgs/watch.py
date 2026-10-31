@@ -4,10 +4,14 @@
 SendDocument, SendAnimation, SendVideo), EditMessageCaption,
 EditMessageReplyMarkup и DeleteMessage (прочее пропускает без чтения базы);
 отказ Telegram уходит наверх как есть; у правки текста или подписи
-обработчиком (не heal) отказ «не изменено» запись не трогает, любой другой
-(сообщения нет, править нельзя) снимает запись и отпускает её снимки:
-обработчик шлёт экран заново новым сообщением, и его ссылки привязывают их;
-было живым меню чата — им становится присланное заново (REISSUE: отказ
+обработчиком (не heal) отказ «не изменено» запись не трогает; сообщения нет
+или править его нельзя (_GONE: «message to edit not found», «message can't be
+edited», MESSAGE_ID_INVALID) — запись снимается и отпускает снимки: обработчик
+шлёт экран заново новым сообщением, и его ссылки привязывают их; прочий отказ
+(разметка, длина, незнакомый 400) — сообщение на месте, запись цела, строка
+журнала: снятая запись лишала бы его «Скрыть» и правок ссылок. Было живым
+меню чата — им при любом отказе, кроме «не изменено», становится присланное
+заново (REISSUE: отказ
 запоминается в контексте задачи, следующая отправка в тот чат — живое меню;
 иначе указатель остался бы на пропавшем сообщении, и следующее меню не
 погасило бы присланное заново). После удачного ответа:
@@ -49,6 +53,13 @@ _TEXT = (SendMessage, EditMessageText)
 _CAP = (SendPhoto, SendDocument, SendAnimation, SendVideo, EditMessageCaption)
 _SENDS = (SendMessage, SendPhoto, SendDocument, SendAnimation, SendVideo)
 _EDITS = (EditMessageText, EditMessageCaption)
+# отказы правки, после которых сообщения нет или оно не правится никогда
+_GONE = ("message to edit not found", "message can't be edited", "message_id_invalid")
+
+
+def _gone(e) -> bool:
+    why = str(e).lower()
+    return any(m in why for m in _GONE)
 
 
 def _html(method) -> bool:
@@ -129,18 +140,20 @@ class ListMsgWatch(BaseRequestMiddleware):
             await self._hide_age(bot, chat, mid, sent, kb)
 
     async def _refused(self, method, e) -> None:
-        """Правку экрана отклонил Telegram (сообщение удалено, править нельзя): обработчик
-        пришлёт экран заново новым сообщением — запись прежнего снимается, снимки
-        отпущены (не сняты: их привяжет новое сообщение); было живым меню — живым
+        """Правку экрана отклонил Telegram: обработчик пришлёт экран заново новым
+        сообщением. Сообщения нет или оно не правится (_gone) — запись прежнего
+        снимается, снимки отпущены (не сняты: их привяжет новое сообщение);
+        прочий отказ — сообщение на месте, запись цела. Было живым меню — живым
         станет присланное заново (REISSUE до следующей отправки в чат)."""
         from awgbot.bot.handlers.common import call
         db = self.services.db
         chat, mid = int(method.chat_id), int(getattr(method, "message_id", 0) or 0)
         if not mid:
             return
+        gone = _gone(e)
         try:
             rec = await call(db.list_msg_get, chat, mid)
-            if rec is not None:
+            if rec is not None and gone:
                 await call(db.list_msg_forget, chat, mid, False)
             nav = await call(db.get_nav_message_id, chat)
         except Exception as err:                       # noqa: BLE001 — отказ уже уходит наверх
@@ -152,8 +165,8 @@ class ListMsgWatch(BaseRequestMiddleware):
         if rec is None and not live:
             return
         log.info("lists: сообщение %d чата %d — правка отклонена (%s): %s%s", mid, chat, e,
-                 "запись снята, снимки %s отпущены" % [str(k) for k in (rec.get("keys") or [])]
-                 if rec is not None else "записи не было",
+                 ("запись снята, снимки %s отпущены" if gone else "сообщение на месте — запись цела, снимки %s при нём")
+                 % [str(k) for k in (rec.get("keys") or [])] if rec is not None else "записи не было",
                  "; живое меню — им станет присланное заново" if live else "")
 
     async def _reissued(self, chat: int, mid: int) -> None:

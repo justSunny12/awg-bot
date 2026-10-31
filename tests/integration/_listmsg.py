@@ -34,6 +34,9 @@ REFUSALS = {
     "not_modified": (400, "Bad Request: message is not modified: specified new message content and reply "
                           "markup are exactly the same as a current content and reply markup of the message"),
     "chat_not_found": (400, "Bad Request: chat not found"),
+    "id_invalid": (400, "Bad Request: MESSAGE_ID_INVALID"),
+    "parse": (400, "Bad Request: can't parse entities: unsupported start tag \"x\" at byte offset 0"),
+    "too_long": (400, "Bad Request: MESSAGE_TOO_LONG"),
     "forbidden": (403, "Forbidden: bot was blocked by the user"),
     "flood": (429, "Too Many Requests: retry after {retry_after}"),
     "server": (502, "Bad Gateway"),

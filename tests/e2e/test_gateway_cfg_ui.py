@@ -166,6 +166,42 @@ async def test_the_last_answer_returns_to_the_panel(svc, fake_bot, reported, log
     assert panels and panels[-1][0].startswith("🛰 ") and "Ждут решения" not in panels[-1][0], panels
 
 
+async def test_accepting_mail_answers_the_tap_before_the_login_check(svc, fake_bot, reported, monkeypatch):
+    """Проверка входа в ящик идёт до 20 с: на нажатие отвечено до неё
+    («Проверяю почту…»), кнопки вопроса сняты правкой на время проверки —
+    иначе Telegram крутит загрузку, человек жмёт снова и начинает вторую
+    проверку и второй ответ серверу; итог — правкой того же сообщения."""
+    from awgbot.bot.texts.gateway.ask import MAIL_CHECKING, MAIL_CHECKING_TOAST
+    _own_mail(svc)
+    svc.apply_cfg(_doc(mail=MAIL))
+    msg, cb = _nav(fake_bot)
+    seen = {}
+
+    def imap(a, timeout=15.0):
+        seen["answers"] = list(cb.answers)
+        seen["edits"] = [(t, m) for k, t, m in msg.sent if k == "edit_text"]
+    monkeypatch.setattr(mailmod, "check_imap", imap)
+    monkeypatch.setattr(mailmod, "check_smtp", lambda a, timeout=15.0: None)
+    await gh.gw_cfg_answer(cb, GwCB(action="cfg_ok!", val="mail"), svc, FakeState())
+    assert seen["answers"] == [(MAIL_CHECKING_TOAST, False)], f"на нажатие не ответили до проверки: {seen}"
+    assert seen["edits"] and seen["edits"][-1][0] == MAIL_CHECKING and not _labels(seen["edits"][-1][1]), \
+        f"кнопки вопроса остались на время проверки: {seen['edits']}"
+    edits = [t for k, t, _ in msg.sent if k == "edit_text"]
+    assert edits[-1] == "✉️ Почта с сервера AWG принята: IMAP и SMTP отвечают, вход выполнен", edits
+    assert len(cb.answers) == 1, f"второй ответ на тот же колбэк: {cb.answers}"
+    assert len(reported) == 1
+
+
+async def test_accepting_mail_already_answered_checks_nothing(svc, fake_bot, reported, monkeypatch):
+    """Вопроса о почте уже нет: всплывашка «Вопрос уже решён», без «Проверяю почту…»."""
+    called = []
+    monkeypatch.setattr(mailmod, "check_imap", lambda a, timeout=15.0: called.append(1))
+    msg, cb = _nav(fake_bot)
+    await gh.gw_cfg_answer(cb, GwCB(action="cfg_ok!", val="mail"), svc, FakeState())
+    assert called == [] and reported == []
+    assert cb.answers and "уже решён" in cb.answers[-1][0], cb.answers
+
+
 async def test_accepting_mail_with_a_failed_login_says_why(svc, fake_bot, reported, monkeypatch):
     monkeypatch.setattr(mailmod, "check_imap",
                         lambda a, timeout=15.0: (_ for _ in ()).throw(mailmod.MailError("IMAP отверг пароль")))

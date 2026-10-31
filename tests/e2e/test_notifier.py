@@ -2,7 +2,8 @@
 
 Проверяем контракт доставки: пропуск пустого адресата, тихие часы vs force_sound,
 проброс/дефолт клавиатуры, устойчивость к ошибке отправки одному из адресатов,
-429 (RetryAfter): пауза ровно retry_after и один повтор, on_sent только при
+429 (RetryAfter): пауза ровно retry_after и один повтор, пауза дольше предела —
+критичный алерт письмом сразу, прочее отложенным повтором фоном, on_sent только при
 доставке, письмо критичного алерта после сетевого отказа, окно пачки при паузе.
 """
 import pytest
@@ -264,14 +265,53 @@ async def test_a_non_network_failure_after_retry_after_is_not_mailed(sleeps, mai
     assert mails == [] and done == []
 
 
-@pytest.mark.xfail(strict=True, reason="BC-2: пауза 429 без предела, критичный алерт письмом не уходит")
 async def test_a_long_retry_after_on_a_critical_alert_goes_to_mail_without_waiting(sleeps, mails):
     """RetryAfter(300) на критичном алерте админу: письмо сразу, пятиминутного
-    ожидания нет (при правке BC-2 тест станет зелёным — снять отметку xfail)."""
+    ожидания нет, повтора в Telegram тоже (алерт уже доставлен)."""
     bot = ScriptedBot({_cfg.ADMIN_ID: [_ra(300)]})
+    done = []
+    await notifier.send_notifications(bot, [
+        Notification(_cfg.ADMIN_ID, "🚨 крит", critical=True, on_sent=lambda: done.append(1))])
+    await _drain_deferred()
+    assert max(sleeps, default=0) <= notifier._RETRY_AFTER_CAP, f"ждали {max(sleeps)} с"
+    assert len(mails) == 1 and done == [1]
+    assert bot.attempts == [_cfg.ADMIN_ID], "после письма — ещё и повтор в Telegram"
+
+
+async def _drain_deferred():
+    """Дождаться отложенных повторов notifier (их сон подменён фикстурой sleeps)."""
+    while notifier._deferred:
+        await asyncio.gather(*list(notifier._deferred), return_exceptions=True)
+
+
+async def test_a_long_retry_after_on_a_plain_notice_is_retried_later_not_in_place(sleeps, mails):
+    """RetryAfter(300) на рядовом уведомлении: отправка возвращается сразу (слот
+    окна и вызывающий не стоят пять минут), повтор — один, фоном, после паузы
+    ровно retry_after; доставка подтверждается уже повтором; письма нет."""
+    bot = ScriptedBot({111: [_ra(300)]})
+    done = []
+    await notifier.send_notifications(bot, [Notification(111, "x", on_sent=lambda: done.append(1))])
+    assert bot.attempts == [111] and done == [] and sleeps == [], "ждали на месте"
+    await _drain_deferred()
+    assert sleeps == [300] and bot.attempts == [111, 111] and bot.delivered == [111]
+    assert done == [1] and mails == []
+
+
+async def test_a_long_retry_after_on_a_critical_alert_without_mail_is_retried_later(sleeps):
+    """Критичный алерт, а запасного канала нет (почта не настроена): не теряется —
+    тот же отложенный повтор, что у рядового."""
+    notifier.set_email_fallback(None)
+    bot = ScriptedBot({_cfg.ADMIN_ID: [_ra(120)]})
+    sent = await notifier.notify_one(bot, _cfg.ADMIN_ID, "🚨 крит")
+    assert sent is None and sleeps == []
+    await _drain_deferred()
+    assert sleeps == [120] and bot.delivered == [_cfg.ADMIN_ID]
+
+
+async def test_retry_after_at_the_cap_still_waits_in_place(sleeps, mails):
+    bot = ScriptedBot({_cfg.ADMIN_ID: [_ra(notifier._RETRY_AFTER_CAP)]})
     await notifier.send_notifications(bot, [Notification(_cfg.ADMIN_ID, "🚨 крит", critical=True)])
-    assert max(sleeps, default=0) <= 30, f"ждали {max(sleeps)} с"
-    assert len(mails) == 1
+    assert sleeps == [notifier._RETRY_AFTER_CAP] and bot.delivered == [_cfg.ADMIN_ID] and mails == []
 
 
 async def test_notify_one_returns_the_message_sent_by_the_retry(sleeps):

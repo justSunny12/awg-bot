@@ -77,6 +77,9 @@ async def gw_cfg_answer(cb: CallbackQuery, callback_data: GwCB, services, state:
     if section == "uplink" and accept:
         await _uplink_accept(cb, services)
         return
+    if section == "mail" and accept:
+        await _mail_accept(cb, services)
+        return
     answer = await call(services.cfg_answer, section, accept)
     if not answer.get("ok"):
         await cb.answer(ui.toast("Вопрос уже решён"))
@@ -132,6 +135,27 @@ async def _keep_answer(cb: CallbackQuery, services, accept: bool) -> None:
         # не применилось — вопрос остаётся в очереди: панель с «⏳ Ответить», а не тот же вопрос снова
         await pkg._panel(cb.message, services, keep_id=cb.message.message_id)
         return
+    await _next_or_panel(cb, services)
+
+
+async def _mail_accept(cb: CallbackQuery, services) -> None:
+    """Почта с сервера: применение — вход по IMAP и SMTP, до 20 с. Ответ на
+    нажатие сразу (иначе Telegram крутит загрузку, и человек жмёт снова), кнопки
+    вопроса прочь на время проверки (второе нажатие не начнёт вторую), итог —
+    правкой того же сообщения."""
+    if "mail" not in await call(services.cfg_questions):
+        await cb.answer(ui.toast(texts.QUESTION_ANSWERED))
+        await pkg._panel(cb.message, services, cb)
+        return
+    await cb.answer(ui.toast(texts.MAIL_CHECKING_TOAST))
+    await _show(cb, services, texts.MAIL_CHECKING, new_on_fail=False)
+    answer = await call(services.cfg_answer, "mail", True)
+    if not answer.get("ok"):
+        await _show(cb, services, texts.QUESTION_ANSWERED)
+        await _next_or_panel(cb, services)
+        return
+    await _report(services, "mail", answer)
+    await _show(cb, services, texts.cfg_answer_text("mail", True, answer.get("note")))
     await _next_or_panel(cb, services)
 
 

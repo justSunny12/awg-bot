@@ -7,8 +7,9 @@ services синхронны и не шлют сообщения сами; это
 
 Flood-контроль Telegram (~30 msg/с на бота): пачки (месячный сброс, массовые
 алерты) шлём с лёгким пейсингом, а 429 (RetryAfter) не глотаем как прочие
-ошибки — ждём указанное время и повторяем один раз, иначе уведомление молча
-терялось бы именно тогда, когда рассылка большая.
+ошибки — ждём указанное время (до _RETRY_AFTER_CAP) и повторяем один раз,
+иначе уведомление молча терялось бы именно тогда, когда рассылка большая;
+пауза дольше предела — критичный алерт письмом, прочее — отложенный повтор.
 
 Кнопки под уведомлением: своя клавиатура уведомления (reply_markup или
 готовая по имени — Notification.keyboard, KEYBOARDS), иначе — кнопка действия
@@ -50,14 +51,14 @@ def _network_failure(e: Exception) -> bool:
     return isinstance(e, (TelegramNetworkError, asyncio.TimeoutError, OSError))
 
 
-async def _fallback(critical: bool, tg_id, text: str) -> bool:
+async def _fallback(critical: bool, tg_id, text: str, why: str = "Telegram недоступен") -> bool:
     """True — алерт всё-таки доставлен, письмом."""
     from awgbot.core import config
     if not critical or _email_fallback is None or tg_id != config.ADMIN_ID:
         return False
     try:
         await _email_fallback(text)
-        log.warning("критичный алерт ушёл на почту: Telegram недоступен")
+        log.warning("критичный алерт ушёл на почту: %s", why)
         return True
     except Exception as e2:                          # noqa: BLE001
         log.warning("запасной канал (почта) не сработал: %s", e2)
@@ -85,13 +86,51 @@ def _silent_now(force_sound: bool) -> bool:
     return timeutil.in_quiet_hours(settings.get_int("quiet_hours.quiet_hours_start", 20), settings.get_int("quiet_hours.quiet_hours_end", 7))
 
 
+# Предел паузы 429 на месте. Telegram отвечает retry_after и в сотни секунд —
+# ждать столько внутри рассылки значит держать слот окна (а у одиночной
+# отправки — вызывающего) минутами. Дольше предела: критичный алерт админу —
+# сразу письмом, прочее — один отложенный повтор фоном по истечении паузы.
+_RETRY_AFTER_CAP = 30
+_deferred: set = set()                 # держатели ссылок на отложенные повторы
+
+
+async def _retry(bot, tg_id, text, markup, silent, critical, on_sent):
+    """Повтор после паузы 429 — один: дошло — on_sent; сетевой отказ на
+    критичном — почта; прочее — в журнал."""
+    try:
+        sent = await bot.send_message(tg_id, text, reply_markup=markup,
+                                      disable_notification=silent)
+        await _confirm(on_sent)
+        return sent
+    except Exception as e2:                          # noqa: BLE001
+        log.warning("Не удалось отправить уведомление %s (после retry): %s", tg_id, e2)
+        if _network_failure(e2) and await _fallback(critical, tg_id, text):
+            await _confirm(on_sent)
+    return None
+
+
+async def _later(delay, bot, tg_id, text, markup, silent, critical, on_sent) -> None:
+    await asyncio.sleep(delay)
+    await _retry(bot, tg_id, text, markup, silent, critical, on_sent)
+
+
+def _defer(delay, *args) -> None:
+    from awgbot.bot import bgtask
+    task = bgtask.spawn(_later(delay, *args), name="notify-retry")
+    _deferred.add(task)
+    task.add_done_callback(_deferred.discard)
+
+
 async def _send(bot, tg_id, text, markup, silent, critical: bool = False, on_sent=None):
-    """Одна отправка: RetryAfter → подождать и повторить один раз; прочие
-    ошибки — залогировать и продолжить рассылку. Сетевой отказ на критичном
-    алерте админу — запасной канал (почта). Возвращает отправленное
-    сообщение либо None; on_sent зовём при доставке любым из каналов.
-    Ссылкам на экраны и списки в тексте — метка «-n» (bot/links): из
-    уведомления экран открывается новым сообщением внизу, а не на месте меню выше."""
+    """Одна отправка: RetryAfter до _RETRY_AFTER_CAP с → подождать и повторить
+    один раз; дольше — критичный алерт админу письмом сразу, прочее (и
+    критичное, если письмо не ушло) — отложенный повтор фоном, отправка
+    возвращает None. Прочие ошибки — залогировать и продолжить рассылку.
+    Сетевой отказ на критичном алерте админу — запасной канал (почта).
+    Возвращает отправленное сообщение либо None; on_sent зовём при доставке
+    любым из каналов. Ссылкам на экраны и списки в тексте — метка «-n»
+    (bot/links): из уведомления экран открывается новым сообщением внизу, а
+    не на месте меню выше."""
     from awgbot.bot import links
     text = links.mark_new(text)
     try:
@@ -100,21 +139,21 @@ async def _send(bot, tg_id, text, markup, silent, critical: bool = False, on_sen
         await _confirm(on_sent)
         return sent
     except TelegramRetryAfter as e:
-        log.warning("flood-контроль: жду %s с и повторяю для %s", e.retry_after, tg_id)
-        await asyncio.sleep(e.retry_after)
-        try:
-            sent = await bot.send_message(tg_id, text, reply_markup=markup,
-                                          disable_notification=silent)
+        wait = max(0, int(e.retry_after or 0))
+        if wait <= _RETRY_AFTER_CAP:
+            log.warning("flood-контроль: жду %s с и повторяю для %s", wait, tg_id)
+            await asyncio.sleep(wait)
+            return await _retry(bot, tg_id, text, markup, silent, critical, on_sent)
+        if await _fallback(critical, tg_id, text, f"flood-контроль Telegram на {wait} с"):
             await _confirm(on_sent)
-            return sent
-        except Exception as e2:                      # noqa: BLE001
-            log.warning("Не удалось отправить уведомление %s (после retry): %s", tg_id, e2)
-            if _network_failure(e2) and await _fallback(critical, tg_id, text):
-                await _confirm(on_sent)
+            return None
+        log.warning("flood-контроль: пауза %s с — повтор для %s отложен", wait, tg_id)
+        _defer(wait, bot, tg_id, text, markup, silent, critical, on_sent)
     except Exception as e:                           # noqa: BLE001
         log.warning("Не удалось отправить уведомление %s: %s", tg_id, e)
         if _network_failure(e) and await _fallback(critical, tg_id, text):
             await _confirm(on_sent)
+    return None
 
 
 _PARALLEL = 6                          # окно одновременно летящих отправок
