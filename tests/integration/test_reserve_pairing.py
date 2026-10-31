@@ -194,6 +194,32 @@ def test_an_acceptor_below_4_2_0_is_refused_as_old_and_the_invitation_waits(serv
     assert again["ok"], f"после обновления то же приглашение не принято: {again}"
 
 
+@pytest.mark.parametrize("version", ["4.1.9", "4.1.1.3", "", "нет"])
+def test_an_acceptor_with_the_quorum_but_below_4_2_0_by_its_release_is_refused_as_old(services, rsv, version):
+    """Пакет переезда 4.2.0 — формата 2: сторона ниже его не прочтёт, даже если объявляет
+    кворум (сборка между выпусками). Выпуск не читается — тоже ниже."""
+    res = services.reserve_invite_issue()
+    out = services.reserve_pair_hello(Acceptor(res["state"]["id"]).hello(version=version))
+    assert (out["ok"], out.get("why")) == (False, "old"), out
+    assert invitemod._live() == {}
+
+
+def test_the_old_refusal_lands_in_the_invitation_and_goes_with_the_updated_acceptor(services, rsv):
+    """Админ пригласившего видит в живом сообщении приглашения, кто подключался и почему пары
+    нет; обновлённый принявший подключился — строка уходит, на её месте обычное «подключился»."""
+    from awgbot.bot.texts.reserve import pairing as pt
+    res = services.reserve_invite_issue()
+    acc = Acceptor(res["state"]["id"])
+    out = services.reserve_pair_hello(acc.hello(version="4.1.1", caps=[]))
+    assert out.get("why") == "old" and out["st"]["old_peer_version"] == "4.1.1"
+    tail = pt.invite_tail(services.reserve_invite())
+    assert tail == ("⛔ Подключался «Beta» на v4.1.1 — для резерва нужен 4.2.0 или новее у обоих серверов: "
+                    "пусть админ обновит его бот и подключится заново, приглашение ждёт"), tail
+    assert services.reserve_pair_hello(acc.hello())["ok"]
+    st = services.reserve_invite()
+    assert "old_peer_version" not in st and "⛔" not in pt.invite_tail(st), pt.invite_tail(st)
+
+
 def test_the_old_refusal_says_what_to_do_and_that_the_invitation_waits():
     from awgbot.bot.texts.reserve import notices as rnt
     text = rnt.refused_by_inviter("old")

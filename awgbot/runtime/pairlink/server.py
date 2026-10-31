@@ -118,6 +118,8 @@ class PairServer(InboundMixin):
             await send_line(sess, "pair_refused", {"reason": str(res.get("why") or "gone")})
             if res.get("why") == "expired":
                 await self.pair_close("expired", notify=True)
+            elif res.get("why") == "old":
+                await self.event("old", res["st"])            # админу пригласившего — почему приглашение ждёт
             return
         old, self._pair_sess = self._pair_sess, sess
         sess.pairing, sess.sid = True, res["sid"]

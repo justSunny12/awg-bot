@@ -166,6 +166,29 @@ async def test_hello_from_a_second_address_is_the_two_event(services, server, mo
     await gw2.close()
 
 
+async def test_an_old_acceptor_hears_old_and_the_inviter_sees_why_in_the_invitation(services, server, monkeypatch):
+    """Принявший ниже 4.2.0: ему — `pair_refused{old}` (его бот пишет «обнови»), а у
+    пригласившего живое сообщение приглашения говорит, кто подключался и почему пары нет, —
+    отказ понятен обоим админам, а не одному; приглашение живо."""
+    from awgbot.bot.handlers.settings.reserve import events
+    from awgbot.domain.services.reserve import compat
+    bot = FakeBot()
+    monkeypatch.setattr(pairlink, "_on_event", events.make_on_event(bot, services))
+    res, key = await _invite(services, server)
+    services.reserve_invite_set_message(ADMIN, 777)
+    acc = Acceptor(res["state"]["id"])
+    gw = _Gw(*await asyncio.open_connection(*server._bound), key=key)
+    hello = acc.hello(version="4.1.1", caps=[c for c in compat.CAPS if c != "quo1"])
+    await gw.send("hello", {k: v for k, v in hello.items() if k not in ("_peer_addr", "nonce")})
+    first = await gw.recv()
+    assert (first.get("t"), first.get("reason")) == ("pair_refused", "old"), first
+    assert await _until(lambda: any(r[0] == "edit_message_text" for r in bot.records)), "у пригласившего тишина"
+    text = [r[2] for r in bot.records if r[0] == "edit_message_text"][-1]
+    assert "⛔ Подключался «Beta» на v4.1.1 — для резерва нужен 4.2.0 или новее у обоих серверов" in text, text
+    assert services.reserve_invite().get("id") == res["state"]["id"], "отказ «old» закрыл приглашение"
+    await gw.close()
+
+
 async def test_wrong_codes_and_the_third_closes_the_session_and_drops_the_link(services, server, rsv):
     res, key = await _invite(services, server)
     gw, acc, _ = await _pair_hello(server, res, key)
