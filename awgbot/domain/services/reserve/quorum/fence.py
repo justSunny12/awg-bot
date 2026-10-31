@@ -29,6 +29,12 @@ class ReserveQuorumFenceMixin:
         """Лишён ли кворума этот процесс (для загородки бота): по отметке такта."""
         return bool(self.__dict__.get("_quo_fenced"))
 
+    def reserve_quorum_barred(self) -> bool:
+        """Решений от админа не исполнять: лишён кворума по отметке такта или по
+        журналу (держатель `self` с ролью `follower` — так и после перезапуска,
+        пока такт отметку не поставил). Страховка доменных действий за загородкой бота."""
+        return self.reserve_quorum_fenced() or self._quorum_jrn_fenced()
+
     def _quorum_jrn_fenced(self) -> bool:
         try:
             meta = self.db.jrn_meta()
