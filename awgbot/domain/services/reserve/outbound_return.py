@@ -11,7 +11,7 @@ take_tg (`deleteWebhook`, поллинг) → record_back (запись → св
 Telegram забирается (deleteWebhook не прошёл — повтор раз в минуту, ~5 мин
 отказов — уведомление), реплика вольётся по выходу резерва на связь (await_merge)
 — или не вольётся (резерв вернулся пустым); с журналом вместо реплики — правки
-бота на резерве хвостом (`reserve_c9_start`, journal/c9), и пока его журнал
+бота на резерве хвостом (`reserve_c9_arm`, journal/c9), и пока его журнал
 данных на диске резерва новее перенесённого (`reserve_disk_waiting`), возврат
 ждёт его, а не считает гостя пустым. Резерв на связи без гостя (по `st` после
 начала возврата) или пустая реплика — возврат без слияния (сразу take_tg).
@@ -143,7 +143,7 @@ class ReserveReturnMixin:
         guest_e = int(self.db.jrn_meta()["epoch"]) if self.reserve_following() else 0
         self.reserve_epoch_sync()                             # точка взятия эпохи — последнее применённое от него
         if guest_e and self._pkg_journal():
-            self.reserve_c9_start(guest_e)                    # журнал: его правки после этой точки — хвостом
+            self.reserve_c9_arm(guest_e)                      # журнал: его правки после этой точки — хвостом
         log.warning("резерв: возврат без резерва «%s» — запись на себя, забираю Telegram", self.reserve_peer_name())
         return actions + [("take_home",)]
 
