@@ -242,13 +242,14 @@ class ClientsMixin:
 
     def add_notified(self, client_id: int, threshold: int) -> None:
         """Добавляет порог в множество отправленных (идемпотентно)."""
-        current = self.get_notified(client_id)
-        if threshold in current:
-            return
-        current.add(threshold)
-        # Храним отсортированно для читабельности файла БД при отладке.
-        csv = ",".join(str(x) for x in sorted(current))
-        self.update_client_fields(client_id, notified_thresholds=csv)
+        with self._tx(immediate=True):      # чтение и запись CSV — под одним замком
+            current = self.get_notified(client_id)
+            if threshold in current:
+                return
+            current.add(threshold)
+            # Храним отсортированно для читабельности файла БД при отладке.
+            csv = ",".join(str(x) for x in sorted(current))
+            self.update_client_fields(client_id, notified_thresholds=csv)
 
     def reset_notified(self, client_id: int) -> None:
         """Обнуляет отправленные пороги (вызывается при создании нового периода)."""
@@ -267,20 +268,22 @@ class ClientsMixin:
 
     def add_traffic_notified(self, client_id: int, marker: str) -> None:
         """Помечает трафик-уведомление отправленным (идемпотентно)."""
-        cur = self.get_traffic_notified(client_id)
-        if marker in cur:
-            return
-        cur.add(marker)
-        self.update_client_fields(client_id, traffic_notified=",".join(sorted(cur)))
+        with self._tx(immediate=True):      # чтение и запись CSV — под одним замком
+            cur = self.get_traffic_notified(client_id)
+            if marker in cur:
+                return
+            cur.add(marker)
+            self.update_client_fields(client_id, traffic_notified=",".join(sorted(cur)))
 
     def remove_traffic_notified(self, client_id: int, marker: str) -> None:
         """Снять одну трафик-метку: уведомление сможет прийти снова после
         поднятия лимита и повторного исчерпания (идемпотентно)."""
-        cur = self.get_traffic_notified(client_id)
-        if marker not in cur:
-            return
-        cur.discard(marker)
-        self.update_client_fields(client_id, traffic_notified=",".join(sorted(cur)))
+        with self._tx(immediate=True):      # чтение и запись CSV — под одним замком
+            cur = self.get_traffic_notified(client_id)
+            if marker not in cur:
+                return
+            cur.discard(marker)
+            self.update_client_fields(client_id, traffic_notified=",".join(sorted(cur)))
 
     def set_tg_identity(self, client_id: int, name: str, username: str) -> None:
         """Имя и username Telegram-аккаунта на профиле и момент сверки — одной

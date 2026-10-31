@@ -20,7 +20,7 @@ class NavMixin:
         транзакцией; вернуть прежний активный id (для гашения его кнопок).
         Раньше это были три хопа в поток и четыре запроса на каждый переход."""
         import json
-        with self._tx() as cur:
+        with self._tx(immediate=True) as cur:   # история читается до записи — под замком
             row = cur.execute("SELECT nav_message_id FROM ui_state WHERE chat_id = ?",
                               (chat_id,)).fetchone()
             prev = row["nav_message_id"] if row else None
@@ -56,53 +56,56 @@ class NavMixin:
 
     def pop_nav_history(self, chat_id: int) -> list:
         import json
-        key = f"nav_history:{chat_id}"
-        ids = json.loads(self.get_state(key) or "[]")
-        self.set_state(key, "[]")
-        return ids
+        with self._tx(immediate=True):      # чтение и запись списка — под одним замком
+            key = f"nav_history:{chat_id}"
+            ids = json.loads(self.get_state(key) or "[]")
+            self.set_state(key, "[]")
+            return ids
 
     def add_content_msg_id(self, chat_id: int, message_id: int) -> None:
         """Запомнить id выданного контент-сообщения (ссылка/QR/файл/инструкция),
         чтобы удалить его при возврате в меню."""
         import json
-        row = self._connection().execute(
-            "SELECT content_msg_ids FROM ui_state WHERE chat_id = ?", (chat_id,)
-        ).fetchone()
-        ids = json.loads(row["content_msg_ids"]) if row and row["content_msg_ids"] else []
-        if message_id not in ids:
-            ids.append(message_id)
-        with self._tx() as cur:
-            cur.execute(
-                "INSERT INTO ui_state (chat_id, content_msg_ids) VALUES (?, ?) "
-                "ON CONFLICT(chat_id) DO UPDATE SET content_msg_ids = excluded.content_msg_ids",
-                (chat_id, json.dumps(ids)),
-            )
+        with self._tx(immediate=True):      # чтение и запись списка — под одним замком
+            row = self._connection().execute(
+                "SELECT content_msg_ids FROM ui_state WHERE chat_id = ?", (chat_id,)
+            ).fetchone()
+            ids = json.loads(row["content_msg_ids"]) if row and row["content_msg_ids"] else []
+            if message_id not in ids:
+                ids.append(message_id)
+            with self._tx() as cur:
+                cur.execute(
+                    "INSERT INTO ui_state (chat_id, content_msg_ids) VALUES (?, ?) "
+                    "ON CONFLICT(chat_id) DO UPDATE SET content_msg_ids = excluded.content_msg_ids",
+                    (chat_id, json.dumps(ids)),
+                )
 
     def remove_content_msg_id(self, chat_id: int, message_id: int) -> None:
         """Убрать один id из служебных: приглашение к вводу снова стало живым
         экраном («✖️ Отмена»), и уборка при возврате в меню не должна его снести."""
         import json
-        row = self._connection().execute(
-            "SELECT content_msg_ids FROM ui_state WHERE chat_id = ?", (chat_id,)
-        ).fetchone()
-        ids = json.loads(row["content_msg_ids"]) if row and row["content_msg_ids"] else []
-        if message_id not in ids:
-            return
-        ids = [i for i in ids if i != message_id]
-        with self._tx() as cur:
-            cur.execute("UPDATE ui_state SET content_msg_ids = ? WHERE chat_id = ?",
-                        (json.dumps(ids) if ids else None, chat_id))
+        with self._tx(immediate=True):      # чтение и запись списка — под одним замком
+            row = self._connection().execute(
+                "SELECT content_msg_ids FROM ui_state WHERE chat_id = ?", (chat_id,)
+            ).fetchone()
+            ids = json.loads(row["content_msg_ids"]) if row and row["content_msg_ids"] else []
+            if message_id not in ids:
+                return
+            ids = [i for i in ids if i != message_id]
+            with self._tx() as cur:
+                cur.execute("UPDATE ui_state SET content_msg_ids = ? WHERE chat_id = ?",
+                            (json.dumps(ids) if ids else None, chat_id))
 
     def pop_content_msg_ids(self, chat_id: int) -> list:
         """Забрать и очистить список id контент-сообщений (для удаления)."""
         import json
-        row = self._connection().execute(
-            "SELECT content_msg_ids FROM ui_state WHERE chat_id = ?", (chat_id,)
-        ).fetchone()
-        ids = json.loads(row["content_msg_ids"]) if row and row["content_msg_ids"] else []
-        if ids:
-            with self._tx() as cur:
-                cur.execute("UPDATE ui_state SET content_msg_ids = NULL WHERE chat_id = ?",
-                            (chat_id,))
-        return ids
-
+        with self._tx(immediate=True):      # чтение и запись списка — под одним замком
+            row = self._connection().execute(
+                "SELECT content_msg_ids FROM ui_state WHERE chat_id = ?", (chat_id,)
+            ).fetchone()
+            ids = json.loads(row["content_msg_ids"]) if row and row["content_msg_ids"] else []
+            if ids:
+                with self._tx() as cur:
+                    cur.execute("UPDATE ui_state SET content_msg_ids = NULL WHERE chat_id = ?",
+                                (chat_id,))
+            return ids
