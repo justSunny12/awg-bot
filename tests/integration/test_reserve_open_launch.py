@@ -269,3 +269,35 @@ def test_after_a_bot_restart_the_exit_code_is_unknown_and_the_timeout_rules(host
     assert host.svc._rsvopen_exit() == (None, "")
     host.svc.reserve_in_tick()
     assert host.svc.reserve_in() == "taking"
+
+
+def _status_then(host, monkeypatch, first: dict, then: dict) -> None:
+    """open.status меняется между чтением такта и кодом завершения: первое чтение — `first`,
+    дальше — `then` (процесс записал итог и вышел в этом окне)."""
+    seq = {"n": 0}
+
+    def status():
+        seq["n"] += 1
+        return dict(first if seq["n"] == 1 else then)
+    monkeypatch.setattr(rsvzone, "open_status", status)
+
+
+def test_a_done_written_right_before_the_exit_is_a_result_not_a_failure(host, monkeypatch):
+    """Гонка «прочитали open.status → спросили код юнита»: процесс записал done между ними
+    и вышел с кодом 0 — это итог, зона обслуживает, а не «завершился без итога (код 0)»."""
+    svc = host.svc
+    _taking(host)
+    _status_then(host, monkeypatch, {"step": "record_fact"}, {"step": "done", "record": "skipped"})
+    host.spawn.rc = 0
+    acts = svc.reserve_in_tick()
+    assert svc.reserve_in() == "taking" and "down" not in sent(acts), acts
+    assert "teardown" not in host.zone.names() and "serve" in host.zone.names(), host.zone.names()
+
+
+def test_a_fail_written_right_before_the_exit_gives_its_own_reason(host, monkeypatch):
+    svc = host.svc
+    _taking(host)
+    _status_then(host, monkeypatch, {"step": "record_set"}, {"step": "fail", "reason": "факт записи не подтвердился за 30 минут"})
+    host.spawn.rc = 1
+    acts = svc.reserve_in_tick()
+    assert [a[2]["reason"] for a in acts if a[:2] == ("send", "down")] == ["факт записи не подтвердился за 30 минут"]

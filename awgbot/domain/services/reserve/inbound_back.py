@@ -7,7 +7,7 @@ inbound_back.py — часть пакета reserve (см. __init__): «поль
 (слияние у неё сорвалось) или прислала `resume` — гость снова у меня
 (`reserve_resume`: юнит гостя, serving), иначе бот нем с обеих сторон.
 `back` основы: пересылка хвоста (`--relay`, файервол с DNAT, `relay_flush`;
-адрес основы — IP, имя резолвится сейчас; срыв открытия до смены записи — без
+адрес основы — IP, имя резолвится сейчас; срыв открытия до подъёма клона — без
 хвоста, сразу idle), учёт, `relay{until}`, `--wipe`, прежний пакет — прочь,
 `wiped`, Т-РУ5 → relay до `relay_max_days` или тишины
 `relay_idle_hours` (по счётчику правила DNAT — nftguard.relay_packets) → idle.
@@ -33,24 +33,30 @@ RESUME_RETRY_S = 60                     # юнит гостя не поднял�
 
 class ReserveInboundBackMixin:
 
-    def _relay_yield(self) -> None:
+    def _relay_yield(self) -> bool:
         """Фаза relay (пересылка хвоста) при новом открытии: правило DNAT снимается —
         иначе оно увело бы пользователей нового клона на основу; состояние — idle.
         Что снято, помнится (`relay_prev`): открытие сорвётся — пересылка вернётся
-        (`_relay_restore`); без пересылки отметка пустая — от прошлого открытия не тянется."""
+        (`_relay_restore`); без пересылки отметка пустая — от прошлого открытия не тянется.
+        Записи conntrack с DNAT хвоста живут и после снятия правила — рукопожатия устройств
+        по тем же 5-кортежам ушли бы на основу до их истечения: отметка `relay_flush_due`,
+        и такт на `clone_up` (клон поднят, порты клонов в состоянии зоны, файервол без DNAT
+        перерисован тем же тактом) сбрасывает их (`relay_flush`). True — пересылка была и снята."""
         from awgbot.infra import rsvzone
         inn = self._inn()
         if self.reserve_in() != "relay":
-            if inn.get("relay_prev"):
-                self.rsv_update("rsv_in", relay_prev=None)
-            return
+            if inn.get("relay_prev") or inn.get("relay_flush_due"):
+                self.rsv_update("rsv_in", relay_prev=None, relay_flush_due=False)
+            return False
         prev = {k: str(inn.get(k) or "") for k in ("relay_to", "relay_until", "relay_at", "relay_last_traffic")}
         try:
             rsvzone.teardown()
         except rsvzone.ZoneError as e:
             log.info("резерв: пересылка хвоста при новом открытии снята с ошибкой: %s", e)
-        self.reserve_set_in("idle", step="", relay_to="", relay_until="", relay_prev=prev if prev["relay_to"] else None)
+        self.reserve_set_in("idle", step="", relay_to="", relay_until="", relay_prev=prev if prev["relay_to"] else None,
+                            relay_flush_due=bool(prev["relay_to"]))
         log.info("резерв: пересылка хвоста снята — зона нужна новому переезду")
+        return bool(prev["relay_to"])
 
     def _relay_restore(self) -> bool:
         """Открытие сорвалось (отказ запуска, `_take_fail`), а пересылка хвоста, уступившая ему,
@@ -61,7 +67,7 @@ class ReserveInboundBackMixin:
         prev = dict(self._inn().get("relay_prev") or {})
         if not prev:
             return False
-        self.rsv_update("rsv_in", relay_prev=None)
+        self.rsv_update("rsv_in", relay_prev=None, relay_flush_due=False)   # сброс сделает такт relay (relay_redraw)
         to = str(prev.get("relay_to") or "")
         if not to or self.reserve_in() != "idle":
             return False
@@ -171,7 +177,8 @@ class ReserveInboundBackMixin:
         return [("fw",), ("notify", [Notification(tg_id=int(config.ADMIN_ID), text=rn.return_resumed(name))])]
 
     def reserve_back_in(self) -> list[tuple]:
-        """`back` основы: пересылка хвоста, учёт, `relay{until}`, снятие, `wiped`, Т-РУ5."""
+        """`back` основы: пересылка хвоста, учёт, `relay{until}`, снятие, `wiped`, Т-РУ5. Бот основы
+        у меня по принудительному захвату (`tg_take_forced`, вебхук у гостя) — `taken`, а не снятие."""
         from awgbot.infra import rsvzone
         from awgbot.domain.notices import reserve as rn
         inn = self._inn()
@@ -185,11 +192,20 @@ class ReserveInboundBackMixin:
             except OSError as e:
                 log.info("резерв: остатки гостя на диске не сняты: %s", e)
             return [("send", "wiped", {})]
+        if str(inn.get("state") or "") == "serving" and inn.get("tg_take_forced") and inn.get("tg_taken"):
+            # основа не отдала бота и пропала — гость забрал Telegram сам и с тех пор правит её данные;
+            # `back` ожившей основы по сроку шага переезда (её срыв, не узнавший об этом) снёс бы их:
+            # ответ — «несу» (`taken`), зона и гость остаются; возврат — обычным путём (back_req, реплика)
+            log.warning("резерв: back от «%s», а её бот у меня по принудительному захвату — отвечаю taken, гостя не снимаю",
+                        self.reserve_peer_name())
+            return [("send", "taken", self._word_oid(inn))]
         name = self.reserve_peer_name()
         # пересылка хвоста нужна, только если пользователи могли прийти на клон: зона обслуживала
-        # или процесс открытия дошёл до смены записи; срыв раньше — сразу idle
+        # или клон уже поднят — запись по кнопке меняет основа сразу после `up`, и пользователи
+        # могли прийти раньше, чем процесс открытия дойдёт до record_set; срыв раньше клона — сразу
+        # idle (лишний хвост безвреден: кончится по тишине relay_idle_hours)
         step = str(rsvzone.open_status().get("step") or "")
-        had_clients = str(inn.get("state") or "") != "taking" or step in ("record_set", "record_fact", "done")
+        had_clients = str(inn.get("state") or "") != "taking" or step in ("clone_up", "record_set", "record_fact", "done")
         if str(inn.get("state") or "") == "taking":
             try:
                 self._rsvopen_stop()                          # переезд сорвался на открытии — юнит прочь

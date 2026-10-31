@@ -160,9 +160,9 @@ def test_status_reports_the_state_file_and_the_encrypted_snapshot(box, tmp_path)
     assert got["phase"] == "serving" and got["iface"] == "awg0" and got["rep"] == "present"
 
 
-def _unit_text(tmp_path: Path) -> str:
+def _unit_text(tmp_path: Path, **env: str) -> str:
     """Текст юнита гостя: функция write_units из скрипта, пишущая в подставные
-    пути (systemctl подменён)."""
+    пути (systemctl подменён); env — окружение режима (GUEST_MEMORY_MB)."""
     src = SCRIPT.read_text()
     start = src.index("write_units() {")
     end = src.index("\n}\n", start) + 3
@@ -174,7 +174,7 @@ def _unit_text(tmp_path: Path) -> str:
             f'STATE_DIR=/run/awg-bot/rsv; INSTALL_DIR=/opt/awg-bot; UNIT="{unit}"; DNS_UNIT="{dns}"\n'
             f'{src[start:end]}\nwrite_units awg0\n')
     r = subprocess.run(["bash", "-c", prog], capture_output=True, text=True, timeout=30,
-                       env={"PATH": f"{bin_}:/usr/bin:/bin"})
+                       env={"PATH": f"{bin_}:/usr/bin:/bin", **env})
     assert r.returncode == 0, r.stderr
     return unit.read_text()
 

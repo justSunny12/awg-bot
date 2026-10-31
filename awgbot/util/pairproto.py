@@ -93,6 +93,7 @@ PAIR_KINDS: dict[str, tuple[str, dict]] = {
                             "in": (_S, 16), "pkg": (_D, None), "admin_id": (_I, None),
                             "admin_opened": (_B, None), "gw": (_B, None),
                             "healthy": (_B, None), "can_return": (_B, None), "in_kind": (_S, 16), "mem_free": (_I, None), "online": (_I, None), "in_by": (_S, 8),
+                            "in_tg": (_S, 8),   # бот второй стороны у меня: forced (захват без её released) | wait (VPN без бота)
                             "zone": (_S, 120), "jrn": (_D, None), "quo": (_D, None), "rfp": (_D, None),
                             "exposed": (_D, None)}),   # {share|code: m_gen} — ключ основы мне известен без её K
     "ping":         (BOTH, {"n": (_S, 32)}),
@@ -196,7 +197,7 @@ def kinds_for(proto: str) -> dict[str, tuple[str, dict]]:
 
 # поля, которых может не быть (добавлены внутри линии; отсутствие — ложь/пусто)
 OPTIONAL: dict[str, frozenset] = {"st": frozenset({"healthy", "can_return", "in_kind", "mem_free", "online", "in_by", "zone",
-                                                     "jrn", "quo", "rfp", "exposed"}),
+                                                     "jrn", "quo", "rfp", "exposed", "in_tg"}),
                                    "ask": frozenset({"kind"}), "up": frozenset({"oid"}), "taken": frozenset({"oid"}),
                                   "state": frozenset({"reason", "e"}), "qview": frozenset({"i"}),
                                   "go": frozenset({"ttl", "k", "sealed", "oid"}), "go_req": frozenset({"ttl"}),

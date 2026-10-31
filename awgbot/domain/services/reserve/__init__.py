@@ -21,11 +21,15 @@ reserve — взаимный резерв серверов AWG на сторон
 - `outbound` — «мои пользователи»: переезд кнопкой, away, здоровье, зависший
   вебхук резерва;
 - `outbound_stuck` — «мои пользователи»: зависший вебхук резерва (away и home);
+- `outbound_forced` — «мои пользователи»: срок шага переезда, а бот уже у гостя
+  принудительным захватом (`st.in_tg = forced`) — away, а не срыв;
 - `outbound_return` — «мои пользователи»: возврат с резерва (в том числе без
   реплики и рычагом «вернуть без резерва»);
 - `merge_ops` — слияние реплики при возврате: базы, пиры, блокировки, отчёт;
 - `inbound` — «пользователи основы у меня»: автомат приёма, зона, handback;
 - `inbound_back` — их возврат основе (`back`), пересылка хвоста, relay;
+- `inbound_tgwait` — VPN основы у меня, а её бот здесь Telegram не взял: зона
+  остаётся, захват повторяется (`st.in_tg`);
 - `openproc` — запуск процесса открытия временным юнитом (`OPEN_UNIT`,
   свойства песочницы `rsvopen_sandbox_props`), код завершения и его stderr;
 - `notify` — уведомления пользователям о переезде и возврате;
@@ -63,6 +67,7 @@ from .guest import ReserveGuestMixin
 from .gwside import ReserveGwSideMixin
 from .inbound import ReserveInboundMixin
 from .inbound_back import ReserveInboundBackMixin
+from .inbound_tgwait import ReserveInboundTgWaitMixin
 from .journal import ReserveJournalMixin
 from .invite import ReserveInviteMixin
 from .keys import ReserveKeysMixin
@@ -73,6 +78,7 @@ from .openproc import ReserveOpenProcMixin
 from .outbound import ReserveOutboundMixin
 from .outbound_return import ReserveReturnMixin
 from .outbound_stuck import ReserveStuckMixin
+from .outbound_forced import ReserveForcedTakeMixin
 from .package import ReservePackageMixin
 from .pairing import ReservePairingMixin
 from .peeradmin import ReservePeerAdminMixin
@@ -96,7 +102,8 @@ class ReserveMixin(ReserveStateMixin, ReserveKeysMixin, ReserveInviteMixin, Rese
                    ReserveTrafficMixin, ReserveAwayMixin, ReserveGwSideMixin, ReserveZoneLinksMixin, ReserveGwGuestMixin,
                    ReserveOpeningMixin, ReserveRfZoneMixin, ReserveRfPeerMixin, ReserveTgPoolMixin, ReserveMergeOpsMixin,
                    ReserveCodeWindowMixin, ReserveReturnMixin, ReserveOpenProcMixin, ReserveJournalMixin,
-                   ReserveInboundBackMixin, ReserveStuckMixin, ReserveQuorumMixin):
+                   ReserveInboundBackMixin, ReserveInboundTgWaitMixin, ReserveStuckMixin, ReserveForcedTakeMixin,
+                   ReserveQuorumMixin):
     """Резерв серверов: всё о паре — в одном месте сервисов."""
 
 

@@ -93,6 +93,13 @@ def hosting_failed(primary: str, reason: str) -> str:
     return f"⚠️ Пользователей {_n(primary)} принять не удалось: {_e(reason)}"
 
 
+def hosting_without_bot(primary: str, reason: str) -> str:
+    """Запись DNS уже на мне, клон несёт пользователей, а бот основы здесь Telegram не взял:
+    зона остаётся (VPN работает), захват повторяется."""
+    return (f"⚠️ Пользователи {_n(primary)} у тебя, VPN работает, а бот {_n(primary)} здесь не отвечает в Telegram: "
+            f"{_e(reason)} — повторяю раз в минуту")
+
+
 def return_resumed(primary: str) -> str:
     """Возврат сорвался у основы (слияние не прошло): бот основы снова работает здесь."""
     return (f"⚠️ Возврат пользователей {_n(primary)} не состоялся: слияние данных у {_n(primary)} не прошло — "

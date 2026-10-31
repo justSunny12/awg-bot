@@ -11,7 +11,8 @@ inbound.py — часть пакета reserve (см. __init__): «пользо�
 
 Переезд кнопкой (`go_req{gen, kind}`; предусловия — `reserve_open_block`:
 зона свободна, мои пользователи здесь, готовность, направление, пакет):
-пересылка хвоста прошлого возврата уступает (`_relay_yield`),
+пересылка хвоста прошлого возврата уступает (`_relay_yield`; её записи
+conntrack сбрасывает такт на `clone_up` — `relay_flush`),
 `open.status = launching`, хранилище гостя монтирует бот (у хоста), процесс
 открытия временным юнитом с песочницей (openproc, `rsvopen_sandbox_props`;
 stdin — JSON входа первой строкой, труба открыта; запись DNS меняет основа;
@@ -29,9 +30,12 @@ env резерва закрыт, каталог данных подменён п
 догоняет и ставит вебхук сам; основа с `released` опоздала — `takeover`.
 Такт проверяет код завершения процесса: кончился без `done`/`fail` — срыв
 сразу, хвост stderr (rsvopen.err) — в причину. После `done` у taking есть
-срок: аварийный путь ждёт `tg_taken` TAKEN_WAIT_S, путь с K основы (кнопка и
+срок: аварийный путь ждёт `tg_taken` TAKEN_WAIT_S (не дождался, а запись уже
+сменил процесс — зона остаётся, serving без бота, захват повторяется:
+inbound_tgwait), путь с K основы (кнопка и
 просьба кворума) — `released` DONE_BUTTON_WAIT_S; основа с `released` опоздала и не на связи — `tg_take`
-гостю сам (`tg_take_forced`), ещё TAKEN_WAIT_S, иначе срыв. Отказ процесса —
+гостю сам (`tg_take_forced`), ещё TAKEN_WAIT_S, иначе срыв (взял — её `back`
+гостя не снимает, inbound_back). Отказ процесса —
 один раз под замком: `down{причина}`, юнит открытия стоп, зона снята, шлюзам
 — `state{idle, reason}` (шлюз, отдавший точку ключа кворума, говорит своему
 админу «переезд не состоялся», Т-РА5), отметка `fail_at` (пауза после срыва,
@@ -171,7 +175,8 @@ class ReserveInboundMixin:
             rsvzone.open_status_write("launching")           # прежний open.status не должен сойти за ход этого открытия
             self.reserve_set_in("taking", kind=str(kind or "button"), gen=int(gen), why=str(kind or "button"), by="k",
                                 open_started=timeutil.now_iso(), deadline=time.monotonic() + OPEN_WAIT_S,
-                                up_sent=False, tg_taken=False, sealed=not k_hex, k_passed=False, oid="", eph_sent=0,
+                                up_sent=False, tg_taken=False, tg_take_forced=False, tg_wait="",
+                                sealed=not k_hex, k_passed=False, oid="", eph_sent=0,
                                 ended_auto=str(kind or "button") != "button")   # по просьбе кворума (dead | rf) — автоматический
             self._in_step("open")
         try:
@@ -211,7 +216,14 @@ class ReserveInboundMixin:
         if step != "done":
             rc, tail = self._rsvopen_exit()                   # юнит не стартовал (226) или процесс убит (OOM): сразу, не через 35 мин
             if rc is not None:
-                return self._take_fail(f"процесс открытия завершился без итога (код {rc})" + (f": {tail}" if tail else ""))
+                # итог мог лечь между чтением open.status и кодом завершения (done и выход с кодом 0) —
+                # решает перечитанный итог, а не код
+                st = rsvzone.open_status()
+                step = str(st.get("step") or "")
+                if step == "fail":
+                    return self._take_fail(str(st.get("reason") or "процесс открытия отказал"), pre_m=open_fail_pre_m(st))
+                if step != "done":
+                    return self._take_fail(f"процесс открытия завершился без итога (код {rc})" + (f": {tail}" if tail else ""))
         now = time.monotonic()
         if step == "eph" and inn.get("sealed") and not inn.get("k_passed") and livestep.mono_due(inn.get("eph_sent"), now, EPH_RESEND_S):
             # процесс ждёт конверт: разовый ключ — основе (повтор, пока ждёт: сессия могла оборваться)
@@ -245,6 +257,12 @@ class ReserveInboundMixin:
                             "reserve.zone_pool или свободного блока нет); их устройства выходят одним адресом зоны, "
                             "CAKE делит загрузку по назначению", zst["netmap_miss"])
             actions += [("send", "up", self._word_oid(inn)), ("fw",)]
+            if inn.get("relay_flush_due"):
+                # хвост прошлого возврата уступил этому открытию: файервол уже без DNAT хвоста (fw выше),
+                # порты клонов — в состоянии зоны; записи conntrack с DNAT на основу — прочь, иначе
+                # рукопожатия устройств по тем же 5-кортежам уходили бы на основу до их истечения
+                self.rsv_update("rsv_in", relay_flush_due=False)
+                actions.append(("relay_flush",))
         elif step in ("clone_up", "record_set", "record_fact", "done") and livestep.mono_due(inn.get("up_resent"), now, 30):
             self.rsv_update("rsv_in", up_resent=now)          # сессия могла оборваться в секунду clone_up — повтор, основа дубли не берёт
             actions.append(("send", "up", self._word_oid(inn)))
@@ -267,7 +285,8 @@ class ReserveInboundMixin:
     def _tick_done_wait(self, inn: dict, now: float) -> list[tuple]:
         """После done у taking есть срок: аварийный путь ждёт `tg_taken` гостя
         (бот основы поднялся и поставил вебхук), путь с K основы — `released` основы.
-        Гость не стартовал или не взял Telegram — отказ с причиной; основа с
+        Гость не стартовал или не взял Telegram — отказ с причиной, а если запись уже
+        сменил процесс открытия — VPN остаётся, захват повторяется (inbound_tgwait); основа с
         `released` опоздала и мертва для меня — Telegram берёт гость (клон уже
         несёт пользователей), жива — отказ."""
         from awgbot.infra import rsvzone
@@ -282,9 +301,13 @@ class ReserveInboundMixin:
         if not by_k:
             if waited < TAKEN_WAIT_S:
                 return []
-            if not rsvzone.guest_unit_active():
-                return self._take_fail("бот основы на резерве не поднялся (юнит гостя не активен)")
-            return self._take_fail("бот основы на резерве не взял право отвечать (вебхук не поставлен)")
+            why = ("бот основы на резерве не поднялся (юнит гостя не активен)" if not rsvzone.guest_unit_active()
+                   else "бот основы на резерве не взял право отвечать (вебхук не поставлен)")
+            if str(rsvzone.open_status().get("record") or "") != "skipped":
+                # запись уже сменил процесс открытия — пользователи идут на клон: срыв по Telegram
+                # не снимает рабочий VPN (inbound_tgwait), захват повторяется
+                return self._take_keep_vpn(why)
+            return self._take_fail(why)
         if waited < DONE_BUTTON_WAIT_S:
             return []
         if not inn.get("replica_at") and self.reserve_peer_seen() == "down" and not inn.get("tg_take_forced"):
@@ -385,7 +408,7 @@ class ReserveInboundMixin:
             return []
         with _LOCK:
             self.reserve_set_in("serving", kind=str(inn.get("kind") or "button"), gen=int(inn.get("gen") or 0),
-                                tg_taken=True, served=True, taken_at=timeutil.now_iso(), step="")
+                                tg_taken=True, served=True, taken_at=timeutil.now_iso(), step="", tg_wait="")
         name = self.reserve_peer_name()
         log.info("резерв: пользователи и бот «%s» у меня", name)
         return [("send", "taken", self._word_oid(inn)), ("fw",),
@@ -400,7 +423,7 @@ class ReserveInboundMixin:
         from awgbot.domain.notices import reserve as rn
         phase = str(rsvzone.state().get("phase") or "")
         if phase in ("serving", "taking"):
-            return []
+            return [] if inn.get("tg_taken") else self._tick_tg_wait(inn)   # VPN здесь без бота — повтор захвата
         name = self.reserve_peer_name()
         log.warning("резерв: зона в состоянии %s, а я считаю serving — пользователей «%s» больше не несу", phase or "idle", name)
         # пакет и ключи кворума не трогаем: основа может быть всё ещё мертва — кандидат кворума откроет

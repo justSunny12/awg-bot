@@ -229,9 +229,12 @@ def test_back_with_an_empty_zone_answers_wiped(host, state):
     assert host.zone.calls == []
 
 
-@pytest.mark.parametrize("step, relays", [("launched", False), ("clone_up", False), ("record_set", True),
+@pytest.mark.parametrize("step, relays", [("launched", False), ("store", False), ("clone_up", True), ("record_set", True),
                                           ("done", True)])
 def test_back_from_taking_relays_the_tail_only_if_clients_could_have_come(host, monkeypatch, step, relays):
+    """Клон поднят (`clone_up`) — пользователи уже могли прийти: по кнопке запись меняет основа
+    сразу после `up`, процесс открытия до record_set не доходит вовсе. Без хвоста они теряли
+    VPN до переподключения; лишний хвост безвреден — кончится по тишине."""
     real = host.svc.reserve_peer_state
     monkeypatch.setattr(host.svc, "reserve_peer_state", lambda: {**real(), "self_host": "203.0.113.9", "ports": [45877]})
     _taking(host)
@@ -256,11 +259,14 @@ def test_up_is_repeated_every_30_seconds_until_the_hosting_moves_on(host):
 
 @pytest.mark.parametrize("active, why", [(False, "не поднялся"), (True, "не взял право отвечать")])
 def test_an_emergency_hosting_that_did_not_take_telegram_fails_after_ten_minutes(host, monkeypatch, active, why):
+    """Запись процесс открытия не менял (`record=skipped`) — пользователи на клон не шли:
+    срыв по Telegram снимает зону, как прежде. Запись сменена — зона остаётся
+    (test_reserve_vpn_without_bot)."""
     svc = host.svc
     monkeypatch.setattr(rsvzone, "guest_unit_active", lambda: active)
     _taking(host, "dead")
     svc.rsv_update("rsv_in", by="share")                  # аварийный путь — открытие по точкам: запись меняет процесс
-    host.zone.status = {"step": "done"}
+    host.zone.status = {"step": "done", "record": "skipped"}
     svc.reserve_in_tick()
     svc.reserve_in_tick()
     host.clock.advance(inbound.TAKEN_WAIT_S - 5)

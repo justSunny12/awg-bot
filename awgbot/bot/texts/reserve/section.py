@@ -231,12 +231,18 @@ def card_text(d: dict) -> str:
         since = d.get("in_since") or ""
         lines.append(f"📥 Пользователи {_n(name)}: здесь" + (f" с {_e(_when(since))}" if since else "")
                      + (" — принимаю" if inn == "taking" else " — возвращаю" if inn == "releasing" else ""))
+        if d.get("in_tg_wait"):                               # VPN здесь, а бот второй стороны Telegram не взял
+            lines.append(f"└ ⚠️ бот {_n(name)} здесь не отвечает в Telegram: {_e(d['in_tg_wait'])} — повторяю раз в минуту")
     elif inn == "relay":
         lines.append(f"📥 Пользователи {_n(name)}: возвращаются к нему — пересылка до {_e(_date(d.get('in_relay_until') or ''))}")
     else:
         lines.append(f"📥 Пользователи {_n(name)}: на его сервере")
         if not in_ok and in_why:
             lines.append("└ ⚠️ " + _e(in_why))
+        mem = d.get("pkg_mem") or {}
+        if mem:
+            lines.append(f"└ ⚠️ данные для переезда {_n(name)} — {_e(mem['size'])}: переезду сюда понадобится "
+                         f"до {_e(mem['need'])} памяти")
         lines += quorum_peer_lines(d.get("quorum") or {})
         lines += rfpeer_peer_lines(d.get("rfpeer") or {}, name)
         if d.get("await_merge"):
