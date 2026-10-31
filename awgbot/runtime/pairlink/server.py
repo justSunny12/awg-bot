@@ -92,6 +92,7 @@ class PairServer(InboundMixin):
                 self._pair_sess = None
                 with contextlib.suppress(Exception):
                     await asyncio.to_thread(self.services.reserve_pair_session_closed, sess.sid)
+            sess.ready.set()                                 # ждущие отправки — не до таймаута
             await close_session(sess)
 
     async def _serve_pairing(self, reader, sess: _Session, hello: dict, last_seq: int) -> None:
@@ -128,11 +129,14 @@ class PairServer(InboundMixin):
         old, self._sess = self._sess, sess
         if old is not None and old is not sess:
             await close_session(old)
-        sess.hello = True
         sess.caps = [str(c)[:16] for c in (hello.get("caps") or [])[:16]]
         await self.notes(await asyncio.to_thread(self.services.reserve_session_opened, hello))
         if not await send_line(sess, "st", await asyncio.to_thread(self.services.reserve_st_body_sent)):
             return
+        # на связи — только после своего st: клиент ждёт его первым и рвёт сессию на любом
+        # другом слове (задания кворума, ушедшие в это окно, начинали бы сессию)
+        sess.hello = True
+        sess.ready.set()
         while True:
             line = await reader.readline()
             if not line:
@@ -170,6 +174,11 @@ class PairServer(InboundMixin):
         await self.ensure()
 
     async def send(self, kind: str, body: dict | None = None) -> bool:
-        if self._sess is None or not self._sess.hello:
+        sess = self._sess
+        if sess is not None and not sess.hello:
+            # сессия открыта, своё st ещё не ушло — слово после него, а не первым
+            with contextlib.suppress(asyncio.TimeoutError):
+                await asyncio.wait_for(sess.ready.wait(), HELLO_TIMEOUT)
+        if sess is None or self._sess is not sess or not sess.hello:
             return False
-        return await send_line(self._sess, kind, body)
+        return await send_line(sess, kind, body)

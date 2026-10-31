@@ -38,6 +38,7 @@ class _Session:
         self.listener = listener         # эта сторона — слушатель (пригласивший)
         self.seq = 0
         self.hello = False
+        self.ready = asyncio.Event()     # своё первое st ушло (или сессия кончилась) — слова можно слать
         self.pairing = False             # сессия сопряжения (hello с pair)
         self.sid = ""
         self.caps: list[str] = []
