@@ -98,6 +98,8 @@ class ReservePackageMixin:
         share, m_gen} для отправки частями или None."""
         if not self.reserve_paired() or not self.reserve_online() or (self.reserve_away() and not self._pkg_for_move()):
             return None
+        if self.reserve_peer_seen() == "down":
+            return None                                       # сеанс мёртвого линка ещё держится — пакет в никуда
         if self.__dict__.get("_rsv_pkg_sending"):
             return None
         due_at = self.__dict__.get("_rsv_pkg_due_at")

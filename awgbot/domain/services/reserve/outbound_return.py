@@ -46,10 +46,15 @@ class ReserveReturnMixin:
         return {"name": self.reserve_peer_name(), "record": self.reserve_dns_name(), "own": self.reserve_own_ip(),
                 "manual": not self.reserve_dns_automatic()}
 
+    def _peer_reachable(self) -> bool:
+        """Резерв на связи: сеанс канала есть и живость не `down`. Один флаг сеанса — не то:
+        сеанс отрезанного сервера держится до ~23 мин (keepalive TCP)."""
+        return bool(self.reserve_online() and self.reserve_peer_seen() != "down")
+
     def reserve_return_check(self) -> str:
         if self.reserve_out() != "away":
             return "пользователи не у резерва"
-        if not self.reserve_online():
+        if not self._peer_reachable():
             return f"«{self.reserve_peer_name()}» не на связи"
         return self.reserve_tail_return_why()                 # мой хвост ещё переносится на резерв — ждать
 
@@ -59,7 +64,7 @@ class ReserveReturnMixin:
         не на связи дольше FORCE_OFFLINE_S."""
         if self.reserve_out() != "away":
             return "пользователи не у резерва"
-        if self.reserve_online():
+        if self._peer_reachable():
             return f"«{self.reserve_peer_name()}» на связи — верни пользователей обычным путём"
         since = self.reserve_down_since()
         try:

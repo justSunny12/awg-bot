@@ -362,6 +362,13 @@ class ReserveSessionMixin:
     def reserve_session_closed(self) -> None:
         self.rsv_update("rsv_peer_state", session=False)
 
+    def reserve_session_reset(self) -> None:
+        """Старт процесса: сеанс канала пары прошлого процесса умер вместе с его сокетом (флаг
+        в базе снимал только `finally` сеанса — после краха или перезагрузки он оставался), а
+        `st` второй стороны — из прошлого: флаг снят, `st` устаревший до нового (journal/epoch)."""
+        if self.rsv_get("rsv_peer_state"):
+            self.rsv_update("rsv_peer_state", session=False, st_stale=True)
+
     def reserve_last_word(self) -> list[Notification]:
         return self.reserve_liveness_word()
 
