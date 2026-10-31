@@ -211,12 +211,21 @@ class ReserveEpochMixin:
             meta_now = self.db.jrn_meta()
             if meta_now["holder"] == "self" and meta_now["role"] == "follower":
                 return 0                                      # ограждение кворума (4.2.0, jrn_fence): снимает только jrn_unfence
-            adopted = bool(self.rsv_get("rsv_qlog").get("adopted"))
+            adopted = dict(self.rsv_get("rsv_qlog").get("adopted") or {})
             if self.reserve_out() != "home":
                 if adopted:
                     self.rsv_update("rsv_qlog", adopted=None)
-            elif meta_now["holder"] == "peer" and adopted and self._quorum_rules_home() and self._quorum_decides():
-                return 0                                      # эпоха принята по кворуму (jrn_adopt): вернёт правило лидера (v ≥ 2)
+            elif meta_now["holder"] == "peer" and adopted:
+                if self._quorum_rules_home() and self._quorum_decides():
+                    return 0                                  # эпоха принята по кворуму (jrn_adopt): вернёт правило лидера (v ≥ 2)
+                # линия между принятием и тактом перестала решать (выключена: ключи, состав, цифры; или
+                # голосующий один): правила лидера не будет, но кандидат второй стороны, сказавший
+                # «забираю», ещё открывает зону и поднимет гостя под принятой эпохой — вернуть её себе
+                # сразу значило бы двух писателей одной линии. Возвращает роль дома, но тем же фактом, что
+                # правило лидера (§3.4.2): живая вторая сторона после принятия сказала, что моих не несёт
+                if not self._quorum_adopted_idle_fact(adopted):
+                    return 0
+                self.rsv_update("rsv_qlog", adopted=None)
             applied = int(meta_now["applied"])
             prev_e = int(meta_now["epoch"]) if meta_now["holder"] == "peer" else 0
             meta = self.db.jrn_pass(holder="self", role="holder", why=why, fork_i=applied)   # его события — по applied
