@@ -85,7 +85,7 @@ def _ctx():
 def check_imap(acc: MailAccount, timeout: float = 10.0) -> None:
     """Вход по IMAP. Ошибка — MailError с понятным текстом."""
     try:
-        conn = net4.IMAP4_SSL4(acc.imap_host, acc.imap_port, ssl_context=_ctx(), timeout=timeout)
+        conn = imap_open(acc, timeout)
     except OSError as e:
         raise MailError(f"IMAP {acc.imap_host}:{acc.imap_port} недоступен: {e}") from e
     try:
@@ -101,11 +101,46 @@ def check_imap(acc: MailAccount, timeout: float = 10.0) -> None:
             pass
 
 
-def check_smtp(acc: MailAccount, timeout: float = 10.0) -> None:
-    """Вход по SMTP (STARTTLS), без отправки."""
+# Порт 465 — TLS сразу (SMTPS), прочие — STARTTLS; у IMAP 143 — STARTTLS, прочие
+# (993) — TLS сразу. STARTTLS на 465 висел до таймаута: сервер ждёт TLS-рукопожатия.
+SMTPS_PORT = 465
+IMAP_STARTTLS_PORT = 143
+
+
+def smtp_open(acc: MailAccount, timeout: float = 10.0):
+    """Соединение SMTP под шифрованием по порту, ещё без входа."""
+    if int(acc.smtp_port) == SMTPS_PORT:
+        return net4.SMTP_SSL4(acc.smtp_host, acc.smtp_port, timeout=timeout, context=_ctx())
+    s = net4.SMTP4(acc.smtp_host, acc.smtp_port, timeout=timeout)
     try:
-        with net4.SMTP4(acc.smtp_host, acc.smtp_port, timeout=timeout) as s:
-            s.starttls(context=_ctx())
+        s.starttls(context=_ctx())
+    except BaseException:
+        s.close()
+        raise
+    return s
+
+
+def imap_open(acc: MailAccount, timeout: float = 10.0, ctx=None):
+    """Соединение IMAP под шифрованием по порту, ещё без входа."""
+    ctx = ctx or _ctx()
+    if int(acc.imap_port) == IMAP_STARTTLS_PORT:
+        conn = net4.IMAP44(acc.imap_host, acc.imap_port, timeout=timeout)
+        try:
+            conn.starttls(ssl_context=ctx)
+        except BaseException:
+            try:
+                conn.shutdown()
+            except OSError:
+                pass
+            raise
+        return conn
+    return net4.IMAP4_SSL4(acc.imap_host, acc.imap_port, ssl_context=ctx, timeout=timeout)
+
+
+def check_smtp(acc: MailAccount, timeout: float = 10.0) -> None:
+    """Вход по SMTP (465 — TLS сразу, прочие — STARTTLS), без отправки."""
+    try:
+        with smtp_open(acc, timeout) as s:
             s.login(acc.login, acc.password)
     except smtplib.SMTPAuthenticationError as e:
         raise MailError(f"SMTP отверг логин/пароль: {_clean(e)}") from e
@@ -124,8 +159,7 @@ def send_mail(acc: MailAccount, to_addr: str, subject: str, body: str,
     for name, raw in (attachments or []):
         msg.add_attachment(raw, maintype="application", subtype="octet-stream", filename=name)
     try:
-        with net4.SMTP4(acc.smtp_host, acc.smtp_port, timeout=timeout) as s:
-            s.starttls(context=_ctx())
+        with smtp_open(acc, timeout) as s:
             s.login(acc.login, acc.password)
             s.send_message(msg)
     except (OSError, smtplib.SMTPException) as e:

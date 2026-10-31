@@ -81,6 +81,13 @@ class IMAP4_SSL4(imaplib.IMAP4_SSL):
         return self.ssl_context.wrap_socket(sock, server_hostname=self.host)
 
 
+class IMAP44(imaplib.IMAP4):
+    """IMAP без TLS на входе (STARTTLS по месту вызова), соединение только по IPv4."""
+
+    def _create_socket(self, timeout):
+        return connect4(self.host, self.port, timeout)
+
+
 class SMTP4(smtplib.SMTP):
     """SMTP (STARTTLS по месту вызова), соединение только по IPv4."""
 
@@ -88,3 +95,13 @@ class SMTP4(smtplib.SMTP):
         if timeout is not None and not timeout:
             raise ValueError("Non-blocking socket (timeout=0) is not supported")
         return connect4(host, port, timeout, self.source_address)
+
+
+class SMTP_SSL4(smtplib.SMTP_SSL):
+    """SMTP с TLS сразу (порт 465), соединение только по IPv4 (SNI и проверка имени — по хосту)."""
+
+    def _get_socket(self, host, port, timeout):
+        if timeout is not None and not timeout:
+            raise ValueError("Non-blocking socket (timeout=0) is not supported")
+        sock = connect4(host, port, timeout, self.source_address)
+        return self.context.wrap_socket(sock, server_hostname=self._host)
