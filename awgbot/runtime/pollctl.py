@@ -117,7 +117,10 @@ class PollControl:
             with contextlib.suppress(NotImplementedError, RuntimeError):
                 loop.add_signal_handler(sig, lambda: loop.create_task(self.close()))
         while not self._closing:
-            if not await self._allowed():
+            allowed = await self._allowed()
+            if self._closing:
+                break                                        # close() пришёл во время проверки (сетевой запрос) — поллинг не начинать
+            if not allowed:
                 self._wake.clear()
                 with contextlib.suppress(asyncio.TimeoutError):
                     # право отвечать решает Telegram: перепроверять getWebhookInfo, а не ждать слова вечно
@@ -131,8 +134,11 @@ class PollControl:
             try:
                 await self._task
             except asyncio.CancelledError:
+                me = asyncio.current_task()
+                if me is not None and me.cancelling():
+                    raise                                    # отменён сам run() — наверх
                 if self._closing:
-                    raise
+                    return                                   # неначатый опрос снят в close() — выход, как после stop_polling
             except BaseException:
                 self._task = None
                 raise                                        # как прежде: сбой поллинга — наверх, в finally main
@@ -154,7 +160,10 @@ class PollControl:
         try:
             await self.dp.stop_polling()
         except RuntimeError:
-            pass
+            # поллинг ещё не начался (задача создана, start_polling не дошёл до цикла) —
+            # останавливать нечего, а ждать задачу — вечно: снять её
+            if self._task is not None:
+                self._task.cancel()
         with contextlib.suppress(asyncio.CancelledError, Exception):
             if self._task is not None:
                 await self._task
