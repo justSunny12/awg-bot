@@ -283,7 +283,7 @@ class ReserveQuorumProbesMixin:
             quoprobe.wipe()
         except quoprobe.QuoError as e:
             log.warning("кворум: пространство зондов не снято: %s", e)
-        for k in ("_rsv_qleader", "_rsv_qvoters", "_rsv_qgwviews", "_quo_apply_digest", "_quo_guest_sent"):
+        for k in ("_rsv_qleader", "_rsv_qvoters", "_rsv_qgwviews", "_quo_apply_digest", "_quo_guest_sent", "_quo_active_cache"):
             self.__dict__.pop(k, None)
 
 

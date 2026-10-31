@@ -82,6 +82,29 @@ def test_no_responder_while_the_vote_is_off(lead, monkeypatch):
     assert lead.reserve_quorum_responder_addr() is None, "ответчик при выключенном голосовании"
 
 
+def test_the_responder_does_not_recount_the_off_reasons_on_every_datagram(lead, monkeypatch):
+    """Причины выключения кворума (ключи, состав, цифры, снимки шлюзов — чтения базы)
+    считаются не чаще раза в такт: ответчик берёт расчёт такта, а не пересчитывает на
+    каждую пробу (их — по одной в секунду от каждого голосующего); такт сбрасывает кэш,
+    и выключение доходит до ответчика следующим тактом."""
+    calls = []
+    real = lead.reserve_quorum_off_reasons
+
+    def counted():
+        calls.append(1)
+        return real()
+    monkeypatch.setattr(lead, "reserve_quorum_off_reasons", counted)
+    lead.quorum_tick()
+    n0 = len(calls)
+    for i in range(20):
+        assert _ask(lead, "b", s=100 + i) is not None
+    assert len(calls) == n0, f"ответчик пересчитал причины выключения на пробах: {len(calls) - n0} раз за 20 проб"
+    monkeypatch.setattr(lead, "reserve_quorum_off_reasons", lambda: ["keys"])
+    assert _ask(lead, "b", s=200) is not None, "до такта — расчёт такта"
+    lead.quorum_tick()
+    assert _ask(lead, "b", s=201) is None, "выключение после такта не дошло до ответчика"
+
+
 def test_a_proper_probe_gets_a_reply_with_the_count(lead):
     r = _ask(lead, "b", s=4242)
     assert r is not None, "проба второго сервера с его адреса без ответа"
