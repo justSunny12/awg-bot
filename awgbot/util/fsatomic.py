@@ -12,6 +12,11 @@ from pathlib import Path
 
 def write_private(path, text: str, mode: int = 0o600) -> None:
     """Записать text в path атомарно (свой tmp рядом + replace), с правами mode."""
+    write_private_bytes(path, text.encode("utf-8"), mode)
+
+
+def write_private_bytes(path, raw: bytes, mode: int = 0o600) -> None:
+    """Байтовый вариант write_private: архив копии, зашифрованный блоб."""
     import tempfile
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -19,8 +24,8 @@ def write_private(path, text: str, mode: int = 0o600) -> None:
     # процесса с общим именем писали бы в один файл — подмена отдала бы смесь двух записей
     fd, tmp = tempfile.mkstemp(prefix=f".{p.name}.", suffix=".tmp", dir=str(p.parent))
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(text)
+        with os.fdopen(fd, "wb") as f:
+            f.write(raw)
             f.flush()
             os.fsync(f.fileno())
         os.chmod(tmp, mode)
@@ -31,6 +36,22 @@ def write_private(path, text: str, mode: int = 0o600) -> None:
         except OSError:
             pass
         raise
+    _fsync_dir(p.parent)
 
 
-__all__ = ["write_private"]
+def _fsync_dir(d: Path) -> None:
+    """Подмена имени живёт в каталоге: без его fsync при потере питания после
+    replace файл мог вернуться прежним (или пропасть, если был новым)."""
+    try:
+        dfd = os.open(str(d), os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(dfd)
+    except OSError:
+        pass                                    # ФС без fsync каталога — данные уже на месте
+    finally:
+        os.close(dfd)
+
+
+__all__ = ["write_private", "write_private_bytes"]

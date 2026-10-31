@@ -1,9 +1,11 @@
 """snaps.py — часть пакета listsnap: снимки и отметки в server_state.
 
 Запись (`list_snap_keep`): тело v2 с `exp` и `msg` = 0; перед записью — уборка
-(`_snap_sweep`: протухшие любого чата — в отметки, в чате — живых не больше
-PER_CHAT − 1, вытесняется самый ранний по `seq`; отметок — не больше
-TOMBS_PER_CHAT, старые прочь). Пределы MAX_ROWS и MAX_BYTES: сверх — последняя
+своего чата (`_snap_sweep`: протухшие — в отметки, живых не больше PER_CHAT − 1,
+вытесняется самый ранний по `seq`; отметок — не больше TOMBS_PER_CHAT, старые
+прочь). Разбираются только записи этого чата: снимки чужих чатов — до сотен по
+десяткам килобайт — на каждую запись не читаются; их протухшие сжимает такт
+после полуночи и чтение по ссылке. Пределы MAX_ROWS и MAX_BYTES: сверх — последняя
 строка «… и ещё N — …», отрезанное целиком уходит в журнал порциями по
 LOG_TAIL_ROWS строк (строка — до LOG_ROW_CHARS знаков), каждая строка журнала —
 с ключом снимка и чатом. Когда источник сам отдал не все (`missing`), в
@@ -36,19 +38,27 @@ def _pkg():
 
 class _SnapsPart:
 
-    def _snaps(self) -> list[tuple[str, dict]]:
-        """Снимки и отметки (записи сообщений — `m:` — не здесь)."""
+    def _snaps(self, chat: int | None = None) -> list[tuple[str, dict]]:
+        """Снимки и отметки (записи сообщений — `m:` — не здесь); chat — только
+        этого чата: отбор строкой в SQL (тело пишет json.dumps — «"chat": N,» в
+        нём дословно, кавычки внутри строк экранированы), проверка — после разбора."""
         p = _pkg()
+        sql = f"SELECT key, value FROM server_state WHERE {p.WHERE} AND instr(substr(key, {len(p.PREFIX) + 1}), ':') = 0"
+        args: tuple = ()
+        if chat is not None:
+            sql += " AND instr(value, ?) > 0"
+            args = (f'"chat": {int(chat)},',)
         out = []
-        for row in self._connection().execute(
-                f"SELECT key, value FROM server_state WHERE {p.WHERE} AND instr(substr(key, {len(p.PREFIX) + 1}), ':') = 0"
-        ).fetchall():
+        for row in self._connection().execute(sql, args).fetchall():
             key = str(row[0])[len(p.PREFIX):]
             try:
                 data = json.loads(row[1] or "{}")
             except ValueError:
                 data = {}
-            out.append((key, data if isinstance(data, dict) else {}))
+            data = data if isinstance(data, dict) else {}
+            if chat is not None and int(data.get("chat") or 0) != int(chat):
+                continue
+            out.append((key, data))
         return out
 
     @staticmethod
@@ -66,9 +76,9 @@ class _SnapsPart:
                            "why": why})
 
     def _snap_sweep(self, snaps: list[tuple[str, dict]], chat: int) -> None:
-        """Протухшие — в отметки; в чате chat — живых не больше PER_CHAT − 1 (место под
-        новый, вытесняется самый ранний), отметок — не больше TOMBS_PER_CHAT; старые
-        отметки — прочь."""
+        """По записям snaps (у записи — только чата chat): протухшие — в отметки;
+        живых в чате — не больше PER_CHAT − 1 (место под новый, вытесняется самый
+        ранний), отметок — не больше TOMBS_PER_CHAT; старые отметки — прочь."""
         p = _pkg()
         now = timeutil.now()
         tomb, drop = [], []
@@ -120,7 +130,7 @@ class _SnapsPart:
     def _snap_keep(self, chat, role, title, rows, back, new, n, missing, tail_note) -> str:
         p = _pkg()
         rows = [str(r) for r in rows]
-        snaps = self._snaps()
+        snaps = self._snaps(int(chat))                       # только свой чат: seq — порядок вытеснения в чате
         seq = max((int(d.get("seq") or 0) for _k, d in snaps), default=0) + 1
         at = timeutil.now_iso()
         body = {"v": 2, "chat": int(chat), "role": str(role), "at": at, "exp": expiry.exp_iso(at), "seq": seq,
@@ -145,10 +155,10 @@ class _SnapsPart:
                 raise ValueError(f"одна строка не влезает в {p.MAX_BYTES // 1024} КБ")
             keep = max(1, keep - max(1, keep // 10))          # не влезло по объёму — короче на десятую
         self._snap_sweep(snaps, int(chat))
-        have = {k for k, _d in snaps}
         key = p.new_key()
-        while key in have:
-            key = p.new_key()
+        while self._connection().execute("SELECT 1 FROM server_state WHERE key = ?",
+                                         (p.PREFIX + key,)).fetchone() is not None:
+            key = p.new_key()                                 # занят — снимком или отметкой любого чата
         if keep < len(rows):
             # ключ выбран до строк журнала: по нему снимок сопоставим со ссылкой, когда
             # заголовки одинаковые (две рассылки, два итога «🗺 Подсети»)

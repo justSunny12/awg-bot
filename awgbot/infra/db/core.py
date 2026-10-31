@@ -31,6 +31,7 @@ class DatabaseCore:
     def __init__(self, path: str | Path):
         self.path = str(path)
         self._local = threading.local()                # соединение на поток; close() подменяет хранилище целиком
+        self._txl = threading.local()                  # транзакция потока (глубина, вид, её соединение); close() не подменяет
         # Инициализируем соединение основного потока (для init_schema).
         self._connection()
 
@@ -38,7 +39,13 @@ class DatabaseCore:
         """Соединение, привязанное к текущему потоку. services вызываются через
         asyncio.to_thread (пул потоков), поэтому соединение одно на все потоки
         использовать нельзя — sqlite3 не потокобезопасен на одном connection.
-        WAL позволяет много читателей + одного писателя через РАЗНЫЕ соединения."""
+        WAL позволяет много читателей + одного писателя через РАЗНЫЕ соединения.
+        Внутри транзакции — её соединение, даже если close() уже подменил
+        хранилище: новое соединение того же потока ждало бы замок записи,
+        который держит его же транзакция (5 с и «database is locked»)."""
+        conn = getattr(self._txl, "conn", None)
+        if conn is not None:
+            return conn
         conn = getattr(self._local, "conn", None)
         if conn is not None and not getattr(self._local, "jrn_ok", False) and self.__dict__.get("_jrn_ready"):
             self._jrn_triggers(conn)                    # соединение открыто до init_schema — триггеры теперь
@@ -82,15 +89,22 @@ class DatabaseCore:
         Поэтому хранилище соединений подменяется целиком: у прежнего не остаётся
         ссылок, кроме как из потока, который сейчас им пользуется, и оно
         закрывается по счётчику ссылок, как только тот закончит; следующий
-        запрос любого потока открывает новое соединение."""
+        запрос любого потока открывает новое соединение. Транзакцию потока
+        подмена не задевает: она доживает на своём соединении (оно у неё,
+        а не в хранилище), своё же соединение посреди транзакции закрывается
+        на выходе из неё."""
+        own = getattr(self._txl, "conn", None)
         local, self._local = self._local, threading.local()
         conn = getattr(local, "conn", None)
         if conn is not None:
             local.conn = None
-            try:
-                conn.close()
-            except sqlite3.Error:
-                pass
+            if conn is own:
+                self._txl.close_after = True            # своя транзакция идёт — закроем на выходе из неё
+            else:
+                try:
+                    conn.close()
+                except sqlite3.Error:
+                    pass
         del local
 
     # ── вид транзакции и крючок коммита (пакет переезда резерву) ─────────────
@@ -107,39 +121,47 @@ class DatabaseCore:
         """Писатели счётчиков зовут ПОСЛЕ своих записей: запоминаем счётчик
         изменений соединения — всё, что запишут после, считается данными
         (непомеченный писатель ничего не отмечает, но пишет)."""
-        if kind == self._TX_DATA or getattr(self._local, "tx_kind", None) is None:
-            self._local.tx_kind = kind
+        if kind == self._TX_DATA or getattr(self._txl, "kind", None) is None:
+            self._txl.kind = kind
         if kind == self._TX_COUNTERS:
-            self._local.tx_counters_changes = self._connection().total_changes
+            self._txl.counters_changes = self._connection().total_changes
 
     def set_commit_hook(self, fn) -> None:
         """fn(kind) — после каждого коммита внешней транзакции; None — снять."""
         self.__dict__["_commit_hook"] = fn
 
     @contextmanager
-    def _tx(self) -> Iterator[sqlite3.Cursor]:
+    def _tx(self, immediate: bool = False) -> Iterator[sqlite3.Cursor]:
         """Транзакция с поддержкой вложенности: commit/rollback делает только
         внешний уровень. Внутри db.transaction() все операции — один атомарный
-        commit (и один fsync вместо десятков)."""
+        commit (и один fsync вместо десятков). immediate — см. transaction()."""
         conn = self._connection()
-        depth = getattr(self._local, "tx_depth", 0)
-        self._local.tx_depth = depth + 1
+        depth = getattr(self._txl, "depth", 0)
+        self._txl.depth = depth + 1
+        quiet = -1                                     # total_changes на BEGIN IMMEDIATE
         if depth == 0:
-            self._local.tx_kind = None
-            self._local.tx_counters_changes = -1
+            self._txl.conn = conn
+            self._txl.kind = None
+            self._txl.counters_changes = -1
+            if immediate and not conn.in_transaction:
+                conn.execute("BEGIN IMMEDIATE")
+                quiet = conn.total_changes
         cur = conn.cursor()
         try:
             yield cur
+            if depth == 0 and conn.in_transaction and conn.total_changes == quiet:
+                conn.commit()                          # замок взят, писать не пришлось — только отпустить
             # Коммитим только если что-то писали: пустая транзакция (тик без
             # изменений) не должна стоить ни fsync, ни сброса кэша доступа.
-            if depth == 0 and conn.in_transaction:
+            elif depth == 0 and conn.in_transaction:
                 conn.commit()
                 self.__dict__["_commits"] = self.__dict__.get("_commits", 0) + 1
+                self._hot_state_drop()
                 _access_cache.invalidate_all()      # любая запись → middleware перечитает
                 hook = self.__dict__.get("_commit_hook")
                 if hook is not None:
-                    kind = getattr(self._local, "tx_kind", None) or self._TX_DATA
-                    if kind == self._TX_COUNTERS and conn.total_changes != getattr(self._local, "tx_counters_changes", -1):
+                    kind = getattr(self._txl, "kind", None) or self._TX_DATA
+                    if kind == self._TX_COUNTERS and conn.total_changes != getattr(self._txl, "counters_changes", -1):
                         kind = self._TX_DATA           # после отметки счётчиков писали ещё — это данные
                     try:
                         hook(kind)
@@ -150,22 +172,46 @@ class DatabaseCore:
                 conn.rollback()
             raise
         finally:
-            self._local.tx_depth = depth
+            self._txl.depth = depth
             cur.close()
+            if depth == 0:
+                self._txl.conn = None
+                if getattr(self._txl, "close_after", False):
+                    self._txl.close_after = False
+                    try:
+                        conn.close()
+                    except sqlite3.Error:
+                        pass
 
     @contextmanager
-    def transaction(self) -> Iterator[None]:
+    def transaction(self, immediate: bool = False) -> Iterator[None]:
         """Групповая транзакция: всё внутри — атомарно, один commit.
-        Используется опросчиком трафика (целостность дельт + меньше fsync)."""
-        with self._tx():
+        Используется опросчиком трафика (целостность дельт + меньше fsync).
+
+        immediate — замок записи с первой строки (BEGIN IMMEDIATE), а не с
+        первой записи: для «прочитал — решил — записал», где решение по
+        прочитанному до замка затёрло бы параллельную правку (сроки против
+        продления, лимиты против месячного сброса, паузы, перепривязка). Не по
+        умолчанию: длинная транзакция опросчика держала бы замок все свои
+        чтения. Внутри уже идущей транзакции — без эффекта (её вид решил
+        внешний уровень)."""
+        with self._tx(immediate):
             yield
 
 
     # ── server_state: key-value ──────────────────────────────────────────────
 
     # Состояние переезда читает каждый list_devices/count_devices (видимость пар):
-    # держим в памяти, инвалидация — в set_state. Ключи-«горячие» перечислены явно.
+    # держим в памяти, инвалидация — на каждом коммите (_tx и сырые коммиты
+    # применителя журнала): горячий ключ пишет не только set_state, но и
+    # применение событий держателя, и перенос хвоста. Ключи-«горячие» — явно.
     _HOT_STATE_KEYS = (MIGRATION_STATE_KEY,)
+
+    def _hot_state_drop(self) -> None:
+        """Забыть горячие ключи после коммита. Поколение — против гонки: поток,
+        прочитавший базу ДО коммита, не кладёт в кэш прочитанное после сброса."""
+        self.__dict__["_hot_gen"] = self.__dict__.get("_hot_gen", 0) + 1
+        self._hot_state.clear()
 
     @property
     def _hot_state(self) -> dict:
@@ -177,10 +223,11 @@ class DatabaseCore:
     def get_state(self, key: str) -> Optional[str]:
         if key in self._HOT_STATE_KEYS and key in self._hot_state:
             return self._hot_state[key]
+        gen = self.__dict__.get("_hot_gen", 0)
         row = self._connection().execute(
             "SELECT value FROM server_state WHERE key = ?", (key,)
         ).fetchone()
-        if key in self._HOT_STATE_KEYS:
+        if key in self._HOT_STATE_KEYS and gen == self.__dict__.get("_hot_gen", 0):
             self._hot_state[key] = row["value"] if row else None
         return row["value"] if row else None
 

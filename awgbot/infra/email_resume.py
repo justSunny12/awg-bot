@@ -22,12 +22,10 @@ import email
 import imaplib
 import secrets
 import ssl
-
-from awgbot.util import net4
 from email.header import decode_header
 from typing import Callable
 
-from awgbot.infra.mail import MailAccount, send_mail
+from awgbot.infra.mail import MailAccount, imap_open, send_mail
 
 # Безопасный алфавит: без 0/O, 1/l/I — чтобы код нельзя было перепутать при
 # ручном наборе с телефона.
@@ -80,7 +78,7 @@ def poll_once(acc: MailAccount, on_code: Callable[[str], bool]) -> int:
         return 0
     accepted = 0
     ctx = ssl.create_default_context()
-    conn = net4.IMAP4_SSL4(acc.imap_host, acc.imap_port, ssl_context=ctx, timeout=10)
+    conn = imap_open(acc, 10, ctx)
     try:
         conn.login(acc.login, acc.password)
         for mbox in _MAILBOXES:

@@ -362,6 +362,7 @@ class JrnMixin:
         if conn.in_transaction:
             conn.commit()
         res = _apply.apply(conn, events)
+        self._hot_state_drop()                          # коммит мимо _tx: события пишут и состояние переезда
         access_cache.invalidate_all()
         return res
 
@@ -434,5 +435,6 @@ class JrnMixin:
         if conn.in_transaction:
             conn.commit()
         res = rebase.rebase(conn, events, before_commit=before_commit)
+        self._hot_state_drop()                          # коммит мимо _tx: перенесённое пишет и состояние переезда
         access_cache.invalidate_all()
         return res

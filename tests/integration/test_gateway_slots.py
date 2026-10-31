@@ -196,6 +196,69 @@ def test_manual_switch_ignores_thresholds_and_the_interval(two, services):
     assert services.gateway_switch(1, manual=True).id == 1 and services.switched == ["awglink2", "awglink"]
 
 
+def test_a_manual_switch_during_the_automatic_one_waits_or_is_refused_not_interleaved(two, services, monkeypatch):
+    """Такт переключает автоматом (маршрут + запись активного), рука жмёт «переключить»
+    в тот же момент из другого потока: под общим замком кнопка ждёт SWITCH_WAIT_S и
+    отказывает текстом (снятие слота — ждёт сколько надо), а не кладёт свой маршрут и
+    запись вразнобой с тактом — иначе state называл один слот, а маршрут вёл в другой."""
+    import threading
+    from awgbot.domain.services.types import ServiceError
+    admin, g1, g2 = two
+    _settle(services)
+    services.probe[1] = "down"
+    for _ in range(services._rt_fail_need() - 1):
+        services.routing_liveness_tick()
+    paused, go = threading.Event(), threading.Event()
+
+    def slow_switch(iface):
+        services.switched.append(iface)
+        if threading.current_thread().name == "tick":
+            paused.set()
+            go.wait(5)
+    monkeypatch.setattr(routing.marking, "switch_active", slow_switch)
+    monkeypatch.setattr(services, "SWITCH_WAIT_S", 0.2)
+    tick = threading.Thread(target=services.routing_liveness_tick, name="tick")
+    tick.start()
+    assert paused.wait(5), "такт не дошёл до переключения"
+    with pytest.raises(ServiceError, match="автоматическое переключение"):
+        services.gateway_switch(1, manual=True)
+    waited = {}
+    hand = threading.Thread(target=lambda: waited.setdefault("gw", services.gateway_switch(1, manual=True, wait=True)))
+    hand.start()
+    hand.join(0.3)
+    assert hand.is_alive(), "снятие слота не дождалось такта — переключило посреди автомата"
+    go.set()
+    tick.join(10)
+    hand.join(10)
+    assert waited["gw"].id == 1 and services.active_gateway().id == 1
+    assert services.switched == ["awglink2", "awglink"], services.switched
+
+
+def test_a_hand_switch_during_the_probes_is_not_overridden_by_the_tick(two, services):
+    """Рука переключила на резерв, пока такт мерил (активный на входе такта — прежний):
+    решение по прежнему активному устарело — такт этим разом не переключает и не
+    объявляет «переключён», следующий меряет новые роли."""
+    admin, g1, g2 = two
+    _settle(services)
+    services.probe[1] = "down"
+    for _ in range(services._rt_fail_need() - 1):
+        services.routing_liveness_tick()
+    done = {}
+
+    def probe(g, active=False):
+        if g.id == 1 and "hand" not in done:
+            done["hand"] = services.gateway_switch(2, manual=True)
+        return services.probe[g.id]
+    services._probe_slot = probe
+    notes = services.routing_liveness_tick()
+    assert services.active_gateway().id == 2 and services.switched == ["awglink2"], services.switched
+    assert services.db.get_state(services._RT_SWITCHED_KEY) is None, "такт записал автоматическое переключение поверх ручного"
+    assert not [n for n in notes if "переключён" in n.text], [n.text for n in notes]
+    services._probe_slot = lambda g, active=False: services.probe[g.id]
+    _settle(services)
+    assert services.active_gateway().id == 2, "следующие такты увели трафик с выбранного рукой слота"
+
+
 def test_ping_cache_is_invalidated_when_the_host_falls(two, services, monkeypatch):
     admin, g1, g2 = two
     monkeypatch.setattr(routing.probes, "ping_peer", lambda iface="", **k: 43)

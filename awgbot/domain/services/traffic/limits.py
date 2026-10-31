@@ -11,6 +11,7 @@ from awgbot.core.enums import ActivationStatus, FriendStatus
 from awgbot.domain.services.types import Notification
 
 from . import bonus
+from awgbot.domain.services.blocks import month_used
 from awgbot.domain.notices.traffic import _cli_limit_off_text, _cli_limit_off_admin_text, _admin_dev_over_text, _admin_self_over_text, _cli_bonus_admin_text, _cli_bonus_text, _cli_over_admin_text, _cli_over_text, _cli_warn_text, _dev_over_text, _dev_warn_text, _friend_dev_over_host_text
 
 log = logging.getLogger("awgbot.services")
@@ -32,7 +33,9 @@ class LimitsMixin:
         admin_id = config.ADMIN_ID
         twins = self.db.twins_by_origin()             # один раз на проход, не на устройство
 
-        with self.db.transaction():                   # один коммит вместо десятков
+        # один коммит вместо десятков; замок записи с первого чтения — месячный
+        # сброс между чтением счётчиков и записью блока не оставит блок после себя
+        with self.db.transaction(immediate=True):
           for client in self.db.list_clients(include_service=False):
               if client.activation_status != ActivationStatus.ACTIVE:
                   continue
@@ -55,14 +58,12 @@ class LimitsMixin:
                   dlim = dev.traffic_limit
                   if dlim == 0:
                       continue
-                  used = int(dev.traffic_rx_month) + int(dev.traffic_tx_month)
                   mate = by_id.get(dev.twin_of) if dev.twin_of else None
-                  if mate is not None:
-                      # СУММА по паре против лимита пары (лимиты строк равны —
-                      # сеттер парный). Считай каждую строку отдельно — и человек
-                      # получает двойную квоту, у которой ни одна половина не
-                      # дотягивает до порога.
-                      used += int(mate.traffic_rx_month) + int(mate.traffic_tx_month)
+                  # СУММА по паре против лимита пары (лимиты строк равны —
+                  # сеттер парный). Считай каждую строку отдельно — и человек
+                  # получает двойную квоту, у которой ни одна половина не
+                  # дотягивает до порога.
+                  used = month_used([dev] + ([mate] if mate is not None else []))
                   over_marker = f"dev_over:{dev.id}"
                   warn_marker = f"dev80:{dev.id}"
                   if used >= dlim:
@@ -99,8 +100,7 @@ class LimitsMixin:
               climit = client.traffic_limit
               if climit == 0:
                   continue
-              total = sum(int(d.traffic_rx_month) + int(d.traffic_tx_month)
-                          for d in devices)
+              total = month_used(devices)
               effective = climit + int(client.bonus_bytes)
               is_admin_client = (client.tg_id == admin_id)
 

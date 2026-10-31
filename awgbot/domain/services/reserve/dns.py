@@ -73,12 +73,14 @@ class ReserveDnsMixin:
             raise ServiceError("Это не похоже на токен: одна строка без пробелов")
         fields: dict = {"token": text, "token_at": timeutil.now_iso(), "checked_at": "", "check_ok": None}
         if self.reserve_dns_provider() == "dyndns2":
-            from urllib.parse import urlsplit
+            from urllib.parse import unquote, urlsplit
             u = urlsplit(text)
             if u.scheme != "https" or not u.hostname or not u.username:
                 raise ServiceError("Для DynDNS2 нужна строка вида https://логин:пароль@сервер/nic/update")
-            # в server — только схема и хост[:порт]: путь /nic/update дописывает сам провайдер (dyndns2._url)
-            fields.update(user=u.username or "", token=u.password or "",
+            # в server — только схема и хост[:порт]: путь /nic/update дописывает сам провайдер (dyndns2._url);
+            # логин и пароль в URL percent-кодированы («@» в логине-почте — %40, «#» и «/» в пароле) —
+            # провайдеру они уходят в basic auth раскодированными, иначе отказ badauth
+            fields.update(user=unquote(u.username or ""), token=unquote(u.password or ""),
                           server=f"{u.scheme}://{u.hostname}{(':' + str(u.port)) if u.port else ''}")
         with _LOCK:
             d = self.rsv_update("rsv_dns", **fields)

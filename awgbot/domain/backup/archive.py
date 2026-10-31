@@ -138,6 +138,11 @@ class BackupArchiveMixin:
         return extra
 
     def build_backup_archive(self, extra: list[tuple[str, bytes]] | None = None) -> bytes:
+        return self._build_backup_archive(extra)[0]
+
+    def _build_backup_archive(self, extra: list[tuple[str, bytes]] | None = None) -> tuple[bytes, bool]:
+        """(архив, частичный ли): снимок базы не снялся — архив без state/bot.db,
+        с меткой partial в описи."""
         import glob
         import io
         import json
@@ -154,13 +159,16 @@ class BackupArchiveMixin:
             # Метка ВНУТРИ архива (схема 2, опись шлюзов, линия базы): имя
             # файла не в счёт — его переименуют, а восстановление читает отсюда.
             from . import meta as _meta
-            label = _meta.build(getattr(self, "db", None), self.backup_role())
-            add(self.META_NAME, json.dumps(label, ensure_ascii=False).encode(), 0o644)
+            partial = False
             try:
                 raw_db = self.db_snapshot_bytes(config.DB_PATH)
             except Exception as e:                    # noqa: BLE001 — sqlite3.Error, OSError
-                log.warning("копия: БД не снялась (%s) — архив без state/bot.db", e)
-                raw_db = None
+                log.error("копия: БД не снялась (%s) — архив без state/bot.db, помечен частичным", e)
+                raw_db, partial = None, True
+            label = _meta.build(getattr(self, "db", None), self.backup_role())
+            if partial:
+                label["partial"] = True               # восстановлению и человеку: базы в копии нет
+            add(self.META_NAME, json.dumps(label, ensure_ascii=False).encode(), 0o644)
             if raw_db is not None:
                 add("state/bot.db", raw_db)
             for p in sorted(glob.glob(os.path.join(str(config.CONF_DIR), "*.yaml"))):
@@ -175,7 +183,7 @@ class BackupArchiveMixin:
                     pass
             for name, raw in (extra or []):
                 add(name, raw)
-        return buf.getvalue()
+        return buf.getvalue(), partial
 
     def write_backup_archive(self, tag: str, extra: list[tuple[str, bytes]] | None = None) -> list[str]:
         """Собрать архив, зашифровать и положить в BACKUP_DIR. Открытых копий
@@ -186,26 +194,30 @@ class BackupArchiveMixin:
             raise BackupKeyMissing("нет секрета шифрования")
         config.BACKUP_DIR.mkdir(parents=True, exist_ok=True)
         stamp = timeutil.now().strftime("%Y%m%d_%H%M%S")
-        raw = self.build_backup_archive(extra)
-        from awgbot.util import secrets_util
-        dst = config.BACKUP_DIR / f"awg-bot-backup-{tag}-{stamp}.tgz.enc"
-        dst.write_bytes(secrets_util.encrypt(raw, **enc_kwargs))
-        try:
-            dst.chmod(0o600)
-        except OSError:
-            pass
+        raw, partial = self._build_backup_archive(extra)
+        from awgbot.util import fsatomic, secrets_util
+        # частичная — и в имени: ротация не вытесняет ради неё последнюю полную
+        dst = config.BACKUP_DIR / f"awg-bot-backup-{tag}{self.PARTIAL_MARK if partial else ''}-{stamp}.tgz.enc"
+        # 0600 с первого байта и без обрезка при ENOSPC (write_bytes + chmod давали и то, и другое)
+        fsatomic.write_private_bytes(dst, secrets_util.encrypt(raw, **enc_kwargs))
+        self.__dict__["_backup_partial"] = partial    # подписи копии: предупредить админа
         self._rotate_backups()
         return [str(dst)]
 
     KEEP_BACKUPS = 5
+    PARTIAL_MARK = "-partial"
 
     @classmethod
     def _rotate_backups(cls) -> None:
         """В каталоге копий — последние KEEP_BACKUPS снятых ботом (файл из чата
-        для восстановления не трогается)."""
+        для восстановления не трогается). Последняя полная остаётся, сколько бы
+        частичных (без базы) ни легло после неё."""
         files = sorted(config.BACKUP_DIR.glob("awg-bot-backup-*.tgz.enc"), key=lambda p: p.stat().st_mtime,
                        reverse=True)
+        full = next((f for f in files if cls.PARTIAL_MARK + "-" not in f.name), None)
         for old in files[cls.KEEP_BACKUPS:]:
+            if old == full:
+                continue
             try:
                 old.unlink()
             except OSError:

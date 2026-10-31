@@ -82,6 +82,14 @@ def _manual_client_unblocked() -> str:
 log = logging.getLogger("awgbot.services")
 
 
+def month_used(rows) -> int:
+    """Расход месяца по строкам — устройству и его двойнику в окне переезда
+    (лимит пары — против суммы), или по всем строкам профиля без шлюзов.
+    Одна функция у проверки лимита и у снятия блока при смене лимита:
+    разъедутся — блок снимется при превышении по паре или не снимется при недобое."""
+    return sum(int(d.traffic_rx_month) + int(d.traffic_tx_month) for d in rows if not d.is_gateway)
+
+
 class BlocksMixin:
     # ── Блокировки (битовые маски причин) ────────────────────────────────────
     # is_blocked как отдельного поля нет: заблокирован ⇔ block_reason != 0.
@@ -295,7 +303,7 @@ class BlocksMixin:
         dev = self.db.get_device(device_id)
         if dev is None:
             return
-        used = int(dev.traffic_rx_month) + int(dev.traffic_tx_month)
+        used = month_used(self._device_pair(dev))         # пара — как в check_traffic_limits
         if (limit_bytes == 0 or used < limit_bytes) and \
                 (int(dev.block_reason) & int(DeviceBlock.TRAFFIC_USER)):
             self._device_clear_block(device_id, DeviceBlock.TRAFFIC_USER)
@@ -319,9 +327,9 @@ class BlocksMixin:
         client = self.db.get_client(client_id)
         if client is None:
             return
-        devices = self.db.list_devices(client_id)
-        total = sum(int(d.traffic_rx_month) + int(d.traffic_tx_month)
-                    for d in devices)
+        # ОБЕ строки пары и без шлюза — как в check_traffic_limits
+        devices = self.db.list_devices(client_id, all_rows=True)
+        total = month_used(devices)
         effective = limit_bytes + int(client.bonus_bytes)
         if limit_bytes == 0 or total < effective:
             if int(client.block_reason) & int(ClientBlock.TRAFFIC_CLIENT):

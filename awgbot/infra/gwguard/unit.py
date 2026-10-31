@@ -3,10 +3,10 @@ from __future__ import annotations
 
 import ipaddress
 import re
-import tempfile
 from pathlib import Path
 
 from awgbot.core import config
+from awgbot.util import fsatomic
 from awgbot.infra import gwguard as pkg       # имена пакета — через него: их подменяют тесты, и подмена должна видеться везде
 
 
@@ -52,15 +52,10 @@ def write_env(**fields: str) -> dict[str, str]:
         if k not in pkg.ENV_KEYS:
             raise ValueError(f"неизвестный ключ {k}")
         cur[k] = pkg._check_env_value(k, v)
-    p = pkg.Path(pkg.FW_ENV)
-    p.parent.mkdir(parents=True, exist_ok=True)
     body = pkg._ENV_HEAD + "".join(f'{k}="{cur[k]}"\n' for k in pkg.ENV_KEYS if k in cur) \
         + "".join(f'{k}="{v}"\n' for k, v in cur.items() if k not in pkg.ENV_KEYS)
-    fd, tmp = tempfile.mkstemp(prefix=".firewall.env.", dir=str(p.parent))
-    with open(fd, "w", encoding="utf-8") as f:
-        f.write(body)
-    pkg.Path(tmp).chmod(0o644)
-    pkg.Path(tmp).replace(p)
+    # сбой записи (ENOSPC) не оставляет временного файла в /etc/awg-gw, итог — с fsync
+    fsatomic.write_private(pkg.FW_ENV, body, mode=0o644)
     return cur
 
 

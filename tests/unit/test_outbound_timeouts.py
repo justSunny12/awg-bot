@@ -50,11 +50,13 @@ NET_CALLS: dict[str, tuple[str, Optional[int]]] = {
     "IMAP4_SSL": ("timeout", None),
     "SMTP4": ("timeout", None),          # обёртки net4 «только IPv4» — тот же выход наружу
     "IMAP4_SSL4": ("timeout", None),
+    "SMTP_SSL4": ("timeout", None),
+    "IMAP44": ("timeout", None),
     "ClientTimeout": ("total", None),
 }
 # Свои обёртки над сетью: предел по умолчанию ловится у вызова наружу внутри
 # них, а здесь — явный timeout= у вызывающего (feeds.py когда-то передавал 60).
-WRAPPERS = {"fetch", "check_imap", "check_smtp", "send_mail", "http", "api"}
+WRAPPERS = {"fetch", "check_imap", "check_smtp", "send_mail", "http", "api", "smtp_open", "imap_open"}
 
 # (файл, вызов, кусок строки) → почему предел не выводится из исходника
 ALLOWED_PY: dict[tuple[str, str, str], str] = {

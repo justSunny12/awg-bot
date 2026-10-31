@@ -315,15 +315,32 @@ class SubscriptionMixin:
         days=None — берёт весь доступный максимум (обратная совместимость);
         иначе резервирует ровно min(days, доступное). Возвращает
         (ok, reserved_days, notifications)."""
+        # чтение и запись под одним замком: продление или вторая пауза из другого
+        # потока ждут, а не затираются прочитанным раньше
+        with self.db.transaction(immediate=True):
+            got = self._enter_pause_tx(client_id, days)
+        if got is None:
+            return (False, 0, [], None)
+        reserved, code = got
+        notes: list[Notification] = []
+        for dev in self.db.list_devices(client_id):
+            self._device_set_block(dev.id, DeviceBlock.PAUSED)
+            if dev.friend_status == FriendStatus.ACTIVE and dev.friend_tg_id:
+                notes.append(Notification(dev.friend_tg_id,
+                             _pause_friend_started(dev.name)))
+        return (True, reserved, notes, code)
+
+    def _enter_pause_tx(self, client_id: int, days):
+        """Запись паузы пользователя; None — паузу взять нельзя, иначе (reserved, code)."""
         client = self.db.get_client(client_id)
         if client is None or client.is_service:
-            return (False, 0, [], None)
+            return None
         if client.pause_active_since or int(client.block_reason) & int(ClientBlock.PAUSED):
-            return (False, 0, [], None)
+            return None
         avail = self.pause_available_days(client_id)
         reserved = avail if days is None else max(0, min(int(days), avail))
         if reserved <= 0:
-            return (False, 0, [], None)
+            return None
         now = timeutil.now()
         end = timeutil.parse_iso(client.period_end)
         new_end = end + datetime.timedelta(days=reserved)
@@ -338,17 +355,10 @@ class SubscriptionMixin:
                 used_days=int(client.pause_used_days),   # накопленное за период
                 balance_days=int(client.pause_balance_days) - reserved,   # резерв списан
                 resume_code=code))
-            self.db.update_client_fields(
-                client_id,
-                period_end=timeutil.to_iso(new_end),
-                block_reason=int(client.block_reason) | int(ClientBlock.PAUSED))
-        notes: list[Notification] = []
-        for dev in self.db.list_devices(client_id):
-            self._device_set_block(dev.id, DeviceBlock.PAUSED)
-            if dev.friend_status == FriendStatus.ACTIVE and dev.friend_tg_id:
-                notes.append(Notification(dev.friend_tg_id,
-                             _pause_friend_started(dev.name)))
-        return (True, reserved, notes, code)
+            self.db.update_client_fields(client_id, period_end=timeutil.to_iso(new_end))
+            # бит — в SQL, не маской из прочитанного: чужой бит, поставленный после чтения, цел
+            self.db.client_mask_apply(client_id, or_bits=int(ClientBlock.PAUSED))
+        return reserved, code
 
     def enter_admin_pause(self, client_id: int, days: int):
         """Приостановка подписки при АДМИНСКОМ блоке пользователя. days>0 — срочная
@@ -357,11 +367,13 @@ class SubscriptionMixin:
         снятии). Без лимита 28 и без привязки к годовой. НЕ ставит сам блок-бит
         (это делает вызывающий block_client_manual) и НЕ шлёт уведомлений
         (уведомляет вызывающий по notify-флагу). Возвращает reserved (0 у open)."""
-        client = self.db.get_client(client_id)
-        if client is None or client.is_service or client.pause_active_since:
-            return 0
-        now = timeutil.now()
-        with self.db.transaction():
+        # чтение и запись под одним замком: срок, продлённый из другого потока между
+        # чтением и записью, не затирается прочитанным раньше
+        with self.db.transaction(immediate=True):
+            client = self.db.get_client(client_id)
+            if client is None or client.is_service or client.pause_active_since:
+                return 0
+            now = timeutil.now()
             if days > 0:
                 # срочная: сдвигаем период вперёд, как самоблок
                 self.db.save_pause(client_id, models.PauseState(
@@ -388,9 +400,36 @@ class SubscriptionMixin:
         (только user/admin_fixed). Пересчитывает фактическую длительность, правит
         period_end по режиму, снимает PAUSED-каскад. Возвращает
         (ok, actual_days, new_end, notifications)."""
+        # чтение и запись под одним замком (см. enter_pause)
+        with self.db.transaction(immediate=True):
+            got = self._exit_pause_tx(client_id, auto)
+        if got is None:
+            return (False, 0, None, [])
+        client, mode, actual, new_end = got
+        notes: list[Notification] = []
+        for dev in self.db.list_devices(client_id):
+            self._device_clear_block(dev.id, DeviceBlock.PAUSED)
+            if dev.friend_status == FriendStatus.ACTIVE and dev.friend_tg_id:
+                # «доступ снова активен» — только если устройство РЕАЛЬНО
+                # разблокировано: при выходе из паузы могут оставаться другие
+                # биты (админ-блок при admin_fixed, лимит трафика) — тогда
+                # доступ не вернулся и радовать друга рано. О снятии этих битов
+                # уведомит их собственный поток (unblock_client_manual и т.п.).
+                fresh = self.db.get_device(dev.id)
+                if fresh is not None and int(fresh.block_reason) == 0:
+                    notes.append(Notification(dev.friend_tg_id,
+                                 _pause_friend_ended(dev.name)))
+        # пользователю — только при АВТО-выходе самоблока пользователя (по макс. сроку)
+        if auto and mode == PauseMode.USER and client.tg_id:
+            notes.append(Notification(client.tg_id,
+                         _pause_auto_ended_client(actual, new_end)))
+        return (True, actual, new_end, notes)
+
+    def _exit_pause_tx(self, client_id: int, auto: bool):
+        """Запись выхода из паузы; None — паузы нет, иначе (client, mode, actual, new_end)."""
         client = self.db.get_client(client_id)
         if client is None or not client.pause_active_since:
-            return (False, 0, None, [])
+            return None
         mode = client.pause_mode or PauseMode.USER
         since = timeutil.parse_iso(client.pause_active_since)
         now = timeutil.now()
@@ -427,28 +466,10 @@ class SubscriptionMixin:
                 active_since=None, reserved_days=0, mode=None, saved_end=None,
                 used_days=int(client.pause_used_days) + used_add,
                 balance_days=max(0, balance)))
-            self.db.update_client_fields(
-                client_id,
-                period_end=new_end_iso,
-                block_reason=int(client.block_reason) & ~int(ClientBlock.PAUSED))
-        notes: list[Notification] = []
-        for dev in self.db.list_devices(client_id):
-            self._device_clear_block(dev.id, DeviceBlock.PAUSED)
-            if dev.friend_status == FriendStatus.ACTIVE and dev.friend_tg_id:
-                # «доступ снова активен» — только если устройство РЕАЛЬНО
-                # разблокировано: при выходе из паузы могут оставаться другие
-                # биты (админ-блок при admin_fixed, лимит трафика) — тогда
-                # доступ не вернулся и радовать друга рано. О снятии этих битов
-                # уведомит их собственный поток (unblock_client_manual и т.п.).
-                fresh = self.db.get_device(dev.id)
-                if fresh is not None and int(fresh.block_reason) == 0:
-                    notes.append(Notification(dev.friend_tg_id,
-                                 _pause_friend_ended(dev.name)))
-        # пользователю — только при АВТО-выходе самоблока пользователя (по макс. сроку)
-        if auto and mode == PauseMode.USER and client.tg_id:
-            notes.append(Notification(client.tg_id,
-                         _pause_auto_ended_client(actual, new_end)))
-        return (True, actual, new_end, notes)
+            self.db.update_client_fields(client_id, period_end=new_end_iso)
+            # бит — в SQL, не маской из прочитанного: чужой бит, поставленный после чтения, цел
+            self.db.client_mask_apply(client_id, and_bits=~int(ClientBlock.PAUSED))
+        return client, mode, actual, new_end
 
     def resume_by_email_code(self, code: str):
         """Аварийный email-выход: найти пользователя с активной паузой и данным
