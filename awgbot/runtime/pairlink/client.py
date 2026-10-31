@@ -51,6 +51,15 @@ class PairClient(InboundMixin):
     def wake(self) -> None:
         self._wake.set()
 
+    async def drop_session(self) -> None:
+        """Сессию закрыть по «недоступен» живости: сокет полуоткрыт, readline не
+        вернётся до keepalive ядра. Цикл подключения продолжает с отступа, «снова
+        на связи» его будит (wake)."""
+        sess = self._sess
+        if sess is not None:
+            log.info("канал пары: сессия закрыта — линк пары молчит")
+            await close_session(sess)                         # finally _connect_once снимет _sess и отметки
+
     async def _run(self) -> None:
         attempt = 0
         while not self._dead:

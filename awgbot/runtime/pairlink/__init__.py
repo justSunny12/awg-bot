@@ -164,5 +164,14 @@ def wake() -> None:
         _link.wake()
 
 
+async def drop_session() -> None:
+    """Текущую обычную сессию закрыть: живость линка сказала «недоступен», а TCP
+    полуоткрыт — слова уходили бы в никуда до keepalive ядра. Слушатель ждёт
+    новую сессию, клиент переподключается своим циклом."""
+    if _link is not None and hasattr(_link, "drop_session"):
+        await _link.drop_session()
+
+
 __all__ = ["DEFAULT_PORT", "channel_port", "pair_hosts", "set_on_event", "set_on_notes", "online", "ensure",
-           "shutdown", "send", "flush_outbox", "send_package", "pair_accepted", "pair_wrong", "pair_close", "wake"]
+           "shutdown", "send", "flush_outbox", "send_package", "pair_accepted", "pair_wrong", "pair_close", "wake",
+           "drop_session"]

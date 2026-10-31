@@ -253,11 +253,13 @@ def test_down_and_back_notify_once_each(services, paired, monkeypatch):
     downs = _texts(acts, "Нет связи с резервом")
     assert len(downs) == 1 and downs[0].tg_id == ADMIN, downs
     assert [a for a, _ in acts].count("ping") == 3
+    assert [a for a, _ in acts].count("down") == 1, "такт не сказал каналу «down» — полуоткрытая сессия останется"
     assert services.reserve_peer_seen() == "down" and services.reserve_down_since()
     rx.alive = True
     back = rx.ticks(services, 1205, 1400)
     assert len(_texts(back, "восстановлена")) == 1, back
     assert not _texts(back, "Нет связи с резервом")
+    assert [a for a, _ in back].count("up") == 1, "такт не сказал каналу «up» — клиент досиживает отступ"
     assert services.reserve_peer_seen() == "ok" and services.reserve_down_since() == ""
 
 

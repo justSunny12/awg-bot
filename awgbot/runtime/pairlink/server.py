@@ -53,6 +53,14 @@ class PairServer(InboundMixin):
     async def stop(self) -> None:
         await self._close_server()
 
+    async def drop_session(self) -> None:
+        """Обычную сессию закрыть по «недоступен» живости: сокет полуоткрыт, слова
+        в него уходили бы в никуда. Слушатель остаётся — новая сессия от клиента."""
+        sess = self._sess
+        if sess is not None:
+            log.info("канал пары: сессия закрыта — линк пары молчит")
+            await close_session(sess)                         # finally обслуживания снимет _sess и отметки
+
     @property
     def online(self) -> bool:
         return self._sess is not None and self._sess.hello

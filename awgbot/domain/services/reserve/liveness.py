@@ -67,7 +67,10 @@ class ReserveLivenessMixin:
         return total
 
     def reserve_liveness_tick(self, now: float | None = None) -> tuple[str, list[Notification]]:
-        """Такт живости (5 с). Возвращает (действие для канала: ping/"", уведомления)."""
+        """Такт живости (5 с). Возвращает (действие для канала, уведомления):
+        "ping" — проба по подозрению; "down" — связи нет, текущую сессию канала
+        закрыть (TCP полуоткрыт, сам он этого не заметит до keepalive ядра);
+        "up" — связь вернулась, клиенту канала не ждать отступа; "" — ничего."""
         if not self.reserve_paired():
             self.__dict__.pop("_reserve_liveness", None)
             self.__dict__.pop("_lv_base", None)
@@ -91,9 +94,9 @@ class ReserveLivenessMixin:
             notes.append(Notification(tg_id=int(config.ADMIN_ID),
                                       text=rn.peer_down(self.reserve_peer_name(), self.reserve_down_since())))
             log.warning("резерв: «%s» недоступен — линк пары молчит", self.reserve_peer_name())
-            return "", notes
+            return "down", notes
         if act == "up":
-            return "", self._liveness_up()
+            return "up", self._liveness_up()
         return act, notes
 
     def _liveness_up(self) -> list[Notification]:

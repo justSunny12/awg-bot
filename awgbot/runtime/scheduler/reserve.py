@@ -24,9 +24,15 @@ def setup_reserve_jobs(scheduler, services, bot) -> None:
                 notes = list(notes) + list(await asyncio.to_thread(services.reserve_pair_confirm_tick))
             if notes:
                 await send_notifications(bot, notes)
+            from awgbot.runtime import pairlink
             if act == "ping":
-                from awgbot.runtime import pairlink
                 await pairlink.send("ping", {"n": services.reserve_ping_nonce()})
+            elif act == "down":
+                # линк молчит, а TCP сессии полуоткрыт: сам он до keepalive ядра не умрёт,
+                # и слова уходили бы в никуда — сессию закрываем, следующая начнётся с st
+                await pairlink.drop_session()
+            elif act == "up":
+                pairlink.wake()                           # клиенту канала не досиживать отступ: линк ожил
         except Exception as e:                           # noqa: BLE001
             log.warning("резерв: такт живости: %s", e)
         try:
