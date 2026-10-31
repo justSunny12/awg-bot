@@ -394,6 +394,10 @@ def test_inspections_through_gateways_go_one_at_a_time(tmp_path, monkeypatch):
 
 
 async def test_a_second_file_while_relaying_says_already_and_is_removed(tmp_path, monkeypatch):
+    """Второй файл во время передачи: убран из чата (в нём ключи), второй передачи
+    нет — и текст говорит именно это: файл убран, прислать снова после итога.
+    Прежний текст велел «дождаться окончания», а файла, которому ждать, уже не
+    было — человек ждал итога второй передачи, которой не будет."""
     from awgbot.bot.handlers.gateway import bundle as gb
     from awgbot.domain.gateway import GatewayServices
     from awgbot.infra.db import Database
@@ -416,6 +420,9 @@ async def test_a_second_file_while_relaying_says_already_and_is_removed(tmp_path
     await first
     assert calls == ["one.tgz.enc"], "вторая передача пошла параллельно"
     assert m2.deleted and m2.sent[-1][1] == texts.GW_RELAY_BUSY
+    assert "убран из чата" in texts.GW_RELAY_BUSY and "пришли его снова" in texts.GW_RELAY_BUSY
+    assert "дождись" not in texts.GW_RELAY_BUSY, "текст обещает ожидание файла, которого уже нет"
+    assert len(texts.GW_RELAY_BUSY) <= 4096
     assert [b.text for r in m2.sent[-1][2].inline_keyboard for b in r] == ["Скрыть"]
     assert linkclient.relay_reserve(), "передача не освобождена после итога"
     linkclient.relay_release()
