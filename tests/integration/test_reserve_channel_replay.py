@@ -22,10 +22,11 @@ from awgbot.util import pairproto
 
 from tests.integration import _reserve_common as rc
 from tests.integration.test_gwlink_channel import _Gw, _until
-from tests.integration.test_reserve_channel import _closed, linked, server   # noqa: F401  (фикстуры)
+from tests.integration import test_reserve_channel as _chan
 
 pytestmark = pytest.mark.integration
 rsv = rc.rsv
+server, linked, _closed = _chan.server, _chan.linked, _chan._closed     # фикстуры и помощник соседа
 
 HELLO = {"name": "Beta", "version": "4.0.0", "caps": [], "gen": 0, "ports": [45871], "seen": "",
          "bot": "beta_vpn_bot", "gw": True}
