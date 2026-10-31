@@ -10,7 +10,7 @@ from aiogram.types import CallbackQuery
 from awgbot.bot.callbacks import BroadcastCB
 from awgbot.bot.handlers.common import edit, edit_nav, cleanup_content, send_menu
 from awgbot.bot.notifier import send_notifications
-from awgbot.bot.handlers.admin.panel import _main_menu_markup, _panel_parts
+from awgbot.bot.handlers.admin.panel import _panel_parts
 from .targets import router, _BROADCAST_COOLDOWN_SEC, _last_broadcast_at, _bc_selected
 from .draft import _bc_cancel_render
 from awgbot.bot.handlers.admin import broadcast as pkg       # имена пакета — через него: их подменяют тесты
@@ -50,10 +50,13 @@ async def broadcast_send(cb: CallbackQuery, state: FSMContext, services):
     text = data.get("text") or ""
     photos = tuple(data.get("photos") or ())
     sel = tuple(sorted(data.get("targets") or ()))
-    await state.clear()
+    # Проверки — ДО сброса черновика: отказ по длине или пустоте оставляет
+    # черновик живым, и «сократи и пришли заново» действительно возможно; иначе
+    # следующий текст админа уходил бы в никуда, а превью с кнопками — висело.
     # Текст опционален, когда есть картинки: объявление из одних снимков
     # легально, превью прямо спрашивало про пустую подпись.
     if not sel or (not text and not photos):
+        await state.clear()
         await cb.answer("Нечего отправлять.", show_alert=True)
         return
     # Страховка от устаревшей кнопки: превью пересобирается при каждом изменении
@@ -75,7 +78,8 @@ async def broadcast_send(cb: CallbackQuery, state: FSMContext, services):
         await cb.answer("Только что уже отправляли — подожди немного.", show_alert=True)
         return
     _last_broadcast_at[sel] = now                # метку ставим ДО await'ов —
-    await cb.answer("Рассылаю…")                 # второе нажатие уже отсечётся
+    await state.clear()                          # второе нажатие уже отсечётся
+    await cb.answer("Рассылаю…")
     # Переписку с набором черновика убираем и здесь, а не только при отмене:
     # после отправки она тем более не нужна, а превью само станет отчётом.
     await cleanup_content(cb.bot, services, cb.message.chat.id, keep=cb.message.message_id)
@@ -83,8 +87,11 @@ async def broadcast_send(cb: CallbackQuery, state: FSMContext, services):
     tg_ids = await pkg.call(services.db.broadcast_recipients_for_clients,
                         sel, config.ADMIN_ID, owners_only=extend)
     if not tg_ids:
-        await edit(cb, "Некому отправлять — нет активных получателей.",
-                   await _main_menu_markup(services))
+        # итог — правкой текущего сообщения, панель — следующим как единственное
+        # живое меню (send_menu её регистрирует; меню на правке регистрировать некому)
+        await edit(cb, "Некому отправлять — нет активных получателей.", None)
+        await send_menu(cb.message, services, *await _panel_parts(services),
+                        keep_id=cb.message.message_id)
         return
     extension = by_tg = None
     shown = text
