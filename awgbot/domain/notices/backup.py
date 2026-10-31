@@ -134,13 +134,19 @@ def event_tail(why: list[dict]) -> str:
 CAPTION_MAX = 1024              # подпись файла в Telegram — не длиннее (видимый текст)
 
 
+PARTIAL_LINE = "⚠️ Бэкап неполный: база бота не снялась, причина — в журнале бота. Последний полный бэкап на сервере сохранён"
+
+
 def backup_caption(created: str, refs: list[str], offline: list[tuple[str, str, str]], why_tail: str = "",
-                   *, limit: int = CAPTION_MAX) -> str:
+                   *, limit: int = CAPTION_MAX, partial: bool = False) -> str:
     """Подпись копии в чате и тело письма: одна строка на слот — только
     отклонения; без шлюзов — без блока. offline — [(ref, seen, keep_at)].
     Подпись файла в Telegram — не длиннее limit: шлюзы и строки «не на
-    связи» — сколько влезает, остальное — «и ещё N»."""
+    связи» — сколько влезает, остальное — «и ещё N». partial — в копии нет
+    базы (снимок не снялся): строка-предупреждение сразу под заголовком."""
     head = f"💾 Бэкап сервера AWG от {created}" + (f" — {why_tail}" if why_tail else "")
+    if partial:
+        head += "\n" + PARTIAL_LINE
 
     def size(refs_line: str, off: list[str]) -> int:
         return len(plain("\n".join([head] + ([refs_line] if refs_line else []) + off)))

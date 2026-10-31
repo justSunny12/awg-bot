@@ -186,7 +186,7 @@ class BackupsMixin:
                             "ref": nb.gw_ref(w["name"], w.get("label", ""), slot=slot if live else 0,
                                              bot_username=bot) if w.get("name") else ""})
         return nb.backup_caption(timeutil.fmt_dt_ui(timeutil.now(), year=True), refs, offline,
-                                 nb.event_tail(why))
+                                 nb.event_tail(why), partial=bool(self.__dict__.get("_backup_partial")))
 
     def backup_slot_states(self) -> list[tuple]:
         """[(слот, «имя», подпись, состояние, seen, keep_at)] — строки раздела,
