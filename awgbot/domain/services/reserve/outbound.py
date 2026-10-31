@@ -232,6 +232,8 @@ class ReserveOutboundMixin:
         if state == "returning":
             return self._tick_returning(out)
         acts = self._tick_home(out) + self.reserve_tail_settle() + self._home_back_resend()   # свой хвост при держателе дома — переносить
+        if self.reserve_out() == "home":
+            acts += self.reserve_rec_back_settle()            # резерв не принял моих после смены записи — запись на себя
         self.reserve_c9_settle()                              # отметка С9 без рычага — пока правки бота на резерве возможны
         return acts
 
@@ -470,12 +472,16 @@ class ReserveOutboundMixin:
             return True
         return False
 
-    def reserve_down_in(self, reason: str) -> list[tuple]:
+    def reserve_down_in(self, reason: str, rec: bool = False) -> list[tuple]:
         """`down` резерва на переезде: срыв; `back` не нужен — резерв зону снял сам
-        (и когда отказал конверту ключа: ждавший его процесс открытия он гасит)."""
+        (и когда отказал конверту ключа: ждавший его процесс открытия он гасит). Вне
+        переезда с `rec` — запись уже сменил его процесс открытия: вернуть её на себя
+        (outbound_keep)."""
         out = self._out()
         if out.get("state") == "leaving":
             return self._move_fail(f"«{self.reserve_peer_name()}» не поднял профили — {reason}")
+        if rec and str(out.get("state") or "home") in ("home", "away"):
+            return self.reserve_rec_back_mark(reason)
         return []
 
     def reserve_release_build(self) -> dict | None:

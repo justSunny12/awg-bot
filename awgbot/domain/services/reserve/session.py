@@ -118,6 +118,7 @@ class ReserveSessionMixin:
                 "mem_free": self.reserve_mem_free_mb(), "online": int(self.__dict__.get("_rsv_guest_online") or 0),
                 "in_by": str(self.rsv_get("rsv_in").get("by") or ""), "zone": str(self._my_side().get("zone") or ""),
                 **({"in_tg": tg} if (tg := self.reserve_in_tg()) else {}),   # бот основы у меня: forced | wait
+                **({"in_keep": kp} if (kp := self.reserve_in_keep()) else {}),   # приём сорвался после смены записи
                 **({"jrn": jrn} if (jrn := self._jrn_st_part()) else {}),
                 **({"quo": quo} if (quo := self._quo_st_part()) else {}),
                 **({"rfp": rfp} if (rfp := self._rfp_st_part()) else {}),
@@ -281,6 +282,7 @@ class ReserveSessionMixin:
             notes.extend(self._reserve_compat_notes(peer))
         # мой ключ мог стать известен второму серверу без моего K (точки, код) — поколение сменить
         notes.extend(self.reserve_exposed_in(body.get("exposed")))
+        notes.extend(self.reserve_keep_st_in(body.get("in_keep")))   # у резерва сбой после смены моей записи
         return notes
 
     def _reserve_compat_notes(self, peer: dict) -> list[Notification]:

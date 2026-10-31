@@ -94,6 +94,7 @@ PAIR_KINDS: dict[str, tuple[str, dict]] = {
                             "admin_opened": (_B, None), "gw": (_B, None),
                             "healthy": (_B, None), "can_return": (_B, None), "in_kind": (_S, 16), "mem_free": (_I, None), "online": (_I, None), "in_by": (_S, 8),
                             "in_tg": (_S, 8),   # бот второй стороны у меня: forced (захват без её released) | wait (VPN без бота)
+                            "in_keep": (_D, None),   # {k, why, at}: приём сорвался после смены записи её процессом открытия
                             "zone": (_S, 120), "jrn": (_D, None), "quo": (_D, None), "rfp": (_D, None),
                             "exposed": (_D, None)}),   # {share|code: m_gen} — ключ основы мне известен без её K
     "ping":         (BOTH, {"n": (_S, 32)}),
@@ -116,7 +117,7 @@ PAIR_KINDS: dict[str, tuple[str, dict]] = {
     "go":           (BOTH, {"k": (_S, 64), "gen": (_I, None), "kind": (_S, 16), "ttl": (_I, None),
                             "sealed": (_S, 384), "oid": (_S, 16)}),   # конверт: 48 + JSON (K, gen до 10 цифр, oid) ≤ 162 байт
     "up":           (BOTH, {"oid": (_S, 16)}),              # oid (ret1) — к какому открытию слово
-    "down":         (BOTH, {"reason": (_S, MAX_REASON)}),
+    "down":         (BOTH, {"reason": (_S, MAX_REASON), "rec": (_B, None)}),   # rec — запись на мне, верни её себе
     "released":     (BOTH, {"gen": (_I, None), "i": (_I, None), "n": (_I, None), "blob": (_S, MAX_BLOB),
                             "epoch": (_I, None), "last": (_I, None)}),
     "taken":        (BOTH, {"oid": (_S, 16)}),
@@ -198,7 +199,8 @@ def kinds_for(proto: str) -> dict[str, tuple[str, dict]]:
 
 # поля, которых может не быть (добавлены внутри линии; отсутствие — ложь/пусто)
 OPTIONAL: dict[str, frozenset] = {"st": frozenset({"healthy", "can_return", "in_kind", "mem_free", "online", "in_by", "zone",
-                                                     "jrn", "quo", "rfp", "exposed", "in_tg"}),
+                                                     "jrn", "quo", "rfp", "exposed", "in_tg", "in_keep"}),
+                                   "down": frozenset({"rec"}),
                                    "ask": frozenset({"kind"}), "up": frozenset({"oid"}), "taken": frozenset({"oid"}),
                                   "state": frozenset({"reason", "e"}), "qview": frozenset({"i"}),
                                   "go": frozenset({"ttl", "k", "sealed", "oid"}), "go_req": frozenset({"ttl"}),

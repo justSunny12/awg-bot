@@ -10,6 +10,10 @@ from .c9wait import card_line as c9_card_line
 
 
 LOW_MEM_MB = 400                     # меньше — строка «мало свободной памяти» (решение по в. 56)
+# приём сорвался после смены записи процессом открытия (inbound_keep): что не доделано — что делаю
+_KEEP_LINES = {"record": ("запись DNS не подтвердилась", "проверяю раз в минуту"),
+               "serve": ("вход вебхука в зону не настроен", "повторяю раз в минуту"),
+               "relaunch": ("клона нет", "перезапускаю открытие раз в минуту")}
 
 
 def _n(name: str) -> str:
@@ -237,6 +241,9 @@ def card_text(d: dict, bot_username: str = "") -> str:
                      + (" — принимаю" if inn == "taking" else " — возвращаю" if inn == "releasing" else ""))
         if d.get("in_tg_wait"):                               # VPN здесь, а бот второй стороны Telegram не взял
             lines.append(f"└ ⚠️ бот {_n(name)} здесь не отвечает в Telegram: {_e(d['in_tg_wait'])} — повторяю раз в минуту")
+        keep = d.get("in_keep") or {}                         # запись уже здесь, приём сорвался — доделываю
+        if keep.get("k") in _KEEP_LINES:
+            lines.append(f"└ ⚠️ {_KEEP_LINES[keep['k']][0]}: {_e(keep.get('why') or '')} — {_KEEP_LINES[keep['k']][1]}")
     elif inn == "relay":
         lines.append(f"📥 Пользователи {_n(name)}: возвращаются к нему — пересылка до {_e(_date(d.get('in_relay_until') or ''))}")
     else:

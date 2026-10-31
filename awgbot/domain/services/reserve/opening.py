@@ -15,6 +15,7 @@ from awgbot.util import rsvkeys, timeutil
 
 from ..types import Notification
 from ..gateway_link.common import log
+from .inbound_keep import KEEP_RESET
 from .state import _LOCK
 
 NEED_RETRY_S = 30                 # точка не пришла — qneed следующему «не вижу»
@@ -101,7 +102,7 @@ class ReserveOpeningMixin:
             self.reserve_set_in("taking", kind=kind, gen=int(pkg_in.get("gen") or 0), why=kind, case=case, extra="",   # why — гостю причина
                                 by="code" if "code" in secret else "share",
                                 open_started=timeutil.now_iso(), deadline=time.monotonic() + self._open_wait_s(),
-                                up_sent=False, tg_taken=False, tg_take_forced=False, tg_wait="",
+                                up_sent=False, tg_taken=False, tg_take_forced=False, tg_wait="", **KEEP_RESET,
                                 ended_auto="code" not in secret,   # по коду — не автоматический
                                 dead_since=str(self.rsv_get("rsv_view").get("code", {}).get("since") or ""))
             self._in_step("open")
@@ -113,6 +114,9 @@ class ReserveOpeningMixin:
             self._relay_restore()                             # пересылка хвоста, уступившая открытию, — обратно
             return [("notify", [Notification(tg_id=int(config.ADMIN_ID), text=_fail_text(self.reserve_peer_name(), str(e)))])] \
                 + self._gw_refusal_word(str(e))
+        # вход — только в памяти бота, не в базе: запись сменит процесс, а клон потом пропадёт —
+        # перезапуск тем же входом (inbound_keep); ключ основы мне и так известен (st.exposed)
+        self.__dict__["_rsvopen_payload"] = payload
         log.warning("резерв: процесс открытия по %s запущен (%s, пакет %s)", "коду" if kind == "code" else "точкам",
                     case, pkg_in.get("gen"))
         return [("fw",)] + self.reserve_gw_state_actions()
