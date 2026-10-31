@@ -230,6 +230,32 @@ def test_the_system_resolver_view_and_its_failure(monkeypatch):
     assert dnsapi.read_system("vpn.example.net") == []
 
 
+def test_a_hung_system_resolver_is_cut_at_the_timeout_and_the_default_stays(monkeypatch):
+    """getaddrinfo своего таймаута не знает, а socket.setdefaulttimeout на него
+    не действует и меняет умолчание всему процессу (параллельный вызов мог
+    оставить его чужим). Повисший резолвер — пустой ответ к сроку, умолчание
+    процесса не тронуто."""
+    import threading
+    import time
+    release = threading.Event()
+    seen = []
+
+    def hung(*a, **kw):
+        seen.append(socket.getdefaulttimeout())
+        release.wait(5)
+        return [(2, 1, 6, "", ("203.0.113.9", 0))]
+    monkeypatch.setattr(common.socket, "getaddrinfo", hung)
+    before = socket.getdefaulttimeout()
+    t0 = time.monotonic()
+    try:
+        assert dnsapi.read_system("vpn.example.net", timeout=0.3) == []
+        took = time.monotonic() - t0
+    finally:
+        release.set()
+    assert took < 2, f"ожидание {took:.1f} с вместо потолка"
+    assert seen == [before] and socket.getdefaulttimeout() == before, "умолчание таймаута процесса тронуто"
+
+
 def test_ipv4_accepts_only_an_ipv4_address():
     assert common.ipv4(" 198.51.100.7\n") == "198.51.100.7"
     for bad in ("", "2001:db8::1", "198.51.100.300", "vpn.example.net", None):

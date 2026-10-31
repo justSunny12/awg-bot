@@ -80,15 +80,15 @@ def ipv4(text: str) -> str:
 # ── чтение записи ─────────────────────────────────────────────────────────────
 
 def read_system(name: str, timeout: float = TIMEOUT) -> list[str]:
-    """A-адреса имени через системный резолвер (с кэшем, как у пользователей)."""
-    old = socket.getdefaulttimeout()
-    socket.setdefaulttimeout(timeout)
+    """A-адреса имени через системный резолвер (с кэшем, как у пользователей).
+    Потолок ожидания — у вызова в отдельном потоке: socket.setdefaulttimeout
+    на getaddrinfo не действует, а умолчание меняет всему процессу."""
+    from concurrent import futures
+    from awgbot.util import nets
     try:
-        infos = socket.getaddrinfo(name, None, socket.AF_INET, socket.SOCK_STREAM)
-    except (socket.gaierror, OSError):
+        infos = nets.getaddrinfo_timed(name, timeout=timeout, family=socket.AF_INET)
+    except (futures.TimeoutError, OSError):
         return []
-    finally:
-        socket.setdefaulttimeout(old)
     return sorted({i[4][0] for i in infos})
 
 
