@@ -160,6 +160,7 @@ def test_finish_prunes_old_kernel_builds_only_after_a_generation_change(services
     assert pruned == [1], "на финале смены поколения прежняя сборка должна уйти"
 
     pruned.clear()
+    services.migration_restart_done()                     # бот перезапущен после первого переезда
     c2 = make_active_client(name="c2", tg_id=7131)
     dc2 = services.add_device(c2.id, "Тел")
     services.migration_start()

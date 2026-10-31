@@ -264,6 +264,8 @@ def test_remove_legacy_ssh_gate_strips_postup_and_chain(monkeypatch):
     calls = []
 
     def fake_exec(args, check=True, **kw):
+        if args[1:3] == ["-w", "5"]:                      # ожидание замка xtables — не часть правила
+            args = args[:1] + args[3:]
         calls.append(args)
         # первый -D в INPUT снимает джамп, второй уже нечего
         if args[:2] == ["iptables", "-D"]:
@@ -279,6 +281,20 @@ def test_remove_legacy_ssh_gate_strips_postup_and_chain(monkeypatch):
     assert "AWGBOT_SSH" not in body
     assert "PostUp = iptables -A FORWARD -i awg1 -j ACCEPT" in body, "чужой PostUp цел"
     assert ["iptables", "-X", "AWGBOT_SSH"] in calls
+
+
+def test_remove_legacy_ssh_gate_stops_when_iptables_never_says_gone(monkeypatch):
+    """Снятие джампов — циклом «пока -D удаётся»: iptables, отвечающий успехом без
+    конца (сбой, обёртка), не вешает поток навсегда — предел _MAX_DUPES на хук."""
+    from awgbot.infra.awg import blocks
+    monkeypatch.setattr(config, "AWG_INTERFACE", "awg1")
+    monkeypatch.setattr(config, "MIGRATION_INTERFACE", "")
+    monkeypatch.setattr(awg, "read_file", lambda p: "[Interface]\nAddress = 10.9.1.0/24\n")
+    calls = []
+    monkeypatch.setattr(awg, "_exec", lambda args, check=True, **kw: calls.append(args)
+                        or subprocess.CompletedProcess(args, 0, b"", b""))
+    assert awg.remove_legacy_ssh_gate() is True
+    assert sum(1 for a in calls if "-D" in a) == 2 * blocks._MAX_DUPES
 
 
 def test_remove_legacy_ssh_gate_is_a_noop_when_clean(monkeypatch):

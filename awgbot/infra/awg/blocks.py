@@ -118,8 +118,9 @@ def remove_legacy_ssh_gate() -> bool:
                 pkg.write_file(path, "".join(kept))
             changed = True
     for hook in ("INPUT", "FORWARD"):
-        while pkg._exec([*_IPT, "-D", hook, "-j", _LEGACY_SSH_CHAIN],
-                    check=False).returncode == 0:
+        for _ in range(_MAX_DUPES):                # предел: iptables, «снимающий» без конца, не вешает поток
+            if pkg._exec([*_IPT, "-D", hook, "-j", _LEGACY_SSH_CHAIN], check=False).returncode != 0:
+                break
             changed = True
     if pkg._exec([*_IPT, "-F", _LEGACY_SSH_CHAIN], check=False).returncode == 0:
         pkg._exec([*_IPT, "-X", _LEGACY_SSH_CHAIN], check=False)
