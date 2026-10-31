@@ -23,6 +23,7 @@ import pytest
 from awgbot.core import config
 from awgbot.domain.services.reserve import package
 from awgbot.infra import awg
+from awgbot.util import rsvkeys
 from awgbot.util.rsvpkg import seal
 
 pytestmark = pytest.mark.integration
@@ -399,11 +400,15 @@ def test_the_package_opens_with_k_from_m_and_carries_no_host_secrets(paired, mak
 def test_the_package_carries_no_point_of_m_and_its_key_generation_only_in_the_header(paired, make_active_client, clock):
     """Прямой самого `M` нет: с пакетом не уходит ни точка ключа, ни поколение отдельным
     полем. Точка в пакете — резерв сам собирал бы `M` с одной точкой шлюза мимо
-    большинства; поколение — только в заголовке, с ним сверяется ящик кода."""
+    большинства; поколение — только в заголовке, с ним сверяется ящик кода. Рядом —
+    лишь отпечаток `M` (8 байт хеша, не точка): номер поколения после восстановления из
+    копии не уникален."""
     make_active_client(name="Профиль", tg_id=7001)
     built = _tick(paired, clock)
-    assert set(built) <= {"gen", "fp", "blob", "jrn"}, f"с пакетом уходит лишнее: {sorted(built)}"
+    assert set(built) <= {"gen", "fp", "blob", "jrn", "mf"}, f"с пакетом уходит лишнее: {sorted(built)}"
     keys = paired.reserve_keys()
+    assert built["mf"] == rsvkeys.m_print(bytes.fromhex(keys["m"])) and keys["m"] not in built["mf"], \
+        "рядом с пакетом не отпечаток M"
     assert seal.header(bytes.fromhex(built["blob"])).m_gen == int(keys["m_gen"]), "в заголовке не текущее поколение M"
     assert keys["m"] not in built["blob"], "M открытым в пакете"
 

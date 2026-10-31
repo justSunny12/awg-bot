@@ -48,6 +48,8 @@ CODE_X = 255
 _PERSON = b"awgbot-rsv-m-v1"
 _PERSON_Q = b"awgbot-rsv-mq-v1"
 _PERSON_C = b"awgbot-rsv-mc-v1"
+_PERSON_F = b"awgbot-rsv-mf-v1"
+MF_LEN = 8                                           # байт отпечатка `M`
 BOX_LEN = 24 + M_LEN + 16                            # нонс + M + MAC
 
 ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"      # Crockford base32, как у кода сопряжения
@@ -68,6 +70,32 @@ def box_key(m: bytes) -> bytes:
     if len(m) != M_LEN:
         raise ValueError(f"главный ключ — {M_LEN} байт")
     return hashlib.blake2b(bytes(m), digest_size=32, person=_PERSON).digest()
+
+
+def m_print(m: bytes) -> str:
+    """Отпечаток `M` — 8 байт SHA-256 (hex, 16 знаков) рядом с номером поколения: после
+    восстановления из копии номера `m_gen`/`c_gen`/`q_gen` идут заново и совпадают с
+    прежними, а отпечаток — нет; сверки по номеру без него приняли бы чужое поколение.
+    По отпечатку `M` не узнать: 64 бита хеша от 128 случайных бит."""
+    if len(m) != M_LEN:
+        raise ValueError(f"главный ключ — {M_LEN} байт")
+    return hashlib.sha256(_PERSON_F + bytes(m)).digest()[:MF_LEN].hex()
+
+
+def m_print_of(v) -> str:
+    """Отпечаток из слова или записи: 16 знаков hex — он, иначе пусто (прежняя сторона
+    отпечатка не шлёт — сверка по номеру)."""
+    s = str(v or "").lower()
+    return s if len(s) == 2 * MF_LEN and all(ch in "0123456789abcdef" for ch in s) else ""
+
+
+def same_m(a: dict, b: dict) -> bool:
+    """Записи об одном поколении `M`: номер совпал, и отпечатки, если они есть у обеих,
+    тоже; нет отпечатка у одной — по номеру, как прежде."""
+    if int(a.get("m_gen") or 0) != int(b.get("m_gen") or 0):
+        return False
+    fa, fb = m_print_of(a.get("mf")), m_print_of(b.get("mf"))
+    return not (fa and fb) or fa == fb
 
 
 def gateway_x(slot: int) -> int:
