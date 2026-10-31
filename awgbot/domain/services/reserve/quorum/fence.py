@@ -137,12 +137,21 @@ class ReserveQuorumFenceMixin:
         после «забираю», а не факт: передачу делает моя рука (hand_over), принимать нечего."""
         from ..journal.ship import epoch_sane
         mine = self.reserve_quorum_epoch()
+        skip = ""
         if not epoch_sane(int(e), int(mine)):
-            log.warning("кворум: эпоха %s от %s — вне разумного при моей %s, не принимаю", e, who, mine)
+            skip = "insane"
+        elif hasattr(self, "reserve_out") and self.reserve_out() == "leaving":
+            skip = "leaving"
+        if skip:
+            told = self.__dict__.setdefault("_quo_adopt_skip_told", set())
+            if (int(e), skip) not in told:                    # строка журнала один раз на (эпоха, причина): пробы идут каждые секунды
+                told.add((int(e), skip))
+                if skip == "insane":
+                    log.warning("кворум: эпоха %s от %s — вне разумного при моей %s, не принимаю", e, who, mine)
+                else:
+                    log.info("кворум: эпоха %s от %s в ходе передачи — не принимаю (передачу делаю сам)", e, who)
             return
-        if hasattr(self, "reserve_out") and self.reserve_out() == "leaving":
-            log.info("кворум: эпоха %s от %s в ходе передачи — не принимаю (передачу делаю сам)", e, who)
-            return
+        self.__dict__.pop("_quo_adopt_skip_told", None)
         self.rsv_update("rsv_qlog", adopted={"e": int(e), "at": timeutil.now_iso(), "at_ts": timeutil.now().timestamp(),
                                              "who": str(who)[:64]})
         try:

@@ -28,7 +28,9 @@ from awgbot.core import config
 
 class LabBot(main_pkg.Bot):
     def __init__(self, token: str, **kw):
-        kw["session"] = AiohttpSession(api=TelegramAPIServer.from_base(os.environ["LAB_BOTAPI"]))
+        # таймаут как у продукта (≤10 с): первый запрос к макету может попасть в окно до перерисовки NAT зоны
+        # (запись conntrack без NAT), и с умолчанием aiohttp (60 с) старт гостя стоял бы минуту
+        kw["session"] = AiohttpSession(api=TelegramAPIServer.from_base(os.environ["LAB_BOTAPI"]), timeout=10)
         super().__init__(token, **kw)
 
 

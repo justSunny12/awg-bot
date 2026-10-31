@@ -124,6 +124,14 @@ class ReserveEpochMixin:
         except Exception:                                     # noqa: BLE001
             return False
 
+    def _quorum_decides(self) -> bool:
+        """Голосов хватает для решений (v ≥ 2): при одном голосующем правило лидера `unfence`
+        не выдаёт — принятую эпоху ждать от него нельзя, роль дома возвращает её сама."""
+        try:
+            return bool(self.reserve_quorum_decisions())
+        except Exception:                                     # noqa: BLE001
+            return False
+
     def _peer_alive(self, peer: dict) -> bool:
         """Резерв на связи живым словом: сессия есть, живость не `down`, и его `st` получен
         после последней потери связи. Один флаг TCP-сеанса — не то: сеанс мёртвого линка
@@ -197,8 +205,8 @@ class ReserveEpochMixin:
             if self.reserve_out() != "home":
                 if adopted:
                     self.rsv_update("rsv_qlog", adopted=None)
-            elif meta_now["holder"] == "peer" and adopted and self._quorum_rules_home():
-                return                                        # эпоха принята по кворуму (jrn_adopt): вернёт правило лидера
+            elif meta_now["holder"] == "peer" and adopted and self._quorum_rules_home() and self._quorum_decides():
+                return                                        # эпоха принята по кворуму (jrn_adopt): вернёт правило лидера (v ≥ 2)
             applied = int(meta_now["applied"])
             prev_e = int(meta_now["epoch"]) if meta_now["holder"] == "peer" else 0
             meta = self.db.jrn_pass(holder="self", role="holder", why=why, fork_i=applied)   # его события — по applied

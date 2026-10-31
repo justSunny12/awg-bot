@@ -31,7 +31,7 @@ from ..base import log
 from .store import STORE_LOCK                                 # один замок на reserve.json и quorum.json
 
 STORE_PATH = Path("/var/lib/awg-gw/quorum.json")
-_KEEP_KEYS = ("views", "pledges", "told", "apply_mono", "share_given_at", "e_known")
+_KEEP_KEYS = ("views", "pledges", "told", "apply_mono", "share_given_at", "e_known", "e_take")
 APPLY_EVERY_S = 300
 EPOCH_STEP_MAX = 1000          # эпоха из слова или ответа — не дальше известной на столько (мусор, поломка)
 
@@ -243,24 +243,42 @@ class GatewayQuorumMixin:
                 log.warning("quorum: пользователей основы у резерва нет — эпоха снова %s (поднятую по qtake снял)", v.epoch)
             top = max(top, int(v.epoch))
         if self._gw_qvoters:
-            self._quorum_epoch_unpersist(top)
+            self._quorum_take_unpersist()
 
-    def _quorum_epoch_unpersist(self, e: int) -> None:
-        """Известная эпоха на диске — не выше `e` (откат поднятой по `qtake`)."""
+    def _quorum_take_persist(self, e: int) -> None:
+        """Эпоха, поднятая по `qtake` (e + 1), — на диск отдельно от факта (`e_take`): после
+        перезапуска агента голосующий снова под ней, но `qrel{e}` и `state{idle}` её снимают;
+        лежала бы она в `e_known` — стала бы фактом, и откат после перезапуска был бы невозможен."""
         with STORE_LOCK:
             sec = self.quorum_section()
-            if sec.get("l") and int(sec.get("e_known") or 0) > int(e):
-                sec["e_known"] = max(int(e), int(sec.get("e") or 0))
+            if sec.get("l") and int(sec.get("e_take") or 0) < int(e):
+                sec["e_take"] = int(e)
+                _write(sec, self._QUO_STORE)
+
+    def _quorum_take_unpersist(self) -> None:
+        """«Забираю» отменено (qrel, state{idle}) — поднятая по qtake эпоха с диска прочь."""
+        with STORE_LOCK:
+            sec = self.quorum_section()
+            if sec.get("l") and sec.get("e_take"):
+                sec["e_take"] = 0
                 _write(sec, self._QUO_STORE)
 
     def _quorum_epoch_persist(self, e: int) -> None:
-        """Известная эпоха — на диск (`e_known`): после перезапуска агента пробы идут с ней,
-        а не с эпохой документа (после `qtake` прежний лидер иначе снова набирал бы «да» под
-        старой эпохой до `qstate` резерва)."""
+        """Известная эпоха — факт (ответ ответчика, `qstate`, `state{e}`, документ) — на диск
+        (`e_known`): после перезапуска агента пробы идут с ней, а не с эпохой документа. Факт не
+        ниже поднятой по qtake — поднятая больше не нужна."""
         with STORE_LOCK:
             sec = self.quorum_section()
-            if sec.get("l") and int(sec.get("e_known") or 0) < int(e):
+            if not sec.get("l"):
+                return
+            changed = False
+            if int(sec.get("e_known") or 0) < int(e):
                 sec["e_known"] = int(e)
+                changed = True
+            if sec.get("e_take") and int(sec["e_take"]) <= int(e):
+                sec["e_take"] = 0
+                changed = True
+            if changed:
                 _write(sec, self._QUO_STORE)
 
     def quorum_runtime_plan(self) -> dict:
@@ -287,7 +305,9 @@ class GatewayQuorumMixin:
             if v is None:
                 v = Voter(str(rec["l"]), me, timing=timing)
                 v.start(now)
-                v.epoch_in(max(int(sec.get("e") or 0), int(sec.get("e_known") or 0)))
+                v.epoch_in(max(int(sec.get("e") or 0), int(sec.get("e_known") or 0)))   # факт (документ, ответы, qstate)
+                if int(sec.get("e_take") or 0) > int(v.epoch):
+                    v.raise_to(int(sec["e_take"]))         # поднятая по qtake — отдельно: qrel/state{idle} вернут к факту
                 self._gw_qvoters[name] = v
                 self._pledge_restore(name, v, now)
             elif v.timing != timing:
@@ -332,6 +352,7 @@ class GatewayQuorumMixin:
             r = dataclasses.replace(r, e=int(v.epoch))       # ответ — жизнь лидера, эпоха — нет
         now = time.monotonic()
         actions: list[tuple] = []
+        fact_before = int(v.fact)
         for act in v.reply_in(r, now):
             if act == "see":
                 rec = self.quorum_probe_ifaces().get(name) or {"l": v.l, "target": name[-1:]}
@@ -341,6 +362,8 @@ class GatewayQuorumMixin:
                 # и на диск; иначе пробы к основе дома шли бы с прежней и она набрала бы «да»
                 self._quorum_epoch_in(int(v.epoch))
                 log.info("quorum: ответ %s несёт эпоху %s — принята", "клона" if name.endswith("r") else "сервера AWG", v.epoch)
+        if int(v.fact) > fact_before:
+            self._quorum_epoch_persist(int(v.fact))           # факт догнал поднятую по qtake — на диск (e_take прочь)
         return actions
 
     def _quorum_view_changed(self, name: str, rec: dict, v: Voter, w: str) -> list[tuple]:
@@ -388,8 +411,12 @@ class GatewayQuorumMixin:
         if kind == "qask":
             return self._quorum_asked(name, v, now)
         if kind == "qtake":
-            v.take(int(body.get("e") or 0))
-            self._quorum_epoch_persist(int(v.epoch))
+            e = int(body.get("e") or 0)
+            if not self._quorum_epoch_sane(e + 1):
+                log.warning("quorum: qtake под эпоху %s далеко впереди известной — не принят", e + 1)
+                return []
+            v.take(e)
+            self._quorum_take_persist(int(v.epoch))
             self._pledge_store(name, None)
             log.warning("quorum: кандидат забирает основу под эпоху %s — обязательство снято", v.epoch)
             return []
@@ -400,7 +427,7 @@ class GatewayQuorumMixin:
                 if int(v.epoch) < before:
                     # «забираю» отменено: эпоха, поднятая по qtake без факта, — назад, на диске тоже (иначе
                     # после перезапуска пробы снова шли бы с e + 1, и прежний лидер не набрал бы «да»)
-                    self._quorum_epoch_unpersist(int(v.epoch))
+                    self._quorum_take_unpersist()
                     log.warning("quorum: «забираю» под эпоху %s отменено (qrel) — эпоха снова %s", before, v.epoch)
                 else:
                     log.info("quorum: обязательство «нет» под эпохой %s снято (qrel)", body.get("e"))
@@ -418,11 +445,12 @@ class GatewayQuorumMixin:
 
     def _quorum_word_without_voter(self, name: str, kind: str, body: dict) -> list[tuple]:
         """Слово кандидата до создания голосующего (первый такт после перезапуска агента):
-        `qtake{e}` — эпоха e + 1 на диск (e_known), обязательство на диске снято; `qrel{e}` —
-        обязательство под той эпохой снято. Голосующий при создании берёт всё с диска."""
+        `qtake{e}` — эпоха e + 1 на диск (e_take, отдельно от факта), обязательство на диске снято;
+        `qrel{e}` — обязательство под той эпохой снято, поднятая эпоха прочь. Голосующий при
+        создании берёт всё с диска."""
         e = int(body.get("e") or 0)
         if kind == "qtake" and self._quorum_epoch_sane(e + 1):
-            self._quorum_epoch_persist(e + 1)
+            self._quorum_take_persist(e + 1)
             self._pledge_store(name, None)
             log.warning("quorum: кандидат забирает основу под эпоху %s (голосующего ещё нет) — записано, обязательство снято", e + 1)
         elif kind == "qrel":
@@ -431,9 +459,9 @@ class GatewayQuorumMixin:
             if isinstance(pledge, dict) and int(pledge.get("e") or -1) == e:
                 self._pledge_store(name, None)
                 log.info("quorum: обязательство «нет» под эпохой %s снято (qrel, голосующего ещё нет)", e)
-            if int(sec.get("e_known") or 0) == e + 1 and int(sec.get("e") or 0) <= e:
-                self._quorum_epoch_unpersist(e)               # «забираю» под e отменено — поднятая по qtake эпоха назад
-                log.warning("quorum: «забираю» под эпоху %s отменено (qrel, голосующего ещё нет) — эпоха снова %s", e + 1, e)
+            if int(sec.get("e_take") or 0) == e + 1:
+                self._quorum_take_unpersist()                 # «забираю» под e отменено — поднятая по qtake эпоха прочь
+                log.warning("quorum: «забираю» под эпоху %s отменено (qrel, голосующего ещё нет)", e + 1)
             if hasattr(self, "reserve_share_released"):
                 self.reserve_share_released()
         return []
