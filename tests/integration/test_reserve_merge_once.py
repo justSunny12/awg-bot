@@ -98,3 +98,49 @@ def test_a_failed_merge_leaves_no_mark(spy, monkeypatch):
     monkeypatch.setattr(merge_mod, "_merge_state", lambda con, rpt: (_ for _ in ()).throw(RuntimeError("database is locked")))
     w.svc.reserve_released_in(rm.snapshot_blob(w.svc, gen=7))
     assert w.svc.reserve_out() == "away" and not w.svc.db.get_state(merge_ops.MERGED_KEY)
+
+
+# ── расшифрованная реплика на диске ─────────────────────────────────────────
+
+def _out_dir(svc) -> str:
+    import os
+    from awgbot.core import config
+    return os.path.join(str(config.DATA_DIR), "reserve", "out")
+
+
+def test_the_decrypted_replica_is_born_private_and_a_stale_one_is_replaced(spy, monkeypatch):
+    """`rep-<gen>.db` — открытая база пользователей: права 0600 с рождения (не open()+chmod
+    с окном по umask), остаток прерванного слияния того же поколения не мешает."""
+    import os
+    import stat
+    w = spy
+    out = _out_dir(w.svc)
+    os.makedirs(out, exist_ok=True)
+    stale = os.path.join(out, "rep-7.db")
+    open(stale, "wb").write(b"stale")
+    os.chmod(stale, 0o644)
+    seen = {}
+    real = merge_mod.merge
+
+    def peek(cur, base, rep, **k):
+        seen["mode"] = stat.S_IMODE(os.stat(rep).st_mode)
+        seen["size"] = os.path.getsize(rep)
+        return real(cur, base, rep, **k)
+    monkeypatch.setattr(merge_mod, "merge", peek)
+    assert w.svc.reserve_released_in(rm.snapshot_blob(w.svc, gen=7)) == [("restart",)]
+    assert seen["mode"] == 0o600 and seen["size"] > 5, seen
+    assert not os.path.exists(stale), "реплика не снята после слияния"
+
+
+def test_a_replica_left_by_a_killed_merge_is_removed_at_start_and_by_the_prune(away):
+    import os
+    svc = away.svc
+    out = _out_dir(svc)
+    os.makedirs(out, exist_ok=True)
+    for n in ("rep-3.db", "rep-4.db"):
+        open(os.path.join(out, n), "wb").write(b"x")
+    svc.reserve_session_reset()                              # старт процесса
+    assert not any(n.startswith("rep-") for n in os.listdir(out))
+    open(os.path.join(out, "rep-5.db"), "wb").write(b"x")
+    svc._pkg_prune_bases([7])
+    assert not any(n.startswith("rep-") for n in os.listdir(out))

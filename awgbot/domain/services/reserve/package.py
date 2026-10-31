@@ -298,7 +298,24 @@ class ReservePackageMixin:
         except OSError:
             pass
 
+    def _pkg_prune_reps(self) -> None:
+        """Расшифрованные реплики `rep-<gen>.db` — только на время слияния; остались (процесс
+        убит посреди слияния) — прочь: открытая база пользователей на диске."""
+        out = os.path.join(reserve_dir(), "out")
+        try:
+            names = os.listdir(out)
+        except OSError:
+            return
+        for n in names:
+            if n.startswith("rep-") and n.endswith(".db"):
+                try:
+                    os.unlink(os.path.join(out, n))
+                    log.info("резерв: снята расшифрованная реплика %s, оставшаяся от прерванного слияния", n)
+                except OSError:
+                    pass
+
     def _pkg_prune_bases(self, keep: list[int]) -> None:
+        self._pkg_prune_reps()
         out = os.path.join(reserve_dir(), "out")
         try:
             names = os.listdir(out)
