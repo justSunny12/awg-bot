@@ -391,11 +391,10 @@ async def test_close_stops_a_holding_polling_and_ends_the_run(services, rsv):
     assert dp.stopped.is_set() and dp.starts == 1 and not ctl.polling()
 
 
-@pytest.mark.xfail(strict=True, reason="RT-9: _closing не перепроверяется после _allowed()")
 async def test_close_during_the_right_check_does_not_start_the_polling():
     """SIGTERM (close) пришёл, пока run() ждёт ответа проверки права: опрос не
     стартует, run() завершается — иначе остановка юнита висит до TimeoutStopSec
-    и finally main не исполняется (при правке RT-9 снять отметку xfail)."""
+    и finally main не исполняется."""
     dp = _StubDp(hold=True)
     svc = _GateSvc()
     ctl = pollctl.PollControl(dp, object(), svc)
@@ -413,3 +412,69 @@ async def test_close_during_the_right_check_does_not_start_the_polling():
         await asyncio.wait({run}, timeout=2)
         if not run.done():
             run.cancel()
+
+
+class _SlowDp(_StubDp):
+    """Опрос, который идёт до stop_polling; до первого шага цикла stop_polling — RuntimeError, как у aiogram."""
+
+    def __init__(self):
+        super().__init__()
+        self._stop = asyncio.Event()
+        self.running = False
+
+    async def start_polling(self, *a, **kw):
+        self.starts += 1
+        self.running = True
+        await self._stop.wait()
+
+    async def stop_polling(self):
+        if not self.running:
+            raise RuntimeError("Polling is not started")
+        self._stop.set()
+
+
+async def test_close_during_the_right_check_does_not_start_polling(services, rsv, monkeypatch):
+    """SIGTERM, пока идёт проверка права отвечать (getWebhookInfo — сетевой запрос): опрос не
+    начинается, run() выходит — иначе остановка юнита висит до TimeoutStopSec и finally не исполняется."""
+    dp = _SlowDp()
+    ctl = pollctl.PollControl(dp, object(), services)
+    entered = asyncio.Event()
+
+    async def slow_allowed():
+        entered.set()
+        await asyncio.sleep(0.2)
+        return True
+    monkeypatch.setattr(ctl, "_allowed", slow_allowed)
+    run = asyncio.create_task(ctl.run())
+    await entered.wait()
+    await ctl.close()
+    await asyncio.wait_for(run, 2)
+    assert dp.starts == 0, "опрос начался после close()"
+
+
+async def test_close_before_the_polling_task_got_going_cancels_it(services, rsv):
+    """Задача опроса создана, но start_polling ещё не дошёл до цикла: stop_polling отвечает «не начат»,
+    задача снимается, а не ждётся вечно."""
+    dp = _SlowDp()
+    ctl = pollctl.PollControl(dp, object(), services)
+    run = asyncio.create_task(ctl.run())
+    while ctl._task is None:                                  # noqa: SLF001
+        await asyncio.sleep(0)
+    await asyncio.wait_for(ctl.close(), 2)
+    await asyncio.wait_for(run, 2)                            # выход штатный: finally main исполняется
+    assert not ctl.polling()
+
+
+async def test_a_second_release_does_not_confirm_what_nobody_handled(lab, paired):
+    """Подтверждающий getUpdates(limit 1) отдаёт следующее обновление — посредник не берёт его id
+    в последний обработанный: повторный release (сорванная передача и новая) не подтверждает
+    обновление, которое здесь никто не обработал, — иначе оно потеряно и для резерва."""
+    lab.mock.inject(_update("а"))
+    lab.run()
+    assert await lab.until(lambda: lab.handled == ["а"])
+    assert await lab.ctl.release() is True
+    lab.mock.inject(_update("после"))
+    assert await lab.ctl.release() is True
+    assert await lab.ctl.release() is True
+    assert lab.handled == ["а"]
+    assert [u["message"]["text"] for u in lab.mock.updates] == ["после"], "необработанное подтверждено повторным release"

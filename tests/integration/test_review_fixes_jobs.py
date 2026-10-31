@@ -29,7 +29,7 @@ async def test_qprobe_reset_runs_off_the_event_loop(monkeypatch):
     threads: list[threading.Thread] = []
     svc = types.SimpleNamespace(reserve_liveness_tick=lambda: ("", []), reserve_gwguest_tick=lambda: [],
                                 reserve_st_if_changed=lambda: None,
-                                reserve_qprobe_reset=lambda: threads.append(threading.current_thread()))
+                                reserve_pair_unsent=lambda kind: threads.append(threading.current_thread()))
 
     async def run(acts):
         return None

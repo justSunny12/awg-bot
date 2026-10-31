@@ -89,6 +89,51 @@ async def test_a_link_conf_gone_for_good_retires_the_client(vps, conf, gateway_r
     assert conn.closed, "сессия до ВПС не закрыта"
 
 
+async def test_a_retired_client_takes_its_rekey_cycle_with_it(vps, conf, gateway_role, monkeypatch):
+    """Клиент гасится посреди смены ключей линка: частый такт перехода (_rekey_task) снят
+    вместе с ним — иначе он жил бы без клиента и правил конфиг снятой обвязки."""
+    import time as _time
+    agent = _Agent()
+    vps.answers(hang=True)
+    client = linkclient.ensure(agent)
+    await _until_online()
+    rekey = asyncio.get_running_loop().create_task(asyncio.sleep(3600))
+    client.__dict__["_rekey_task"] = rekey
+    clock = [_time.monotonic()]
+    monkeypatch.setattr(linkclient.time, "monotonic", lambda: clock[0])
+    conf.unlink()
+    await linkclient.on_tick(agent)
+    clock[0] += linkclient.CONF_GONE_STOP + 1
+    await linkclient.on_tick(agent)
+    assert linkclient._client is None
+    await asyncio.sleep(0)
+    assert rekey.cancelled(), "такт смены ключей пережил погашенного клиента"
+
+
+async def test_own_changed_pushes_through_a_client_that_appeared_during_the_reconcile(monkeypatch):
+    """Клиента не было, пока шла сверка своих списков, а к её концу он на связи: правки
+    уходят через него (прежде — AttributeError на None)."""
+    pushed = []
+
+    class _Live:
+        _writer = object()
+
+        async def push_own(self):
+            pushed.append(1)
+    monkeypatch.setattr(linkclient, "_client", None)
+
+    class _Svc:
+        def own_reconcile(self):
+            linkclient._client = _Live()                   # подключился во время сверки
+            return True
+
+        def own_unsent(self):
+            return 0
+    assert await linkclient.own_changed(_Svc()) is True
+    assert pushed == [1]
+    monkeypatch.setattr(linkclient, "_client", None)
+
+
 async def test_without_the_link_conf_nothing_starts(gateway_role, monkeypatch, tmp_path):
     """Шлюз без конфига линка (обвязка ещё не применена): подписать hello нечем,
     и клиент не заводится вовсе — без стука в никуда каждые пять секунд."""

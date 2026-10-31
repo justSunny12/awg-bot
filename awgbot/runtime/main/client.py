@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 
 from aiogram.exceptions import TelegramUnauthorizedError
 from aiogram.client.default import DefaultBotProperties
@@ -15,7 +16,7 @@ from awgbot.core import settings
 from awgbot.runtime import main as pkg          # подменяемое тестами — через пакет
 
 from . import alive
-from .common import log
+from .common import log, shutdown_steps
 
 
 async def main() -> None:
@@ -394,11 +395,20 @@ async def main() -> None:
         scheduler.shutdown(wait=False)
         watcher.stop()
         conf_watcher.stop()
-        from awgbot.runtime import linkserver, pairlink
-        from awgbot.runtime.pairlink import guestctl
-        await pollctl.close()
-        await linkserver.shutdown()
-        await pairlink.shutdown()
-        await guestctl.shutdown()
-        await bot.session.close()
+        from awgbot.runtime import linkserver, pairlink, quorum
+        from awgbot.runtime.pairlink import guest, guestctl
+        # поллинг первым (с Telegram больше не говорим), каналы — в порядке, обратном
+        # подъёму: кворум и гостевой канал поднимает такт, локальный канал гостя, канал
+        # пары и канал шлюзов — стартовая задача; каждый шаг с пределом, сбой одного
+        # не оставляет остальные сокеты открытыми
+        await shutdown_steps([
+            ("поллинг", pollctl.close),
+            ("ответчик и зонды кворума", quorum.shutdown),
+            ("гостевой канал", guest.shutdown),
+            ("локальный канал гостя", guestctl.shutdown),
+            ("канал пары", pairlink.shutdown),
+            ("канал шлюзов", linkserver.shutdown),
+        ])
+        with contextlib.suppress(Exception):
+            await bot.session.close()
         db.close()

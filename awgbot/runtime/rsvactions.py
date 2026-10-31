@@ -71,6 +71,8 @@ async def _one(act: tuple) -> None:
     if kind == "send":
         if not await pairlink.send(act[1], act[2] if len(act) > 2 else None):
             log.info("резерв: «%s» не ушло — канала нет", act[1])
+            if svc is not None and hasattr(svc, "reserve_pair_unsent"):
+                await asyncio.to_thread(svc.reserve_pair_unsent, str(act[1]))   # отметка «отправлено» снята — такт повторит
     elif kind == "send_released":
         await pairlink.send_released(act[1])
     elif kind == "guest":
@@ -150,12 +152,26 @@ async def _jrn_drain(svc) -> bool:
 async def _release(bot, svc, pc) -> None:
     """Передача бота резерву: поллинг стоп, пачка подтверждена, опрос вне
     очереди (свежие рукопожатия адресатам Т-РК1), финальная реплика → released."""
-    from awgbot.runtime import pairlink
     if pc is not None and not await pc.release():
         log.warning("резерв: пачка обновлений не подтверждена — передачу бота откладываю, поллинг обратно")
         await asyncio.to_thread(svc.rsv_update, "rsv_out", step="release")
         pc.wake()
         return
+    try:
+        await _release_after_stop(svc, pc)
+    except Exception as e:                                   # noqa: BLE001
+        # поллинг уже остановлен: без возврата бот молчал бы до перепроверки права (минуты)
+        log.warning("резерв: передача бота сорвалась (%s) — поллинг обратно", e)
+        try:
+            await asyncio.to_thread(svc.rsv_update, "rsv_out", step="release")
+            await asyncio.to_thread(svc.reserve_set_poll, "mine")
+        finally:
+            if pc is not None:
+                pc.wake()
+
+
+async def _release_after_stop(svc, pc) -> None:
+    from awgbot.runtime import pairlink
     try:
         await asyncio.to_thread(svc.poll_traffic)
     except Exception as e:                                   # noqa: BLE001

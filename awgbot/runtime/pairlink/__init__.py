@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import time
 
 from .common import DEFAULT_PORT, channel_port, pair_hosts
 
@@ -29,6 +30,14 @@ log = logging.getLogger(__name__)
 _on_event = None
 _on_notes = None
 _link = None          # PairServer | PairClient | None
+
+# «Дорогие» слова: их не повторяет такт (переход автомата переезда, отказ, взгляд
+# голосующего по смене) — не ушедшее ждёт следующей сессии, последнее значение вида
+# выигрывает; старше OUTBOX_TTL_S — не шлётся (обработчики второй стороны сверяют
+# шаг, но слово прежнего эпизода новому не нужно)
+OUTBOX_KINDS = frozenset({"down", "taken", "ask_no", "evict", "relay", "qview"})
+OUTBOX_TTL_S = 120.0
+_outbox: dict[str, tuple[dict | None, float]] = {}
 
 
 def set_on_event(fn) -> None:
@@ -62,6 +71,12 @@ async def ensure(services) -> None:
             _link = PairServer(services)
         await _link.ensure()
     elif want == "client":
+        if _link is not None and _link.dead:
+            # прежнее сопряжение кончилось отказом, а роль снова «принявший» — новое
+            # принятие (в ту же минуту, до такта): цикл прежнего клиента вышел насовсем
+            with contextlib.suppress(Exception):
+                await _link.stop()
+            _link = None
         if _link is None:
             from .client import PairClient
             _link = PairClient(services)
@@ -77,7 +92,31 @@ async def shutdown() -> None:
 
 
 async def send(kind: str, body: dict | None = None) -> bool:
-    return bool(_link is not None and await _link.send(kind, body))
+    ok = bool(_link is not None and await _link.send(kind, body))
+    if kind in OUTBOX_KINDS:
+        if ok:
+            _outbox.pop(kind, None)
+        else:
+            _outbox[kind] = (body, time.monotonic())
+            log.info("канал пары: «%s» ждёт следующей сессии", kind)
+    return ok
+
+
+async def flush_outbox() -> None:
+    """Сессия открыта и своё st ушло: не ушедшие «дорогие» слова — следом."""
+    now = time.monotonic()
+    for kind, (body, at) in list(_outbox.items()):
+        if _outbox.get(kind, (None, -1.0))[1] != at:
+            continue                                      # заменено свежим, пока слали предыдущие
+        _outbox.pop(kind, None)
+        if now - at > OUTBOX_TTL_S:
+            log.info("канал пары: «%s» не ушло за %d с — снято", kind, int(OUTBOX_TTL_S))
+            continue
+        if not await send(kind, body):
+            cur = _outbox.get(kind)
+            if cur is not None and cur[0] is body:
+                _outbox[kind] = (body, at)                # сессия снова кончилась: слово в очереди, возраст — прежний
+            return
 
 
 async def send_package(built: dict) -> bool:
@@ -125,5 +164,14 @@ def wake() -> None:
         _link.wake()
 
 
+async def drop_session() -> None:
+    """Текущую обычную сессию закрыть: живость линка сказала «недоступен», а TCP
+    полуоткрыт — слова уходили бы в никуда до keepalive ядра. Слушатель ждёт
+    новую сессию, клиент переподключается своим циклом."""
+    if _link is not None and hasattr(_link, "drop_session"):
+        await _link.drop_session()
+
+
 __all__ = ["DEFAULT_PORT", "channel_port", "pair_hosts", "set_on_event", "set_on_notes", "online", "ensure",
-           "shutdown", "send", "send_package", "pair_accepted", "pair_wrong", "pair_close", "wake"]
+           "shutdown", "send", "flush_outbox", "send_package", "pair_accepted", "pair_wrong", "pair_close", "wake",
+           "drop_session"]

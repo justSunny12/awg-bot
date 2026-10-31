@@ -41,7 +41,23 @@ from awgbot.util.pairproto import JRN_KINDS
 log = logging.getLogger(__name__)
 
 MAX_LINE = 64 * 1024 * 1024 + 1024     # реплика шифротекстом в одной строке
+SEND_TIMEOUT = 10                      # с — drain: сокет локальный, дольше — вторая сторона не читает
 _BACKOFF = (2, 5, 10, 20, 30)
+
+
+async def _write_line(w: asyncio.StreamWriter, kind: str, body: dict | None, who: str) -> bool:
+    """Строка в сокет с пределом на drain: вторая сторона не читает (зависла, песочница
+    остановлена) — недописанное не ждём, сокет закрываем, сессия мертва; иначе такт,
+    зовущий send, висел бы вместе с ней."""
+    try:
+        w.write(_dumps(kind, body))
+        await asyncio.wait_for(w.drain(), SEND_TIMEOUT)
+        return True
+    except (ConnectionError, OSError, asyncio.TimeoutError) as e:
+        log.info("%s: «%s» не ушло (%s) — сессия закрыта", who, kind, e)
+        with contextlib.suppress(Exception):
+            w.close()
+        return False
 
 
 def _dumps(kind: str, body: dict | None = None) -> bytes:
@@ -179,12 +195,7 @@ class GuestCtlServer:
         w = self._writer
         if w is None or w.is_closing():
             return False
-        try:
-            w.write(_dumps(kind, body))
-            await w.drain()
-            return True
-        except (ConnectionError, OSError):
-            return False
+        return await _write_line(w, kind, body, "локальный канал гостя")
 
     async def push_quorum(self, force: bool = False) -> bool:
         """Кворум: состав линии основы — её боту у меня (ответчик на клоне); по смене."""
@@ -269,7 +280,9 @@ class GuestCtlClient:
             self._attempt = 0
             self._writer = writer
             try:
-                await self.send("hello", {"online": self.services.guest_devices_online(), "jrn": self._jrn_status()})
+                # число устройств — awg show в потоке, журнал — база: не в цикле событий
+                await self.send("hello", {"online": await asyncio.to_thread(self.services.guest_devices_online),
+                                          "jrn": await asyncio.to_thread(self._jrn_status)})
                 while True:
                     line = await reader.readline()
                     if not line:
@@ -313,12 +326,7 @@ class GuestCtlClient:
         w = self._writer
         if w is None or w.is_closing():
             return False
-        try:
-            w.write(_dumps(kind, body))
-            await w.drain()
-            return True
-        except (ConnectionError, OSError):
-            return False
+        return await _write_line(w, kind, body, "гость: локальный канал")
 
     async def send_online(self) -> bool:
         return await self.send("online", {"n": await asyncio.to_thread(self.services.guest_devices_online),
@@ -347,7 +355,7 @@ def client() -> "GuestCtlClient | None":
 async def ensure(services) -> GuestCtlServer | None:
     """Сторона бота резерва: слушатель, пока есть пара; снять — без пары."""
     global _server
-    if not services.reserve_paired():
+    if not await asyncio.to_thread(services.reserve_paired):          # база — не в цикле событий
         if _server is not None:
             await _server.stop()
             _server = None

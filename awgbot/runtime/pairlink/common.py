@@ -38,6 +38,7 @@ class _Session:
         self.listener = listener         # эта сторона — слушатель (пригласивший)
         self.seq = 0
         self.hello = False
+        self.ready = asyncio.Event()     # своё первое st ушло (или сессия кончилась) — слова можно слать
         self.pairing = False             # сессия сопряжения (hello с pair)
         self.sid = ""
         self.caps: list[str] = []
@@ -47,6 +48,7 @@ class _Session:
         self.sn_sent = False
         self.st_sent: dict | None = None
         self.parts: dict = {}            # сборка пакета частями: {gen: [часть…]}
+        self.faults: dict[str, list[float]] = {}   # сбои обработчиков по видам: отметки monotonic
 
 
 async def send_line(sess: _Session, kind: str, body: dict | None = None, *, pad: int = gwlink.PAD_DELTA) -> bool:
@@ -62,7 +64,11 @@ async def send_line(sess: _Session, kind: str, body: dict | None = None, *, pad:
         await asyncio.wait_for(sess.writer.drain(), SEND_TIMEOUT)
         return True
     except (ConnectionError, OSError, asyncio.TimeoutError) as e:
-        log.info("канал пары: «%s» не ушло (%s)", kind, e)
+        # недописанное в буфере может дойти позже и перемешаться со словами новой сессии
+        # (часть пакета прежнего поколения, реплика после «не ушла») — сессия мертва,
+        # следующая начнётся с st
+        log.info("канал пары: «%s» не ушло (%s) — сессия закрыта", kind, e)
+        await close_session(sess)
         return False
 
 

@@ -58,6 +58,7 @@ async def server(services, rsv, monkeypatch):
     port = _free_port()
     monkeypatch.setattr(services, "reserve_listen_address",
                         lambda: ("127.0.0.1", port) if services.reserve_link_role() == "inviter" else None)
+    monkeypatch.setattr(services, "reserve_acceptor_address", lambda: "127.0.0.1")   # вторая сторона /30 — петля
     hooks = _Hooks(monkeypatch)
     from awgbot.runtime.pairlink.server import PairServer
     srv = PairServer(services)
@@ -221,10 +222,11 @@ async def _session(server, key) -> tuple[_Gw, dict]:
 async def test_an_ordinary_hello_gets_st_and_ping_gets_pong(services, server, linked):
     gw, first = await _session(server, linked)
     assert first["t"] == "st" and first["admin_id"] == ADMIN
-    assert await _until(lambda: server.online)
+    assert not server.online, "на связи до первого слова клиента, подписанного нонсом сессии"
     await gw.send("ping", {"n": "abcdef0123456789"})
     pong = await gw.recv()
     assert (pong["t"], pong["n"]) == ("pong", "abcdef0123456789")
+    assert await _until(lambda: server.online)
     await gw.send("slots", {"slots": []})              # ключи шлюзовых сторон — ответ slots_ok тем же видом
     ok = await gw.recv()
     assert (ok["t"], ok["slots"]) == ("slots_ok", []), f"на slots без слотов не пришёл пустой slots_ok: {ok}"

@@ -212,22 +212,36 @@ class BackupsMixin:
 
     WAIT_KEY = "restore_wait"
 
-    def restore_wait_start(self, report: dict) -> None:
+    def restore_wait_start(self, report: dict) -> list:
         """Отчёт ушёл: по каждому слоту, к которому бэкап применён, ждём hello.
-        Пустой сервер — свой текст на случай, если шлюз не выйдет."""
+        Пустой сервер — свой текст на случай, если шлюз не выйдет. Слот, чья
+        сессия в этом процессе уже открыта (запись hello: на старте её снимает
+        gwlink_sessions_reset, ставит только hello этого процесса), на связь
+        вышел до отчёта — его не ждём, а сразу отвечаем тем же «на связи»
+        (возвращаются уведомления); иначе такт канала, поднявший слушатель
+        раньше отчёта, через срок сказал бы «не вышел» о подключённом шлюзе."""
+        from awgbot.core import config
+        from awgbot.domain.notices import backup as nb
+        from awgbot.domain.services.types import Notification
         if hasattr(self, "reserve_refuse_if_away"):
             self.reserve_refuse_if_away()
-        slots = {}
+        slots, notes = {}, []
         for s in (report or {}).get("slots") or []:
-            if isinstance(s, dict) and s.get("case") != "removed" and s.get("slot"):
-                slots[str(int(s["slot"]))] = {"name": s.get("name", ""), "label": s.get("label", ""),
-                                              "link_if": s.get("link_if", "")}
+            if not (isinstance(s, dict) and s.get("case") != "removed" and s.get("slot")):
+                continue
+            slot = int(s["slot"])
+            rec = {"name": s.get("name", ""), "label": s.get("label", ""), "link_if": s.get("link_if", "")}
+            if hasattr(self, "gwlink_session") and self.gwlink_session(slot):
+                notes.append(Notification(config.ADMIN_ID, nb.gateway_back(self._wait_ref(slot, rec)), silent=True))
+                continue
+            slots[str(slot)] = rec
         if not slots:
             self.db.set_state(self.WAIT_KEY, "")
-            return
+            return notes
         self.db.set_state(self.WAIT_KEY, json.dumps(
             {"at": timeutil.to_iso(timeutil.now()), "empty": bool(report.get("empty")), "slots": slots},
             ensure_ascii=False))
+        return notes
 
     def _wait(self) -> dict:
         w = self.db.get_state_json(self.WAIT_KEY, {})

@@ -18,6 +18,7 @@ class PairServer(InboundMixin):
         self._server: asyncio.AbstractServer | None = None
         self._bound: tuple[str, int] | None = None
         self._sess: _Session | None = None
+        self._pending: _Session | None = None    # обычная сессия до первого слова клиента (не вытесняет живую)
         self._pair_sess: _Session | None = None
 
     # ── жизненный цикл ───────────────────────────────────────────────────────
@@ -52,6 +53,14 @@ class PairServer(InboundMixin):
     async def stop(self) -> None:
         await self._close_server()
 
+    async def drop_session(self) -> None:
+        """Обычную сессию закрыть по «недоступен» живости: сокет полуоткрыт, слова
+        в него уходили бы в никуда. Слушатель остаётся — новая сессия от клиента."""
+        sess = self._sess
+        if sess is not None:
+            log.info("канал пары: сессия закрыта — линк пары молчит")
+            await close_session(sess)                         # finally обслуживания снимет _sess и отметки
+
     @property
     def online(self) -> bool:
         return self._sess is not None and self._sess.hello
@@ -80,6 +89,12 @@ class PairServer(InboundMixin):
             if msg.get("pair"):
                 await self._serve_pairing(reader, sess, msg, last_seq)
                 return
+            want = await asyncio.to_thread(self.services.reserve_acceptor_address)
+            if want and str(peer[0]) != want:
+                # обычная сессия — только со второй стороны /30 линка пары: чужой адрес внутри
+                # линка с перехваченным hello не говорит с ботом как вторая сторона
+                log.warning("канал пары: обычная сессия с %s, а вторая сторона линка — %s — отвергнута", peer[0], want)
+                return
             await self._serve_session(reader, sess, msg, last_seq)
         except (gwlink.ProtocolError, asyncio.TimeoutError, ValueError, TypeError, ConnectionError, OSError) as e:
             log.info("канал пары: коннект с %s отвергнут (%s)", peer[0], e)
@@ -92,6 +107,9 @@ class PairServer(InboundMixin):
                 self._pair_sess = None
                 with contextlib.suppress(Exception):
                     await asyncio.to_thread(self.services.reserve_pair_session_closed, sess.sid)
+            if self._pending is sess:
+                self._pending = None
+            sess.ready.set()                                 # ждущие отправки — не до таймаута
             await close_session(sess)
 
     async def _serve_pairing(self, reader, sess: _Session, hello: dict, last_seq: int) -> None:
@@ -125,23 +143,49 @@ class PairServer(InboundMixin):
             break
 
     async def _serve_session(self, reader, sess: _Session, hello: dict, last_seq: int) -> None:
+        sess.caps = [str(c)[:16] for c in (hello.get("caps") or [])[:16]]
+        # hello не подписан нонсом слушателя — его повтор изнутри линка открыл бы сессию.
+        # Поэтому новая сессия получает st сразу (клиент ждёт его первым), а прежнюю
+        # вытесняет и открывается в домене только по первому слову клиента, подписанному
+        # моим нонсом этой сессии, — до того живая сессия цела
+        self._pending = sess
+        if not await send_line(sess, "st", await asyncio.to_thread(self.services.reserve_st_body_sent)):
+            return
+        first = None
+        try:
+            line = await asyncio.wait_for(reader.readline(), HELLO_TIMEOUT)
+            if line:
+                first = gwlink.unpack(sess.key, line, last_seq=last_seq, nonce=sess.sn)
+        finally:
+            if first is None:
+                # st ушло сессии, которая так и не открылась: отпечаток — снова не отправленный,
+                # живой сессии такт пошлёт st заново
+                with contextlib.suppress(Exception):
+                    await asyncio.to_thread(self.services.reserve_st_sent_reset)
+        if first is None:
+            return
+        last_seq = int(first.get("seq") or 0)
+        if self._pending is sess:
+            self._pending = None
         old, self._sess = self._sess, sess
         if old is not None and old is not sess:
             await close_session(old)
-        sess.hello = True
-        sess.caps = [str(c)[:16] for c in (hello.get("caps") or [])[:16]]
         await self.notes(await asyncio.to_thread(self.services.reserve_session_opened, hello))
-        if not await send_line(sess, "st", await asyncio.to_thread(self.services.reserve_st_body_sent)):
-            return
+        # на связи — только после своего st: клиент ждёт его первым и рвёт сессию на любом
+        # другом слове (задания кворума, ушедшие в это окно, начинали бы сессию)
+        sess.hello = True
+        sess.ready.set()
+        await self.flush_outbox()
+        msg = first
         while True:
+            await self.notes(await asyncio.to_thread(self.services.reserve_last_word))
+            if not await self._handle_safe(sess, msg):
+                break
             line = await reader.readline()
             if not line:
                 break
             msg = gwlink.unpack(sess.key, line, last_seq=last_seq, nonce=sess.sn)
             last_seq = int(msg.get("seq") or 0)
-            await self.notes(await asyncio.to_thread(self.services.reserve_last_word))
-            if not await self._handle_safe(sess, msg):
-                break
 
     # ── события из чата ──────────────────────────────────────────────────────
 
@@ -170,6 +214,11 @@ class PairServer(InboundMixin):
         await self.ensure()
 
     async def send(self, kind: str, body: dict | None = None) -> bool:
-        if self._sess is None or not self._sess.hello:
+        sess = self._sess or self._pending
+        if sess is not None and not sess.hello:
+            # сессия открыта, своё st ещё не ушло — слово после него, а не первым
+            with contextlib.suppress(asyncio.TimeoutError):
+                await asyncio.wait_for(sess.ready.wait(), HELLO_TIMEOUT)
+        if sess is None or self._sess is not sess or not sess.hello:
             return False
-        return await send_line(self._sess, kind, body)
+        return await send_line(sess, kind, body)

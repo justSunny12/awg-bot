@@ -116,6 +116,17 @@ async def test_a_replica_that_did_not_leave_returns_the_right_to_answer_to_the_p
         "реплика не ушла, а поллинг не возвращён — бот молчит у обоих серверов"
 
 
+async def test_a_failure_after_the_polling_stopped_gives_the_polling_back(mv, act, monkeypatch):
+    rm.to_step(act.svc, "release")
+
+    def boom():
+        raise RuntimeError("база занята")
+    monkeypatch.setattr(act.svc, "reserve_release_build", boom)
+    await rsvactions.run([("release",)])
+    assert not act.released and act.log[-1] == "pc.wake", f"поллинг остановлен и не возвращён после сбоя: {act.log}"
+    assert act.svc.rsv_get("rsv_out")["step"] == "release" and act.svc.reserve_poll() == "mine"
+
+
 # ── take_tg и прочие действия ───────────────────────────────────────────────
 
 async def test_take_tg_confirms_with_taken_and_moves_the_record_step(mv, act):

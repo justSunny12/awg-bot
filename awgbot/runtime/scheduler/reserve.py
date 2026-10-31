@@ -24,9 +24,15 @@ def setup_reserve_jobs(scheduler, services, bot) -> None:
                 notes = list(notes) + list(await asyncio.to_thread(services.reserve_pair_confirm_tick))
             if notes:
                 await send_notifications(bot, notes)
+            from awgbot.runtime import pairlink
             if act == "ping":
-                from awgbot.runtime import pairlink
                 await pairlink.send("ping", {"n": services.reserve_ping_nonce()})
+            elif act == "down":
+                # линк молчит, а TCP сессии полуоткрыт: сам он до keepalive ядра не умрёт,
+                # и слова уходили бы в никуда — сессию закрываем, следующая начнётся с st
+                await pairlink.drop_session()
+            elif act == "up":
+                pairlink.wake()                           # клиенту канала не досиживать отступ: линк ожил
         except Exception as e:                           # noqa: BLE001
             log.warning("резерв: такт живости: %s", e)
         try:
@@ -54,8 +60,9 @@ def setup_reserve_jobs(scheduler, services, bot) -> None:
                 if not pairlink.online():                 # канала пары нет — слова второй стороне подождут
                     dropped = [a for a in (acts or []) if a and a[0] == "send"]
                     acts = [a for a in (acts or []) if a and a[0] != "send"]
-                    if any(a[1] == "qprobe" for a in dropped) and hasattr(services, "reserve_qprobe_reset"):
-                        await asyncio.to_thread(services.reserve_qprobe_reset)   # отметка «отправлено» снята: конфиг уйдёт следующей сессией
+                    if hasattr(services, "reserve_pair_unsent"):
+                        for kind in {str(a[1]) for a in dropped}:
+                            await asyncio.to_thread(services.reserve_pair_unsent, kind)   # отметка «отправлено» снята: слово уйдёт следующей сессией
                 await rsvactions.run(acts)
             await _quorum.tick(services, _qact)
         except Exception as e:                           # noqa: BLE001

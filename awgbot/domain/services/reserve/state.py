@@ -29,6 +29,17 @@ KEYS: tuple[str, ...] = (
     "rsv_gw_links", "rsv_traffic", "rsv_dns", "rsv_record_watch", "rsv_follow", "rsv_jrn_out", "rsv_jrn_in", "rsv_tail", "rsv_tail_done", "rsv_c9",
     "rsv_quorum", "rsv_probes", "rsv_qkeys", "rsv_qlog", "rsv_rfpeer",
 )
+# Отметки «отправлено» слов второй стороне по каналу пары, по видам слова: в памяти
+# процесса (`__dict__`) и в `rsv_view`. Ставятся при сборке слова; не ушло — снимаются
+# (`reserve_pair_unsent`), новая сессия начинает их заново (`reserve_pair_sent_reset`).
+# st — не сессионная: его тело уходит в начале каждой сессии само, отметка — отпечаток
+# содержимого (снимается только неудачей отправки). Сторож — tests/integration/test_reserve_sent_marks.
+PAIR_SENT_MEM: dict[str, tuple[str, ...]] = {
+    "qkeys": ("_qkeys_sent", "_qkeys_sent_at"), "qmem": ("_qmem_sent",), "blocks": ("_rsv_blocks_sent",),
+    "jtail": ("_tail_sent_at",), "st": ("_rsv_st_sent",),
+}
+PAIR_SENT_VIEW: dict[str, dict] = {"qprobe": {"qprobe_sent": ""}, "slots": {"slots_sent": [], "slots_at": ""}}
+PAIR_SENT_NOT_SESSION = frozenset({"st"})
 OUT_STATES = ("home", "leaving", "away", "returning")
 IN_STATES = ("idle", "taking", "serving", "releasing", "relay")
 HOSTING = ("taking", "serving", "releasing")     # у стороны — пользователи и бот второй (`rsv_in` и `st.in`)

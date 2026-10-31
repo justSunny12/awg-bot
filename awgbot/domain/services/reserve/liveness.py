@@ -30,7 +30,7 @@ from ..gateway_link.common import log
 
 # машина живости — util/livestep (общая с агентом шлюза); имена оставлены для тестов
 from awgbot.util.livestep import (Liveness, step, PROBE_EVERY, PROBE_COUNT,  # noqa: E402,F401
-                                  ping as _ping, alive as _alive, word as _word)
+                                  ping as _ping, alive as _alive, word as _word, pong as _pong)
 
 __all__ = ["Liveness", "step", "PROBE_EVERY", "PROBE_COUNT", "_ping", "_alive", "_word", "ReserveLivenessMixin"]
 
@@ -67,7 +67,10 @@ class ReserveLivenessMixin:
         return total
 
     def reserve_liveness_tick(self, now: float | None = None) -> tuple[str, list[Notification]]:
-        """Такт живости (5 с). Возвращает (действие для канала: ping/"", уведомления)."""
+        """Такт живости (5 с). Возвращает (действие для канала, уведомления):
+        "ping" — проба по подозрению; "down" — связи нет, текущую сессию канала
+        закрыть (TCP полуоткрыт, сам он этого не заметит до keepalive ядра);
+        "up" — связь вернулась, клиенту канала не ждать отступа; "" — ничего."""
         if not self.reserve_paired():
             self.__dict__.pop("_reserve_liveness", None)
             self.__dict__.pop("_lv_base", None)
@@ -91,9 +94,9 @@ class ReserveLivenessMixin:
             notes.append(Notification(tg_id=int(config.ADMIN_ID),
                                       text=rn.peer_down(self.reserve_peer_name(), self.reserve_down_since())))
             log.warning("резерв: «%s» недоступен — линк пары молчит", self.reserve_peer_name())
-            return "", notes
+            return "down", notes
         if act == "up":
-            return "", self._liveness_up()
+            return "up", self._liveness_up()
         return act, notes
 
     def _liveness_up(self) -> list[Notification]:
@@ -109,9 +112,7 @@ class ReserveLivenessMixin:
         return []
 
     def reserve_pong_in(self, nonce: str) -> list[Notification]:
-        lv = self._lv
-        if nonce == lv.nonce:
-            _word(lv, time.monotonic())
+        _pong(self._lv, time.monotonic(), str(nonce or ""))   # сверка нонса и слово — под замком объекта
         return []
 
     def reserve_ping_nonce(self) -> str:
