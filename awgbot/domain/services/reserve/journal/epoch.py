@@ -33,7 +33,7 @@ from __future__ import annotations
 from awgbot.util.rsvjrn import schema_too_old
 
 from ...gateway_link.common import log
-from ..state import HOSTING
+from ..state import HOSTING, _LOCK
 from .ship import epoch_sane
 
 
@@ -154,12 +154,23 @@ class ReserveEpochMixin:
 
     def reserve_epoch_sync(self) -> None:
         """Роль — по правилу; переход — передача эпохи (эпоха + 1, synchronous = FULL).
-        Бот основы на резерве эпоху берёт и отдаёт по журналу (guestj), не по паре."""
+        Бот основы на резерве эпоху берёт и отдаёт по журналу (guestj), не по паре.
+        Сверка и переход — под замком резерва: сюда приходят такт, поллинг (слово Telegram),
+        обработчики канала пары и ответчик кворума (принятая эпоха) из разных потоков, а
+        решение опирается на прочитанные jrn_meta и отметки; подготовка хвоста (откат в
+        базе и пиры — вызовы awg) — уже вне замка."""
         if getattr(self, "guest", False):
             return
+        with _LOCK:
+            fork = self._epoch_sync_locked()
+        if fork:                                              # точка гостя известна — хвост готовить сразу
+            self.reserve_tail_finalize(fork)
+
+    def _epoch_sync_locked(self) -> int:
+        """Переход эпохи по правилу; число — точка гостя, по которой готовить хвост (0 — нечего)."""
         want, why = self._follow_wanted()
         if want == self.reserve_following():
-            return
+            return 0
         if want:
             # эпоха и точка расхождения бота на резерве, если он открылся сам (авария), — его, а не
             # моя + 1 и мой последний номер; не знаю — подтверждённое резервом (дальше — хвост)
@@ -193,20 +204,19 @@ class ReserveEpochMixin:
             if meta is not None:
                 self.rsv_update("rsv_out", jrn_report=None)   # сводка эпохи для Т-РУ5б — с начала следования
                 self.db.jrn_seen_reset(f"{self.db.jrn_line()}:b")   # новый гость — счёт его пачек заново
-                if fork:                                      # точка гостя известна — хвост готовить сразу
-                    self.reserve_tail_finalize(fork)
                 log.warning("резерв: эпоха %s у «%s» — здесь следование (%s)", meta["epoch"],
                             self.reserve_peer_name(), why)
+                return fork
         else:
             meta_now = self.db.jrn_meta()
             if meta_now["holder"] == "self" and meta_now["role"] == "follower":
-                return                                        # ограждение кворума (4.2.0, jrn_fence): снимает только jrn_unfence
+                return 0                                      # ограждение кворума (4.2.0, jrn_fence): снимает только jrn_unfence
             adopted = bool(self.rsv_get("rsv_qlog").get("adopted"))
             if self.reserve_out() != "home":
                 if adopted:
                     self.rsv_update("rsv_qlog", adopted=None)
             elif meta_now["holder"] == "peer" and adopted and self._quorum_rules_home() and self._quorum_decides():
-                return                                        # эпоха принята по кворуму (jrn_adopt): вернёт правило лидера (v ≥ 2)
+                return 0                                      # эпоха принята по кворуму (jrn_adopt): вернёт правило лидера (v ≥ 2)
             applied = int(meta_now["applied"])
             prev_e = int(meta_now["epoch"]) if meta_now["holder"] == "peer" else 0
             meta = self.db.jrn_pass(holder="self", role="holder", why=why, fork_i=applied)   # его события — по applied
@@ -218,6 +228,7 @@ class ReserveEpochMixin:
                     # эпоху взял у бота на резерве без его released (срыв, зависший вебхук, «вернуть без
                     # резерва»): его правки после applied — хвостом при встрече, одним путём (rsv_c9)
                     self.reserve_c9_start(prev_e)
+        return 0
 
     def reserve_epoch_check(self) -> None:
         """Такт: страховка — роль снова сверяется с состоянием."""
