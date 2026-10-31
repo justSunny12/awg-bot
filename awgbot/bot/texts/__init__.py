@@ -127,7 +127,7 @@ from .broadcast import (
     extension_reserve, broadcast_prompt, broadcast_preview, broadcast_preview_photos,
     broadcast_too_many_photos, broadcast_too_long, broadcast_report)
 from .gateway import (
-    QUESTION_STALE, LINK_KEYS_ACCEPTED, UPLINK_APPLYING, UPLINK_BUSY, QUESTION_ANSWERED, GW_TOKEN_SWITCHED, cfg_question_text, cfg_answer_text, cfg_pending_line, keep_answer_text, keep_answer_failed,
+    QUESTION_STALE, LINK_KEYS_ACCEPTED, UPLINK_APPLYING, MAIL_CHECKING_TOAST, MAIL_CHECKING, UPLINK_BUSY, QUESTION_ANSWERED, GW_TOKEN_SWITCHED, cfg_question_text, cfg_answer_text, cfg_pending_line, keep_answer_text, keep_answer_failed,
     gateway_panel, gateway_health, gateway_transit_text, gateway_transit_ask_domain, gateway_transit_too_many,
     gateway_transit_result, gateway_transit_removed_toast, short_name,
     smb_line, own_lists_short,
@@ -229,7 +229,7 @@ __all__ = [
     "BROADCAST_DAYS_BAD", "BROADCAST_DAYS_OTHER", "subscription_mark", "broadcast_days_prompt",
     "extension_header", "EXTENSION_HEADER_MASK", "announcement_text", "extension_reserve", "broadcast_prompt",
     "broadcast_preview", "broadcast_preview_photos", "broadcast_too_many_photos",
-    "broadcast_too_long", "broadcast_report", "QUESTION_STALE", "LINK_KEYS_ACCEPTED", "UPLINK_APPLYING", "UPLINK_BUSY", "QUESTION_ANSWERED", "GW_TOKEN_SWITCHED", "cfg_question_text", "cfg_answer_text", "cfg_pending_line", "keep_answer_text", "keep_answer_failed", "gateway_panel", "gateway_health",
+    "broadcast_too_long", "broadcast_report", "QUESTION_STALE", "LINK_KEYS_ACCEPTED", "UPLINK_APPLYING", "MAIL_CHECKING_TOAST", "MAIL_CHECKING", "UPLINK_BUSY", "QUESTION_ANSWERED", "GW_TOKEN_SWITCHED", "cfg_question_text", "cfg_answer_text", "cfg_pending_line", "keep_answer_text", "keep_answer_failed", "gateway_panel", "gateway_health",
     "gateway_transit_text", "gateway_transit_ask_domain", "gateway_transit_too_many", "gateway_transit_result", "gateway_transit_removed_toast", "smb_line", "own_lists_short", "GW_SSH_FILTER_ON_ALERT",
     "short_name", "GW_OLD_BACKUP_REFUSED", "GW_RELAY_SENDING", "GW_RELAY_BUSY", "gw_relay_result",
     "host_rebooted", "gw_confirm_reassert", "SYNC_TAILS", "REASSERT_FAIL_HINT", "REFRESH_PAYLOAD", "QUESTIONS_NONE", "KEEP_LABEL", "ACCEPT_LABEL",
