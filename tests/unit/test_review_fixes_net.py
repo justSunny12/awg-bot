@@ -329,6 +329,13 @@ def test_a_change_of_the_members_drops_decided_and_keeps_the_count():
 
 
 def test_the_net_helpers_agree_on_the_telegram_ranges():
+    """Набор Telegram файервола зоны (nftguard TG_OUT4) — тот же, что у скриптов
+    (TG_NETS обвязки линка к резерву) и у метки сокетов агента (tgmark.TG_RANGES):
+    разойдись они — часть адресов Bot API идёт мимо обхода или режется выходом."""
+    from awgbot.domain.gateway import tgmark
     from awgbot.infra.nftguard import common
+    from tests.unit.test_quorum_cov_scripts import TG_NETS
     for n in common.TG_OUT4:
         ipaddress.ip_network(n)
+    assert list(common.TG_OUT4) == TG_NETS, "набор Telegram файервола разошёлся с набором скриптов"
+    assert list(tgmark.TgMarkMixin.TG_RANGES) == TG_NETS, "набор Telegram метки агента разошёлся с набором скриптов"
