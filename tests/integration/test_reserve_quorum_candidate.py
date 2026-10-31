@@ -306,6 +306,30 @@ def test_the_no_of_a_dead_gateway_channel_does_not_count(c):
     assert c.s.reserve_quorum_candidate_view()["no"] == 1
 
 
+def test_a_gateway_removed_from_the_line_mid_episode_lowers_the_threshold(box):
+    """Состав линии сменился посреди эпизода: v = 4 (a, b1, b2, b3), свой «не вижу»
+    и «нет» b1 — 2 из 4, большинства нет; шлюз b3 снят из состава (и его канал
+    закрыт) — голосующих 3, порог 2: тот же счёт стал большинством, через T_up
+    «забираю» — только оставшимся b1 и b2, снятому b3 ни слова."""
+    c = _Cand(box, members=["b", "a", "b1", "b2", "b3"])
+    c.own("uns")
+    c.view(1, "uns")
+    c.view(2, "see")
+    acts = c.tick() + c.run(T_UP + 10)
+    assert c.s.reserve_quorum_candidate_view()["v"] == 4
+    assert not gw_sent(acts, "qtake"), "2 «нет» из 4 — «забираю» без большинства"
+    box.peer_line(members=["b", "a", "b1", "b2"])
+    box.gone(3)
+    c.tick()
+    view = c.s.reserve_quorum_candidate_view()
+    assert (view["v"], view["no"]) == (3, 2), f"после снятия шлюза порог не пересчитан: {view}"
+    acts = c.run(T_UP - 5)
+    assert not gw_sent(acts, "qtake"), "после смены состава «забираю» раньше полного T_up"
+    acts = c.run(10)
+    assert sorted(s for s, _ in gw_sent(acts, "qtake")) == [1, 2], \
+        f"2 «нет» из 3 после снятия шлюза — не забрано или забрано не у тех: {gw_sent(acts, 'qtake')}"
+
+
 def test_hosting_her_users_there_is_no_candidate(c):
     c.s.reserve_set_in("serving")
     acts = _majority(c) + c.run(T_UP + 10)
