@@ -256,11 +256,15 @@ class BackupsMixin:
         from awgbot.core import config
         from awgbot.domain.notices import backup as nb
         from awgbot.domain.services.types import Notification
-        w = self._wait()
-        rec = (w.get("slots") or {}).pop(str(int(slot_id)), None)
-        if rec is None:
-            return []
-        self._wait_save(w)
+        # чтение и запись ожидания — под замком записи: hello двух слотов (потоки
+        # приёма) или hello и такт (поток канала) иначе затирали друг другу снятое,
+        # и вышедший на связь шлюз через 15 минут шёл в «не вышел»
+        with self.db.transaction(immediate=True):
+            w = self._wait()
+            rec = (w.get("slots") or {}).pop(str(int(slot_id)), None)
+            if rec is None:
+                return []
+            self._wait_save(w)
         return [Notification(config.ADMIN_ID, nb.gateway_back(self._wait_ref(int(slot_id), rec)), silent=True)]
 
     def restore_wait_tick(self) -> list:
@@ -269,19 +273,19 @@ class BackupsMixin:
         from awgbot.core import config
         from awgbot.domain.notices import backup as nb
         from awgbot.domain.services.types import Notification
-        w = self._wait()
-        if not w:
-            return []
-        try:
-            age = timeutil.elapsed(timeutil.parse_iso(str(w.get("at"))))
-        except ValueError:
-            age = nb.RESTORE_WAIT_MIN * 60
-        if age < nb.RESTORE_WAIT_MIN * 60:
-            return []
-        notes = [Notification(config.ADMIN_ID,
-                              nb.gateway_not_back(self._wait_ref(int(n), rec), empty=bool(w.get("empty")),
-                                                  link_if=str(rec.get("link_if") or ""),
-                                                  bot=self._wait_bot(int(n))), silent=True)
-                 for n, rec in sorted((w.get("slots") or {}).items(), key=lambda x: int(x[0]))]
-        self.db.set_state(self.WAIT_KEY, "")
-        return notes
+        with self.db.transaction(immediate=True):            # см. restore_wait_hello
+            w = self._wait()
+            if not w:
+                return []
+            try:
+                age = timeutil.elapsed(timeutil.parse_iso(str(w.get("at"))))
+            except ValueError:
+                age = nb.RESTORE_WAIT_MIN * 60
+            if age < nb.RESTORE_WAIT_MIN * 60:
+                return []
+            self.db.set_state(self.WAIT_KEY, "")
+        return [Notification(config.ADMIN_ID,
+                             nb.gateway_not_back(self._wait_ref(int(n), rec), empty=bool(w.get("empty")),
+                                                 link_if=str(rec.get("link_if") or ""),
+                                                 bot=self._wait_bot(int(n))), silent=True)
+                for n, rec in sorted((w.get("slots") or {}).items(), key=lambda x: int(x[0]))]
