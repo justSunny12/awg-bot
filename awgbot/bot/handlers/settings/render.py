@@ -36,6 +36,9 @@ async def _screen(sec: str, services, key: str = ""):
     if sec == "rsv_dns":
         from .reserve.dns import dns_screen
         return await dns_screen(services)
+    if sec == "rsv_c9":
+        from .reserve.c9wait import c9_screen
+        return await c9_screen(services)
     if sec == "rsv":
         if config.GUEST:
             from .reserve.guest import guest_screen

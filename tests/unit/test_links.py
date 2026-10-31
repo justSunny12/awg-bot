@@ -125,7 +125,7 @@ def test_a_code_ending_in_the_mark_stays_whole(code):
 @pytest.mark.parametrize("payload, want", [
     ("online", ("online", 0)), ("expiring", ("expiring", 0)), ("unassigned", ("unassigned", 0)),
     ("upd", ("upd", 0)), ("traffic", ("traffic", 0)), ("traffic_local", ("traffic", 0)),
-    ("migration", ("migration", 0)), ("rsv", ("set_rsv", 0)),
+    ("migration", ("migration", 0)), ("rsv", ("set_rsv", 0)), ("rsv-c9", ("set_rsv_c9", 0)),
     ("traffic-3", ("traffic_dev", 3)), ("traffic-3-t", ("traffic_dev", 3)), ("traffic_local-4-t", ("traffic_dev", 4)),
     ("traffic_local-4", ("traffic_dev", 4)),
     ("extend-4", ("extend", 4)), ("gw-2", ("gw", 2)), ("cl-5", ("cl", 5)), ("dev-7", ("dev", 7)),

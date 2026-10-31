@@ -82,6 +82,12 @@ def card(*, ready: bool, rf_on: bool, has_gateway: bool, ret_immediate: bool, na
         _back())
 
 
+def c9_wait(can_drop: bool = True) -> InlineKeyboardMarkup:
+    """Экран «не ждать» (отметка С9 без рычага): снять ожидание и назад в карточку;
+    отметки уже нет — только назад."""
+    return ui.rows(("🗑 Не ждать", RsvCB(action="c9_drop"), "danger") if can_drop else None, _back("rsv"))
+
+
 def confirm_rfmine_off() -> InlineKeyboardMarkup:
     """Т-РТ4: «⬅️ Отмена» первой, «Выключить» второй."""
     return kc.confirm(SetCB(sec="rsv"), "Выключить", RsvCB(action="rfmine_off"))

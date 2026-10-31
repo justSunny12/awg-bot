@@ -64,7 +64,7 @@ class ReserveScreenMixin:
                 "code_by": str((self.rsv_get("rsv_view").get("code") or {}).get("by") or ""),
                 "mem_free": int(ps.get("mem_free") or 0), "here": self._online_count(), "there": int(ps.get("there") or 0),
                 "force_why": self.reserve_force_check() if self.reserve_out() == "away" else "пользователи не у резерва",
-                "await_merge": bool(out.get("await_merge")),
+                "await_merge": bool(out.get("await_merge")), "c9_wait": self.reserve_c9_wait_view(),
                 "jrn_on": self.reserve_jrn_on(), "jrn_moved": self.reserve_jrn_moved(),
                 "rfpeer": self.reserve_rfpeer_view() if hasattr(self, "reserve_rfpeer_view") else {},
                 "jrn_follow": self.reserve_follow_view(),
