@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 
 from .common import log
 
@@ -40,11 +39,30 @@ class DispatchMixin:
 
     async def _inbox_drain(self) -> None:
         """Прочитанное в сессии — обработать до того, как сокет снят: ответы
-        уходят по этой сессии, а следующая не начнётся посреди обработки."""
+        уходят по этой сессии, а следующая не начнётся посреди обработки.
+        Отмена задачи сессии посреди дообработки (остановка клиента) — очередь
+        брошена, обработчик снят: ждать документ минуты стоп не должен."""
+        task = self._inbox_task
+        if task is None or task.done():
+            return
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            if task.done():
+                return                                  # снят обработчик, не сессия (_inbox_abandon)
+            self._inbox_abandon()
+            raise
+        except Exception:                                 # noqa: BLE001 — _handle своё ловит сам
+            pass
+
+    def _inbox_abandon(self) -> None:
+        """Остановка клиента: очередь прочь, обработчик снят — документ в работе
+        не ждём (поток применения доработает сам; ответа не будет — сервер
+        повторит доставку, как и при обрыве сессии прежде)."""
+        self._inbox.clear()
         task = self._inbox_task
         if task is not None and not task.done():
-            with contextlib.suppress(BaseException):
-                await asyncio.shield(task)
+            task.cancel()
 
     async def _handle(self, msg: dict) -> None:
         """Разбор одного сообщения. Исключение внутри — в журнал, а не наружу:

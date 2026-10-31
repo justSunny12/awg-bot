@@ -12,7 +12,9 @@
 порядок, на который рассчитывает сервер (роль, фиды, ключи после
 документа), сломан; документ, принятый к обработке и потерянный с концом
 сессии, — сервер ждёт ответа, которого не будет; два устаревших документа
-подряд — минуты лишнего применения уже заменённого.
+подряд — минуты лишнего применения уже заменённого; конец сессии, ждущий
+документ и при отмене задачи, — остановка агента (перезапуск юнита) висит
+минуты.
 """
 from __future__ import annotations
 
@@ -139,6 +141,46 @@ async def test_words_read_before_the_session_ends_are_handled_on_it(vps):
     assert [d["gen"] for d in agent.docs] == [7]
     assert "cfg_ack" in _kinds(conn), _kinds(conn)
     assert agent.pending == {}
+
+
+async def test_cancelling_the_session_task_does_not_wait_for_a_slow_document(vps):
+    """Задача сессии отменена (остановка клиента), пока документ применяется:
+    конец сессии не ждёт его, обработчик снят, очередь брошена — иначе стоп
+    агента (и перезапуск юнита) висел бы минуты за документом."""
+    agent = _SlowAgent()
+    conn = _session(vps, ("cfg", {"gen": 7}), ("role", {"active": False}))
+    client = linkclient.LinkClient(agent)
+    task = asyncio.create_task(client._connect_once())
+    try:
+        await _until(agent.applying.is_set)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(task, timeout=2)
+        assert client._inbox_task is None or client._inbox_task.done(), "обработчик очереди пережил сессию"
+        assert not client._inbox, "очередь входящих не брошена"
+        assert agent.seen.count("role") == 1, "роль из брошенной очереди обработана после отмены"
+    finally:
+        agent.release.set()
+        conn.close()
+
+
+async def test_stop_during_the_end_of_session_drain_does_not_wait_either(vps, monkeypatch):
+    """ВПС закрыл сессию, пока документ применяется: конец сессии дорабатывает
+    очередь (ответ — по ней); остановка клиента в этот момент очередь бросает."""
+    monkeypatch.setattr("awgbot.core.config.ROLE", "gateway")
+    agent = _SlowAgent()
+    conn = _Conn([_reply(KEY, "role", {"active": True}), _reply(KEY, "cfg", {"gen": 7}, seq=2, first=False)])
+    vps.sessions.append(conn)
+    client = linkclient.LinkClient(agent)
+    client._task = asyncio.create_task(client._connect_once())
+    try:
+        await _until(agent.applying.is_set)
+        await asyncio.sleep(0.05)
+        assert not client._task.done(), "конец сессии не дождался документа"
+        await asyncio.wait_for(client.stop(), timeout=2)
+        assert client._task is None and client._inbox_task is None
+    finally:
+        agent.release.set()
 
 
 async def test_stop_does_not_wait_for_a_slow_document(vps, monkeypatch):
