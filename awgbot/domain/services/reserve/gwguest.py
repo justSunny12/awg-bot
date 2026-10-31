@@ -149,7 +149,7 @@ class ReserveGwGuestMixin:
         else:
             prefix = ""
         known = set(int(k) for k in (self.reserve_guest_links() if hasattr(self, "reserve_guest_links") else {}) if str(k).isdigit())
-        for slot in sorted(known | set(int(k) for k in self._gwv)):
+        for slot in sorted(known | set(int(k) for k in list(self._gwv))):   # копия: слова шлюзов вставляют из потоков
             rec = self._gwv.get(slot) or {}
             online = bool(rec.get("online")) and (rec.get("lv") is None or rec["lv"].state != "down")
             w = (views.get(f"{prefix}{int(slot)}") or {}) if prefix else {}
@@ -177,4 +177,4 @@ class ReserveGwGuestMixin:
         if not force and self.__dict__.get("_rsv_state_sent") == packed:
             return []
         self.__dict__["_rsv_state_sent"] = packed
-        return [("gw", s, "state", body) for s, rec in self._gwv.items() if rec.get("online")]
+        return [("gw", s, "state", body) for s, rec in list(self._gwv.items()) if rec.get("online")]

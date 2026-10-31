@@ -83,3 +83,35 @@ def test_without_hosting_the_guest_epoch_is_not_taken(box):
     Cand(box, hello=False)
     box.s.reserve_guest_jrn_seen({"e": 9})
     assert box.s._state_body().get("e") == 7, "эпоха гостя без приёма пользователей — не факт"
+
+
+# ── обход памяти взглядов и сессий — копией ─────────────────────────────────
+
+class _Inserting(dict):
+    """Запись, при чтении которой «поток слов» вставляет новую — как qview/hello из другого потока."""
+
+    def __init__(self, outer: dict, key, val, **kw):
+        super().__init__(**kw)
+        self._outer, self._key, self._val = outer, key, val
+
+    def get(self, k, default=None):
+        if self._key not in self._outer:
+            self._outer[self._key] = self._val
+        return super().get(k, default)
+
+
+def test_the_views_of_the_line_survive_a_word_inserted_meanwhile(box):
+    Cand(box, hello=False)
+    views = box.s._qgwviews
+    views["b1"] = _Inserting(views, "b2", {"w": "see", "l": LINE}, w="uns", l=LINE)
+    got = box.s.reserve_quorum_gw_views(LINE)                 # прежде: RuntimeError — такт кандидата терялся
+    assert "b1" in got
+
+
+def test_the_state_word_survives_a_session_opened_meanwhile(box):
+    box.hello(1)
+    gwv = box.s._gwv
+    gwv[1] = _Inserting(gwv, 3, {"online": False}, **dict(gwv[1]))
+    acts = box.s.reserve_gw_state_actions(force=True)          # прежде: RuntimeError — state шлюзам не уходил
+    assert gw_sent(acts, "state") and gw_sent(acts, "state")[0][0] == 1
+    assert box.s.reserve_gw_links_view()

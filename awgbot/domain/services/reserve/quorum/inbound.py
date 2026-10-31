@@ -163,5 +163,5 @@ class ReserveQuorumInboundMixin:
     def reserve_quorum_gw_views(self, l: str, t: str = "h") -> dict:
         """Взгляды узлов на линию `l` (шлюзы и второй сервер), как они известны мне;
         `t` — цель: сервер линии дома (`h`) или его клон у второй стороны (`r`)."""
-        return {n.split(":", 1)[0]: v for n, v in self._qgwviews.items()
+        return {n.split(":", 1)[0]: v for n, v in list(self._qgwviews.items())    # копия: qview вставляют потоки слов
                 if str(v.get("l") or "") == l and str(v.get("t") or "h") == t}
