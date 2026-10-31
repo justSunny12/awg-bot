@@ -129,6 +129,53 @@ async def test_holder_blocks_outside_following_are_dropped(world):
     assert world.svc.rsv_get("rsv_follow") == {}
 
 
+async def test_a_fenced_leader_does_not_take_the_blocks_of_the_other_side(world):
+    """Лидер, лишённый кворума (держатель self, роль follower), «следует» по журналу, но
+    пользователи у него: слово `blocks` второй стороны — не решения держателя, DROP
+    остаётся по своей базе, и список в rsv_follow не ложится."""
+    assert world.svc.db.jrn_fence(why="тест: кворума нет") is not None
+    assert world.svc.reserve_following(), "предпосылка: ограждённый лидер считается следующим"
+    await _Handler(world.svc)._in_blocks(_sess(), {"addrs": [world.a_petr]})
+    assert world.fake.blocked == {world.a_ivan}, f"блокировки второй стороны легли на ограждённого лидера: {world.fake.blocked}"
+    assert not world.svc.rsv_get("rsv_follow").get("blocks_at")
+    assert world.svc.reserve_holder_blocks() is None
+    world.svc.reconcile_blocks(True)
+    assert world.fake.blocked == {world.a_ivan}
+
+
+def test_the_end_of_following_keeps_a_monthly_mark_set_while_it_was_clearing(world):
+    """`reserve_follow_clear` читает отложенный месяц и пишет ключ заново: отметка
+    `reserve_monthly_defer` из другого потока в этом окне терялась — слияние после
+    возврата сбрасывало бы месяц второй раз. Чтение и запись — под замком резерва."""
+    import threading
+    svc = world.svc
+    _away(world)
+    svc.reserve_monthly_defer("2026-10")
+    real_get = svc.rsv_get
+    in_read, go = threading.Event(), threading.Event()
+
+    def slow_get(key):
+        out = real_get(key)
+        if key == "rsv_follow" and threading.current_thread().name == "clear":
+            in_read.set()
+            go.wait(2)                                        # окно между чтением и записью
+        return out
+
+    svc.rsv_get = slow_get
+    t = threading.Thread(target=svc.reserve_follow_clear, name="clear")
+    t.start()
+    assert in_read.wait(2)
+    deferred = threading.Thread(target=svc.reserve_monthly_defer, args=("2026-11",))
+    deferred.start()
+    deferred.join(0.3)
+    assert deferred.is_alive(), "отметка месяца записалась посреди очистки — замка нет"
+    go.set()
+    t.join(2)
+    deferred.join(2)
+    svc.rsv_get = real_get
+    assert svc.rsv_get("rsv_follow").get("monthly_deferred") == "2026-11", "отметка месяца потеряна при очистке следования"
+
+
 async def test_the_holder_list_is_capped(world):
     _away(world)
     await _Handler(world.svc)._in_blocks(_sess(), {"addrs": [f"10.8.{i // 250}.{i % 250 + 2}" for i in range(5000)]})

@@ -23,6 +23,7 @@ from awgbot.util import timeutil
 
 from ...gateway_link.common import log
 from ..away import AWAY_REFUSED
+from ..state import _LOCK
 from ...types import Notification, ServiceError
 
 
@@ -34,9 +35,12 @@ class ReserveFollowMixin:
 
     # ── блокировки держателя ────────────────────────────────────────────────
     def reserve_holder_blocks_in(self, addrs: list[str]) -> None:
-        """`blocks` от бота основы на резерве: DROP оставшимся здесь сессиям по его решениям."""
-        if not self.reserve_following():
-            log.info("резерв: блокировки от «%s» вне следования — пропущены", self.reserve_peer_name())
+        """`blocks` от бота основы на резерве: DROP оставшимся здесь сессиям по его решениям.
+        Только пока держатель — вторая сторона (`holder == "peer"`): лишённый кворума лидер
+        тоже «следует» (holder self, role follower), но пользователи у него, а слово `blocks`
+        от второй стороны тогда не решения держателя."""
+        if not self._holder_is_peer():
+            log.info("резерв: блокировки от «%s» вне следования за ним — пропущены", self.reserve_peer_name())
             return
         clean = sorted({str(a) for a in addrs if a})[:4096]
         self.rsv_update("rsv_follow", blocks=clean, blocks_at=timeutil.now_iso())
@@ -45,10 +49,18 @@ class ReserveFollowMixin:
         except Exception as e:                                # noqa: BLE001
             log.warning("резерв: блокировки держателя не наложены: %s", e)
 
+    def _holder_is_peer(self) -> bool:
+        """Право записи — у второй стороны (следование за ней), а не ограждение лидера."""
+        try:
+            return str(self.db.jrn_meta()["holder"]) == "peer"
+        except Exception as e:                                # noqa: BLE001
+            log.warning("резерв: держатель журнала не прочитан (%s) — считаю, что не вторая сторона", e)
+            return False
+
     def reserve_holder_blocks(self) -> list[str] | None:
         """Адреса для DROP в следовании; None — не следование или держатель их ещё не прислал
         (тогда — по своей базе: решения в ней с начала следования не меняются)."""
-        if not self.reserve_following() or self.reserve_jrn_moved():
+        if not self._holder_is_peer() or self.reserve_jrn_moved():
             return None                                       # журнал: решения держателя уже в моей базе
         f = self.rsv_get("rsv_follow")
         if not f.get("blocks_at"):
@@ -58,9 +70,11 @@ class ReserveFollowMixin:
     # ── месячный сброс ──────────────────────────────────────────────────────
     def reserve_monthly_defer(self, ym: str) -> None:
         """Сброс месяца пришёлся на следование: его сделал держатель."""
-        if str(self.rsv_get("rsv_follow").get("monthly_deferred") or "") < ym:
+        with _LOCK:
+            if str(self.rsv_get("rsv_follow").get("monthly_deferred") or "") >= ym:
+                return
             self.rsv_update("rsv_follow", monthly_deferred=ym)
-            log.info("резерв: месячный сброс %s — у бота на «%s»", ym, self.reserve_peer_name())
+        log.info("резерв: месячный сброс %s — у бота на «%s»", ym, self.reserve_peer_name())
 
     def reserve_monthly_settle(self) -> None:
         """Слияние реплики прошло: сброс, сделанный держателем, учтён — отметка месяца
@@ -74,9 +88,11 @@ class ReserveFollowMixin:
 
     def reserve_follow_clear(self) -> None:
         """Конец следования: блокировки держателя прочь; отложенный месячный сброс
-        остаётся — его учитывает слияние после возврата (reserve_monthly_settle)."""
-        f = self.rsv_get("rsv_follow")
-        self.rsv_put("rsv_follow", {"monthly_deferred": f["monthly_deferred"]} if f.get("monthly_deferred") else None)
+        остаётся — его учитывает слияние после возврата (reserve_monthly_settle). Чтение и
+        запись — под замком: параллельная отметка месяца (reserve_monthly_defer) иначе терялась."""
+        with _LOCK:
+            f = self.rsv_get("rsv_follow")
+            self.rsv_put("rsv_follow", {"monthly_deferred": f["monthly_deferred"]} if f.get("monthly_deferred") else None)
         self.__dict__.pop("_follow_seen_top", None)
         self.__dict__.pop("_follow_lag_since", None)
 
