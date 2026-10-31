@@ -24,6 +24,14 @@ log = logging.getLogger(__name__)
 
 _ctx: dict = {}
 
+# Виды действий, которые понимает исполнитель (_one). Действия — строковые
+# кортежи из домена: опечатка в виде прежде тихо уходила в log.info, сторож
+# tests/unit/test_rsvactions_kinds.py сверяет литералы домена с этим набором.
+ACTION_KINDS = frozenset({
+    "send", "send_released", "guest", "guestctl", "gw", "gwlink", "notify", "fw", "relay_flush",
+    "live", "release", "restart", "take_tg", "wake_poll", "take_home",
+})
+
 
 def setup(bot, services, pollctl=None) -> None:
     _ctx.update(bot=bot, services=services, pollctl=pollctl)
@@ -47,6 +55,9 @@ def services():
 
 async def run(actions) -> None:
     for act in actions or []:
+        if not act or act[0] not in ACTION_KINDS:
+            log.warning("резерв: неизвестное действие %r — пропущено", act[0] if act else act)
+            continue
         try:
             await _one(act)
         except Exception as e:                               # noqa: BLE001
