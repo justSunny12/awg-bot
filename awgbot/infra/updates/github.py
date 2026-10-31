@@ -106,7 +106,9 @@ def list_releases(meta_cache: Optional[dict] = None, fetch_meta: bool = True,
     meta_tag — метаданные этого тега читаются всегда (переход на выпуск
     бэкапа): установка может быть и не релизной сборкой (предрелизная
     X.Y.Z.N), а без метаданных выпуск бэкапа ложно «не прочитан»."""
-    raw = _up()._request(f"{_API}/repos/{config.UPDATES_REPO}/releases",
+    # per_page=100 — потолок API: без него 30 последних, и установка, отставшая
+    # больше чем на 30 выпусков, не нашла бы своей версии («нерелизная сборка»)
+    raw = _up()._request(f"{_API}/repos/{config.UPDATES_REPO}/releases?per_page=100",
                          "application/vnd.github+json")
     try:
         data = json.loads(raw.decode("utf-8"))

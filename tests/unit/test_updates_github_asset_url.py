@@ -59,7 +59,7 @@ def net(monkeypatch):
 
     def request(url: str, accept: str) -> bytes:
         state["calls"].append(url)
-        if url.endswith("/releases"):
+        if url.endswith("/releases?per_page=100"):
             return json.dumps(state["releases"]).encode()
         return blobs[url]
     monkeypatch.setattr(updates, "_request", request)
