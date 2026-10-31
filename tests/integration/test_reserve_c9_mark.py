@@ -8,14 +8,17 @@
   без released, гость за мёртвым линком мог жить — отметка стоит, пока резерв
   живым словом после перехода домой не скажет, что гостя нет (и его журнал на
   диске не новее перенесённого); тогда такт дома (`reserve_c9_settle`) её снимает;
-- с рычагом (await_merge) такт дома её не трогает — ждёт возврата.
+- с рычагом (await_merge) такт дома её не трогает — ждёт возврата;
+- released при держателе дома сверяет эпоху: отметка другой эпохи (прошлый
+  эпизод) — устарела, снимается, недостающее по её `upto` не просится.
 
 Цена ошибки: висящая отметка перехватывает события эпохи гостя как «хвост С9»
 вместо jstale, держит в `reserve_disk_waiting` ожидание чужого журнала и
 приносит Т-Ж4/Т-Ж5 с устаревшими цифрами при следующем возврате, через
 переезды; заведённая на прежнем пути — то же без единой записи журнала;
 снятая по одной смене состояния — правки людей у живого гостя за мёртвым
-линком теряются молча.
+линком теряются молча; устаревшая отметка при released — jneed хвоста, которого
+у гостя нет, возврат ждёт срок шага и пишет «не применено» о несуществующем.
 """
 from __future__ import annotations
 
@@ -26,7 +29,7 @@ from awgbot.util import timeutil
 
 from tests.integration import _reserve_common as rc
 from tests.integration import _reserve_move as rm
-from tests.integration._reserve_jrn_duo import JCAPS, Duo
+from tests.integration._reserve_jrn_duo import JCAPS, Duo, sends
 
 pytestmark = pytest.mark.integration
 rsv = rc.rsv
@@ -153,3 +156,40 @@ def test_the_lever_with_the_journal_keeps_the_c9_mark_until_the_return(duo):
     duo.a.reserve_stuck_home()
     c9 = duo.a.rsv_get("rsv_c9")
     assert c9.get("e") == guest_e, f"рычаг с журналом без отметки С9 — правки бота на резерве потеряются: {c9}"
+
+
+# ── released при держателе дома: отметка — только своей эпохи ───────────────
+
+def _returning_holder_with_c9(duo) -> dict:
+    """«Вернуть без резерва» на журнале (эпоха здесь, отметка С9 эпохи гостя), резерв вышел на
+    связь с гостем — возврат с шага back_req, право записи остаётся здесь (как _tick_await_merge)."""
+    _following_by_journal(duo)
+    _gone(duo.a)
+    duo.a.reserve_force_home()
+    duo.a.reserve_stuck_home()
+    c9 = duo.a.rsv_get("rsv_c9")
+    assert c9.get("e"), "условие: отметка С9 заведена"
+    duo.a.reserve_set_out("returning", kind="dead", gen=7, return_why="force", await_merge=False, step="back_req")
+    duo.a.reserve_epoch_sync()
+    m = duo.a.db.jrn_meta()
+    assert (m["holder"], m["role"]) == ("self", "holder"), f"условие: на back_req после рычага держатель здесь: {m}"
+    return c9
+
+
+def test_a_released_of_the_c9_epoch_still_asks_for_the_missing_edits(duo):
+    """Отметка той же эпохи, что released, — недостающее после перенесённого просим (jneed)."""
+    c9 = _returning_holder_with_c9(duo)
+    acts = duo.a.reserve_released_jrn_in(int(c9["e"]), int(c9["upto"]) + 3)
+    assert [b["from"] for _, b in sends(acts, "jneed")] == [int(c9["upto"]) + 1], acts
+    assert duo.a.rsv_get("rsv_c9").get("e") == c9["e"], "отметку своей эпохи сняли"
+
+
+def test_a_released_of_another_epoch_drops_the_stale_c9_and_takes_the_epoch(duo):
+    """Отметка прошлого эпизода (не снята фактом) при released другой эпохи: её upto — не о
+    номерах этого гостя; jneed по ней просил бы хвост, которого нет, а возврат ждал бы срок шага."""
+    c9 = _returning_holder_with_c9(duo)
+    duo.a.rsv_update("rsv_c9", e=int(c9["e"]) - 1)        # отметка прежнего эпизода
+    acts = duo.a.reserve_released_jrn_in(int(c9["e"]), int(c9["upto"]) + 3)
+    assert not sends(acts, "jneed"), f"устаревшая отметка С9 запросила хвост, которого нет: {acts}"
+    assert ("take_tg",) in acts, acts
+    assert duo.a.rsv_get("rsv_c9") == {}, "устаревшая отметка С9 осталась — Т-Ж4/Т-Ж5 с чужими цифрами"
