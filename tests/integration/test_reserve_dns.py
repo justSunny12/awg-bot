@@ -84,6 +84,28 @@ def test_dyndns2_splits_the_url_into_user_secret_and_server(mv):
         "сервер хранится без пути — путь /nic/update добавляет провайдер"
 
 
+def test_dyndns2_decodes_the_percent_encoded_login_and_password(mv, monkeypatch):
+    """Логин-почта и пароль со спецзнаками в URL percent-кодированы (иначе urlsplit
+    их не разберёт): провайдеру в basic auth уходят раскодированные, а не «%40»
+    как есть — с ним No-IP отвечает badauth, и аварийный переезд не сменит запись."""
+    from awgbot.util.dnsapi import dyndns2
+    svc = mv.svc
+    svc.reserve_dns_set_provider("dyndns2")
+    svc.reserve_dns_set_token("https://user%40mail.example:p%40ss%2Fw%23rd@dyn.example.org/nic/update")
+    d = svc.rsv_get("rsv_dns")
+    assert (d["user"], d["token"]) == ("user@mail.example", "p@ss/w#rd"), (d["user"], d["token"])
+    seen: dict = {}
+
+    def fake_http(method, url, *, auth=None, **kw):
+        seen.update(url=url, auth=auth)
+        return 200, "good 203.0.113.5"
+    monkeypatch.setattr(dyndns2, "http", fake_http)
+    dyndns2.set({"name": "vpn.example.org", "server": d["server"], "user": d["user"], "token": d["token"]},
+                "203.0.113.5")
+    assert seen["auth"] == ("user@mail.example", "p@ss/w#rd"), f"провайдеру ушли кодированные данные: {seen}"
+    assert seen["url"].startswith("https://dyn.example.org/nic/update?"), seen["url"]
+
+
 @pytest.mark.parametrize("bad", ["DUMMY-token", "http://l:p@dyn.example.org/nic/update", "https://dyn.example.org/nic/update"])
 def test_dyndns2_refuses_everything_but_https_with_a_login(mv, bad):
     mv.svc.reserve_dns_set_provider("dyndns2")
