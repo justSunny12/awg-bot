@@ -474,6 +474,37 @@ def test_pair_ok_without_a_field_or_under_another_key_writes_nothing(services, r
     assert not services.reserve_paired() and "--set-peer" not in rsv.modes
 
 
+@pytest.mark.parametrize("tamper", ["priv-newline", "psk-short", "obf-extra-key", "obf-newline", "obf-missing",
+                                    "obf-not-dict"])
+def test_pair_ok_with_values_that_would_become_config_lines_is_refused(services, rsv, tamper):
+    """Секреты `pair_ok` уходят в окружение reserve-pair-setup.sh и строками в
+    awgpair.conf: перевод строки в ключе или в числе обфускации стал бы своей
+    строкой конфига (`PostUp = …` от root), лишний ключ обфускации — лишней
+    переменной окружения скрипта. Отказ до записи «принятого»."""
+    inv = Inviter()
+    _acceptor_at_code(services, inv)
+    data = inv.ok_body()["_data"]
+    obf = dict(data["obf"])
+    if tamper == "priv-newline":
+        data["priv"] = data["priv"][:20] + "\nPostUp = touch /tmp/x"
+    elif tamper == "psk-short":
+        data["psk"] = "AAAA="
+    elif tamper == "obf-extra-key":
+        data["obf"] = {**obf, "PostUp": "1"}
+    elif tamper == "obf-newline":
+        data["obf"] = {**obf, "H1": "100-200\nPostUp = touch /tmp/x"}
+    elif tamper == "obf-missing":
+        obf.pop(next(iter(obf)))
+        data["obf"] = obf
+    else:
+        data["obf"] = ["JC", "5"]
+    with pytest.raises(ServiceError, match="не того вида"):
+        services.reserve_accept_ok_in({"sealed": joinsas.seal(inv.kp, data)})
+    with pytest.raises(ServiceError):
+        services.reserve_accept_commit()
+    assert "--set-peer" not in rsv.modes and not services.reserve_paired()
+
+
 # ── адреса канала ────────────────────────────────────────────────────────────
 
 def test_the_channel_listens_on_the_inviters_address_in_the_30(services, rsv, monkeypatch):

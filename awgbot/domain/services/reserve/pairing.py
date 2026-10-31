@@ -25,12 +25,14 @@ pairing.py — часть пакета reserve (см. __init__): сопряже�
 from __future__ import annotations
 
 import base64
+import binascii
 import hashlib
+import re
 import secrets
 
 from awgbot.core import config, settings
 from awgbot.domain.services.types import ServiceError
-from awgbot.util import joinsas, pairtoken, timeutil
+from awgbot.util import joinsas, pairtoken, timeutil, wgkeys
 
 from ..gateway_link.common import log
 from . import compat
@@ -47,6 +49,42 @@ def _unb64u(text) -> bytes:
         return base64.urlsafe_b64decode(str(text or "") + "==")
     except (ValueError, TypeError):
         return b""
+
+
+# Секреты линка от второго сервера уходят в окружение reserve-pair-setup.sh и
+# строками в awgpair.conf: перевод строки в значении стал бы своей строкой
+# конфига (`PostUp = …` от root). Только ключи вида WireGuard и числа
+# обфускации; имена обфускации — ровно набор конфига.
+_OBF_VALUE = re.compile(r"[0-9]{1,10}(-[0-9]{1,10})?\Z")
+_OBF_ENV = tuple(k.upper() for k in wgkeys.OBF_KEYS)
+
+
+def _key_ok(text) -> bool:
+    s = str(text or "")
+    if len(s) != 44:
+        return False
+    try:
+        return len(base64.b64decode(s, validate=True)) == 32
+    except (binascii.Error, ValueError):
+        return False
+
+
+def _pair_secrets_env(data: dict) -> dict:
+    """PAIR_PRIV/PAIR_PEER_PUB/PAIR_PSK и JC…H4 из `pair_ok`; не того вида — отказ."""
+    if not (_key_ok(data.get("priv")) and _key_ok(data.get("peer_pub")) and _key_ok(data.get("psk"))):
+        raise ServiceError("Секреты сопряжения не того вида")
+    obf = data.get("obf")
+    if not isinstance(obf, dict):
+        raise ServiceError("Секреты сопряжения не того вида")
+    env: dict[str, str] = {}
+    for k, v in obf.items():
+        name = str(k).upper()
+        if name not in _OBF_ENV or name in env or not _OBF_VALUE.match(str(v)):
+            raise ServiceError("Секреты сопряжения не того вида")
+        env[name] = str(v)
+    if set(env) != set(_OBF_ENV):
+        raise ServiceError("Секреты сопряжения не того вида")
+    return {"PAIR_PRIV": str(data["priv"]), "PAIR_PEER_PUB": str(data["peer_pub"]), "PAIR_PSK": str(data["psk"]), **env}
 
 
 def _from_ts(ts: int):
@@ -203,9 +241,7 @@ class ReservePairingMixin:
             need = ("psk", "priv", "peer_pub", "admin_id", "obf", "self_host")
             if any(k not in data for k in need):
                 raise ServiceError("Секреты сопряжения не того вида")
-            env = {**self._pair_env(), "PAIR_PRIV": str(data["priv"]), "PAIR_PEER_PUB": str(data["peer_pub"]),
-                   "PAIR_PSK": str(data["psk"]), **{k.upper() if k in ("Jc", "Jmin", "Jmax") else k: str(v)
-                                                    for k, v in dict(data["obf"]).items()}}
+            env = {**self._pair_env(), **_pair_secrets_env(data)}
             reply = {"sealed": joinsas.seal(live["kp"], {"admin_id": int(config.ADMIN_ID),
                                                          "self_host": self._own_host_or_empty()})}
             live["accept"] = {"env": env, "host": str(data.get("self_host") or st.get("host") or ""),
