@@ -26,6 +26,8 @@
 # усыновлении (adopt_routing_conf) — маршрутизация могла быть включена при
 # публичном DNS, и routing-host-setup писал их туда; после переезда на свой
 # резолвер два владельца одного ключа роняли бы dnsmasq у всех пользователей.
+# Отказ проверки или рестарта возвращает и наш файл, и конфиг обвязки (копия
+# до первой правки усыновления).
 # Адрес интерфейса awg появляется позже старта dnsmasq — юнит перезапускается
 # сам без лимита попыток, пока не поднимется. Проверка перед рестартом —
 # dnsmasq --test с тем же --conf-dir, что даёт демону юнит Debian: голый --test
@@ -156,7 +158,18 @@ rollback_conf() {  # вернуть прежний конфиг (или снят
         rm -f "$RESOLVER_CONF"
         log "новый конфиг резолвера снят"
     fi
+    # конфиг обвязки — тоже: усыновление сняло из него bind-interfaces и наши
+    # адреса, и прежняя схема без них поднимала dnsmasq на 0.0.0.0
+    if [[ -n "${PREV_BASE:-}" && -f "$PREV_BASE" ]]; then
+        cp "$PREV_BASE" "$ROUTING_BASE_CONF"; rm -f "$PREV_BASE"
+        log "конфиг обвязки $ROUTING_BASE_CONF возвращён к прежнему"
+    fi
     systemctl restart "$DNSMASQ_SERVICE" 2>/dev/null || true
+}
+
+base_backup() {   # копия конфига обвязки до первой правки усыновления (для отката)
+    [[ "$PLAN" -eq 0 && -z "${PREV_BASE:-}" ]] || return 0
+    PREV_BASE="$(mktemp)"; cp "$ROUTING_BASE_CONF" "$PREV_BASE"
 }
 
 adopt_routing_conf() {  # adopt_routing_conf ADDR… — конфиг обвязки под наш режим
@@ -168,14 +181,14 @@ adopt_routing_conf() {  # adopt_routing_conf ADDR… — конфиг обвяз
     [[ -f "$ROUTING_BASE_CONF" ]] || return 0
     local a changed=""
     if grep -q '^bind-interfaces$' "$ROUTING_BASE_CONF"; then
-        run "sed -i '/^bind-interfaces$/d' '$ROUTING_BASE_CONF'"; changed=1
+        base_backup; run "sed -i '/^bind-interfaces$/d' '$ROUTING_BASE_CONF'"; changed=1
     fi
     if grep -q '^cache-size=' "$ROUTING_BASE_CONF"; then
-        run "sed -i '/^cache-size=/d' '$ROUTING_BASE_CONF'"; changed=1
+        base_backup; run "sed -i '/^cache-size=/d' '$ROUTING_BASE_CONF'"; changed=1
     fi
     for a in "$@"; do
         if grep -qx "listen-address=$a" "$ROUTING_BASE_CONF"; then
-            run "sed -i '/^listen-address=${a//./\\.}$/d' '$ROUTING_BASE_CONF'"; changed=1
+            base_backup; run "sed -i '/^listen-address=${a//./\\.}$/d' '$ROUTING_BASE_CONF'"; changed=1
         fi
     done
     [[ -n "$changed" ]] && log "конфиг обвязки $ROUTING_BASE_CONF приведён под резолвер бота"
@@ -243,6 +256,7 @@ restart_service() {
         die "dnsmasq не активен после запуска — journalctl -u ${DNSMASQ_SERVICE} -o short-iso -e; прежний конфиг возвращён"
     fi
     [[ -n "${PREV_CONF:-}" ]] && rm -f "$PREV_CONF"
+    [[ -n "${PREV_BASE:-}" ]] && rm -f "$PREV_BASE"
     return 0
 }
 
