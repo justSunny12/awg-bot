@@ -92,13 +92,15 @@ def add_period(start: datetime, kind: str, extra_seconds: int = 0) -> datetime:
     Месяц и год — календарные (relativedelta), день и неделя — по стенным
     часам: подписка кончается в тот же час на циферблате и через переход на
     летнее время. extra_seconds — неистраченный остаток при продлении с
-    сохранением.
+    сохранением: это настоящие секунды (remaining_seconds считает по
+    абсолютному времени), и прибавляются они по абсолютному времени, а не по
+    стенным часам — через перевод часов остаток иначе длиннел или короче на час.
     """
     if kind not in _PERIOD_DELTAS:
         raise ValueError(f"Неизвестный период: {kind}")
     end = start + _PERIOD_DELTAS[kind]
     if extra_seconds:
-        end = end + relativedelta(seconds=extra_seconds)
+        end = datetime.fromtimestamp(end.timestamp() + extra_seconds, end.tzinfo)
     return end
 
 

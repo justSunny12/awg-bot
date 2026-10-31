@@ -261,6 +261,23 @@ def test_add_period_keeps_the_wall_clock_over_dst(berlin):
     assert t.add_period(datetime(2026, 3, 1, 18, tzinfo=berlin), "month").hour == 18
 
 
+@pytest.mark.parametrize("start, extra_h, want_utc", [
+    (datetime(2026, 10, 23, 12, 0), 24, datetime(2026, 10, 25, 10, 0)),    # остаток через осенний перевод (25.10 03:00 → 02:00)
+    (datetime(2026, 3, 27, 12, 0), 24, datetime(2026, 3, 29, 11, 0)),      # через весенний (29.03 02:00 → 03:00)
+    (datetime(2026, 10, 23, 12, 0), -5, datetime(2026, 10, 24, 5, 0)),     # долг отсрочки, перевода нет
+], ids=["autumn", "spring", "cut"])
+def test_add_period_extra_seconds_are_real_seconds_over_dst(berlin, start, extra_h, want_utc):
+    """Остаток при продлении с сохранением — настоящие секунды (remaining_seconds
+    считает по абсолютному времени): прибавка по стенным часам через перевод
+    часов давала подписке час лишний или час недостающий — профиль истекал не
+    тогда, когда обещал экран «осталось …»."""
+    end = t.add_period(start.replace(tzinfo=berlin), "day", extra_seconds=extra_h * 3600)
+    assert end.astimezone(timezone.utc) == want_utc.replace(tzinfo=timezone.utc), end.isoformat()
+    assert end.tzinfo is berlin, "пояс итога — не пояс начала"
+    plain = t.add_period(start.replace(tzinfo=berlin), "day")
+    assert t.elapsed(plain, end) == extra_h * 3600, "остаток по абсолютному времени — не extra_seconds"
+
+
 # ── ввод: пропавший и повторный час ──────────────────────────────────────────
 def test_input_in_the_missing_hour_moves_forward(berlin):
     got = t.parse_dt_sec("29.03.2026 02:30")
