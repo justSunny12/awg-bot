@@ -252,7 +252,7 @@
 #                          первого применения с 3.4.0 нет: ни глагола
 #                          gw-bundle, ни ключа reconfigure и переменных
 #                          окружения для него.
-#   reserve status|plan|selftest|open|zone --<режим>|teardown|tgpool show|refresh
+#   reserve status|plan|selftest|open|zone --<режим>|teardown|tgpool show|refresh|home --force
 #                          сервер AWG, взаимный резерв: гостевая зона и процесс
 #                          открытия. status — линк пары и зона (reserve-pair-setup.sh
 #                          --status, reserve-zone-setup.sh --status) и РФ-доступ
@@ -280,6 +280,19 @@
 #                          $DATA_DIR/reserve/tg_pool.refresh (root): её снимает
 #                          минутный такт бота резерва и обновляет анонсы вне
 #                          расписания.
+#                          home --force — запасной путь рычага «вернуть
+#                          пользователей без резерва», когда бот в Telegram
+#                          недоступен (root; tools/rsvhome.py): запрос
+#                          $DATA_DIR/reserve/home.req забирает такт переезда
+#                          запущенного бота (3 с) и делает то же, что рычаг из
+#                          меню, — те же проверки (пользователи у резерва, он не
+#                          на связи дольше 10 мин, по getWebhookInfo бот на нём
+#                          в Telegram не отвечает); Telegram ещё у резерва —
+#                          сначала забирает его (deleteWebhook без сброса
+#                          очереди), затем запись на себя. Итог — строкой из
+#                          $DATA_DIR/reserve/home.res; код 0 — пошло, 3 — отказ
+#                          с причиной, 4 — бот не взял запрос за 30 с (запрос
+#                          убран), 5 — взял, а итога нет за 60 с.
 #                          uninstall снимает линк пары и зону без вопроса.
 #   status                 состояние сервиса и пути.
 #   logs                   журнал сервиса (follow, время journald со смещением).
@@ -1334,7 +1347,7 @@ cmd_first_device() {  # показать конфигурацию первого
         && ./venv/bin/python -m tools.first_device "$@" )
 }
 
-cmd_reserve() {  # reserve status | plan | selftest | open | zone | teardown | tgpool — взаимный резерв серверов
+cmd_reserve() {  # reserve status | plan | selftest | open | zone | teardown | tgpool | home — взаимный резерв серверов
     local sub="${1:-status}"; shift || true
     local zone="$INSTALL_DIR/install/reserve-zone-setup.sh"
     case "$sub" in
@@ -1375,7 +1388,14 @@ cmd_reserve() {  # reserve status | plan | selftest | open | zone | teardown | t
                 refresh) require_root; mkdir -p "$DATA_DIR/reserve"; : > "$DATA_DIR/reserve/tg_pool.refresh"; echo "refresh: отметка поставлена" ;;
                 *) die "awg-bot reserve tgpool: show | refresh" ;;
             esac ;;
-        *) die "awg-bot reserve: status | plan | selftest | open | zone --<режим> | teardown | tgpool show|refresh" ;;
+        home)
+            # рычаг «вернуть пользователей без резерва» из терминала: делает запущенный бот
+            # (tools/rsvhome.py кладёт запрос и ждёт итог), код возврата — итог рычага
+            require_root
+            [[ "${1:-}" == "--force" && $# -eq 1 ]] || die "awg-bot reserve home --force — вернуть пользователей без резерва"
+            systemctl is-active --quiet "$SERVICE" || die "сервис $SERVICE не запущен — рычаг делает запущенный бот (systemctl start $SERVICE)"
+            bot_tool tools.rsvhome --force ;;
+        *) die "awg-bot reserve: status | plan | selftest | open | zone --<режим> | teardown | tgpool show|refresh | home --force" ;;
     esac
 }
 
@@ -1619,7 +1639,8 @@ awg-bot — управление установленным ботом.
                              open — процесс открытия пакета (вход — JSON в stdin, зовёт бот);
                              zone --<режим> — скрипт зоны напрямую;
                              teardown — аварийно снять зону (пользователи второго сервера обрываются);
-                             tgpool show | refresh — пул адресов Telegram: показать / обновить анонсы
+                             tgpool show | refresh — пул адресов Telegram: показать / обновить анонсы;
+                             home --force — вернуть пользователей без резерва (бот в Telegram недоступен)
   awg-bot resolver <cmd>     свой DNS-резолвер пользователей (dnsmasq на <подсеть>.1):
                              status | install [addr] | add <addr> | remove <addr> | plan |
                              dropin — обновить override юнита dnsmasq (зовёт бот на старте);
