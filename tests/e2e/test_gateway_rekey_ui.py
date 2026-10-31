@@ -551,7 +551,7 @@ async def test_finish_dialog_names_the_gateway_still_on_the_old_uplink(services,
     Telegram."""
     monkeypatch.setattr(services, "migration_available", lambda: True)
     monkeypatch.setattr(services, "migration_running", lambda: True)
-    monkeypatch.setattr(services, "migration_finish_preview", lambda: (0, []))
+    monkeypatch.setattr(services, "migration_finish_preview", lambda: (0, [], []))
     monkeypatch.setattr(services, "gwcfg_old_uplink",
                         lambda: [("NASPi", {"username": "naspi_gw_bot", "name": "NASPi"})])
     cb, nav = _acb(fake_bot)

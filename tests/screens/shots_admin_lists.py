@@ -128,7 +128,7 @@ async def _drift_note(services, bot):
 def _dropped(services, mp):
     who = _mig_running(services, mp)
     names = [_long(f"Ксюша — iPhone {i}") for i in range(25)]
-    services.migration_finish_preview = lambda: ([], list(names))
+    services.migration_finish_preview = lambda: ([], list(names), [])
     services.gwcfg_old_uplink = lambda: []
     return who
 

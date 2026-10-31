@@ -148,9 +148,11 @@ def migration_start_confirm(clients: int, devices: int, to_birth: int) -> str:
                       "будут только они. Прежние конфигурации продолжат работать до завершения переезда")
 
 
-def migration_finish_confirm(dropped, old_uplink=(), bot: str = "") -> str:
+def migration_finish_confirm(dropped, old_uplink=(), bot: str = "", twinless=()) -> str:
     """Уронённых называем поимённо, а не числом. Шлюз, не подтвердивший новый
-    аплинк, — отдельной строкой: после завершения его бот потеряет Telegram."""
+    аплинк, — отдельной строкой: после завершения его бот потеряет Telegram.
+    Устройства без новой конфигурации (рождение сорвалось при включении) —
+    тоже поимённо: завершение создаст её им, не выйдет — остановится."""
     tail = "Прежние конфигурации снимутся, трафик старых и новых конфигураций сложится в одну историю"
     if not dropped:
         text = ui.confirm("🚚 Завершить переезд?",
@@ -160,6 +162,10 @@ def migration_finish_confirm(dropped, old_uplink=(), bot: str = "") -> str:
         text = ui.confirm("🚚 Завершить переезд?",
                           f"Потеряют связь сейчас ({len(dropped)}): {names}. Вернуть их — перенастроить "
                           f"устройства на новую конфигурацию. {tail}")
+    twinless = list(twinless or ())
+    if twinless:
+        text += (f"\n⚠️ Без новой конфигурации ({len(twinless)}): {_names_capped(twinless, bot)}. "
+                 "Завершение создаст её им; не получится — остановится, прежние конфигурации останутся")
     for name, gw_bot in old_uplink:
         link = _bot_link(gw_bot)
         where = f"в чате бота шлюза ({link})" if link else "в чате бота шлюза"
