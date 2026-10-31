@@ -50,7 +50,9 @@ reserve open` (root, без этой песочницы).
 (--take: клон, veth, dnsmasq, юнит бота основы) → `record_set` → `record_fact` → `done`; отказ — `fail
 <причина>`, код 1. При готовом `k` вместо `m` → `k` — шаг `k_given`; по конверту — `eph` → `k_sealed`. Ждёт
 факта записи у авторитетного сервера до 30 минут; по факту кладёт отметку
-`tg_take` — бот основы на резерве ставит вебхук. Без записи (`set_record`
+`tg_take` — бот основы на резерве ставит вебхук. Отказ после смены записи (факт
+за 30 минут не наступил, любой сбой дальше) несёт поля `record=set`, `name`, `ip`:
+бот резерва зону тогда не снимает и доделывает не сделанное сам. Без записи (`set_record`
 false, нет `target_ip` или провайдера — переезд кнопкой и по согласию основы:
 запись меняет она) — `done record=skipped` после `clone_up`, отметку тогда
 ставит поле `tg_take: true` во входе (иначе её даёт бот резерва по локальному
@@ -125,9 +127,14 @@ def _step(step: str, **fields) -> None:
     _p(step)
 
 
+# запись уже сменена этим процессом (после `set_record`): любой отказ дальше несёт поля
+# record=set, name, ip — бот резерва по ним зону не снимает и доделывает сам (inbound_keep)
+_RECORD: dict = {}
+
+
 def _fail(reason: str, *, pre_m: bool = False) -> int:
     from awgbot.infra import rsvzone
-    rsvzone.open_status_write("fail", reason=reason, pre_m="1" if pre_m else "")
+    rsvzone.open_status_write("fail", reason=reason, pre_m="1" if pre_m else "", **_RECORD)
     _p(f"fail {reason}")
     return 1
 
@@ -414,6 +421,7 @@ def run(data: dict) -> int:
     from awgbot.core import config
     from awgbot.infra import rsvzone
     from awgbot.util.rsvpkg import seal, vpn as pkgvpn
+    _RECORD.clear()
     pkg_path = os.path.join(str(config.DATA_DIR), "reserve", "guest.pkg")
     try:
         blob = open(pkg_path, "rb").read()
@@ -499,6 +507,7 @@ def run(data: dict) -> int:
         return _fail(f"запись DNS: {e}")
     name = str(dns.get("name") or "")
     dns = {}                                                   # токен провайдера дальше не нужен
+    _RECORD.update(record="set", name=name, ip=target)
     _step("record_set", name=name, ip=target)
     if not wait_fact(name, target):
         return _fail("факт записи не подтвердился за 30 минут")
