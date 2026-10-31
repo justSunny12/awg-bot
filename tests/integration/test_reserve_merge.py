@@ -177,6 +177,34 @@ def test_a_device_the_main_removed_after_the_snapshot_is_not_brought_back(trio):
     assert t.result("SELECT COUNT(*) FROM devices WHERE id = ?", (t.seeded["da"],)) == [(0,)]
 
 
+def test_a_device_added_on_the_reserve_to_a_profile_the_main_deleted_is_not_inserted_as_an_orphan(trio):
+    """Слияние идёт при foreign_keys = OFF: устройство без родителя вставилось бы молча —
+    сирота в базе (списки, сверка пиров, отчёты по профилю). Решение основы удалить профиль
+    главнее: устройство не переносится, в отчёте — строка `lost`."""
+    t = trio()
+    t.cur().delete_client(t.seeded["a"])
+    did = mk_dev(t.rep(), t.seeded["a"], "Планшет", "10.8.1.9")
+    rpt = t.merge()
+    assert t.result("SELECT COUNT(*) FROM devices WHERE id = ? OR client_id = ?", (did, t.seeded["a"])) == [(0,)]
+    assert t.result("SELECT COUNT(*) FROM device_traffic WHERE device_id = ?", (did,)) == [(0,)]
+    assert t.result("PRAGMA foreign_key_check") == []
+    assert rpt.lost == [{"table": "devices", "kind": "orphan", "id": did, "name": "Планшет", "owner": "Аня"}]
+    assert not rpt.inserted.get("devices")
+
+
+def test_a_row_without_a_parent_that_slips_through_rolls_the_merge_back(trio, monkeypatch):
+    """Страховка перед COMMIT: `foreign_key_check` непустой — MergeError, живая база не тронута."""
+    t = trio()
+    monkeypatch.setattr(M, "_parent_present", lambda con, parent, pid: True)
+    t.cur().delete_client(t.seeded["a"])
+    mk_dev(t.rep(), t.seeded["a"], "Планшет", "10.8.1.9")
+    mk_client(t.rep(), "Вера", 2003)
+    with pytest.raises(M.MergeError, match="без родителя: devices"):
+        t.merge()
+    assert t.result("SELECT COUNT(*) FROM clients WHERE name = 'Вера'") == [(0,)], "слияние не откатилось"
+    assert t.result("PRAGMA foreign_key_check") == []
+
+
 # ── поля ─────────────────────────────────────────────────────────────────────
 
 def test_a_field_changed_on_the_reserve_takes_the_replica_value_even_if_the_main_changed_it_too(trio):

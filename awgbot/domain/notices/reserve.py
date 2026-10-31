@@ -147,6 +147,12 @@ def lost_device(name: str, owner: str, taken_by: str, taken_owner: str, reserve:
             f"{_e(taken_owner)}, заведённый на {_n(reserve)}. Выдай «{_e(name)}» конфигурацию заново")
 
 
+def lost_orphan(name: str, owner: str, reserve: str) -> str:
+    """Строка Т-РУ5б: устройство, заведённое на резерве для профиля, который основа удалила после снимка."""
+    return (f"⚠️ Устройство «{_e(name)}» профиля {_e(owner)}, заведённое на {_n(reserve)}, не перенесено: "
+            f"профиль удалён здесь после переезда")
+
+
 def primary_back(auto: bool) -> str:
     """Т-РУ6 (из бота основы на резерве): сервер основы снова в строю."""
     if auto:

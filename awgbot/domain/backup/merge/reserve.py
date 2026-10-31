@@ -102,6 +102,7 @@ def merge(cur_db: str, base_db: str, rep_db: str, *, admin_tg: int = 0, no_delet
         con.execute("ATTACH DATABASE ? AS rep", (rep_db,))
         con.execute("PRAGMA foreign_keys = OFF")
         _check_schema(con)
+        fk_before = _fk_violations(con)                    # что было до слияния — не на его счёт
         con.execute("BEGIN")
         try:
             id_map: dict[str, dict[int, int]] = {"clients": {}, "devices": {}}
@@ -117,6 +118,10 @@ def merge(cur_db: str, base_db: str, rep_db: str, *, admin_tg: int = 0, no_delet
                 _append_table(con, table, rpt, id_map)
             if mark is not None:
                 con.execute("INSERT OR REPLACE INTO server_state (key, value) VALUES (?, ?)", (str(mark[0]), str(mark[1])))
+            # страховка: под foreign_keys = OFF сирота (строка без родителя) прошла бы молча — откат
+            orphans = _fk_violations(con) - fk_before
+            if orphans:
+                raise MergeError("слияние оставило строки без родителя: " + ", ".join(sorted({t for t, _ in orphans})))
             con.execute("COMMIT")
         except Exception:
             con.execute("ROLLBACK")
@@ -124,6 +129,11 @@ def merge(cur_db: str, base_db: str, rep_db: str, *, admin_tg: int = 0, no_delet
     finally:
         con.close()
     return rpt
+
+
+def _fk_violations(con) -> set[tuple[str, int]]:
+    """Нарушения связей в живой базе: (таблица, rowid)."""
+    return {(str(r[0]), int(r[1] or 0)) for r in con.execute("PRAGMA main.foreign_key_check").fetchall()}
 
 
 def _check_schema(con) -> None:
@@ -225,6 +235,14 @@ def _insert_row(con, table, rules, cols, key, rk, rrow, rpt, id_map, parent) -> 
     values = {c: _ref_value(table, c, rrow[c], id_map) for c in cols}
     for i, name in enumerate(key):
         values[name] = rk[i]
+    if parent is not None and not _parent_present(con, parent, values.get(parent[1])):
+        # родителя в основе нет (профиль удалён здесь после снимка — её решение): дочерняя строка
+        # не вставляется — под foreign_keys = OFF она встала бы сиротой; устройство — в отчёт
+        if table == "devices":
+            owner = con.execute("SELECT name FROM rep.clients WHERE id = ?", (rrow["client_id"],)).fetchone()
+            rpt.lost.append({"table": table, "kind": "orphan", "id": int(rrow["id"]), "name": rrow["name"],
+                             "owner": str(owner["name"]) if owner is not None else "?"})
+        return
     if table in ("clients", "devices"):
         _resolve_unique(con, table, values, rpt)
         old_id = int(values["id"])
@@ -240,6 +258,12 @@ def _insert_row(con, table, rules, cols, key, rk, rrow, rpt, id_map, parent) -> 
             id_map[table][int(rrow["id"])] = new_id
             rpt.remapped[table] = rpt.remapped.get(table, 0) + 1
     rpt.inserted[table] = rpt.inserted.get(table, 0) + 1
+
+
+def _parent_present(con, parent: tuple[str, str], pid) -> bool:
+    if pid is None:
+        return False
+    return con.execute(f"SELECT 1 FROM main.{parent[0]} WHERE id = ?", (int(pid),)).fetchone() is not None
 
 
 def _resolve_unique(con, table: str, values: dict, rpt: Report) -> None:

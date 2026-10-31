@@ -178,6 +178,8 @@ class ReserveMergeOpsMixin:
 
     def _lost_line(self, lost: dict) -> str:
         from awgbot.domain.notices import reserve as rn
+        if lost.get("kind") == "orphan":
+            return rn.lost_orphan(str(lost.get("name") or "?"), str(lost.get("owner") or "?"), self.reserve_peer_name())
         return rn.lost_device(str(lost.get("name") or "?"), str(lost.get("owner") or "?"), str(lost.get("taken_by") or "?"),
                               str(lost.get("taken_owner") or "?"), self.reserve_peer_name())
 
