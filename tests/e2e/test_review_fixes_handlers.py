@@ -44,9 +44,9 @@ async def test_migration_start_refusal_is_shown_in_the_chat(services, mig, fake_
     assert services.migration_running() is False
     shown = [t for kind, t, _ in msg.sent if kind == "edit_text"]
     assert shown, "отказ старта не оставил записи в чате"
-    assert shown[-1].startswith("⚠️ Переезд не начат\n\n")
+    assert shown[-1].startswith("⚠️ <b>Переезд не начат</b>\n\n")
     assert "Резолвер пользователей на новом интерфейсе не поднят: dnsmasq не стартовал." in shown[-1]
-    assert shown[-1].endswith("Функция осталась выключенной, выдача идёт по-старому")
+    assert shown[-1].endswith("Функция осталась выключенной, выдача идёт по-старому — устрани причину и включи снова")
 
 
 # ── слоты шлюзов: слота уже нет ──────────────────────────────────────────────

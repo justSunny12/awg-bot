@@ -112,7 +112,7 @@ check_values() { # check_values SELF_ADDR PRIV PEER_PUB PEER_ADDR [PSK] [ENDPOIN
     valid_num "$PAIR_PORT" || die "порт линка пары не того вида"
     for v in JC JMIN JMAX S1 S2 S3 S4 H1 H2 H3 H4; do
         eval "_x=\${$v:-}"
-        valid_obf "$_x" || die "$v не того вида"
+        valid_obf "$_x" || die "параметр обфускации $v не того вида"
     done
 }
 

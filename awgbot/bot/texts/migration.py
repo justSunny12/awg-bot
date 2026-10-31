@@ -55,8 +55,8 @@ def migration_start_refused(reason: str) -> str:
     интерфейса не поднят, переезд не настроен): функция не включена."""
     why = str(reason).strip().rstrip(".")
     why = why[:1].upper() + why[1:900]
-    return ("⚠️ Переезд не начат\n\n" + _e(why) + ".\n\n"
-            "Функция осталась выключенной, выдача идёт по-старому")
+    return (ui.head("⚠️ Переезд не начат") + "\n\n" + _e(why) + ".\n\n"
+            "Функция осталась выключенной, выдача идёт по-старому — устрани причину и включи снова")
 
 
 def migration_prepare_failed(reason: str) -> str:

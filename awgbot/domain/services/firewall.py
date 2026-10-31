@@ -4,6 +4,7 @@ firewall.py — файервол из чата (README §6b).
 from __future__ import annotations
 
 import contextlib
+import html
 import logging
 import os
 import sys
@@ -146,7 +147,7 @@ class FirewallMixin:
         cur = [v for v in (settings.get("app.firewall.ssh_allow", []) or []) if v != entry]
         if not cur and nftguard.enabled():
             raise ServiceError("это последний адрес: без адресов фильтр открывает SSH снаружи всем. "
-                               "Сначала выключи «Фильтр снаружи»")
+                               "Сначала выключи «✅ Фильтр снаружи»")
         with self._own_settings_change():
             settings.set_value("app.firewall.ssh_allow", cur)
         if nftguard.enabled():
@@ -294,11 +295,11 @@ class FirewallMixin:
         self.db.set_state(self._SSH_OPEN_KEY, key)
         log.warning("firewall: ни одно имя списка SSH не резолвится (%s), прежних адресов нет — SSH снаружи открыт всем",
                     ", ".join(bad))
-        names = ", ".join(f"<code>{n}</code>" for n in bad[:5]) + (f" [+{len(bad) - 5}]" if len(bad) > 5 else "")
+        names = ", ".join(f"<code>{html.escape(n)}</code>" for n in bad[:5]) + (f" [+{len(bad) - 5}]" if len(bad) > 5 else "")
         return [Notification(config.ADMIN_ID,
-                             f"⚠️ SSH-фильтр: имена из списка адресов не резолвятся ({names}), прежних адресов нет — "
-                             "снаружи SSH открыт всем. Проверь DNS сервера или добавь адрес: ⚙️ Настройки → "
-                             "🛡 SSH-доступ → «➕ Адрес»", critical=False)]
+                             f"⚠️ Фильтр снаружи: имена из списка адресов не резолвятся ({names}), прежних адресов нет — "
+                             "SSH снаружи открыт всем (только по SSH-ключам). Проверь DNS сервера или добавь адрес: "
+                             "⚙️ Настройки → 🛡 SSH-доступ → «➕ Адрес»", critical=False)]
 
     def retire_legacy_ssh_gate(self) -> None:
         """Разово снять прежние ворота (цепочка AWGBOT_SSH + PostUp-страж) —

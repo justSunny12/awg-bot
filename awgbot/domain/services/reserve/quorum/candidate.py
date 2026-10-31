@@ -47,7 +47,7 @@ class ReserveQuorumCandidateMixin:
             # два писателя; кворум о второй линии не включаю, окно кода — запасным сигналом по линку пары
             if self.__dict__.get("_quo_tm_told") != off:
                 self.__dict__["_quo_tm_told"] = off
-                log.warning("кворум: цифры кворума расходятся с «%s» (%s) — голосование о нём не включаю",
+                log.warning("кворум: цифры времени расходятся с «%s» (%s) — голосование о нём не включаю",
                             self.reserve_peer_name(), off)
             self.__dict__.pop("_rsv_qcand", None)
             return None
