@@ -24,7 +24,9 @@
 #   pl_gw_start <слот> / pl_gw_stop <слот>   шлюз основы с кворумом (gwnode) в lab-G1, lab-G2, lab-GR (слот 3);
 #                                 основе и резерву слоты — LAB_GW_SLOTS (до pl_start)
 #   pl_gq <слот> <выражение>      значение из status.json шлюза (выражение python над s)
-#   (РФ-доступ узлов для s08_rf_transit — rtlab.sh: LAB_RT и LAB_RF_SET идут узлам окружением)
+#   (РФ-доступ узлов для s08_rf_transit — rtlab.sh: LAB_RT и LAB_RF_SET идут узлам окружением;
+#    LAB_CONST — сжатые сроки резерва узлам и боту основы на резерве, LAB_OPEN_RECORD=1 — запись при
+#    аварийном открытии меняет процесс открытия миром DNS стенда; оба — до pl_start, см. pairnode)
 #   pl_cleanup                    всё снять (trap EXIT сценария)
 set -u
 PL_HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; PL_ROOT="$(cd "$PL_HERE/../.." && pwd)"
@@ -50,7 +52,7 @@ pl_env() {   # окружение узла; у A свои каталоги со�
         "LAB_SHARED=$PL/shared" "LAB_BOTAPI=http://${PL_GW[$n]}:8081" "LAB_VENV=$PL_VENV" \
         "LAB_NETNS=${PL_NS[$n]}" "LAB_RECORD=$RECORD" "PYTHONPATH=$PL_ROOT" "HOME=/root" \
         "QUO_NS=awg-quo-$n" "QUO_CONF_DIR=$w/quo" "LAB_GW_SLOTS=${LAB_GW_SLOTS:-}" \
-        "LAB_RT=${LAB_RT:-}" "LAB_RF_SET=${LAB_RF_SET:-}"
+        "LAB_RT=${LAB_RT:-}" "LAB_RF_SET=${LAB_RF_SET:-}" "LAB_CONST=${LAB_CONST:-}" "LAB_OPEN_RECORD=${LAB_OPEN_RECORD:-}"
 }
 
 # Узлы входят только в сетевое пространство (nsenter --net), а не через `ip netns exec`:
@@ -205,7 +207,8 @@ pl_guest_start() {
     mkdir -p "$PL/G"
     (cd "$PL_ROOT" && set -a && . "$run/env" && set +a && exec nsenter --net=/run/netns/awg-guest env AWG_BOT_GUEST=1 \
         AWG_BOT_CONF_DIR="$run/conf" AWG_BOT_DATA_DIR="$run/data" AWG_BOT_ENV="$run/env" \
-        LAB_BOTAPI="http://${PL_GW[B]}:8081" LAB_GUEST_CMD="$PL/G" PYTHONPATH="$PL_ROOT" "$PY" -m tests.lab.guest_main) \
+        LAB_BOTAPI="http://${PL_GW[B]}:8081" LAB_GUEST_CMD="$PL/G" LAB_CONST="${LAB_CONST:-}" PYTHONPATH="$PL_ROOT" \
+        "$PY" -m tests.lab.guest_main) \
         >>"$PL/G/guest.log" 2>&1 &
     PL_GUEST_PID=$!
     sleep 3
