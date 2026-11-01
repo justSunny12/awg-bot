@@ -133,16 +133,6 @@ class RoutingMixin:
     _NOT_GATEWAY = ("NOT EXISTS (SELECT 1 FROM gateways g WHERE g.device_id = d.id "
                     "OR (d.twin_of IS NOT NULL AND g.device_id = d.twin_of))")
 
-    def set_devices_routing(self, client_id: int, on: bool) -> int:
-        """Включить/выключить режим на всех устройствах СУБЪЕКТА (свои
-        непереданные + удерживаемые). Возвращает число изменённых строк — по
-        нему видно, было ли действие холостым."""
-        with self._tx() as cur:
-            cur.execute("UPDATE devices AS d SET routing_on = ? "
-                        f" WHERE {self._SUBJECT_WHERE} AND routing_on <> ? AND {self._NOT_GATEWAY}",
-                        (1 if on else 0, client_id, client_id, 1 if on else 0))
-            return cur.rowcount
-
     def routing_device_counts(self, client_id: int, admin_tg_id: int = 0) -> tuple[int, int]:
         """(включено, всего) по устройствам СУБЪЕКТА с разрешённым РФ-доступом.
 

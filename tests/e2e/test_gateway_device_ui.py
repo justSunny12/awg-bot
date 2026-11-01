@@ -246,10 +246,10 @@ def test_gateway_device_is_out_of_ru_access(services, gwsetup, monkeypatch):
     assert [d.id for d in services.routing_devices(admin.id)] == [phone.id], "шлюза в списке нет"
     assert services.routing_device_counts(admin.id) == (1, 1)
     assert pi.address not in sum(services.db.routing_active_addresses(ADMIN).values(), [])
-    # «включить на всех» профиля, выдача разрешения владельцу и тумблер по id
-    # из старой клавиатуры — шлюз не трогают
+    # «✅ Применить» раздела с отметкой шлюза (id из старой клавиатуры), выдача
+    # разрешения владельцу и тумблер по id — шлюз не трогают
     services.db.update_device_fields(pi.id, routing_on=0)
-    services.db.set_devices_routing(admin.id, True)
+    services.set_routing_devices({pi.id: True, phone.id: True})
     assert services.db.get_device(pi.id).routing_on == 0
     services.db.set_owner_devices_routing(admin.id, True)
     assert services.db.get_device(pi.id).routing_on == 0
