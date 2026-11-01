@@ -122,7 +122,8 @@ class ReserveSessionMixin:
                 **({"jrn": jrn} if (jrn := self._jrn_st_part()) else {}),
                 **({"quo": quo} if (quo := self._quo_st_part()) else {}),
                 **({"rfp": rfp} if (rfp := self._rfp_st_part()) else {}),
-                **({"exposed": ex} if (ex := self.reserve_exposed_st_part()) else {})}
+                **({"exposed": ex} if (ex := self.reserve_exposed_st_part()) else {}),
+                **({"tg_pult": at} if (at := self.reserve_pult_st()) else {})}   # Telegram моего бота у меня (пульт)
 
     def _rfp_st_part(self) -> dict:
         """РФ-доступ через второй сервер в `st`: согласие и факт пользования (reserve/rfpeer)."""
@@ -249,7 +250,8 @@ class ReserveSessionMixin:
                         healthy=bool(body.get("healthy")), can_return=bool(body.get("can_return")),
                         in_kind=str(body.get("in_kind") or ""),
                         mem_free=int(body.get("mem_free") or 0), there=int(body.get("online") or 0),
-                        in_by=str(body.get("in_by") or ""), in_tg=str(body.get("in_tg") or ""), st_stale=False)
+                        in_by=str(body.get("in_by") or ""), in_tg=str(body.get("in_tg") or ""),
+                        tg_pult=str(body.get("tg_pult") or ""), st_stale=False)
             # своё о сессии и связи (session, session_at, down_since, linked_msg …) — не из st, не стирать
             self.rsv_put("rsv_peer_state", {**prev, **peer})
             self.reserve_pkg_zone_freed(peer["inn"])         # «зона занята» прошла — пакет без отступа
@@ -288,6 +290,7 @@ class ReserveSessionMixin:
         # мой ключ мог стать известен второму серверу без моего K (точки, код) — поколение сменить
         notes.extend(self.reserve_exposed_in(body.get("exposed")))
         notes.extend(self.reserve_keep_st_in(body.get("in_keep")))   # у резерва сбой после смены моей записи
+        notes.extend(self.reserve_pult_seen_notes())          # Telegram бота второй стороны у неё, её пользователи здесь
         return notes
 
     def _reserve_compat_notes(self, peer: dict) -> list[Notification]:

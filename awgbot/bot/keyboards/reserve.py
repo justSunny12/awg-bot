@@ -64,13 +64,19 @@ def final() -> InlineKeyboardMarkup:
 
 def card(*, ready: bool, rf_on: bool, has_gateway: bool, ret_immediate: bool, name: str = "",
          can_move: bool = False, can_evict: bool = False, can_return: bool = False,
-         self_admin: bool = False, can_force: bool = False) -> InlineKeyboardMarkup:
+         self_admin: bool = False, can_force: bool = False, pult: bool = False) -> InlineKeyboardMarkup:
     """Кнопки переезда видны, только когда действие возможно; невозможное —
-    строкой причины в карточке."""
+    строкой причины в карточке. Пульт у основы (`pult`: Telegram бота здесь,
+    пользователи на резерве) — рычаг «вернуть без резерва» словами «↩️ Вернуть
+    пользователей сюда» (те же проверки; нажатие при невозможном — всплывашка с
+    причиной) и «📤 Отдать Telegram резерву»; резерв на связи и обычный возврат
+    возможен — вместо рычага обычный «↩️ Вернуть пользователей»."""
     return ui.rows(
         (f"🔀 Переезд на «{name}»", RsvCB(action="move")) if can_move else None,
         ("↩️ Вернуть пользователей", RsvCB(action="back")) if can_return else None,
-        (f"⚠️ Вернуть без «{name}»", RsvCB(action="force")) if can_force else None,
+        ("↩️ Вернуть пользователей сюда", RsvCB(action="force")) if pult and not can_return else None,
+        ("📤 Отдать Telegram резерву", RsvCB(action="pult_give")) if pult else None,
+        (f"⚠️ Вернуть без «{name}»", RsvCB(action="force")) if can_force and not pult else None,
         (f"↩️ Вернуть всё на «{name}»", RsvCB(action="evict")) if can_evict else None,
         (f"{_chk(ready)} Готов быть резервом", RsvCB(action="ready")),
         (f"{_chk(rf_on)} Мои шлюзы для резерва", RsvCB(action="rfmine")) if has_gateway else None,

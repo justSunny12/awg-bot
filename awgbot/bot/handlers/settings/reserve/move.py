@@ -1,7 +1,8 @@
 """move.py — переезд кнопкой и возврат в карточке резерва: «🔀 Переезд на
 «Beta»» → диалог (Т-Р10) → живое сообщение хода (Т-Р10б; его правят такты
 автомата через `refresh_live`); «↩️ Вернуть пользователей» (основа, рычаг
-«по кнопке»); «↩️ Вернуть всё на «Alpha»» (резерв, Т-Р12 → `evict`)."""
+«по кнопке»); «↩️ Вернуть всё на «Alpha»» (резерв, Т-Р12 → `evict`); «📤 Отдать
+Telegram резерву» (пульт у основы — domain reserve/pult)."""
 from __future__ import annotations
 
 import logging
@@ -13,7 +14,7 @@ from awgbot.bot import ui
 from awgbot.bot.callbacks import RsvCB
 from awgbot.bot.handlers.common import call, edit
 from awgbot.bot.keyboards import reserve as rkb
-from awgbot.bot.texts.reserve import section as st_t
+from awgbot.bot.texts.reserve import pult as pult_t, section as st_t
 from awgbot.core import config
 from awgbot.domain.services import ServiceError
 
@@ -115,15 +116,8 @@ async def force_ask(cb: CallbackQuery, services, **_):
 
 async def _webhook_info(bot) -> dict | None:
     """getWebhookInfo для рычага С9 (вебхук не снимается); не ответил за 10 с — None."""
-    import asyncio
-    try:
-        info = await asyncio.wait_for(bot.get_webhook_info(), 10)
-        from awgbot.util import timeutil
-        return {"url": str(info.url or ""), "pending_update_count": int(info.pending_update_count or 0),
-                "last_error_date": timeutil.epoch_seconds(getattr(info, "last_error_date", None))}
-    except Exception as e:                                   # noqa: BLE001
-        log.warning("резерв: рычаг «вернуть без резерва»: getWebhookInfo не прошёл: %s", e)
-        return None
+    from awgbot.runtime import pollctl
+    return await pollctl.webhook_info(bot, "рычаг «вернуть без резерва»")
 
 
 @router.callback_query(RsvCB.filter(F.action == "force_yes"))
@@ -141,6 +135,19 @@ async def force_go(cb: CallbackQuery, services, **_):
     await _run(actions)
     await _render(cb, "rsv", services)
     await cb.answer("Запись возвращается, Telegram забираю")
+
+
+@router.callback_query(RsvCB.filter(F.action == "pult_give"))
+async def pult_give(cb: CallbackQuery, services, **_):
+    """«📤 Отдать Telegram резерву» (пульт у основы): слово паре, вебхук поставит гость."""
+    try:
+        actions = await call(services.reserve_pult_give)
+    except ServiceError as e:
+        await cb.answer(ui.toast_cap(e, html=getattr(e, "html", False)), show_alert=True)
+        return
+    await _run(actions)
+    await _render(cb, "rsv", services)
+    await cb.answer(pult_t.GIVE_TOAST)
 
 
 @router.callback_query(RsvCB.filter(F.action == "evict"))

@@ -96,7 +96,8 @@ PAIR_KINDS: dict[str, tuple[str, dict]] = {
                             "in_tg": (_S, 8),   # бот второй стороны у меня: forced (захват без её released) | wait (VPN без бота)
                             "in_keep": (_D, None),   # {k, why, at}: приём сорвался после смены записи её процессом открытия
                             "zone": (_S, 120), "jrn": (_D, None), "quo": (_D, None), "rfp": (_D, None),
-                            "exposed": (_D, None)}),   # {share|code: m_gen} — ключ основы мне известен без её K
+                            "exposed": (_D, None),     # {share|code: m_gen} — ключ основы мне известен без её K
+                            "tg_pult": (_S, 32)}),     # Telegram моего бота у меня, пользователи у тебя (пульт): с какого момента
     "ping":         (BOTH, {"n": (_S, 32)}),
     "pong":         (BOTH, {"n": (_S, 32)}),
     "slots":        (BOTH, {"slots": (_L, MAX_LIST)}),
@@ -129,6 +130,7 @@ PAIR_KINDS: dict[str, tuple[str, dict]] = {
     "evict":        (BOTH, {}),
     "resume":       (BOTH, {}),                              # ret1: возврат сорвался у основы — гость снова у резерва
     "gone":         (BOTH, {}),
+    "pult_back":    (BOTH, {"at": (_S, 32)}),               # pult1: основа отдаёт Telegram своего бота гостю (отметка пульта из st)
     # кворум резерва (quo1): состав линии и подтверждение, конфиг зонда второму серверу, точки и
     # ящики ключа, взгляд голосующего, эпоха и роль держателя, плановая пауза лидера
     "qmem":         (BOTH, {"l": (_S, 1), "g": (_I, None), "members": (_L, MAX_LIST)}),
@@ -204,7 +206,8 @@ def kinds_for(proto: str) -> dict[str, tuple[str, dict]]:
 
 # поля, которых может не быть (добавлены внутри линии; отсутствие — ложь/пусто)
 OPTIONAL: dict[str, frozenset] = {"st": frozenset({"healthy", "can_return", "in_kind", "mem_free", "online", "in_by", "zone",
-                                                     "jrn", "quo", "rfp", "exposed", "in_tg", "in_keep"}),
+                                                     "jrn", "quo", "rfp", "exposed", "in_tg", "in_keep",
+                                                     "tg_pult"}),
                                    "down": frozenset({"rec"}),
                                    "ask": frozenset({"kind"}), "up": frozenset({"oid"}), "taken": frozenset({"oid"}),
                                   "state": frozenset({"reason", "e"}), "qview": frozenset({"i"}),

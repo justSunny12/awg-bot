@@ -16,10 +16,12 @@ blocks{addrs}, webhook{stalled, foreign, ours}, bye{}
 (blocks — адреса заблокированных устройств по решениям гостя: резерв шлёт их основе, та
 держит DROP своим оставшимся сессиям; hook_foreign — отметка «вебхук не здесь» в хранилище
 гостя с прошлого запуска).
-Резерв → гость: state{name, since, reason, primary, return, self_host}, tg{go, foreign}
+Резерв → гость: state{name, since, reason, primary, return, self_host, tg_hold}, tg{go, foreign}
 (ставить ли вебхук: пользователи у резерва и основа Telegram не забирала — на hello и по
-смене; без `go` гость вебхук не ставит), take_tg{}, blocks{addrs}, stop{} (гость пишет
-финальный снимок, шлёт replica и выходит).
+смене; без `go` гость вебхук не ставит), take_tg{}, tg_retake{}, blocks{addrs}, stop{} (гость пишет
+финальный снимок, шлёт replica и выходит). tg_hold — причина не ставить вебхук (пульт у основы:
+Telegram её бота у неё); tg_retake — основа отдала Telegram (`pult_back`): прежний вебхук она
+сняла — поставить снова (по слову `tg{go}`).
 
 Журнал (jrn1, services/reserve/journal): гость → резерв — свои записи `jev`,
 `jcnt` (уходят основе как есть), `jneed` (событий основы не хватает —
@@ -277,6 +279,7 @@ class GuestCtlClient:
         self.take_tg = asyncio.Event()
         self.tg_go = False                                   # последнее слово резерва «ставь вебхук» в этой сессии
         self.tg_foreign_ack = False                          # …и он знает об отметке «вебхук не здесь»
+        self.retake = asyncio.Event()                        # основа отдала Telegram (пульт) — вебхук снова
         self.tg_acked = asyncio.Event()                      # резерв подтвердил tg_taken
         self.stop_req = asyncio.Event()
         self.blocks: list[str] | None = None    # последние блокировки от основы (через резерв)
@@ -347,6 +350,11 @@ class GuestCtlClient:
             self.take_tg.set()
         elif kind == "tg":
             self.tg_go, self.tg_foreign_ack = bool(msg.get("go")), bool(msg.get("foreign"))
+        elif kind == "tg_retake":
+            # бот резерва сам снял запрет по пульту (pult_back основы) — не ждать следующего state
+            await asyncio.to_thread(self.services.guest_tg_hold_clear)
+            self.retake.set()
+            self.take_tg.set()
         elif kind == "stop":
             self.stop_req.set()
         elif kind == "blocks":

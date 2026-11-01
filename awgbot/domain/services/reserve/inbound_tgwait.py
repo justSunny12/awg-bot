@@ -116,7 +116,9 @@ class ReserveInboundTgWaitMixin:
                 log.info("резерв: боту основы у меня вебхук не ставить — %s", why)
             elif not why:
                 log.info("резерв: боту основы у меня — ставить вебхук")
-        return {"go": not why, "foreign": bool(inn.get("webhook_foreign"))}
+        # основа отдала Telegram после пульта (`pult_back`) — я знаю, что вебхук был не у гостя, и всё же
+        # отдаю его сюда: гость с отметкой «вебхук не здесь» без этого знания не поставил бы
+        return {"go": not why, "foreign": bool(inn.get("webhook_foreign") or inn.get("pult_back"))}
 
     def reserve_guest_webhook_hold_why(self, inn: dict | None = None) -> str:
         """Единственное решение бота резерва «можно ли гостю (боту основы у меня) ставить
@@ -126,7 +128,8 @@ class ReserveInboundTgWaitMixin:
         (отметка `tg_take` — факт записи или released реплики, `released` журнала,
         принудительный захват, вебхук уже был у гостя) и основа Telegram не забирала: гость
         не говорил «вебхук не здесь», её `taken` в этом эпизоде не приходил, её живой `st`
-        после начала эпизода не `home`/`returning`. Новое условие запрета — сюда же."""
+        после начала эпизода не `home`/`returning`, пульт не у неё (`st.tg_pult` без её `pult_back` —
+        pult/peer). Новое условие запрета — сюда же."""
         from awgbot.infra import rsvzone
         inn = self._inn() if inn is None else inn
         if str(inn.get("state") or "") not in ("taking", "serving"):
@@ -134,6 +137,9 @@ class ReserveInboundTgWaitMixin:
         if not (rsvzone.TG_TAKE_FILE.exists() or inn.get("jrn_released") or inn.get("tg_take_forced")
                 or inn.get("tg_taken")):
             return "бот основы ещё не передан"
+        why = self.reserve_pult_hold_why(inn)                 # пульт у основы: Telegram её бота у неё (pult/peer)
+        if why:
+            return why
         if inn.get("webhook_foreign"):
             return "гость сказал «вебхук не здесь» — Telegram у основы"
         if inn.get("peer_tg_taken"):

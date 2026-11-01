@@ -184,6 +184,10 @@ class InboundMixin:
         """Возврат сорвался у основы (слияние): гость, остановленный на back_req, — снова."""
         await self._actions(await asyncio.to_thread(self.services.reserve_resume_in))
 
+    async def _in_pult_back(self, sess: _Session, body: dict) -> None:
+        """Основа отдаёт Telegram своего бота (пульт у неё снят её админом): гостю — вебхук снова."""
+        await self._actions(await asyncio.to_thread(self.services.reserve_pult_back_in, str(body["at"])))
+
     async def _in_blocks(self, sess: _Session, body: dict) -> None:
         """`blocks` в обе стороны. Я несу пользователей основы — её блокировки гостю в зону
         (основа 4.0.x решает их сама); мои пользователи у резерва и я следую — блокировки

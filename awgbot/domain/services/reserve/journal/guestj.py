@@ -55,7 +55,15 @@ class ReserveGuestJournalMixin:
         return {"e": int(meta["epoch"]), "last": self.db.jrn_last_i(), "fork": int(meta["fork_i"])}
 
     def guest_can_take_tg(self) -> bool:
-        """Ставить ли вебхук: с журналом — только держателем (следующий ждёт передачи бота)."""
+        """Ставить ли вебхук: не при пульте у основы (поле `tg_hold` слова `state` бота резерва —
+        pult/peer); с журналом — только держателем (следующий ждёт передачи бота)."""
+        hold = str(self.guest_state().get("tg_hold") or "")
+        if hold:
+            if self.__dict__.get("_guest_hold_told") != hold:
+                self.__dict__["_guest_hold_told"] = hold
+                log.info("гость: вебхук не ставлю — %s", hold)
+            return False
+        self.__dict__.pop("_guest_hold_told", None)
         if not self.guest_jrn_on():
             return True
         return self.db.jrn_meta()["role"] == "holder"

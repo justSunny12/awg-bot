@@ -27,6 +27,20 @@ log = logging.getLogger(__name__)
 
 POLL_TIMEOUT = 50
 RECHECK_S = 300                   # в ожидании права отвечать — повторный getWebhookInfo
+WEBHOOK_INFO_S = 10               # getWebhookInfo рычага и пробы пульта — не дольше
+
+
+async def webhook_info(bot, why: str) -> dict | None:
+    """getWebhookInfo без снятия вебхука (рычаг «вернуть без резерва», проба пульта): адрес,
+    очередь, дата последней ошибки доставки в секундах эпохи; не ответил за WEBHOOK_INFO_S — None."""
+    from awgbot.util import timeutil
+    try:
+        info = await asyncio.wait_for(bot.get_webhook_info(), WEBHOOK_INFO_S)
+        return {"url": str(info.url or ""), "pending_update_count": int(info.pending_update_count or 0),
+                "last_error_date": timeutil.epoch_seconds(getattr(info, "last_error_date", None))}
+    except Exception as e:                                   # noqa: BLE001
+        log.warning("резерв: %s: getWebhookInfo не прошёл: %s", why, e)
+        return None
 
 
 class _Watch(BaseRequestMiddleware):
@@ -86,9 +100,24 @@ class PollControl:
         loop.create_task(self._stop_after_conflict())
 
     async def _stop_after_conflict(self) -> None:
+        await self._pult_handed()
         with contextlib.suppress(Exception):
             await asyncio.to_thread(self.services.reserve_set_poll, "away", why="webhook")
         await self.stop()
+
+    async def _pult_handed(self) -> None:
+        """Вебхук снова у бота на резерве: пульт (domain reserve/pult) снят — по факту Telegram,
+        а не по нажатию «📤 Отдать Telegram резерву»."""
+        fn = getattr(self.services, "reserve_pult_webhook_back", None)
+        if fn is None:
+            return
+        try:
+            acts = await asyncio.to_thread(fn)
+            if acts:
+                from awgbot.runtime import rsvactions
+                await rsvactions.run(acts)
+        except Exception as e:                               # noqa: BLE001
+            log.warning("пульт: отметка не снята: %s", e)
 
     async def _allowed(self) -> bool:
         """Можно ли поллить: без пары — да; с парой — если вебхука нет."""
@@ -104,6 +133,9 @@ class PollControl:
             log.warning("getWebhookInfo не прошёл (%s) — поллю по прежнему состоянию", e)
             return await asyncio.to_thread(self.services.reserve_poll) == "mine"
         if info.url:
+            # пульт — до отметки away: между отметкой и ожиданием права (run: _wake.clear) лишнего
+            # await нет — take() из такта, увидевший away, не теряет свой wake()
+            await self._pult_handed()
             await asyncio.to_thread(self.services.reserve_set_poll, "away", why="webhook_info", url=str(info.url)[:120])
             log.warning("Telegram: вебхук стоит на %s — право отвечать не у меня", info.url)
             return False

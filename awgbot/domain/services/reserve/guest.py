@@ -160,10 +160,17 @@ class ReserveGuestMixin:
         """`state` из локального канала: имя резерва, с какого момента несёт
         нагрузку, причина, состояние основы, рычаг возврата."""
         data = {k: body.get(k) for k in ("name", "since", "reason", "primary", "return", "self_host", "own_name",
-                                          "rf_via", "rf_cidr")
+                                          "rf_via", "rf_cidr", "tg_hold")
                 if k in body}
         data["at"] = timeutil.now_iso()
         self.__dict__["_guest_state"] = data
+
+    def guest_tg_hold_clear(self) -> None:
+        """Слово `tg_retake` бота резерва: запрет вебхука по пульту основы снят им самим (основа
+        отдала Telegram) — не ждать следующего `state`."""
+        data = self.__dict__.get("_guest_state")
+        if isinstance(data, dict):
+            data.pop("tg_hold", None)
 
     def guest_state(self) -> dict:
         data = dict(self.__dict__.get("_guest_state") or {})
@@ -208,7 +215,8 @@ class ReserveGuestMixin:
         return {"name": str(config.SERVER_NAME or ""), "self_host": own_host(),
                 "since": str(inn.get("since") or ""), "reason": str(inn.get("why") or inn.get("reason") or "dead"),
                 "primary": primary, "return": str(settings.get("app.reserve.return", "immediate") or "immediate"),
-                "own_name": self.reserve_peer_name(), "rf_via": bool(rf.get("rf_via")), "rf_cidr": str(rf.get("rf_cidr") or "")}
+                "own_name": self.reserve_peer_name(), "rf_via": bool(rf.get("rf_via")), "rf_cidr": str(rf.get("rf_cidr") or ""),
+                "tg_hold": self.reserve_pult_hold_why(inn)}    # Telegram у основы (пульт) — вебхук не ставить
 
     def reserve_guest_webhook_in(self, body: dict) -> list[tuple]:
         """Слово гостя о надзоре вебхука: застой доставки — Т-РУ19 админу резерва
@@ -225,7 +233,12 @@ class ReserveGuestMixin:
         if body.get("foreign"):
             if cur.get("webhook_foreign"):
                 return []                                     # гость повторяет на каждом надзоре — сказано
+            pult = str(self.reserve_peer_state().get("tg_pult") or "")
+            if pult and str(cur.get("pult_back") or "") == pult:
+                return []                                     # основа отдала Telegram после пульта — вебхук гость ставит снова
             self.rsv_update("rsv_in", webhook_foreign=True)
+            if self.reserve_pult_hold_why(cur):
+                return []                                     # пульт у основы — о нём админу уже сказано (pult/peer)
             name = self.reserve_peer_name()
             log.warning("резерв: вебхук бота «%s» не у гостя — Telegram у основы, гость решений не пишет", name)
             return [("notify", [Notification(tg_id=int(config.ADMIN_ID), force_sound=True,

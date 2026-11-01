@@ -167,6 +167,12 @@ def setup_reserve_jobs(scheduler, services, bot) -> None:
         except Exception as e:                           # noqa: BLE001
             log.warning("резерв: такт переезда: %s", e)
         try:
+            # `awg-bot reserve home --force`: запрос из терминала — рычаг тем же процессом (runtime/rsvhome)
+            from awgbot.runtime import rsvhome
+            await rsvhome.tick()
+        except Exception as e:                           # noqa: BLE001
+            log.warning("резерв: запрос awg-bot reserve home: %s", e)
+        try:
             srv = guestctl.server()
             if srv is not None:
                 for word in srv.take_words():
