@@ -357,9 +357,6 @@ class ReserveInboundBackMixin:
             return "возврат уже идёт"
         return ""
 
-    def reserve_evict_dialog_data(self) -> dict:
-        return {"name": self.reserve_peer_name()}
-
     def reserve_guest_back_req(self) -> list[tuple]:
         """Кнопка «↩️ Вернуть пользователей» в боте основы на резерве → `evict` основе."""
         if self.reserve_evict_check():
