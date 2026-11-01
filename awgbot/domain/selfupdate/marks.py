@@ -174,12 +174,10 @@ def mark_alive(reason: str, data_dir: Optional[str] = None) -> bool:
     from awgbot.util import timeutil
     if not guard_armed(data_dir):
         return False
+    from awgbot.util import fsatomic
     path = data_path(UPDATE_OK_FILE, data_dir)
-    tmp = f"{path}.tmp"
     try:
-        with open(tmp, "w", encoding="utf-8") as f:
-            f.write(f"{config.INSTALLED_VERSION} {timeutil.now_iso()}\n")
-        os.replace(tmp, path)
+        fsatomic.write_atomic(path, f"{config.INSTALLED_VERSION} {timeutil.now_iso()}\n")
     except OSError as e:
         log.warning("отметка жизни для сторожа обновления не записана: %s", e)
         with _alive_lock:

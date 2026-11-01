@@ -33,7 +33,7 @@ import subprocess
 from pathlib import Path
 
 from awgbot.core import config
-from awgbot.util import kvfile
+from awgbot.util import fsatomic, kvfile
 
 log = logging.getLogger(__name__)
 
@@ -387,38 +387,16 @@ def read_json(path: Path) -> dict:
 
 
 def write_private(path: Path, data: bytes | str, mode: int = 0o600) -> None:
-    """Файл хранилища гостя: 0600 с первого байта (создание под umask, затем
-    chmod — окно, в котором файл читаем шире)."""
-    raw = data.encode() if isinstance(data, str) else data
-    write_private_with(path, lambda f: f.write(raw), mode)
+    """Файл хранилища гостя: 0600 с первого байта, атомарно, с fsync (util/fsatomic)."""
+    fsatomic.write_atomic(path, data, mode)
 
 
 def write_private_with(path: Path, fill, mode: int = 0o600):
     """То же, что write_private, но содержимое пишет `fill(f)` — потоком (база из пакета
     или снимка распаковывается прямо в файл, без копии в памяти). Возвращает то, что
-    вернул `fill`; сбой — временный файл прочь, прежний на месте."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
-    try:
-        with os.fdopen(fd, "wb") as f:
-            got = fill(f)
-            f.flush()
-            os.fsync(f.fileno())                              # rep.bin и пакет переживают крах хоста
-    except BaseException:
-        os.unlink(str(tmp))
-        raise
-    os.chmod(str(tmp), mode)
-    os.replace(str(tmp), str(path))
-    try:
-        dfd = os.open(str(path.parent), os.O_RDONLY)
-        try:
-            os.fsync(dfd)
-        finally:
-            os.close(dfd)
-    except OSError:
-        pass
-    return got
+    вернул `fill`; сбой — временный файл прочь, прежний на месте; rep.bin и пакет
+    переживают крах хоста (fsync файла и каталога)."""
+    return fsatomic.write_stream(path, fill, mode)
 
 
 def open_status_write(step: str, **fields) -> None:

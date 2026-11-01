@@ -31,7 +31,7 @@ import random
 import time
 
 from awgbot.core import config, settings
-from awgbot.util import pairproto, rsvjrn, rsvkeys, timeutil
+from awgbot.util import fsatomic, pairproto, rsvjrn, rsvkeys, timeutil
 from awgbot.util.rsvpkg import bot as pkgbot, seal, vpn as pkgvpn
 
 from ..gateway_link.common import log
@@ -288,21 +288,7 @@ class ReservePackageMixin:
         path = os.path.join(out, f"base-{gen}.db")
         # снимок нужен ровно в сценарии «основа умерла»: tmp + fsync + replace + fsync каталога,
         # иначе после краха на диске файл нулевой длины или усечённый
-        tmp = path + ".tmp"
-        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "wb") as f:
-            f.write(db_bytes)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp, path)
-        try:
-            dfd = os.open(out, os.O_RDONLY)
-            try:
-                os.fsync(dfd)
-            finally:
-                os.close(dfd)
-        except OSError:
-            pass
+        fsatomic.write_atomic(path, db_bytes, 0o600)
 
     def _pkg_prune_reps(self) -> None:
         """Расшифрованные реплики `rep-<gen>.db` — только на время слияния; остались (процесс
@@ -422,13 +408,7 @@ class ReservePackageMixin:
             return "pkg_bad", "поколение или отпечаток не сошлись"
         os.makedirs(reserve_dir(), mode=0o700, exist_ok=True)
         path = guest_pkg_path()
-        tmp = path + ".tmp"
-        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "wb") as f:
-            f.write(blob)
-            f.flush()
-            os.fsync(f.fileno())                              # пакет — опора переезда после смерти основы: на диск
-        os.replace(tmp, path)
+        fsatomic.write_atomic(path, blob, 0o600)              # пакет — опора переезда после смерти основы: на диск
         from awgbot.infra import rsvzone
         self.rsv_put("rsv_pkg_in", {"gen": int(gen), "fp": str(fp), "size": len(blob), "at": timeutil.now_iso(),
                                     "m_gen": int(head.m_gen), "mf": rsvkeys.m_print_of(mf), "has_dns": head.has_dns,

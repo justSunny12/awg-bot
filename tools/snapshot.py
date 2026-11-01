@@ -69,20 +69,13 @@ def main(argv: list[str] | None = None) -> int:
                 db.close()
             except Exception:                         # noqa: BLE001
                 pass
-    tmp = f"{args.out}.part"
+    from awgbot.util import fsatomic
     try:
-        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "wb") as f:
-            f.write(blob)
-        os.replace(tmp, args.out)
+        fsatomic.write_atomic(args.out, blob, 0o600)   # временный рядом убирается и при сбое
         if os.path.dirname(os.path.abspath(args.out)) == os.path.abspath(str(config.BACKUP_DIR)):
             _Snapshot._rotate_backups()                # в каталоге бэкапов — последние 5, как у бота
     except OSError as e:
         print(f"бэкап не записан: {e}", file=sys.stderr)
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
         return 1
     return 0
 
