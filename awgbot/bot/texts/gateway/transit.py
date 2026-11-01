@@ -30,10 +30,7 @@ def _lists_updated_short(raw: str) -> str:
     from awgbot.util import timeutil
     if not raw:
         return "ещё не обновлялись"
-    try:
-        return "обн. " + timeutil.fmt_dt_ui(timeutil.parse_iso(raw))
-    except ValueError:
-        return "обн. ?"
+    return "обн. " + timeutil.iso_dt(raw, "?")
 
 
 def smb_line(svc: dict) -> str:

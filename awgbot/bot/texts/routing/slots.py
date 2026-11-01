@@ -334,11 +334,9 @@ def gateways_text(states: list, *, status: tuple = (True, ""), switched_at: str 
     if len(states) > 1 and not auto_on:
         lines.append(GATEWAYS_AUTO_OFF)
     tail = []
-    if len(states) > 1 and switched_at:
-        try:
-            tail.append(f"Переключение: {timeutil.fmt_dt_ui(timeutil.parse_iso(switched_at))}, авто")
-        except ValueError:
-            pass
+    switched = timeutil.iso_dt(switched_at) if len(states) > 1 else ""
+    if switched:
+        tail.append(f"Переключение: {switched}, авто")
     lt = _lists_tail(lists)
     if lt:
         tail.append(lt)

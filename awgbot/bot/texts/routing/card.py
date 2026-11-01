@@ -124,11 +124,9 @@ def _cfg_lines(cfg: dict, ch: dict) -> list[str]:
 def cfg_more_lines(cfg: dict) -> list[str]:
     """«подробнее»: поколение и дата применения (К13), что оставлено своим."""
     out = []
-    if cfg.get("gen") and cfg.get("applied_at"):
-        try:
-            out.append(f"конфигурация №{int(cfg['gen'])} применена {timeutil.fmt_dt_ui(timeutil.parse_iso(cfg['applied_at']))}")
-        except ValueError:
-            pass
+    when = timeutil.iso_dt(cfg.get("applied_at")) if cfg.get("gen") else ""
+    if when:
+        out.append(f"конфигурация №{int(cfg['gen'])} применена {when}")
     if "mail" in set(cfg.get("declined") or []):
         out.append("почта на шлюзе своя — так решено в чате бота шлюза")
     return out
@@ -151,14 +149,8 @@ def channel_lines(ch: dict | None, server_ok, bot: str = "", slot: int = 0) -> t
     if ch.get("online"):
         head = f"{CHANNEL_HEAD} 🟢"
     else:
-        seen = ch.get("seen") or ""
-        when = ""
-        if seen:
-            try:
-                when = " с " + timeutil.fmt_dt_ui(timeutil.parse_iso(seen))
-            except ValueError:
-                when = ""
-        head = f"{CHANNEL_HEAD} 🔴 нет связи{when}"
+        seen = timeutil.iso_dt(ch.get("seen") or "")
+        head = f"{CHANNEL_HEAD} 🔴 нет связи" + (f" с {seen}" if seen else "")
     warns: list[str] = []
     egress = ""
     if ch.get("has_snap"):
@@ -275,11 +267,8 @@ def keep_line(keep: dict | None, agent_bot: dict | None = None) -> str:
         from awgbot.domain.notices.backup import chat_ref
         return f"{what} ждут решения в чате {chat_ref(agent_bot)}"
     if keep.get("state") == "saved":
-        try:
-            when = timeutil.fmt_dt_ui(timeutil.parse_iso(keep["at"]), year=True)
-        except (ValueError, KeyError, TypeError):
-            return ""
-        return f"💾 Настройки бота шлюза в бэкапе: на {when}"
+        when = timeutil.iso_dt(keep.get("at"), year=True)
+        return f"💾 Настройки бота шлюза в бэкапе: на {when}" if when else ""
     return ""
 
 

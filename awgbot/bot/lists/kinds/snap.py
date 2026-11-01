@@ -24,10 +24,7 @@ async def snap(services, ref: int, key: str, chat_id: int) -> View | None:
     back = _back(data)
     if data is None:
         return View(title="", empty=tl.SNAP_GONE, back=back, live=False)
-    try:
-        at = timeutil.fmt_dt_ui(timeutil.parse_iso(str(data.get("at") or "")))
-    except ValueError:
-        at = ""
+    at = timeutil.iso_dt(str(data.get("at") or ""))
     if data.get("stale"):
         return View(title="", empty=tl.snap_stale(at, str(data.get("why") or "")), back=back, live=False)
     rows = [str(r) for r in data.get("rows") or []]

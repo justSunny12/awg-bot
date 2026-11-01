@@ -84,3 +84,61 @@ def test_the_return_mode_is_read_in_one_place():
     allowed = {ROOT / "domain" / "services" / "reserve" / "away.py"}
     hits = [p for p in ROOT.rglob("*.py") if '"app.reserve.return"' in p.read_text() and p not in allowed]
     assert not hits, f"ключ рычага возврата читают мимо return_mode: {hits}"
+
+
+def test_gateway_and_routing_texts_show_the_moment_or_drop_it():
+    """Остальные тексты с моментом из строки — шлюз (панель резерва, обход
+    Telegram, кворум, обновление списков), карточка и экран слотов, снимок
+    списка, уведомление о настройках шлюза, набор обновлений: живая строка —
+    в поясе показа, битая — заглушка или строка без «с …», а не трассировка."""
+    from awgbot.bot.texts import fleet
+    from awgbot.bot.texts.gateway import panel, transit
+    from awgbot.bot.texts.routing import card, slots
+    from awgbot.domain.notices import gateway as gn
+    assert fleet._clock(LATE) == "00:30 (UTC+5)" and fleet._clock("x") == "?"
+    assert "с 00:30 (UTC+5)" in panel.reserve_panel_line({"seen": "down", "since": LATE, "name": "B"})
+    assert panel.reserve_panel_line({"seen": "down", "since": "x", "name": "B"}).startswith("⚠️ Резерв «B»: нет связи — ")
+    assert "на нём с 00:30" in panel.reserve_panel_line({"open": True, "since_open": LATE, "name": "B"})
+    assert panel.reserve_tg_lines({"tg_via": "B", "tg_since": "x", "name": "A"}) == [
+        "📨 Telegram — через резерв: аплинк до «A» молчит"]
+    assert panel.reserve_tg_lines({"tg_via": "B", "tg_since": LATE, "name": "A"})[0].endswith(" с 00:30 (UTC+5)")
+    assert "не вижу с 00:30 (UTC+5)" in panel.quorum_panel_line({"w": "uns", "since": LATE, "name": "A"})
+    assert "не вижу —" in panel.quorum_panel_line({"w": "uns", "since": None, "name": "A"})
+    assert transit._lists_updated_short(LATE) == "обн. 16.11 00:30 (UTC+5)"
+    assert transit._lists_updated_short("x") == "обн. ?"
+    assert card.cfg_more_lines({"gen": 3, "applied_at": LATE}) == ["конфигурация №3 применена 16.11 00:30 (UTC+5)"]
+    assert card.cfg_more_lines({"gen": 3, "applied_at": "x"}) == card.cfg_more_lines({"applied_at": LATE}) == []
+    assert card.keep_line({"state": "saved", "at": LATE}) == "💾 Настройки бота шлюза в бэкапе: на 16.11.26 00:30 (UTC+5)"
+    assert card.keep_line({"state": "saved"}) == card.keep_line({"state": "saved", "at": "x"}) == ""
+    head = card.channel_lines({"ever": True, "online": False, "seen": LATE}, True)[0]
+    assert head.endswith("🔴 нет связи с 16.11 00:30 (UTC+5)")
+    assert card.channel_lines({"ever": True, "online": False, "seen": "x"}, True)[0].endswith("🔴 нет связи")
+    from types import SimpleNamespace
+    st = [{"gateway": SimpleNamespace(id=i, label="", lan_subnets=[], lan_mode=1),
+           "device": SimpleNamespace(name=f"Pi{i}"), "active": i == 1, "link_ok": True} for i in (1, 2)]
+    assert "Переключение: 16.11 00:30 (UTC+5), авто" in slots.gateways_text(st, switched_at=LATE)
+    assert "Переключение" not in slots.gateways_text(st, switched_at="x")
+    assert gn.keep_received([], LATE).endswith("как на 16.11.26 00:30 (UTC+5)")
+    assert gn.keep_received([], "x").endswith("как на ?")
+
+
+def test_no_text_keeps_its_own_try_around_parse_iso():
+    """Своя обёртка try: fmt_*(parse_iso(…)) except … — копия iso_clock / iso_dt /
+    iso_date_yy; у копий разъезжались ловимые исключения и заглушки."""
+    wrapped = {"fmt_clock_ui", "fmt_dt_ui", "fmt_date_yy"}
+
+    def name(f):
+        return getattr(f, "attr", getattr(f, "id", ""))
+
+    hits = []
+    for path in sorted(ROOT.rglob("*.py")):
+        if "timeutil" in path.parts:
+            continue
+        for node in ast.walk(ast.parse(path.read_text())):
+            if not isinstance(node, ast.Try):
+                continue
+            for sub in (n for stmt in node.body for n in ast.walk(stmt)):
+                if (isinstance(sub, ast.Call) and name(sub.func) in wrapped and sub.args
+                        and isinstance(sub.args[0], ast.Call) and name(sub.args[0].func) == "parse_iso"):
+                    hits.append(f"{path.relative_to(ROOT)}:{sub.lineno}")
+    assert not hits, f"своя копия разбора момента в try: {hits}"
