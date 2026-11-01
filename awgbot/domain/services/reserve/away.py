@@ -105,8 +105,13 @@ class ReserveAwayMixin:
         self.__dict__["_rsv_blocks_sent"] = addrs
         return addrs
 
+    def reserve_return_mode(self) -> str:
+        """Рычаг возврата `app.reserve.return` одним чтением: immediate (сам, когда основа
+        здорова) | button (по кнопке); пусто — умолчание immediate."""
+        return str(settings.get("app.reserve.return", "immediate") or "immediate")
+
     def reserve_return_lever_button(self) -> bool:
-        return str(settings.get("app.reserve.return", "immediate") or "immediate") == "button"
+        return self.reserve_return_mode() == "button"
 
 
 def _when(iso: str) -> str:
