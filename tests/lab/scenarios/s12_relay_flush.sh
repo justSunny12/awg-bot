@@ -12,8 +12,10 @@
 #      DNAT на A, рукопожатие с A через пересылку; запись conntrack у B — с DNAT на A;
 #   3. A гибнет (процесс остановлен, сеть убита) — рукопожатия cA уходят по записи conntrack на
 #      мёртвую A; B открывает по аварийному коду, пересылка уступает открытию;
-#   4. на шаге clone_up записей conntrack с DNAT на A у B нет (relay_flush), рукопожатие cA с
-#      новым клоном — не позже 10 с после clone_up.
+#   4. на шаге clone_up записи сброшены ровно один раз (relay_flush, строка в журнале B), записей
+#      conntrack с DNAT на A у B нет (исходное назначение — адрес B, ответ — от A; собственный
+#      поток B к awg0 A без NAT не в счёт), рукопожатие cA с новым клоном — не позже 10 с после
+#      clone_up.
 #
 # На стенде нужен conntrack (пакет conntrack в ВМ — как ZONE_TOOLS на хостах): без него скрипт
 # зоны сбросить записи не может, и пункт 4 провалится с этой причиной.
@@ -65,9 +67,19 @@ hs_wait() {      # hs_wait <с ts> <срок> <что> — рукопожати�
     for i in $(seq 1 "$2"); do HS="$(hs)"; [ "${HS:-0}" -ge "$1" ] && [ "${HS:-0}" -gt 0 ] && return 0; sleep 1; done
     pl_fail "$3: рукопожатия cA с $(date -d "@$1" +%T) нет за $2 с (последнее $(date -d "@${HS:-0}" +%T))"
 }
-ct_dnat_a() {    # записи conntrack у B: UDP на порт awg0 A с ответом от A (DNAT хвоста)
-    ip netns exec lab-B conntrack -L -p udp --orig-port-dst 45871 2>/dev/null | grep -c 'src=203.0.113.5'
+ct_dnat_a() {    # записи conntrack у B с DNAT хвоста: исходное назначение — адрес B, ответ — от A.
+    # Собственный поток B к awg0 A (B → 203.0.113.5:45871, без NAT: пробы кворума и линка) под
+    # --orig-port-dst 45871 тоже попадает и с мёртвой A живёт [UNREPLIED] — его не считать
+    ip netns exec lab-B conntrack -L -p udp --orig-port-dst 45871 2>/dev/null | awk '
+        { ns = 0; nd = 0; od = ""; rs = ""
+          for (i = 1; i <= NF; i++) {
+              if ($i ~ /^src=/ && ++ns == 2) rs = substr($i, 5)
+              if ($i ~ /^dst=/ && ++nd == 1) od = substr($i, 5)
+          }
+          if (od == "198.51.100.7" && rs == "203.0.113.5") n++ }
+        END { print n + 0 }'
 }
+FLUSHED='записи conntrack по портам клонов сброшены'    # строка исполнителя действий (INFO)
 peer_hs() {      # peer_hs <пространство> — у awg0 там было рукопожатие с cA
     ip netns exec "$1" awg show all latest-handshakes 2>/dev/null | awk -v k="$CPUB" '$2 == k && $3 > 0 {f = 1} END {exit !f}'
 }
@@ -117,9 +129,13 @@ peer_hs lab-A || pl_fail "A рукопожатия cA через пересыл�
 # после возврата пакет у B израсходован — открыть нечем, пока A не пришлёт свежий (pkg_minutes)
 pl_wait B '(s.get("pkg_in") or {}).get("gen")' 240 "у B — свежий пакет A после возврата" || exit 1
 pl_cmd A code "{\"out\": \"$PL/shared/code\"}" >/dev/null || pl_fail "аварийный код A после возврата не получен"
+# окно кода, открытое до гибели A (после возврата проба B линии A может промахнуться — «не вижу» на
+# полминуты), закрывается её «вижу» — код, введённый в него, уйдёт в закрывшееся окно: сначала его нет
+pl_wait B 'not (s.get("code_window") or {}).get("open")' 120 "у B закрыто окно кода до гибели A" || exit 1
 pl_stop A; bash "$PL_HERE/net.sh" kill A >/dev/null
 pl_wait B '(s.get("code_window") or {}).get("open")' 240 "у B открыт приём аварийного кода (Н4) в relay" || exit 1
 [ -n "$NOCT" ] || [ "$(ct_dnat_a)" -ge 1 ] || pl_fail "запись conntrack хвоста пропала сама до открытия — проверка пуста"
+OS0="$(cat /run/awg-bot/rsv/open.status 2>/dev/null)"    # итог прошлого открытия (кнопкой) — не clone_up этого
 cbdata="$(cd "$PL_ROOT" && "$PY" -c 'from awgbot.bot.callbacks import PeerCB; print(PeerCB(action="code").pack())')"
 ib() { ip netns exec lab-B curl -s -m5 -X POST "$API_B/inject/$TOKEN_B" -H 'Content-Type: application/json' -d "$1" >/dev/null; }
 ib "{\"callback_query\": {\"id\": \"lab-1\", \"chat_instance\": \"lab\", \"data\": \"$cbdata\",
@@ -130,24 +146,27 @@ ib "{\"message\": {\"message_id\": 8, \"date\": 1, \"chat\": {\"id\": $ADMIN_A, 
   \"from\": {\"id\": $ADMIN_A, \"is_bot\": false, \"first_name\": \"Админ A\"}, \"text\": \"$(cat "$PL/shared/code")\"}}"
 
 # ── 4. clone_up: записи сброшены, рукопожатие с новым клоном ≤ 10 с ─────────────────────────────
-n_flush0="$(grep -c 'зона --relay-flush\|relay-flush: ok' "$PL/B/node.log")"
+n_flush0="$(grep -c "$FLUSHED" "$PL/B/node.log")"
 t_up=""
 for _ in $(seq 1 900); do
-    case "$(cat /run/awg-bot/rsv/open.status 2>/dev/null)" in
+    os="$(cat /run/awg-bot/rsv/open.status 2>/dev/null)"
+    [ "$os" != "$OS0" ] || { sleep 0.2; continue; }
+    case "$os" in
         *'"step": "clone_up"'*|*'"step": "record'*|*'"step": "done"'*) t_up=$(date +%s); break ;;
         *'"step": "fail"'*) pl_fail "новое открытие сорвалось: $(cat /run/awg-bot/rsv/open.status)" ;;
     esac
     sleep 0.2
 done
 [ -n "$t_up" ] || pl_fail "новое открытие не дошло до clone_up за 180 с: $(cat /run/awg-bot/rsv/open.status 2>/dev/null) · $(pl_q B 's["in"]')"
-for _ in $(seq 1 30); do [ "$(grep -c 'зона --relay-flush\|relay-flush: ok' "$PL/B/node.log")" -gt "$n_flush0" ] && break; sleep 1; done
-flushed="$(( $(grep -c 'зона --relay-flush\|relay-flush: ok' "$PL/B/node.log") - n_flush0 ))"
+for _ in $(seq 1 30); do [ "$(grep -c "$FLUSHED" "$PL/B/node.log")" -gt "$n_flush0" ] && break; sleep 1; done
+flushed="$(( $(grep -c "$FLUSHED" "$PL/B/node.log") - n_flush0 ))"
 HS=0; for _ in $(seq 1 60); do HS="$(hs)"; [ "${HS:-0}" -ge "$((t_up - 1))" ] && break; sleep 1; done
 dt=$(( HS - t_up ))
 [ -z "$NOCT" ] || pl_fail "на стенде нет conntrack (пакет conntrack, ZONE_TOOLS хостов) — сброс записей хвоста не проверить (скрипт зоны --relay-flush на clone_up звался: $flushed раз); рукопожатие cA с новым клоном: $( [ "$HS" -ge "$((t_up - 1))" ] && echo "через $dt с после clone_up" || echo "нет за 60 с")"
 [ "$HS" -ge "$((t_up - 1))" ] || pl_fail "рукопожатия cA с новым клоном нет за 60 с после clone_up"
+[ "$flushed" = 1 ] || pl_fail "записи conntrack на clone_up сбрасывались $flushed раз, а не один (строка «$FLUSHED» в журнале B)"
 n_ct="$(ct_dnat_a)"
-[ "$n_ct" = 0 ] || pl_fail "после clone_up у B записей conntrack с DNAT на A: $n_ct — relay_flush не сбросил"
+[ "$n_ct" = 0 ] || pl_fail "после clone_up у B записей conntrack с DNAT на A: $n_ct — relay_flush не сбросил: $(ip netns exec lab-B conntrack -L -p udp --orig-port-dst 45871 2>&1 | head -n8) · DNAT B: $(ip netns exec lab-B nft list ruleset 2>/dev/null | grep -i dnat | head -n8) · endpoints B: $(ip netns exec lab-B awg show all endpoints 2>&1 | head -n8)"
 [ "$dt" -le 10 ] || pl_fail "рукопожатие cA с новым клоном через $dt с после clone_up — дольше 10 с"
 grep -q "relay-flush\|пересылка хвоста снята" "$PL/B/node.log" || pl_fail "в журнале B нет снятия пересылки при новом открытии"
 echo "ok (рукопожатие cA с новым клоном через ${dt} с после clone_up, записей хвоста после сброса — 0)"
