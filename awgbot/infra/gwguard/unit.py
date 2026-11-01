@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 
 from awgbot.core import config
+from awgbot.infra import systemd
 from awgbot.util import fsatomic, kvfile
 from awgbot.infra import gwguard as pkg       # имена пакета — через него: их подменяют тесты, и подмена должна видеться везде
 
@@ -239,7 +240,7 @@ def _write_private(path: Path, text: str) -> None:
 
 def _daemon_reload() -> None:
     try:
-        proc = pkg.subprocess.run(["systemctl", "daemon-reload"], capture_output=True, timeout=30)
+        proc = systemd.daemon_reload(timeout=30)
     except (OSError, pkg.subprocess.SubprocessError) as e:
         raise pkg.GwGuardError(f"systemctl daemon-reload не отработал: {e}") from e
     if proc is not None and getattr(proc, "returncode", 0) != 0:
@@ -265,8 +266,7 @@ def reassert(timeout: int = 90) -> tuple[bool, str]:
     """Перевыставить таблицу: рестарт юнита — тот зовёт скрипт с окружением
     бандла. Линк скрипт не трогает, если конфиг не менялся."""
     try:
-        proc = pkg.subprocess.run(["systemctl", "restart", config.GW_UNIT],
-                              capture_output=True, timeout=timeout)
+        proc = systemd.restart(config.GW_UNIT, timeout=timeout)
     except pkg.subprocess.TimeoutExpired:
         return False, f"скрипт обвязки {pkg.TIMEOUT_MARK} {timeout} с"
     except OSError as e:

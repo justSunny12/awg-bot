@@ -50,7 +50,7 @@ class _Pi:
     --link-apply — настоящая из скрипта."""
 
     def __init__(self, tmp_path, monkeypatch, *, bot_token: str = ""):
-        from awgbot.infra import gwguard
+        from awgbot.infra import gwguard, systemd
         root = tmp_path / "pi"; root.mkdir()
         self.root = root
         self.link = root / "awglink.conf"
@@ -76,8 +76,10 @@ class _Pi:
                 return _P(0, b"link: restarted\n")
             self.runs.append(" ".join(str(a) for a in argv[1:3]))
             return _P(0, b"")
-        monkeypatch.setattr(gwguard, "subprocess", types.SimpleNamespace(
-            run=run, TimeoutExpired=subprocess.TimeoutExpired, SubprocessError=subprocess.SubprocessError))
+        fake = types.SimpleNamespace(
+            run=run, TimeoutExpired=subprocess.TimeoutExpired, SubprocessError=subprocess.SubprocessError)
+        monkeypatch.setattr(gwguard, "subprocess", fake)
+        monkeypatch.setattr(systemd, "subprocess", fake)    # systemctl юнита обвязки — через infra/systemd
         self.db = Database(str(root / "pi.db")); self.db.init_schema()
         s = GatewayServices(self.db)
         s._join_file = str(root / "join.json")

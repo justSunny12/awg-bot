@@ -8,6 +8,7 @@ import subprocess
 from typing import Optional
 
 from awgbot.core import config
+from awgbot.infra import systemd
 from awgbot.util import fsatomic, net4
 
 from . import base, sets
@@ -128,9 +129,7 @@ def write_dnsmasq_conf(text: str, path: str = None) -> bool:
         raise RoutingError("dnsmasq отверг конфиг списков (файл возвращён): "
                            + (test.stderr or test.stdout).decode(errors="replace").strip()[-300:])
 
-    proc = subprocess.run(
-        ["systemctl", "restart", config.ROUTING_DNSMASQ_SERVICE],
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
+    proc = systemd.restart(config.ROUTING_DNSMASQ_SERVICE, timeout=30)
     if proc.returncode != 0:
         raise RoutingError(
             "Не перезапустить dnsmasq: " + proc.stderr.decode(errors="replace").strip())

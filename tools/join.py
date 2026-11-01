@@ -135,7 +135,7 @@ def _follow(expires: int, *, once: bool = False) -> int:
 def cmd_join(text: str) -> int:
     from awgbot.core import config
     from awgbot.domain.gateway.join import JOIN_FILE, STATUS_FILE
-    from awgbot.infra import gwguard
+    from awgbot.infra import gwguard, systemd
     from awgbot.util import jointoken
     from awgbot.util import jsonfile
     from awgbot.util.fsatomic import write_private
@@ -181,8 +181,7 @@ def cmd_join(text: str) -> int:
         _err("линк по команде подключения не поднялся: " + (out.splitlines()[-1] if out else "скрипт отказал"))
         return 1
     try:
-        rc = subprocess.run(["systemctl", "restart", "awg-bot"], check=False, capture_output=True,
-                            timeout=120).returncode
+        rc = systemd.restart("awg-bot", timeout=120).returncode
     except (OSError, subprocess.SubprocessError) as e:
         rc, out = 1, str(e)
     if rc != 0:
