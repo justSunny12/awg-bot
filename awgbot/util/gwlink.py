@@ -215,14 +215,6 @@ def unpack(key: bytes, line: bytes | str, *, now: float | None = None,
     return data
 
 
-def _ipv4(tok: str) -> bool:
-    import ipaddress
-    try:
-        return ipaddress.ip_address(tok).version == 4
-    except ValueError:
-        return False
-
-
 # ── общие правила обеих сторон ───────────────────────────────────────────────
 # Одно место на то, что раньше жило в трёх-шести копиях и расходилось: порт по
 # умолчанию, адреса сторон в /30, отпечаток фидов, таблица ключей конфигурации.

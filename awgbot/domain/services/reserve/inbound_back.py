@@ -20,7 +20,7 @@ import subprocess
 import time
 
 from awgbot.core import config, settings
-from awgbot.util import livestep, timeutil
+from awgbot.util import livestep, nets, timeutil
 
 from ..types import Notification
 from ..gateway_link.common import log
@@ -87,20 +87,15 @@ class ReserveInboundBackMixin:
     def _relay_host_ip(host: str) -> str:
         """Адрес основы для DNAT хвоста: IPv4-литерал как есть; имя — резолвится
         сейчас (первый A); не резолвится — пусто (хвоста не будет, зона снимается)."""
-        import ipaddress
-        import socket
         if not host:
             return ""
-        try:
-            return str(ipaddress.IPv4Address(host))
-        except ValueError:
-            pass
-        try:
-            infos = socket.getaddrinfo(host, None, socket.AF_INET, socket.SOCK_DGRAM)
-        except OSError as e:
-            log.warning("резерв: адрес основы %s для пересылки хвоста не резолвится: %s", host, e)
-            return ""
-        return str(infos[0][4][0]) if infos else ""
+        if nets.is_ip(host):
+            return host if nets.is_ipv4(host) else ""
+        ip = nets.resolve4(host, nets.RESOLVE_TIMEOUT)
+        if not ip:
+            log.warning("резерв: адрес основы %s для пересылки хвоста не резолвится за %.0f с",
+                        host, nets.RESOLVE_TIMEOUT)
+        return ip
 
     def _tick_releasing(self, inn: dict) -> list[tuple]:
         from awgbot.infra import rsvzone

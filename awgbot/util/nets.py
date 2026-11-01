@@ -1,8 +1,10 @@
 """
-nets.py — подсети: пересечение с учётом вложенности.
+nets.py — подсети: пересечение с учётом вложенности; адреса и имена.
 
 Одна функция на сервис и тексты: «одинаковые» подсети — частный случай,
-192.168.0.0/16 против 192.168.1.0/24 тоже пересечение.
+192.168.0.0/16 против 192.168.1.0/24 тоже пересечение. Здесь же — проверка
+IP-литерала и разрешение имени в IPv4 с потолком ожидания (одно место вместо
+копий по ролям).
 """
 from __future__ import annotations
 
@@ -22,6 +24,37 @@ def getaddrinfo_timed(host: str, *, timeout: float = RESOLVE_TIMEOUT, family: in
     """socket.getaddrinfo(host) не дольше timeout; futures.TimeoutError — не успел."""
     fut = _resolve_pool.submit(socket.getaddrinfo, host, None, family=family, proto=proto)
     return fut.result(timeout=timeout)
+
+
+def resolve4(host: str, timeout: float = RESOLVE_TIMEOUT) -> str:
+    """Первый IPv4 имени в порядке ответа резолвера; пусто — не разрешилось
+    или не уложилось в потолок. Умолчание таймаута сокетов процесса не трогает."""
+    try:
+        infos = getaddrinfo_timed(host, timeout=timeout, family=socket.AF_INET)
+    except (futures.TimeoutError, OSError, UnicodeError):
+        return ""
+    for info in infos or ():
+        addr = str(info[4][0])
+        if is_ipv4(addr):
+            return addr
+    return ""
+
+
+def is_ip(host: str) -> bool:
+    """IP-литерал (IPv4 или IPv6), а не имя."""
+    try:
+        ipaddress.ip_address(str(host))
+        return True
+    except ValueError:
+        return False
+
+
+def is_ipv4(tok: str) -> bool:
+    """IPv4-литерал."""
+    try:
+        return ipaddress.ip_address(str(tok)).version == 4
+    except ValueError:
+        return False
 
 
 def normalize(nets) -> list[str]:

@@ -9,6 +9,8 @@ import subprocess
 from awgbot.core import config
 from tools.firewall import _parse_entries
 
+SYSTEMCTL_TIMEOUT = 10          # с: systemctl, повисший на D-Bus, не держит `awg-bot firewall status`
+
 
 # ── роль gateway: таблица awg_gw_guard под скриптом обвязки ──────────────────
 # Здесь бот таблицу не пишет: её ставит routing-gw-setup.sh из бандла (юнит
@@ -24,6 +26,18 @@ GW_DOC = """awg-bot firewall (шлюз) — таблица awg_gw_guard став
 
 Порт SSH, адреса снаружи и фильтр снаружи — `awg-bot ssh …`.
 """
+
+
+def _unit_enabled_word(unit: str) -> str:
+    """«включён» по коду `systemctl is-enabled` (0 — включён в любом виде:
+    enabled, static, indirect…); systemctl не ответил за потолок или его нет —
+    так и сказано, а не «НЕ включён»."""
+    try:
+        rc = subprocess.run(["systemctl", "is-enabled", unit], capture_output=True,
+                            timeout=SYSTEMCTL_TIMEOUT).returncode
+    except (OSError, subprocess.SubprocessError):
+        return "состояние не снято (systemctl не ответил)"
+    return "включён" if rc == 0 else "НЕ включён"
 
 
 def gw_status(_args) -> int:
@@ -49,8 +63,7 @@ def gw_status(_args) -> int:
                 if {f"i:{config.GW_LINK_IF}", f"o:{config.GW_LINK_IF}"} <= acc
                 else "  ← drop перекроет транзит пользователей")
     print(f"политика ip filter FORWARD: {pol or 'цепочки нет'}{note}")
-    rc = subprocess.run(["systemctl", "is-enabled", config.GW_UNIT], capture_output=True).returncode
-    print(f"юнит {config.GW_UNIT}: {'включён' if rc == 0 else 'НЕ включён'}")
+    print(f"юнит {config.GW_UNIT}: {_unit_enabled_word(config.GW_UNIT)}")
     env = gwguard.read_env()
     print(f"SSH снаружи: порт {env.get('SSH_PORT') or '22 (факт ещё не снят)'}, фильтр "
           f"{'включён' if env.get('SSH_FILTER') == '1' else 'выключен'} — подробнее: awg-bot ssh status")

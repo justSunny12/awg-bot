@@ -27,26 +27,22 @@ jointoken.py — токен подключения шлюза (`AWGJ1.<base64url
 Разбор установщиком на bash (длина, версия, хост, id) — по тем же смещениям
 (install/awg-bot-install.sh, join_parse); контрольную сумму сверяют и он
 (`b2sum -l 32`, если есть в системе), и `awg-bot join`. Правка формата —
-правка обоих разборов.
+правка обоих разборов. Кадр (версия, base64url с префиксом и суммой, выпуск,
+хост, Jc…H4) — общий с приглашением пары, util/tokenwire.py.
 """
 from __future__ import annotations
 
 import base64
-import hashlib
 import ipaddress
-import re
 import struct
 from dataclasses import dataclass
 
+from awgbot.util import tokenwire as tw
+from awgbot.util.tokenwire import FORMAT, TokenError
+
 PREFIX = "AWGJ1."
-FORMAT = 1
-HOST_MAX = 63
-_HOST_RE = re.compile(r"[A-Za-z0-9.-]{1,63}\Z")
-_SUM = 4
-
-
-class TokenError(ValueError):
-    """Токен не разобрался: не наш, повреждён, другой версии формата."""
+_DAMAGED = "команда подключения повреждена"
+_MIN_BODY = 2 + 4 + 8 + 4 + 1         # до хоста включая его длину
 
 
 @dataclass(frozen=True)
@@ -83,89 +79,44 @@ class JoinToken:
 
     def obfuscation(self) -> dict:
         """Jc…H4 строками — как их пишет скрипт линка."""
-        out = {"Jc": str(self.jc), "Jmin": str(self.jmin), "Jmax": str(self.jmax)}
-        for i, v in enumerate(self.s, 1):
-            out[f"S{i}"] = str(v)
-        for i, (lo, hi) in enumerate(self.h, 1):
-            out[f"H{i}"] = f"{lo}-{hi}"
-        return out
-
-
-def _version_bytes(version: str) -> bytes:
-    parts = [int(x) for x in str(version).lstrip("v").split(".")]
-    if not 3 <= len(parts) <= 4 or any(not 0 <= p <= 255 for p in parts):
-        raise TokenError(f"выпуск {version!r} не укладывается в токен")
-    parts += [0] * (4 - len(parts))
-    return bytes(parts)
-
-
-def _version_str(raw: bytes) -> str:
-    x, y, z, p = raw
-    return f"{x}.{y}.{z}" + (f".{p}" if p else "")
-
-
-def _sum(body: bytes) -> bytes:
-    return hashlib.blake2b(body, digest_size=_SUM).digest()
+        return tw.obfuscation(self)
 
 
 def encode(tok: JoinToken) -> str:
     """Токен строкой `AWGJ1.<base64url без =>`."""
-    host = tok.host.encode("ascii")
-    if not _HOST_RE.match(tok.host):
+    if not tw.host_ok(tok.host):
         raise TokenError("хост сервера не укладывается в токен")
     if len(tok.vps_pub) != 32 or len(tok.gw_priv) != 32:
         raise TokenError("ключ линка не 32 байта")
     jid = bytes.fromhex(tok.join_id)
     if len(jid) != 8:
         raise TokenError("id сопряжения — 8 байт")
-    body = (struct.pack(">BB", FORMAT, int(tok.slot)) + _version_bytes(tok.version) + jid
-            + struct.pack(">I", int(tok.expires)) + struct.pack(">B", len(host)) + host
+    body = (struct.pack(">BB", FORMAT, int(tok.slot)) + tw.version_bytes(tok.version, "токен") + jid
+            + struct.pack(">I", int(tok.expires)) + tw.pack_host(tok.host)
             + struct.pack(">HH", int(tok.link_port), int(tok.channel_port))
             + ipaddress.IPv4Address(tok.gw_addr).packed + tok.vps_pub + tok.gw_priv
-            + struct.pack(">BBB", tok.jc, tok.jmin, tok.jmax) + struct.pack(">BBBB", *tok.s)
-            + b"".join(struct.pack(">II", lo, hi) for lo, hi in tok.h))
-    raw = body + _sum(body)
-    return PREFIX + base64.urlsafe_b64encode(raw).decode().rstrip("=")
+            + tw.pack_obf(tok.jc, tok.jmin, tok.jmax, tok.s, tok.h))
+    return tw.wrap(PREFIX, body)
 
 
 def decode(text: str) -> JoinToken:
     """Разобрать строку токена; не наш, повреждён, другой версии — TokenError."""
-    s = str(text or "").strip()
-    if not s.startswith(PREFIX):
-        raise TokenError("это не команда подключения")
-    b64 = s[len(PREFIX):]
-    if not re.fullmatch(r"[A-Za-z0-9_-]{40,400}", b64):
-        raise TokenError("команда подключения повреждена")
-    try:
-        raw = base64.urlsafe_b64decode(b64 + "=" * (-len(b64) % 4))
-    except (ValueError, TypeError) as e:
-        raise TokenError("команда подключения повреждена") from e
-    if len(raw) < 2 + 4 + 8 + 4 + 1 + _SUM:
-        raise TokenError("команда подключения повреждена")
-    body, got = raw[:-_SUM], raw[-_SUM:]
-    import hmac
-    if not hmac.compare_digest(_sum(body), got):
-        raise TokenError("команда подключения повреждена")
-    if body[0] != FORMAT:
-        raise TokenError("команда подключения другого формата — обнови установщик")
+    body = tw.unwrap(PREFIX, text, min_body=_MIN_BODY, not_ours="это не команда подключения", damaged=_DAMAGED,
+                     newer="команда подключения другого формата — обнови установщик")
     try:
         slot = body[1]
-        version = _version_str(body[2:6])
+        version = tw.version_str(body[2:6])
         join_id = body[6:14].hex()
         (expires,) = struct.unpack(">I", body[14:18])
-        hlen = body[18]
-        host = body[19:19 + hlen].decode("ascii")
-        p = 19 + hlen
+        host, p = tw.unpack_host(body, 18)
         link_port, channel_port = struct.unpack(">HH", body[p:p + 4]); p += 4
         gw_addr = str(ipaddress.IPv4Address(body[p:p + 4])); p += 4
         vps_pub, gw_priv = body[p:p + 32], body[p + 32:p + 64]; p += 64
-        jc, jmin, jmax = body[p:p + 3]; p += 3
-        s4 = tuple(body[p:p + 4]); p += 4
-        hs = tuple(struct.unpack(">II", body[p + 8 * i:p + 8 * i + 8]) for i in range(4)); p += 32
+        jc, jmin, jmax, s4, hs, p = tw.unpack_obf(body, p)
     except (IndexError, struct.error, UnicodeDecodeError, ValueError) as e:
-        raise TokenError("команда подключения повреждена") from e
-    if p != len(body) or len(vps_pub) != 32 or len(gw_priv) != 32 or not _HOST_RE.match(host) or not slot:
-        raise TokenError("команда подключения повреждена")
+        raise TokenError(_DAMAGED) from e
+    if p != len(body) or len(vps_pub) != 32 or len(gw_priv) != 32 or not tw.host_ok(host) or not slot:
+        raise TokenError(_DAMAGED)
     return JoinToken(slot=slot, version=version, join_id=join_id, expires=expires, host=host,
                      link_port=link_port, channel_port=channel_port, gw_addr=gw_addr, vps_pub=vps_pub,
                      gw_priv=gw_priv, jc=jc, jmin=jmin, jmax=jmax, s=s4, h=hs)
@@ -174,5 +125,4 @@ def decode(text: str) -> JoinToken:
 def find(text: str) -> str:
     """Токен из текста (команда целиком, токен в кавычках): первая строка вида
     `AWGJ1.…` или пусто."""
-    m = re.search(r"AWGJ1\.[A-Za-z0-9_-]{40,400}", str(text or ""))
-    return m.group(0) if m else ""
+    return tw.find(PREFIX, text)
