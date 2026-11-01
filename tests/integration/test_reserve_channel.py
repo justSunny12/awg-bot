@@ -256,8 +256,12 @@ async def test_an_ordinary_hello_gets_st_and_ping_gets_pong(services, server, li
     await gw.send("ping", {"n": "0123456789abcdef"})
     pong = await gw.recv()
     assert (pong["t"], pong["n"]) == ("pong", "0123456789abcdef"), "сессия не пережила обмен slots"
-    await gw.send("whatever", {})                       # вида нет в словаре — разрыв, как у канала шлюзов
-    assert await _closed(gw), "на вид вне словаря сессия продолжилась"
+    await gw.send("whatever", {})                       # вида нет в словаре — слово выпуска новее: пропуск
+    await gw.send("ping", {"n": "fedcba9876543210"})
+    pong = await gw.recv()
+    assert (pong["t"], pong["n"]) == ("pong", "fedcba9876543210"), "незнакомый вид порвал сессию"
+    await gw.send("ping", {})                           # известный вид с неверным телом — разрыв
+    assert await _closed(gw), "на известный вид с неверным телом сессия продолжилась"
     await gw.close()
     assert await _until(lambda: not server.online)
 
