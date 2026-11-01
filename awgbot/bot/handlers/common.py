@@ -106,10 +106,21 @@ async def purge_menus(bot, services, chat_id: int) -> None:
     await call(services.db.list_msg_drop_notes, chat_id, ids)   # меню ушли мимо гашения: итоги записей не нужны
 
 
+_dismissed = 0          # сколько раз в этом процессе снимали кнопки окон обновления
+
+
+def update_reports_dismissed() -> int:
+    """Счёт снятий кнопок окон обновления: сменился — после этого объявлено новое окно
+    (следующая ступень, «В меню»), запоздалому финишеру своя кнопка уже не положена."""
+    return _dismissed
+
+
 async def dismiss_update_reports(bot, services, keep=None) -> None:
     """Снять кнопку «В меню» у всех прошлых окон обновления (тексты остаются —
     история «какая ступень чем закончилась» ценна). keep — (chat, msg), которое
     трогать не надо: оно и есть текущее."""
+    global _dismissed
+    _dismissed += 1
     for chat_id, mid in await call(services.pop_update_reports):
         if keep and (chat_id, mid) == tuple(keep):
             continue

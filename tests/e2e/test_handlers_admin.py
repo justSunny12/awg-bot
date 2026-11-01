@@ -229,6 +229,64 @@ async def test_a_finisher_delivered_by_a_deferred_retry_still_loses_its_button(
     assert stripped == [first[0][1]], "кнопка у финишера с отложенной доставкой не снята"
 
 
+async def test_a_finisher_delivered_after_the_next_stage_was_announced_drops_its_own_button(
+        services, fake_bot, monkeypatch):
+    """Финишер ступени получил 429 дольше предела, а планировщик тем временем объявил
+    «доступна следующая» (у неё своя кнопка). Повтор финишера доходит последним: его
+    «В меню» снимается сразу и в историю окон не идёт — последней живой в чате
+    остаётся кнопка актуального окна, а не запоздалого отчёта о прошлой ступени."""
+    import asyncio
+    import types
+    from aiogram.exceptions import TelegramRetryAfter
+    from aiogram.methods import SendMessage
+    from awgbot.bot import notifier
+    from awgbot.runtime.main import report_update_result
+    from awgbot.runtime.scheduler import notify_update_available
+    from awgbot.domain.services import Notification
+    from awgbot.bot import keyboards as kb
+    import awgbot.core.config as cfg
+
+    fake_asyncio = types.ModuleType("asyncio")
+    fake_asyncio.__dict__.update(vars(asyncio))
+    real_sleep = asyncio.sleep
+    gate = asyncio.Event()
+
+    async def held_sleep(sec, *a, **k):
+        if sec > notifier._RETRY_AFTER_CAP:
+            await gate.wait()                                # отложенный повтор — когда скажем
+        await real_sleep(0)
+    fake_asyncio.sleep = held_sleep
+    monkeypatch.setattr(notifier, "asyncio", fake_asyncio)
+    flood = [TelegramRetryAfter(method=SendMessage(chat_id=1, text="x"),
+                                message="Too Many Requests", retry_after=300)]
+    plain_send = fake_bot.send_message
+    ids = iter(range(700, 800))
+
+    async def send_message(chat_id, text, **kw):
+        if flood:
+            raise flood.pop()
+        msg = await plain_send(chat_id, text, **kw)
+        msg.message_id = next(ids)
+        return msg
+    monkeypatch.setattr(fake_bot, "send_message", send_message)
+    monkeypatch.setattr(services, "confirm_applied_update",
+                        lambda: Notification(cfg.ADMIN_ID, "обновлён, ступень 1", reply_markup=kb.update_done_menu()))
+    monkeypatch.setattr(services, "pop_update_wait", lambda: None)
+
+    await report_update_result(fake_bot, services)           # 429 на 300 с — повтор фоном
+    await notify_update_available(fake_bot, services, types.SimpleNamespace(tag="v9.9.9", body="- следующая"))
+    sent = [r for r in fake_bot.records if r[0] == "send_message"]
+    assert len(sent) == 1 and "9.9.9" in sent[0][2], sent
+    gate.set()
+    while notifier._deferred:
+        await asyncio.gather(*list(notifier._deferred), return_exceptions=True)
+    sent = [r for r in fake_bot.records if r[0] == "send_message"]
+    assert len(sent) == 2 and sent[-1][2].startswith("обновлён"), "запоздалый финишер не дошёл"
+    stripped = [mid for kind, chat, mid in fake_bot.records if kind == "edit_markup"]
+    assert stripped == [701], f"кнопка запоздалого финишера ниже «доступна следующая» осталась живой: {fake_bot.records}"
+    assert services.pop_update_reports() == [], "снятое окно попало в историю"
+
+
 async def test_admin_start_purges_menu_history(services, fake_bot):
     """/start админа удаляет все прошлые меню чата (история ведётся send_menu/edit_nav)."""
     from awgbot.bot.handlers import admin as admin_h

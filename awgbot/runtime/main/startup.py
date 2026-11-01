@@ -76,7 +76,9 @@ async def do_reconcile(services: Services, bot: Bot) -> None:
 
 async def report_update_result(bot, services) -> None:
     """Финишер self-update: убрать «дождись», отчитаться, ЕДИНСТВЕННАЯ живая
-    кнопка «В меню».
+    кнопка «В меню». Финишер, дошедший отложенным повтором 429 уже после нового
+    окна обновления («доступна следующая», «В меню»), кнопку с себя снимает:
+    последней живой должна быть кнопка актуального окна, а не его.
 
     Обновление через несколько ступеней даёт цепочку рестартов, и финишер
     приходит после каждого. Кнопку прежнего снимаем при отправке следующего:
@@ -95,13 +97,23 @@ async def report_update_result(bot, services) -> None:
         return
     # кнопки у ВСЕХ прошлых окон обновления — долой (история, не один id:
     # между финишерами бывают «не применилось» и «не удалось» с той же кнопкой)
-    from awgbot.bot.handlers.common import dismiss_update_reports
+    from awgbot.bot.handlers.common import dismiss_update_reports, update_reports_dismissed
     await dismiss_update_reports(bot, services)
+    mine = update_reports_dismissed()
     from awgbot.bot.notifier import note_markup
 
     async def _remember(sent) -> None:
         # и при отложенном повторе 429: возврат тогда None, а кнопку этого
         # окна следующая ступень всё равно должна снять
+        if update_reports_dismissed() != mine:
+            # повтор дошёл после «доступна следующая» (или «В меню»): этот финишер в чате
+            # ниже актуального окна — живой «В меню» на нём не оставлять
+            try:
+                await bot.edit_message_reply_markup(chat_id=sent.chat.id, message_id=sent.message_id,
+                                                    reply_markup=None)
+                return
+            except Exception as e:                       # noqa: BLE001 — не снялась: снимет следующее окно
+                log.info("кнопка запоздалого финишера не снята: %s", e)
         await asyncio.to_thread(services.remember_update_report,
                                 sent.chat.id, sent.message_id)
     await pkg.notify_one(bot, note.tg_id, note.text,
