@@ -17,8 +17,13 @@
 # запущенные не трогает; LAB_KEEP_VMS=1 — не гасить). На время прогона в каждой ВМ —
 # проба ресурсов (res.sh, /var/tmp/lab-res.txt): в конце — пик памяти, средний и 95-й
 # процентиль CPU по ВМ, по ним подбирается размер ВМ. Время по шагам сценариев — в ВМ,
-# /var/tmp/lab-steps-<сценарий>.txt (pairlab.sh, pl_mark).
+# /var/tmp/lab-steps-<сценарий>.txt (pairlab.sh, pl_mark). На время прогона Mac не засыпает
+# (caffeinate -i): сон посреди сценария сдвигает сроки и даёт ложные провалы.
 set -u
+# Mac не засыпает, пока идёт прогон: сон посреди сценария — поплывшие сроки и ложные провалы
+if [ -z "${LAB_PAR_AWAKE:-}" ] && command -v caffeinate >/dev/null 2>&1; then
+    LAB_PAR_AWAKE=1 exec caffeinate -i "$0" "$@"
+fi
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 FAST=""
@@ -32,8 +37,8 @@ weight() {
     local f
     case "$1" in
         s06_quorum_move) f="18 15" ;; s06b_quorum_move) f="15 14" ;; s07_quorum_tie) f="25 11" ;;
-        s08_rf_transit|s09_tg_split) f="10 11" ;; s11_c9_wait) f="10 10" ;; s10_force_live_guest) f="10 6" ;;
-        s06_return_tail) f="8 3" ;; s12_relay_flush) f="8 3" ;; s05_quorum_probes) f="6 2" ;; s05_journal) f="5 4" ;;
+        s08_rf_transit) f="10 11" ;; s09_tg_split) f="10 5" ;; s11_c9_wait) f="10 4" ;; s10_force_live_guest) f="10 3" ;;
+        s06_return_tail) f="8 4" ;; s12_relay_flush) f="8 3" ;; s05_quorum_probes) f="6 2" ;; s05_journal) f="5 4" ;;
         s13_big_base) f="5 1" ;; s03_move|s04_open_sandbox) f="2 1" ;; s00_topology|s01_zone|s02_guest) f="1 1" ;; *) f="5 5" ;;
     esac
     set -- $f
