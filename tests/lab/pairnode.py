@@ -90,8 +90,11 @@ def setup(a: argparse.Namespace) -> None:
                                          subnet_prefix=a.subnet, subnet_cidr=f"{a.subnet}.0/24")
     app.setdefault("awg", {})["conf_dir"] = str(w / "awg")
     app.setdefault("client_config", {})["server_name"] = a.name
-    app.setdefault("reserve", {}).update(ready=True, pkg_minutes=1)
     (w / "conf" / "app.yaml").write_text(yaml.safe_dump(app, allow_unicode=True), encoding="utf-8")
+    rsv = yaml.safe_load((w / "conf" / "reserve.yaml").read_text(encoding="utf-8"))
+    rsv.update(ready=True, pkg_minutes=1)
+    lab_digits_into(rsv)
+    (w / "conf" / "reserve.yaml").write_text(yaml.safe_dump(rsv, allow_unicode=True), encoding="utf-8")
     (w / "env").write_text(f"BOT_TOKEN={a.token}\nADMIN_ID={a.admin}\n", encoding="utf-8")
     os.chmod(w / "env", 0o600)
     # BASE_DIR процесса открытия: venv и код — ссылками (на хостах это /opt/awg-bot)
@@ -215,6 +218,48 @@ class LabDns:
             def read(self, cfg: dict) -> str:
                 return self.check(cfg)
         return Provider()
+
+
+# Быстрый уровень стенда (LAB_FAST=1): цифры кворума и «здоров» — настройками узлов, как их
+# поставил бы админ (reserve.yaml); шлюзам они уходят документом, гостю — пакетом. Связка
+# Timing.check держит пределы: P 5 → W ≥ 22 → up ≥ 52, T_tie > up. «Не вижу» — 30 с, не 3·P:
+# при включении голосования документ доходит до шлюза раньше, чем ответчик лидера слушает, а
+# первый ответ идёт ещё и после рукопожатия AWG нового пира-зонда — на стенде до 21 с от
+# сокета зонда; при 15 и 20 с шлюз успевал сказать «не вижу» и держать «да» обязательством до
+# pledge_minutes. Открытие ≈ no + up = 85 с вместо 145, ничья — 60 с вместо 180.
+LAB_FAST_DIGITS = {"quorum": {"probe_seconds": 5, "no_seconds": 30, "yes_window_seconds": 22, "down_seconds": 10,
+                              "up_seconds": 55, "unfence_seconds": 10, "ask_repeat_seconds": 10, "grace_seconds": 40,
+                              "pause_seconds": 100, "tie_clear_seconds": 20, "tie_minutes": 1},
+                   "rf_block_minutes": 2, "healthy_seconds": 60}
+
+
+def lab_digits_into(rsv: dict) -> None:
+    """Цифры быстрого уровня — поверх раздела вида reserve.yaml (без LAB_FAST — как есть)."""
+    if os.environ.get("LAB_FAST") != "1":
+        return
+    rsv.setdefault("quorum", {}).update(LAB_FAST_DIGITS["quorum"])
+    rsv.update({k: v for k, v in LAB_FAST_DIGITS.items() if k != "quorum"})
+
+
+def lab_timing():
+    """Timing узлов стенда при текущем уровне — тем же разбором, что у сервера."""
+    from awgbot.util.quorum.timing import Timing
+    import yaml
+    rsv = yaml.safe_load((ROOT / "conf" / "reserve.yaml").read_text(encoding="utf-8"))
+    lab_digits_into(rsv)
+    return Timing.from_settings(rsv.get("quorum") or {}, rsv.get("rf_block_minutes")), int(rsv.get("healthy_seconds") or 300)
+
+
+def digits(_a: argparse.Namespace) -> None:
+    """Цифры уровня строками оболочки — сценариям (pairlab.sh): пределы проверок от них, не числами."""
+    t, healthy = lab_timing()
+    bad = t.check()
+    if bad:
+        raise SystemExit(f"цифры стенда не сходятся: {bad}")
+    for k, v in (("PROBE", t.probe_s), ("NO", t.no_s), ("W", t.yes_window_s), ("DOWN", t.down_s), ("UP", t.up_s),
+                 ("UNFENCE", t.unfence_s), ("TIE", t.tie_s), ("TIE_CLEAR", t.tie_clear_s), ("RF", t.rf_block_s),
+                 ("DOWN_RF", t.down_rf_s), ("GRACE", t.grace_s), ("PAUSE", t.pause_s), ("HEALTHY", healthy)):
+        print(f"QT_{k}={int(v)}")
 
 
 def lab_consts() -> None:
@@ -450,8 +495,7 @@ async def lab_gw_step(svc, st: dict) -> None:
             if sec is None:                                    # почему раздела нет — сценарию в разбор
                 from awgbot.util.quorum import members as qm
                 m = svc.reserve_quorum_mine() or svc.reserve_quorum_proposed()
-                doc["why_none"] = {"m": m.to_dict() if m else None, "peer_quo1": svc.reserve_quorum_peer_quo1(),
-                                   "own_ip": svc.reserve_own_ip(), "pub": bool(svc._quorum_server_pubkey()),
+                doc["why_none"] = {"m": m.to_dict() if m else None, "own_ip": svc.reserve_own_ip(), "pub": bool(svc._quorum_server_pubkey()),
                                    "port": svc._quorum_server_port(),
                                    "node_rec": bool(((svc.reserve_probes().get(m.l) or {}).get("nodes") or {}).get(
                                        qm.gateway_node(m.l, slot))) if m else None}
@@ -781,6 +825,7 @@ def main() -> None:
     s3.add_argument("--user-psk", dest="user_psk", default="")
     s3.add_argument("--user-name", dest="user_name", default="Пользователь стенда")
     s3.add_argument("--user-tg", dest="user_tg", default="880301")
+    sub.add_parser("digits")
     r = sub.add_parser("run")
     r.add_argument("--work", required=True)
     r.add_argument("--poll", action="store_true")
@@ -793,6 +838,8 @@ def main() -> None:
         bloat(a)
     elif a.cmd == "rtseed":
         rtseed(a)
+    elif a.cmd == "digits":
+        digits(a)
     else:
         asyncio.run(run(a))
 

@@ -33,7 +33,7 @@
 #   --selftest      «сокет у хоста» на модуле ядра этой машины: интерфейс, созданный у хоста и
 #                   перенесённый в пространство, принимает пакеты через сокет хоста; код 0 — да
 # Окружение: QUO_NS (awg-quo), QUO_CONF_DIR (/var/lib/awg-bot/quorum; у шлюза обёртка
-# infra/quoprobe передаёт /var/lib/awg-gw/quorum), QUO_PORT (8789, app.reserve.quorum.port;
+# infra/quoprobe передаёт /var/lib/awg-gw/quorum), QUO_PORT (8789, reserve.quorum.port;
 # для зонда второй линии — порт её ответчика из st.quo),
 # QUO_IF (имя интерфейса для --up), QUO_SELFTEST_PORT (45998).
 # Имена интерфейсов — awgq<линия><цель>: awgqah — зонд к основе линии a, awgqar — к её клону.

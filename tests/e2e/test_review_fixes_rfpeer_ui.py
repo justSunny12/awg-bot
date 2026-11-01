@@ -45,7 +45,7 @@ async def test_turn_off_does_not_run_the_transit_tick(ui, fake_bot, monkeypatch)
     await card_h.rf_mine_off_yes(_cb(fake_bot), ui)
     assert ticks == [], "«Выключить» прогнал весь такт транзита"
     assert (ui.rsv_get("rsv_rfpeer").get("offer") or {}).get("on") is False, "согласие не снято тем же нажатием"
-    assert settings.get_bool("app.reserve.rf_via_mine", True) is False
+    assert settings.get_bool("reserve.rf_via_mine", True) is False
 
 
 async def test_turn_off_while_the_peer_slot_goes_keeps_its_notice_for_the_tick(ui, fake_bot):

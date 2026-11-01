@@ -89,7 +89,7 @@ class ReservePackageMixin:
 
     @staticmethod
     def _pkg_timer_delay() -> float:
-        minutes = max(1, settings.get_int("app.reserve.pkg_minutes", 30))
+        minutes = max(1, settings.get_int("reserve.pkg_minutes", 30))
         return backoff.jitter(minutes * 60)
 
     # ── сборка ──────────────────────────────────────────────────────────────

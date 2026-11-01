@@ -22,7 +22,7 @@ def _quorum_off_why(codes: list, peer: str) -> str:
         if c == "no_gateways":
             return "у этого сервера нет шлюзов с агентом v4.2.0 — переезд кнопкой и по аварийному коду, автоматического нет"
         if c.startswith("timing:"):
-            return "цифры времени не сходятся (reserve.quorum в app.yaml)"
+            return "цифры времени не сходятся (reserve.quorum в reserve.yaml)"
         if c.startswith("overlap:"):
             return f"блок зондов <code>169.254.88.0/24</code> пересекается с <code>{_e(c[8:])}</code>"
         if c.startswith("slot:"):

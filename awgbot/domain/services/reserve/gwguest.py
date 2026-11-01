@@ -26,7 +26,7 @@ class ReserveGwGuestMixin:
         return self.__dict__.setdefault("_rsv_gwviews", {})
 
     def _gw_thresholds(self) -> tuple[int, int]:
-        return (settings.get_int("app.reserve.suspect_seconds", 40), settings.get_int("app.reserve.probe_seconds", 15))
+        return (settings.get_int("reserve.suspect_seconds", 40), settings.get_int("reserve.probe_seconds", 15))
 
     @staticmethod
     def reserve_gw_name(slot: int) -> str:

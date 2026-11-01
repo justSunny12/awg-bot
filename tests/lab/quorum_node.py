@@ -49,9 +49,9 @@ def responder(a: argparse.Namespace) -> None:
     from awgbot.util.quorum import members as qm
     from awgbot.util.quorum.leader import Leader
     from awgbot.util.quorum.probe import Info, Probe
-    from awgbot.util.quorum.timing import Timing
+    from tests.lab.pairnode import lab_timing
 
-    timing = Timing()
+    timing = lab_timing()[0]                              # цифры уровня стенда (LAB_FAST — быстрый), как у узлов пары
     comp = qm.Members.make(a.side, int(a.g), a.members.split(","))
     voters = comp.voters(a.side)
     ld = Leader(a.side, len(voters), int(a.epoch), candidate=probenet.other_side(a.side), timing=timing, voters=voters)

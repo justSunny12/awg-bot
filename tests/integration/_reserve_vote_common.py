@@ -250,7 +250,7 @@ def box(services, rsv, monkeypatch):
     services.rsv_update("rsv_peer_state", version=PEER_VERSION, caps=list(PEER_CAPS), session=True, has_gateway=True)
     services.rsv_put("rsv_pkg_in", {"gen": PKG_GEN, "fp": "ef" * 8, "share": RSV_SHARE, "m_gen": M_GEN})
     services.reserve_set_in("idle")
-    settings.set_value("app.reserve.ready", True)
+    settings.set_value("reserve.ready", True)
     b = _Box(services, monkeypatch)
     b.primary(True)
     return b

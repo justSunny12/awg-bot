@@ -272,9 +272,9 @@ async def test_readiness_off_with_a_pair_goes_through_a_dialog(services, paired,
     await card_h.ready_toggle(cb, services, FakeState())
     text, labels = last_screen(nav)
     assert "Выключить «Готов быть резервом»?" in text and labels[0].startswith("⬅️"), labels
-    assert settings.get_bool("app.reserve.ready", False) is True, "выключено без подтверждения"
+    assert settings.get_bool("reserve.ready", False) is True, "выключено без подтверждения"
     await card_h.ready_off_yes(_cb(nav, fake_bot), services)
-    assert settings.get_bool("app.reserve.ready", True) is False
+    assert settings.get_bool("reserve.ready", True) is False
 
 
 async def test_readiness_off_while_moving_is_deferred_in_the_toast(services, paired, fake_bot):
@@ -311,7 +311,7 @@ async def test_the_return_lever_flips_and_every_reader_sees_the_same_mode(servic
     кнопка карточки, данные карточки, состояние гостю и флаг «по кнопке» не
     расходятся. Пустой ключ — «сразу», как по умолчанию; разойдись чтения —
     карточка показала бы «по кнопке», а гость и автовозврат жили бы «сразу»."""
-    settings.set_value("app.reserve.return", "")
+    settings.set_value("reserve.return", "")
     _, markup = await card_h.reserve_screen(services)
     assert "⏱ Возврат: сразу" in _labels(markup)
     assert services.reserve_card_data()["ret_immediate"] is True
@@ -319,13 +319,13 @@ async def test_the_return_lever_flips_and_every_reader_sees_the_same_mode(servic
     nav = _nav(fake_bot)
     cb = _cb(nav, fake_bot)
     await card_h.return_lever(cb, services)
-    assert settings.get("app.reserve.return") == "button" and cb.answers[-1][0] == "Возврат пользователей: по кнопке"
+    assert settings.get("reserve.return") == "button" and cb.answers[-1][0] == "Возврат пользователей: по кнопке"
     assert "⏱ Возврат: по кнопке" in last_screen(nav)[1]
     assert services.reserve_card_data()["ret_immediate"] is False
     assert services.reserve_guest_state_view()["return"] == "button"
     assert services.reserve_return_lever_button() is True
     await card_h.return_lever(_cb(nav, fake_bot), services)
-    assert settings.get("app.reserve.return") == "immediate" and "⏱ Возврат: сразу" in last_screen(nav)[1]
+    assert settings.get("reserve.return") == "immediate" and "⏱ Возврат: сразу" in last_screen(nav)[1]
 
 
 # ── аварийный код ───────────────────────────────────────────────────────────

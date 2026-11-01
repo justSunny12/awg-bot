@@ -1,5 +1,5 @@
-"""Ключи резерва в шаблоне conf/app.yaml: `network.self_host` и блок
-`reserve:` с умолчаниями.
+"""Ключи резерва в шаблонах: `network.self_host` в conf/app.yaml и
+conf/reserve.yaml с умолчаниями (до 4.2.0 — блок `reserve:` в app.yaml).
 
 Шаблон досевается в живые установки при обновлении, а бот читает эти ключи
 по месту (горячие): ключ с опечаткой в имени или с другим умолчанием
@@ -17,6 +17,7 @@ import yaml
 pytestmark = pytest.mark.unit
 
 APP = Path(__file__).resolve().parents[2] / "conf" / "app.yaml"
+RSV = Path(__file__).resolve().parents[2] / "conf" / "reserve.yaml"
 
 RESERVE = {
     "ready": False,
@@ -37,6 +38,7 @@ RESERVE = {
     "notify_online_minutes": 15,
     "pkg_minutes": 30,
     "min_interval_minutes": 30,
+    "healthy_seconds": 300,
     "relay_idle_hours": 2,
     "relay_max_days": 7,
     "tg_pool_asns": [62041, 62014, 59930, 44907, 211157],
@@ -46,7 +48,8 @@ RESERVE = {
     "tg_pool_learn_syn": 3,
     "tg_pool_stale_days": 3,
     "quorum": {"port": 8789, "probe_seconds": 15, "no_seconds": 45, "yes_window_seconds": 40, "down_seconds": 20,
-               "up_seconds": 100, "pledge_minutes": 10, "tie_minutes": 3},
+               "up_seconds": 100, "unfence_seconds": 30, "ask_repeat_seconds": 30, "grace_seconds": 120,
+               "pause_seconds": 300, "tie_clear_seconds": 60, "pledge_minutes": 10, "tie_minutes": 3},
 }
 
 
@@ -55,13 +58,35 @@ def app() -> dict:
     return yaml.safe_load(APP.read_text(encoding="utf-8"))
 
 
-def test_the_reserve_block_has_exactly_the_agreed_keys_and_defaults(app):
-    got = app.get("reserve")
-    assert isinstance(got, dict), "в шаблоне нет блока reserve"
+@pytest.fixture(scope="module")
+def rsv() -> dict:
+    return yaml.safe_load(RSV.read_text(encoding="utf-8"))
+
+
+def test_the_reserve_template_has_exactly_the_agreed_keys_and_defaults(rsv):
+    got = rsv
+    assert isinstance(got, dict), "шаблон conf/reserve.yaml пуст"
     assert sorted(got) == sorted(RESERVE), \
         f"лишние: {sorted(set(got) - set(RESERVE))}, нет: {sorted(set(RESERVE) - set(got))}"
     wrong = {k: (got[k], v) for k, v in RESERVE.items() if got[k] != v or type(got[k]) is not type(v)}
     assert not wrong, f"умолчания разошлись (есть, ждали): {wrong}"
+
+
+def test_app_template_has_no_reserve_section(app):
+    """Раздел переехал в conf/reserve.yaml: оставшийся в шаблоне app.yaml блок перенос
+    при старте (core/settings) снял бы с каждого сервера, а свежая установка читала бы оттуда."""
+    assert "reserve" not in app
+
+
+def test_the_quorum_template_digits_are_the_code_defaults(rsv):
+    """Цифры кворума в шаблоне — умолчания Timing: шлюз без раздела цифр и сервер без ключа
+    считают теми же."""
+    from awgbot.util.quorum.timing import Timing
+    t = Timing()
+    q = rsv["quorum"]
+    assert Timing.from_settings(q, rsv["rf_block_minutes"]) == t and t.check() == ""
+    from awgbot.domain.services.reserve import outbound
+    assert rsv["healthy_seconds"] == outbound.HEALTHY_S
 
 
 def test_self_host_is_empty_by_default_next_to_server_host(app):

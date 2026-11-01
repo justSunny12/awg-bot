@@ -271,7 +271,7 @@ def test_after_a_success_a_new_failure_is_told_again(services, host):
 def test_the_tick_is_silent_and_installs_nothing_without_a_pair_and_without_readiness(services, host):
     """Резервом сервер не будет — пакеты зоны ему не нужны, ставить их и
     тревожить админа нечего."""
-    settings.set_value("app.reserve.ready", False)
+    settings.set_value("reserve.ready", False)
     services.rsv_update("rsv_view", tools_fail="apt-get: старый отказ", tools_told=False)
     assert services.reserve_tools_tick() == []
     _join()
@@ -279,7 +279,7 @@ def test_the_tick_is_silent_and_installs_nothing_without_a_pair_and_without_read
 
 
 def test_the_tick_works_with_readiness_on_even_before_a_pair(services, host):
-    settings.set_value("app.reserve.ready", True)
+    settings.set_value("reserve.ready", True)
     services.reserve_tools_tick()
     _join()
     assert host.installs == [["dnsmasq", "conntrack"]]

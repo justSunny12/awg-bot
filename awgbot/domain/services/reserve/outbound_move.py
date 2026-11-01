@@ -37,7 +37,7 @@ class ReserveMoveMixin:
             return "вместо доменного имени сервера — IP, записи DNS нет: переезд невозможен"
         if not self.reserve_peer_ip():
             return f"адрес «{self.reserve_peer_name()}» не определился"
-        if settings.get_bool("app.reserve.ready", False) is False:
+        if settings.get_bool("reserve.ready", False) is False:
             return "«Готов быть резервом» выключен"
         if "seal1" not in (self.reserve_peer_state().get("caps") or []):
             # ключ пакета уходит только конвертом к разовому ключу процесса открытия; открытым — нет

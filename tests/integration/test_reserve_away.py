@@ -90,7 +90,7 @@ def test_readiness_off_here_is_named_as_this_side_even_with_data(mv):
     данных ни было; причина говорит «у тебя», а не про второй сервер — иначе
     админ идёт чинить не ту сторону."""
     from awgbot.core import settings
-    settings.set_value("app.reserve.ready", False)
+    settings.set_value("reserve.ready", False)
     rm.confirm_package(mv.svc)
     assert _st(mv.svc) == ("Beta", "🟡", "не готов: у тебя выключено «Готов быть резервом»")
 
@@ -246,8 +246,8 @@ def test_blocked_addresses_go_to_the_reserve_only_while_away_and_only_on_change(
 
 def test_the_lever_button_flag_reads_the_setting(mv):
     from awgbot.core import settings
-    settings.set_value("app.reserve.return", "button")
+    settings.set_value("reserve.return", "button")
     assert mv.svc.reserve_return_lever_button() is True
-    settings.set_value("app.reserve.return", "immediate")
+    settings.set_value("reserve.return", "immediate")
     assert mv.svc.reserve_return_lever_button() is False
     assert awaymod.AWAY_REFUSED

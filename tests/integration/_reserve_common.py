@@ -195,7 +195,7 @@ def rsv(services, tmp_path, monkeypatch):
     monkeypatch.setattr(config, "INSTALLED_VERSION", "4.0.0")
     monkeypatch.setattr(config, "SERVER_NAME", "Alpha")
     settings.set_value("app.network.server_host", HOST_A)
-    settings.set_value("app.reserve.ready", True)
+    settings.set_value("reserve.ready", True)
     invitemod._live_set(None)
     host = PairHost(services, tmp_path, monkeypatch)
     host.gw = True

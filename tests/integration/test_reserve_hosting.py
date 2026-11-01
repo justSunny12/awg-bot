@@ -242,7 +242,7 @@ def test_go_req_with_a_foreign_package_generation_is_refused_with_the_reason(hos
 
 @pytest.mark.parametrize("prep,reason", [
     (lambda h: h.svc.reserve_set_in("serving"), "зона занята"),
-    (lambda h: settings.set_value("app.reserve.ready", False), "выключена"),
+    (lambda h: settings.set_value("reserve.ready", False), "выключена"),
     (lambda h: h.svc.reserve_st_in(rm.peer_st(ready=False)), "у «Beta» выключено «Готов быть резервом»"),
 ])
 def test_go_req_is_refused_when_the_zone_is_busy_or_the_reserve_is_not_ready(host, prep, reason):
@@ -756,7 +756,7 @@ def test_the_relay_stops_after_its_term(host):
     svc = host.svc
     svc.reserve_set_in("relay", relay_to="x:1", relay_at=timeutil.now_iso(),
                        relay_until=timeutil.to_iso(timeutil.shift(timeutil.now(), 3600)))
-    settings.set_value("app.reserve.relay_idle_hours", 0)
+    settings.set_value("reserve.relay_idle_hours", 0)
     assert svc.reserve_in_tick() == [] and svc.reserve_in() == "relay"
     svc.rsv_update("rsv_in", relay_until=timeutil.to_iso(timeutil.shift(timeutil.now(), -5)))
     acts = svc.reserve_in_tick()
@@ -766,7 +766,7 @@ def test_the_relay_stops_after_its_term(host):
 
 def test_the_relay_stops_early_when_the_quiet_hours_have_passed(host):
     svc = host.svc
-    settings.set_value("app.reserve.relay_idle_hours", 2)
+    settings.set_value("reserve.relay_idle_hours", 2)
     svc.reserve_set_in("relay", relay_to="x:1", relay_at=timeutil.to_iso(timeutil.shift(timeutil.now(), -3 * 3600)),
                        relay_until=timeutil.to_iso(timeutil.shift(timeutil.now(), 86400)))
     svc.reserve_in_tick()

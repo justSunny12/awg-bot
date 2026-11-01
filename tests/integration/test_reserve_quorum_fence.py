@@ -233,7 +233,7 @@ def test_held_yes_is_not_counted_for_the_return(q):
 def test_a_leftover_act_off_in_the_settings_still_fences(q):
     """Ключа `quorum.act` больше нет: `false`, оставшийся в чьём-то app.yaml,
     не читается — лидер без большинства дольше T_down лишён права записи."""
-    settings.set_value("app.reserve.quorum.act", False)
+    settings.set_value("reserve.quorum.act", False)
     _lead(q)
     acts = _fence(q)
     assert q.meta()[:2] == ("self", "follower"), "прежний act=false оставил лидеру право записи без кворума"
@@ -337,7 +337,7 @@ def test_an_adopted_epoch_survives_the_tick_insurance(q):
 
 
 def test_a_probe_with_a_larger_epoch_is_adopted_despite_a_leftover_act_off(q):
-    settings.set_value("app.reserve.quorum.act", False)
+    settings.set_value("reserve.quorum.act", False)
     _lead(q)
     e = q.s.reserve_quorum_epoch()
     q.probe("a1", e=e + 1)

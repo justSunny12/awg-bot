@@ -103,7 +103,7 @@ def test_without_a_quo1_gateway_the_line_is_the_two_servers_with_v_1(quo):
 
 
 def test_timing_that_does_not_add_up_turns_the_vote_off(quo):
-    settings.set_value("app.reserve.quorum", {**quo.reserve_quorum_settings(), "up_seconds": 30})
+    settings.set_value("reserve.quorum", {**quo.reserve_quorum_settings(), "up_seconds": 30})
     quo.reserve_quorum_refresh()
     assert any(c.startswith("timing:") for c in quo.reserve_quorum_off_reasons())
 
@@ -125,7 +125,7 @@ def test_st_carries_the_line_for_the_second_server(quo):
     qc.enable(quo)
     part = quo.reserve_st_body().get("quo")
     assert part == {"l": "a", "g": 1, "members": ["a", "b", "a1", "a2"], "active": True, "why": [], "port": 8789,
-                    "tm": {"p": 15, "no": 45, "w": 40, "down": 20, "up": 100, "rf": 900}}, part   # цифры — сверка кандидатом
+                    "tm": {"p": 15, "no": 45, "w": 40, "down": 20, "up": 100, "rf": 900, "pause": 300}}, part   # цифры — сверка кандидатом
 
 
 # ── ключи и адреса зондов ────────────────────────────────────────────────────

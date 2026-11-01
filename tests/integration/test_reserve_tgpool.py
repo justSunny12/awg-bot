@@ -60,7 +60,7 @@ def pool(services, rsv, monkeypatch):
     """Резерв в паре; AS Telegram — две (AS_A анонсирует ядро, AS_B — две
     документационные сети и широкий /8)."""
     rc.pair_row(services)
-    settings.set_value("app.reserve.tg_pool_asns", [AS_A, AS_B])
+    settings.set_value("reserve.tg_pool_asns", [AS_A, AS_B])
     src = _Source(monkeypatch)
     src.by_asn = {AS_A: list(CORE), AS_B: ["203.0.113.0/24", "198.51.100.0/24", "203.0.112.0/20", "198.0.0.0/8"]}
     services.src = src
@@ -99,7 +99,7 @@ def test_the_first_fetch_comes_soon_and_then_once_per_period_with_jitter(pool):
     """Первый — в пределах 36–84 с после старта (кэша нет); дальше — раз в
     tg_pool_hours ± 40 %, и интервалы не одинаковые."""
     s = pool
-    settings.set_value("app.reserve.tg_pool_hours", 1)
+    settings.set_value("reserve.tg_pool_hours", 1)
     assert s.reserve_tg_pool_tick(0.0) == [] and s.src.calls == [], "первый запрос в момент старта"
     t, fetched_at = 0.0, []
     while len(fetched_at) < 8 and t < 20 * HOUR:
@@ -148,7 +148,7 @@ def test_the_core_stays_in_the_pool_even_when_nothing_announces_it(pool):
 
 def test_a_lost_core_prefix_is_told_once_per_discrepancy(pool):
     s = pool
-    settings.set_value("app.reserve.tg_pool_hours", 1)
+    settings.set_value("reserve.tg_pool_hours", 1)
     s.src.by_asn[AS_A] = ["149.154.160.0/20"]                  # 91.108.4.0/22 больше не анонсирует никто
     notes = _due_tick(s, 0.0)
     assert len(notes) == 1 and notes[0].tg_id == config.ADMIN_ID and "91.108.4.0/22" in notes[0].text, notes
@@ -190,7 +190,7 @@ def test_one_failing_asn_does_not_drop_the_prefixes_it_announced_before(pool):
 
 def test_stale_announces_are_told_once_and_the_recovery_once(pool):
     s = pool
-    settings.set_value("app.reserve.tg_pool_hours", 1)
+    settings.set_value("reserve.tg_pool_hours", 1)
     _put(announced={str(AS_A): list(CORE)}, fetched_at=_days_ago(4), learned=[], pool=[])
     s.src.down()
     notes = _due_tick(s, 0.0)
@@ -319,7 +319,7 @@ def test_an_address_of_the_core_is_not_learned(learn, monkeypatch):
 
 
 def test_the_learned_count_has_a_ceiling(learn):
-    settings.set_value("app.reserve.tg_pool_max", 1)
+    settings.set_value("reserve.tg_pool_max", 1)
     learn.seen.data = {"203.0.113.5": 5, "198.51.100.5": 5}
     assert learn.reserve_tg_learn_tick() == [("fw",)]
     assert len(_file()["learned"]) == 1, "потолок выученных не держит"

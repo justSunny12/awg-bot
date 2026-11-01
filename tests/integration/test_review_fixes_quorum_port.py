@@ -4,7 +4,7 @@
 
 Мир — линия «Alpha» с зондами (`quo`, tests/integration/_reserve_quorum_common.py).
 
-Цена ошибки: у серверов разные `app.reserve.quorum.port` — зонд к второй линии стучит
+Цена ошибки: у серверов разные `reserve.quorum.port` — зонд к второй линии стучит
 в свой порт, ответа нет, кандидат «не видит» живой сервер и голосует за переезд.
 """
 from __future__ import annotations

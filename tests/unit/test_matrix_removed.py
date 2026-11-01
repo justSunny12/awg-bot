@@ -161,8 +161,8 @@ def test_voters_of_an_older_st_do_not_get_past_the_dictionary():
 # ── шаблон и уведомления ────────────────────────────────────────────────────
 
 def test_the_app_template_has_no_quorum_act():
-    app = yaml.safe_load((REPO / "conf" / "app.yaml").read_text(encoding="utf-8"))
-    quorum = ((app.get("reserve") or {}).get("quorum") or {})
+    rsv = yaml.safe_load((REPO / "conf" / "reserve.yaml").read_text(encoding="utf-8"))
+    quorum = rsv.get("quorum") or {}
     assert quorum, "в шаблоне нет reserve.quorum — сторож ничего не проверил"
     assert "act" not in quorum, "ключ reserve.quorum.act остался в шаблоне"
 

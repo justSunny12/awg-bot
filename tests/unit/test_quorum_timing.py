@@ -86,7 +86,7 @@ def test_from_settings_reads_the_keys_and_minutes():
       "up_seconds": "1.5", "pledge_minutes": "ten", "tie_minutes": object(), "port": ""}, "мусор"),
 ])
 def test_from_settings_with_garbage_gives_the_defaults(q, rf):
-    """Мусор в `app.reserve.quorum` — умолчание поля, а не ноль и не исключение
+    """Мусор в `reserve.quorum` — умолчание поля, а не ноль и не исключение
     на старте бота."""
     t = Timing.from_settings(q, rf_block_minutes=rf)
     assert t == Timing(), f"мусор дал {t}"

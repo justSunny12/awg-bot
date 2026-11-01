@@ -114,7 +114,7 @@ class ReserveOutHealthMixin:
             if not since or since > now + 1.0:                # отметки нет или она прежней загрузки — счёт заново
                 self.rsv_update("rsv_out", healthy_mono=now, healthy_since=timeutil.now_iso())
                 return []
-            if now - since < HEALTHY_S:
+            if now - since < settings.get_int("reserve.healthy_seconds", HEALTHY_S):
                 return []
             if out.get("merge_blocked"):
                 # слияние дважды упало с той же причиной — сам не повторяю, но кнопка «↩️ Вернуть пользователей»
@@ -126,7 +126,7 @@ class ReserveOutHealthMixin:
             if self.reserve_return_mode() == "immediate" \
                     and not self.reserve_return_check():
                 last = str(out.get("last_switch") or "")
-                gap = settings.get_int("app.reserve.min_interval_minutes", 30) * 60
+                gap = settings.get_int("reserve.min_interval_minutes", 30) * 60
                 if not last or timeutil.elapsed(timeutil.parse_iso(last)) >= gap:
                     return self.reserve_return_start("auto")
             elif not out.get("can_return"):

@@ -310,7 +310,7 @@ def test_the_zone_is_free_only_when_idle_or_relaying(host, state, free):
 def _relay(host, monkeypatch, *, since_h: float, pkts):
     from awgbot.core import settings
     from awgbot.infra import nftguard
-    settings.set_value("app.reserve.relay_idle_hours", 2)
+    settings.set_value("reserve.relay_idle_hours", 2)
     box = {"pkts": pkts}
     monkeypatch.setattr(nftguard, "relay_packets", lambda: box["pkts"])
     host.svc.reserve_set_in("relay", relay_to="203.0.113.9:45877",

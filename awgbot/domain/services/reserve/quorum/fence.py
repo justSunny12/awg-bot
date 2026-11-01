@@ -215,12 +215,15 @@ class ReserveQuorumFenceMixin:
         return self._quorum_peer_idle_fact(str(adopted.get("at") or ""), adopted.get("at_ts"))
 
     # ── плановая пауза ──────────────────────────────────────────────────────
-    def reserve_quorum_pause_actions(self, seconds: int = 300) -> list[tuple]:
+    def reserve_quorum_pause_actions(self, seconds: int | None = None) -> list[tuple]:
         """`qpause{l, until}` второму серверу и своим шлюзам перед плановой остановкой
-        (обновление, перезапуск бота): до срока их «не вижу» кандидату не уходит."""
+        (обновление, перезапуск бота): до срока их «не вижу» кандидату не уходит. Без срока —
+        предел паузы (`reserve.quorum.pause_seconds`): дольше голосующие всё равно не держат."""
         m = self.reserve_quorum_mine() if hasattr(self, "reserve_quorum_mine") else None
         if m is None or not self.reserve_quorum_active():
             return []
+        if seconds is None:
+            seconds = self.reserve_quorum_timing().pause_s
         until = timeutil.to_iso(timeutil.shift(timeutil.now(), int(seconds)))
         body = {"l": m.l, "until": until, "dur": int(seconds)}   # dur — длительность: часы сторон могут расходиться
         actions: list[tuple] = []
@@ -234,7 +237,7 @@ class ReserveQuorumFenceMixin:
                 continue
         return actions
 
-    def reserve_quorum_pause_sync(self, seconds: int = 300) -> None:
+    def reserve_quorum_pause_sync(self, seconds: int | None = None) -> None:
         """То же из синхронного кода (шаг обновления сервера): действия — на цикл событий."""
         actions = self.reserve_quorum_pause_actions(seconds)
         if not actions:

@@ -47,7 +47,7 @@ class ReserveRfSlotMixin:
         if not self._rf_pair_alive():
             return None
         return models.Gateway(id=RF_PEER_ID, device_id=0, link_if=RF_PEER_IF, link_port=0,
-                              link_cidr=str(settings.get("app.reserve.pair_cidr", "10.99.98.0/30") or ""),
+                              link_cidr=str(settings.get("reserve.pair_cidr", "10.99.98.0/30") or ""),
                               label=f"шлюзы «{self.reserve_peer_name()}»")
 
     @staticmethod

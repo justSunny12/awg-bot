@@ -158,7 +158,7 @@ def test_when_the_damper_pause_ends_the_same_decision_is_executed(c, monkeypatch
 def test_the_interval_between_automatic_moves_opens_the_code_window_and_then_takes(c):
     """Прошлый автоматический переезд был недавно (интервал не вышел): окно кода сразу,
     по концу интервала — то же решение; без канала пары — сразу по точкам (`qneed`)."""
-    settings.set_value("app.reserve.min_interval_minutes", 3)
+    settings.set_value("reserve.min_interval_minutes", 3)
     c.s.rsv_update("rsv_in", since=timeutil.now_iso(), ended_auto=True)
     c.b.online = False
     acts = _taken(c)
@@ -184,7 +184,7 @@ def test_a_pause_with_own_see_keeps_the_refusal_with_qrel_and_no_window(c):
 
 def test_a_real_open_block_with_own_unseen_still_refuses_with_qrel(c):
     """Готовность выключена — мешает не пауза: прежний отказ, `qrel`, исполнения в паузе нет."""
-    settings.set_value("app.reserve.ready", False)
+    settings.set_value("reserve.ready", False)
     acts = _taken(c)
     assert sorted(s for s, _ in gw_sent(acts, "qrel")) == [1, 2], "отказ предусловий — без qrel"
     assert not (c.s.__dict__.get("_quo_exec") or {}).get("paused"), "выключенная готовность сочтена паузой"

@@ -299,7 +299,7 @@ def pair_link() -> dict:
         peer = str(ipaddress.ip_address(m.group(1)))
     except ValueError:
         return {}
-    port = int(settings.get_int("app.reserve.pair_channel_port", 8788) or 8788)
+    port = int(settings.get_int("reserve.pair_channel_port", 8788) or 8788)
     return {"pair_if": PAIR_IF, "pair_peer4": peer, "pair_port": port}
 
 

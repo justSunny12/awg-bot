@@ -62,7 +62,7 @@ class _Away:
         self.sessions = {1: True, 2: True}
         monkeypatch.setattr(self.s, "gwlink_session", lambda gid: {"agent": "4.2.0"} if self.sessions.get(int(gid)) else {},
                             raising=False)
-        settings.set_value("app.reserve.return", "immediate")
+        settings.set_value("reserve.return", "immediate")
         self.s.rsv_update("rsv_quorum", active={"l": "a", "g": 1, "members": list(MEMBERS)},
                           mine={"l": "a", "g": 1, "members": list(MEMBERS)})
         mv.rsv.gw = False
@@ -173,7 +173,7 @@ def test_q2_minority_never_starts_the_return(aw):
 def test_a_leftover_act_off_does_not_take_q2_away_and_home_has_no_q2(aw):
     """Ключа `quorum.act` больше нет: прежний `false` не возвращает старый путь
     здоровья — в отъезде здоровье решает Q2; кворум выключен или дома — Q2 нет."""
-    settings.set_value("app.reserve.quorum.act", False)
+    settings.set_value("reserve.quorum.act", False)
     assert aw.s.reserve_quorum_healthy() is False, "прежний act=false снял Q2 со здоровья в отъезде"
     aw.active = False
     assert aw.s.reserve_quorum_healthy() is None, "кворум выключен, а Q2 решает здоровье"
@@ -291,7 +291,7 @@ def test_with_v_1_q2_is_the_vote_of_the_second_server(aw):
 
 
 def test_a_leftover_act_off_does_not_stop_the_emergency_return(aw):
-    settings.set_value("app.reserve.quorum.act", False)
+    settings.set_value("reserve.quorum.act", False)
     acts = _majority(aw) + aw.run(T_UP + 30)
     assert ("take_home",) in acts, "прежний act=false остановил аварийный возврат по Q1"
 

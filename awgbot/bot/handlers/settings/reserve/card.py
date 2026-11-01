@@ -51,12 +51,12 @@ async def _set(cb: CallbackQuery, key: str, value) -> bool:
 
 @router.callback_query(RsvCB.filter(F.action == "ready"))
 async def ready_toggle(cb: CallbackQuery, services, state: FSMContext):
-    on = settings.get_bool("app.reserve.ready", False)
+    on = settings.get_bool("reserve.ready", False)
     if on and await call(services.reserve_paired):
         await edit(cb, st_t.ready_off_dialog(await call(services.reserve_peer_name)), rkb.confirm_ready_off())
         await cb.answer()
         return
-    if not await _set(cb, "app.reserve.ready", not on):
+    if not await _set(cb, "reserve.ready", not on):
         return
     tools = ""
     if not on:
@@ -69,7 +69,7 @@ async def ready_toggle(cb: CallbackQuery, services, state: FSMContext):
 
 @router.callback_query(RsvCB.filter(F.action == "ready_off_yes"))
 async def ready_off_yes(cb: CallbackQuery, services):
-    if not await _set(cb, "app.reserve.ready", False):
+    if not await _set(cb, "reserve.ready", False):
         return
     await _render(cb, "rsv", services)
     busy = await call(services.reserve_busy)
@@ -80,7 +80,7 @@ async def ready_off_yes(cb: CallbackQuery, services):
 
 @router.callback_query(RsvCB.filter(F.action == "rfmine"))
 async def rf_mine_toggle(cb: CallbackQuery, services):
-    on = settings.get_bool("app.reserve.rf_via_mine", True)
+    on = settings.get_bool("reserve.rf_via_mine", True)
     if on:
         # выключение в эпизоде — диалог Т-РТ4: второй сервер сейчас ходит через мои шлюзы
         view = await call(services.reserve_rfpeer_view) if hasattr(services, "reserve_rfpeer_view") else {}
@@ -90,7 +90,7 @@ async def rf_mine_toggle(cb: CallbackQuery, services):
                        rkb.confirm_rfmine_off())
             await cb.answer()
             return
-    if not await _set(cb, "app.reserve.rf_via_mine", not on):
+    if not await _set(cb, "reserve.rf_via_mine", not on):
         return
     await _render(cb, "rsv", services)
     await cb.answer("Мои шлюзы для резерва: " + ("выкл" if on else "вкл"))
@@ -98,7 +98,7 @@ async def rf_mine_toggle(cb: CallbackQuery, services):
 
 @router.callback_query(RsvCB.filter(F.action == "rfmine_off"))
 async def rf_mine_off_yes(cb: CallbackQuery, services):
-    if not await _set(cb, "app.reserve.rf_via_mine", False):
+    if not await _set(cb, "reserve.rf_via_mine", False):
         return
     if hasattr(services, "reserve_rfpeer_offer_now"):
         await call(services.reserve_rfpeer_offer_now)         # согласие снято сразу: правило, файервол, st

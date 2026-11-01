@@ -22,7 +22,7 @@ RETURN_NOTIFY_DELAY_S = 600
 
 class ReserveNotifyMixin:
     def _online_window(self) -> int:
-        return settings.get_int("app.reserve.notify_online_minutes", 15) * 60
+        return settings.get_int("reserve.notify_online_minutes", 15) * 60
 
     def _recipients(self, device_ids: list[int]) -> list[int]:
         """tg_id владельцев и держателей устройств, без админа; без повторов."""

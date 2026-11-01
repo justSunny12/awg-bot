@@ -22,7 +22,7 @@ class ReserveRfOfferMixin:
         """(даю ли свои шлюзы второй стороне, причина отказа кодом): тумблер, свои слоты,
         РФ-доступ задействован и проходит, активный слот — свой (не виртуальный) и доступен.
         То же правило решает запасной слот гостя в зоне (rfzone)."""
-        if not settings.get_bool("app.reserve.rf_via_mine", True):
+        if not settings.get_bool("reserve.rf_via_mine", True):
             return False, "off"
         if not self.db.gateways():
             return False, "no_gw"

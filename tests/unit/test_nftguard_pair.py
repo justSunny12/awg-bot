@@ -59,7 +59,7 @@ def awgdir(tmp_path, monkeypatch):
 
 def _conf(monkeypatch, **kw):
     vals = {"app.firewall.enabled": True, "app.firewall.ssh_allow": [], "app.firewall.open_tcp": [8080],
-            "app.firewall.open_udp": [5353], "app.network.ssh_port": 2222, "app.reserve.pair_channel_port": 8788}
+            "app.firewall.open_udp": [5353], "app.network.ssh_port": 2222, "reserve.pair_channel_port": 8788}
     vals.update(kw)
     monkeypatch.setattr(settings, "get", lambda k, d=None: vals.get(k, d))
     monkeypatch.setattr(settings, "get_int", lambda k, d=0: int(vals.get(k, d)))
@@ -86,7 +86,7 @@ def test_the_pair_link_is_read_from_its_config(awgdir, monkeypatch):
 
 
 def test_the_channel_port_follows_the_setting(awgdir, monkeypatch):
-    spec = _spec(awgdir, monkeypatch, **{"app.reserve.pair_channel_port": 9900})
+    spec = _spec(awgdir, monkeypatch, **{"reserve.pair_channel_port": 9900})
     assert spec.pair_port == 9900
 
 

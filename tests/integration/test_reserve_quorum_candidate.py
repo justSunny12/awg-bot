@@ -107,7 +107,7 @@ def test_take_is_once_per_decision(c):
 
 
 def test_an_open_block_refuses_with_qrel_and_the_card_line(c):
-    settings.set_value("app.reserve.ready", False)
+    settings.set_value("reserve.ready", False)
     acts = _taken(c)
     assert not gw_sent(acts, "qtake") and not sent(acts, "ask"), "открытие не пускают, а «забираю» ушло"
     assert sorted(s for s, _ in gw_sent(acts, "qrel")) == [1, 2], "отказ предусловий — без qrel сказавшим «нет»"

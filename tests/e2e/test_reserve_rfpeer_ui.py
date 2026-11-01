@@ -86,7 +86,7 @@ async def test_the_switch_outside_an_episode_turns_off_at_once(ui, fake_bot):
     nav = _nav(fake_bot)
     cb = _cb(nav, fake_bot)
     await card_h.rf_mine_toggle(cb, ui)
-    assert settings.get_bool("app.reserve.rf_via_mine", True) is False
+    assert settings.get_bool("reserve.rf_via_mine", True) is False
     assert cb.answers[-1][0] == "Мои шлюзы для резерва: выкл", cb.answers
     assert "Выключить «Мои шлюзы для резерва»?" not in last_screen(nav)[0]
 
@@ -101,7 +101,7 @@ async def test_the_switch_in_an_episode_asks_first_with_cancel_first(ui, fake_bo
                     "шлюзы «Beta» не отвечают. После выключения российские сервисы у них откроются с зарубежного "
                     "адреса и могут ругаться"), text
     assert labels[0].startswith("⬅️") and labels[1] == "Выключить", labels
-    assert settings.get_bool("app.reserve.rf_via_mine", False) is True, "выключено без подтверждения"
+    assert settings.get_bool("reserve.rf_via_mine", False) is True, "выключено без подтверждения"
     assert ui.k.rules == [rp.RULE151], "правило снято до подтверждения"
 
 
@@ -111,7 +111,7 @@ async def test_cancel_in_the_dialog_changes_nothing(ui, fake_bot):
     nav = _nav(fake_bot)
     await card_h.rf_mine_toggle(_cb(nav, fake_bot), ui)
     await _render(_cb(nav, fake_bot), "rsv", ui)                 # «⬅️ Отмена» — назад в карточку
-    assert settings.get_bool("app.reserve.rf_via_mine", False) is True and ui.k.rules == [rp.RULE151]
+    assert settings.get_bool("reserve.rf_via_mine", False) is True and ui.k.rules == [rp.RULE151]
     assert "Резерв «Beta»" in last_screen(nav)[0]
 
 
@@ -121,7 +121,7 @@ async def test_turn_off_in_the_dialog_withdraws_the_offer_in_the_same_press(ui, 
     nav = _nav(fake_bot)
     cb = _cb(nav, fake_bot)
     await card_h.rf_mine_off_yes(cb, ui)
-    assert settings.get_bool("app.reserve.rf_via_mine", True) is False
+    assert settings.get_bool("reserve.rf_via_mine", True) is False
     assert ui.rsv_get("rsv_rfpeer")["offer"] == {"on": False, "why": "off", "since": ui.rsv_get("rsv_rfpeer")["offer"]["since"]}
     assert ui.k.rules == [] and ui.fw[-1] == {}, "правило 151 или таблица транзита пережили «Выключить»"
     body = ui.reserve_st_if_changed()

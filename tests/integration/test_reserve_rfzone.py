@@ -248,9 +248,9 @@ def test_the_reserve_allows_rf_via_only_with_its_switch_its_slot_and_a_live_link
     _settle(s)
     v = s.reserve_rf_via_view()
     assert v == {"rf_via": True, "rf_cidr": "169.254.77.4/30"}, v
-    settings.set_value("app.reserve.rf_via_mine", False)
+    settings.set_value("reserve.rf_via_mine", False)
     assert s.reserve_rf_via_view()["rf_via"] is False, "админ резерва выключил — разрешение осталось"
-    settings.set_value("app.reserve.rf_via_mine", True)
+    settings.set_value("reserve.rf_via_mine", True)
     _both_down(s)
     assert s.reserve_rf_via_view()["rf_via"] is False, "активный слот резерва недоступен — давать нечего"
 
@@ -267,7 +267,7 @@ def test_the_state_for_the_guest_carries_rf_via_and_the_guest_keeps_it(two, monk
     rc.pair_row(two)
     body = two.reserve_guest_state_view()
     assert body["rf_via"] is True and body["rf_cidr"] == "169.254.77.4/30"
-    settings.set_value("app.reserve.zone_rf_cidr", "169.254.77.8/30")
+    settings.set_value("reserve.zone_rf_cidr", "169.254.77.8/30")
     assert two.reserve_guest_state_view()["rf_cidr"] == "169.254.77.8/30"
     two.guest_state_in({**body, "name": "Gamma"})
     st = two.guest_state()

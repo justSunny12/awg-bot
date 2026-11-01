@@ -764,7 +764,7 @@ def test_a_settings_set_with_an_unknown_name_is_not_written_anywhere(box, name):
     box.write_package(parts={"vpn": iface, "bot": bot})
     assert box.open(**box.points(1), set_record=False) == 0, box.out
     conf = box.run_dir / "conf"
-    assert sorted(p.name for p in conf.iterdir()) == ["app.yaml", "limits.yaml"], \
+    assert sorted(p.name for p in conf.iterdir()) == ["app.yaml", "limits.yaml", "reserve.yaml"], \
         f"в хранилище набор с именем {name!r}: {sorted(p.name for p in conf.iterdir())}"
     written = [p for p in box.tmp.rglob("*.yaml") if p.read_text(errors="replace").strip() == "x: 1"]
     assert not written, f"набор {name!r} записан вне хранилища: {written}"
@@ -776,8 +776,33 @@ def test_every_known_settings_set_is_written(box):
     iface = pkgvpn.build([("awg0", LIVE)], admin=["10.8.1.2"], dns=["10.8.1.1"], upstreams=["198.51.100.53"], tz="")
     box.write_package(parts={"vpn": iface, "bot": bot})
     assert box.open(**box.points(1), set_record=False) == 0, box.out
-    names = {p.stem for p in (box.run_dir / "conf").iterdir()} - {"app"}
+    names = {p.stem for p in (box.run_dir / "conf").iterdir()} - {"app", "reserve"}
     assert names == set(pkgbot.CONF_FILES), f"белый список отсёк известные наборы: {set(pkgbot.CONF_FILES) - names}"
+
+
+@pytest.mark.parametrize("sent", [None, "мусор", {"quorum": {"probe_seconds": 5, "no_seconds": 15, "port": 8790,
+                                                             "evil": "/etc/x", "up_seconds": "много"},
+                                                  "rf_block_minutes": 2, "ready": True}],
+                         ids=["absent", "junk", "digits"])
+def test_the_guest_gets_the_primary_quorum_digits_and_nothing_else(box, sent):
+    """Цифры кворума основы (app_guest.reserve) — в reserve.yaml гостя: на резерве он ведёт её
+    линию; разбор заново через Timing — чужие ключи и не числа не проходят, без цифр — умолчания."""
+    import yaml
+    from awgbot.util.quorum.timing import Timing
+    bot = {"env": {"BOT_TOKEN": TOKEN, "ADMIN_ID": 77}, "conf": {},
+           "app_guest": {} if sent is None else {"reserve": sent}}
+    iface = pkgvpn.build([("awg0", LIVE)], admin=["10.8.1.2"], dns=["10.8.1.1"], upstreams=["198.51.100.53"], tz="")
+    box.write_package(parts={"vpn": iface, "bot": bot})
+    assert box.open(**box.points(1), set_record=False) == 0, box.out
+    got = yaml.safe_load((box.run_dir / "conf" / "reserve.yaml").read_text(encoding="utf-8"))
+    assert set(got) == {"quorum", "rf_block_minutes"}, got
+    assert "reserve" not in yaml.safe_load((box.run_dir / "conf" / "app.yaml").read_text(encoding="utf-8"))
+    t = Timing.from_settings(got["quorum"], got["rf_block_minutes"])
+    if isinstance(sent, dict):
+        assert (t.probe_s, t.no_s, t.port, t.up_s, t.rf_block_s) == (5, 15, 8790, Timing().up_s, 120), got
+        assert "evil" not in got["quorum"]
+    else:
+        assert t == Timing(), got
 
 
 def _frame_of_run() -> dict:

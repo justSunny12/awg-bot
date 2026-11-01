@@ -37,7 +37,7 @@ class ReserveScreenMixin:
                 "port": int(config.SERVER_PORT or 0), "gateways": self._reserve_gateways_view(),
                 # запись DNS — по настройке «🌐 DNS-запись»: тот же сборщик, что у карточки пары (без DNS-запросов)
                 "dns": self.reserve_dns_line_data(),
-                "ready": settings.get_bool("app.reserve.ready", False),
+                "ready": settings.get_bool("reserve.ready", False),
                 "invite_live": live and inv.get("role") != "acceptor",
                 "accepting": live and inv.get("role") == "acceptor"}
 
@@ -47,8 +47,8 @@ class ReserveScreenMixin:
         dirs = self.reserve_directions()
         sent = self.rsv_get("rsv_pkg_sent")
         out = self.rsv_get("rsv_out")
-        return {"peer": peer, "peer_state": ps, "ready": settings.get_bool("app.reserve.ready", False),
-                "rf_on": settings.get_bool("app.reserve.rf_via_mine", True), "has_gateway": bool(self.db.gateways()),
+        return {"peer": peer, "peer_state": ps, "ready": settings.get_bool("reserve.ready", False),
+                "rf_on": settings.get_bool("reserve.rf_via_mine", True), "has_gateway": bool(self.db.gateways()),
                 "ret_immediate": return_mode() == "immediate",
                 "online": self.reserve_online(), "seen": self.reserve_peer_seen(), "down_since": self.reserve_down_since(),
                 "out": self.reserve_out(), "out_since": out.get("since") or "", "inn": self.reserve_in(),

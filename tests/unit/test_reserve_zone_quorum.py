@@ -140,7 +140,7 @@ def test_the_open_process_hands_the_clone_responder_to_take(monkeypatch):
 
 def test_the_open_payload_carries_the_probe_port(services, monkeypatch):
     from awgbot.core import settings
-    vals = {"app.reserve.quorum": {"port": 9911}}
+    vals = {"reserve.quorum": {"port": 9911}}
     real = settings.get
     monkeypatch.setattr(settings, "get", lambda k, d=None: vals[k] if k in vals else real(k, d))
     monkeypatch.setattr(rsvzone, "plan", lambda: {"webhook_port": "443"})

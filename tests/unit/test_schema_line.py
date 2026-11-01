@@ -120,6 +120,24 @@ def _current_conf() -> dict[tuple[str, str], str]:
     return out
 
 
+# Разделы, переехавшие в свой файл (core/settings._MOVED_SECTIONS): ключ прежнего места
+# на месте, если он есть в новом файле. Код линии ниже читает прежнее место — его живым
+# установкам перенос оставляет копию раздела (метка `moved`), шаблону она не нужна.
+_MOVED = (("app.yaml", "reserve.", "reserve.yaml"),)
+
+
+def _moved(name: str, key: str) -> tuple[str, str]:
+    for old_name, prefix, new_name in _MOVED:
+        if name == old_name and key.startswith(prefix):
+            return new_name, key[len(prefix):]
+    return name, key
+
+
+def _in_cur(conf: dict, cur: dict) -> dict[tuple[str, str], tuple[str, str]]:
+    """{ключ снимка: где он в текущем шаблоне} — с учётом переехавших разделов."""
+    return {nk: (nk if nk in cur else _moved(*nk)) for nk in conf}
+
+
 def _read_conf_floor() -> tuple[str, dict[tuple[str, str], str]]:
     text = CONF_FLOOR.read_text(encoding="utf-8")
     m = _HEAD.search(text)
@@ -140,11 +158,19 @@ def test_conf_keys_only_grow_within_the_line():
         f"COMPAT_FLOOR сдвинут ({ver} → {_floor()}): переснять снимок — python -m tests.unit.test_schema_line")
     assert floor, "снимок conf пуст"
     cur = _current_conf()
-    gone = sorted(f"{n}: {k}" for n, k in floor if (n, k) not in cur)
+    at = _in_cur(floor, cur)
+    gone = sorted(f"{n}: {k}" for n, k in floor if at[(n, k)] not in cur)
     assert not gone, f"ключи conf пропали в линии {_floor()}: {gone} — это сдвиг COMPAT_FLOOR"
-    changed = sorted(f"{n}: {k} {t} → {cur[(n, k)]}" for (n, k), t in floor.items()
-                     if "null" not in (t, cur[(n, k)]) and cur[(n, k)] != t)
+    changed = sorted(f"{n}: {k} {t} → {cur[at[(n, k)]]}" for (n, k), t in floor.items()
+                     if "null" not in (t, cur[at[(n, k)]]) and cur[at[(n, k)]] != t)
     assert not changed, f"ключи conf сменили тип в линии {_floor()}: {changed} — это сдвиг COMPAT_FLOOR"
+
+
+def test_the_moved_section_mapping_matches_settings():
+    """Сторож и перенос знают одни и те же разделы: раздел, перенесённый без строки здесь,
+    сторож счёл бы пропавшим; строка без переноса — пропустила бы настоящую пропажу."""
+    from awgbot.core import settings
+    assert {(f"{a}.yaml", f"{b}.", f"{c}.yaml") for a, b, c in settings._MOVED_SECTIONS} == set(_MOVED)
 
 
 def test_the_guard_sees_a_dropped_column_and_a_changed_type():
@@ -230,10 +256,11 @@ def test_the_schema_and_conf_are_a_superset_of_the_last_released_tag(tmp_path):
             assert cur[table][col] == typ, f"{table}.{col}: тип {typ} ({tag}) → {cur[table][col]} — это сдвиг COMPAT_FLOOR"
     tagged_conf = {(name, key): typ for name, data in snap["conf"].items() for key, typ in _flat(data)}
     cur_conf = _current_conf()
-    gone = sorted(f"{n}: {k}" for n, k in tagged_conf if (n, k) not in cur_conf)
+    at = _in_cur(tagged_conf, cur_conf)
+    gone = sorted(f"{n}: {k}" for n, k in tagged_conf if at[(n, k)] not in cur_conf)
     assert not gone, f"ключи conf из {tag} пропали: {gone} — это сдвиг COMPAT_FLOOR"
-    changed = sorted(f"{n}: {k} {t} → {cur_conf[(n, k)]}" for (n, k), t in tagged_conf.items()
-                     if "null" not in (t, cur_conf[(n, k)]) and cur_conf[(n, k)] != t)
+    changed = sorted(f"{n}: {k} {t} → {cur_conf[at[(n, k)]]}" for (n, k), t in tagged_conf.items()
+                     if "null" not in (t, cur_conf[at[(n, k)]]) and cur_conf[at[(n, k)]] != t)
     assert not changed, f"ключи conf из {tag} сменили тип: {changed} — это сдвиг COMPAT_FLOOR"
 
 

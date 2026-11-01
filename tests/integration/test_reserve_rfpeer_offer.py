@@ -53,7 +53,7 @@ ROWS = [r for r in itertools.product((True, False), repeat=6)
 
 
 def _arrange(s, fake_routing, monkeypatch, via, gw, eng, link, virtual, avail):
-    settings.set_value("app.reserve.rf_via_mine", via)
+    settings.set_value("reserve.rf_via_mine", via)
     fake_routing.enabled = eng
     s.db.set_state(s._RT_LINK_KEY, "1" if link else "0")
     if virtual:
@@ -123,7 +123,7 @@ def test_the_st_carries_offer_why_and_use_after_the_tick(rf):
     assert "rfp" not in rf.reserve_st_body() or rf.reserve_st_body()["rfp"]["offer"] is False
     rp.settle(rf)
     assert rf.reserve_st_body()["rfp"] == {"offer": True, "why": "", "use": ""}
-    settings.set_value("app.reserve.rf_via_mine", False)
+    settings.set_value("reserve.rf_via_mine", False)
     rp.tick(rf)
     assert rf.reserve_st_body()["rfp"] == {"offer": False, "why": "off", "use": ""}
 
@@ -149,7 +149,7 @@ def test_the_st_goes_again_right_after_the_offer_changes(rf):
     rp.settle(rf)
     assert rf.reserve_st_if_changed() is not None
     assert rf.reserve_st_if_changed() is None
-    settings.set_value("app.reserve.rf_via_mine", False)
+    settings.set_value("reserve.rf_via_mine", False)
     rp.tick(rf)
     body = rf.reserve_st_if_changed()
     assert body is not None and body["rfp"]["offer"] is False, "отзыв согласия не ушёл второй стороне сразу"
@@ -190,7 +190,7 @@ def test_the_offer_opens_the_file_the_rule_and_the_table_once(rf):
 def test_a_withdrawn_offer_closes_the_rule_the_file_and_the_table_in_the_same_tick(rf, fake_routing, revoke):
     rp.settle(rf)
     if revoke == "switch_off":
-        settings.set_value("app.reserve.rf_via_mine", False)
+        settings.set_value("reserve.rf_via_mine", False)
         rp.tick(rf)
     elif revoke == "own_slots_dead":
         rp.own_down(rf)

@@ -44,18 +44,18 @@ def _join() -> None:
 
 
 async def test_turning_readiness_on_starts_the_install_and_says_so(services, ui, fake_bot, apt):
-    settings.set_value("app.reserve.ready", False)
+    settings.set_value("reserve.ready", False)
     cb = _ui._cb(_ui._nav(fake_bot), fake_bot)
     await card_h.ready_toggle(cb, services, FakeState())
     assert cb.answers[-1][0] == "Готовность включена · ставлю dnsmasq, conntrack", cb.answers
     _join()
     assert apt == [["dnsmasq", "conntrack"]], "включение готовности не запустило установку"
-    assert settings.get_bool("app.reserve.ready", False) is True
+    assert settings.get_bool("reserve.ready", False) is True
 
 
 async def test_with_the_tools_in_place_the_toast_is_plain(services, ui, fake_bot, apt, monkeypatch):
     monkeypatch.setattr(invitemod.ReserveInviteMixin, "reserve_tools_missing", lambda self: [])
-    settings.set_value("app.reserve.ready", False)
+    settings.set_value("reserve.ready", False)
     cb = _ui._cb(_ui._nav(fake_bot), fake_bot)
     await card_h.ready_toggle(cb, services, FakeState())
     assert cb.answers[-1][0] == "Готовность включена", cb.answers
@@ -64,7 +64,7 @@ async def test_with_the_tools_in_place_the_toast_is_plain(services, ui, fake_bot
 
 
 async def test_turning_readiness_off_without_a_pair_installs_nothing(services, ui, fake_bot, apt):
-    assert settings.get_bool("app.reserve.ready", False) is True
+    assert settings.get_bool("reserve.ready", False) is True
     cb = _ui._cb(_ui._nav(fake_bot), fake_bot)
     await card_h.ready_toggle(cb, services, FakeState())
     assert cb.answers[-1][0] == "Готовность выключена", cb.answers

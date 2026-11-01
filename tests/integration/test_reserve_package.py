@@ -283,7 +283,7 @@ def test_a_package_without_an_answer_is_given_up_after_two_minutes_and_built_aga
 # ── таймер с джиттером ───────────────────────────────────────────────────────
 
 def test_the_timer_delay_stays_within_forty_percent_of_the_setting():
-    base = package.settings.get_int("app.reserve.pkg_minutes", 30) * 60
+    base = package.settings.get_int("reserve.pkg_minutes", 30) * 60
     delays = [package.ReservePackageMixin._pkg_timer_delay() for _ in range(400)]
     assert min(delays) >= 0.6 * base - 1e-6 and max(delays) <= 1.4 * base + 1e-6, \
         f"джиттер вышел за ±40 %: {min(delays) / base:.2f}…{max(delays) / base:.2f} от интервала"
@@ -294,7 +294,7 @@ def test_the_timer_does_not_send_when_the_content_has_not_changed(paired, make_a
     make_active_client(name="Профиль", tg_id=7001)
     built = _tick(paired, clock)
     _ack(paired, built)
-    base = package.settings.get_int("app.reserve.pkg_minutes", 30) * 60
+    base = package.settings.get_int("reserve.pkg_minutes", 30) * 60
     paired.reserve_pkg_tick()                          # первый такт заводит таймер
     clock.advance(1.5 * base)
     assert paired.reserve_pkg_tick() is None, "по таймеру без изменений пакет не уходит"
@@ -307,7 +307,7 @@ def test_the_timer_sends_when_the_content_has_changed_without_an_event(paired, m
     client = make_active_client(name="Профиль", tg_id=7001)
     built = _tick(paired, clock)
     _ack(paired, built)
-    base = package.settings.get_int("app.reserve.pkg_minutes", 30) * 60
+    base = package.settings.get_int("reserve.pkg_minutes", 30) * 60
     paired.reserve_pkg_tick()
     _quiet_write(paired.db, f"UPDATE device_traffic SET traffic_rx_month = 12345 WHERE device_id IN "
                             f"(SELECT id FROM devices WHERE client_id = {client.id})")

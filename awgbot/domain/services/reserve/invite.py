@@ -84,7 +84,7 @@ class ReserveInviteMixin:
         inv = self.rsv_get("rsv_invite")
         peer = self.reserve_peer() or {}
         return {"PAIR_IF": peer.get("pair_if") or inv.get("pair_if") or "awgpair",
-                "PAIR_CIDR": peer.get("pair_cidr") or inv.get("cidr") or str(settings.get("app.reserve.pair_cidr", "10.99.98.0/30")),
+                "PAIR_CIDR": peer.get("pair_cidr") or inv.get("cidr") or str(settings.get("reserve.pair_cidr", "10.99.98.0/30")),
                 "PAIR_PORT": str(peer.get("pair_port") or inv.get("port") or DEFAULT_PAIR_PORT),
                 "PAIR_ID": str(inv.get("id") or "")}
 
@@ -175,7 +175,7 @@ class ReserveInviteMixin:
     def reserve_tools_tick(self) -> list:
         """Такт: повтор установки раз в 6 часов, пока чего-то нет; отказ — админу один раз."""
         from awgbot.domain.notices import reserve as rn
-        if not self.reserve_paired() and not settings.get_bool("app.reserve.ready", False):
+        if not self.reserve_paired() and not settings.get_bool("reserve.ready", False):
             return []
         view = self.rsv_get("rsv_view")
         try:
@@ -216,7 +216,7 @@ class ReserveInviteMixin:
                                    "<code>network.self_host</code>) — второму серверу некуда подключаться")
         self.reserve_pin_self_host()
         host = own_host()
-        if not settings.get_bool("app.reserve.ready", False):
+        if not settings.get_bool("reserve.ready", False):
             raise ServiceError("Сначала включи «Готов быть резервом» — без готовности пара не нужна")
         self.reserve_require_zone_tools()                     # после проверок: пакеты ставятся только ради пары
         if not self.reserve_has_gateway():
@@ -227,8 +227,8 @@ class ReserveInviteMixin:
             if old.get("id"):
                 self._invite_rollback("replaced")
             pid = secrets.token_hex(8)
-            port = int(settings.get("app.reserve.pair_port", DEFAULT_PAIR_PORT) or DEFAULT_PAIR_PORT)
-            cidr = str(settings.get("app.reserve.pair_cidr", "10.99.98.0/30") or "10.99.98.0/30")
+            port = int(settings.get("reserve.pair_port", DEFAULT_PAIR_PORT) or DEFAULT_PAIR_PORT)
+            cidr = str(settings.get("reserve.pair_cidr", "10.99.98.0/30") or "10.99.98.0/30")
             env = {"PAIR_IF": "awgpair", "PAIR_CIDR": cidr, "PAIR_PORT": str(port), "PAIR_ID": pid}
             try:
                 kv = self._run_pair_script("--stage", env)

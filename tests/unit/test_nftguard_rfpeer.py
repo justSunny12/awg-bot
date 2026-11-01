@@ -85,7 +85,7 @@ def host(tmp_path, monkeypatch):
 
 def _conf(monkeypatch, filtering: bool = True):
     vals = {"app.firewall.enabled": filtering, "app.firewall.ssh_allow": [], "app.firewall.open_tcp": [8080],
-            "app.firewall.open_udp": [5353], "app.network.ssh_port": 2222, "app.reserve.pair_channel_port": 8788}
+            "app.firewall.open_udp": [5353], "app.network.ssh_port": 2222, "reserve.pair_channel_port": 8788}
     monkeypatch.setattr(settings, "get", lambda k, d=None: vals.get(k, d))
     monkeypatch.setattr(settings, "get_int", lambda k, d=0: int(vals.get(k, d)))
     monkeypatch.setattr(settings, "get_bool", lambda k, d=False: bool(vals.get(k, d)))

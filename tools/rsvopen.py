@@ -67,7 +67,9 @@ false, нет `target_ip` или провайдера — переезд кно�
 скрипту в GUEST_EXTRA («имя=cidr …»); `clone_up` пишет их список в поле
 `ifaces`. В app.yaml гостя второй интерфейс — `awg.migration_interface` с
 `migration_subnet_prefix` из его адреса: бот основы на резерве ведёт
-устройства на обоих.
+устройства на обоих. reserve.yaml гостя — цифры кворума основы из
+`app_guest.reserve` пакета, разобранные заново (util/rsvpkg/bot.py
+guest_reserve_norm: только числа известных ключей); раздела нет — умолчания.
 Снимок `rep.bin` новее пакета (перезагрузка резерва во время обслуживания)
 — база гостя из него, а не из пакета. Пакет-снимок журнала (`pkg3`, часть
 `jrn`) — база гостя по журналу (util/rsvjrn/opener): снимок + события основы
@@ -259,6 +261,10 @@ def fill_store(data: dict, k: bytes, parts: dict, db, iface: str, extra: list | 
         rsvzone.write_private(run / "conf" / f"{name}.yaml", _yaml_dump(vals))
     tz = str((parts.get("vpn") or {}).get("tz") or "")
     rsvzone.write_private(run / "conf" / "app.yaml", _guest_app_yaml(conf, bot.get("app_guest") or {}, iface, tz, extra or []))
+    rsv = (bot.get("app_guest") or {}).get("reserve")
+    # цифры кворума основы — её линию гость ведёт ими; разбор заново (Timing): из пакета — только числа известных ключей
+    rsvzone.write_private(run / "conf" / "reserve.yaml",
+                          _yaml_dump(pkgbot.guest_reserve_norm(rsv if isinstance(rsv, dict) else {})))
     if isinstance(db, (bytes, bytearray)):
         rsvzone.write_private(run / "data" / "bot.db", bytes(db))
     else:

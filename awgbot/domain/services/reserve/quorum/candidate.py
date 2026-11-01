@@ -430,7 +430,7 @@ class ReserveQuorumCandidateMixin:
             # пауза кончилась: исполнение того же решения — просьба, точки; окно кода остаётся открытым
             log.info("кворум: пауза автоматического переезда кончилась — исполняю решение о «%s»", self.reserve_peer_name())
             return self._quorum_take(c, now)
-        ask_s = settings.get_int("app.reserve.ask_seconds", 60)
+        ask_s = settings.get_int("reserve.ask_seconds", 60)
         if stage == "ask" and ex.get("asked"):
             leaving = str(self.reserve_peer_state().get("out") or "") == "leaving"
             if leaving and not ex.get("agreed_at"):

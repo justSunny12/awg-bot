@@ -84,8 +84,8 @@ class ReserveLivenessMixin:
                 self.__dict__.pop("_lv_base", None)
             return "", []
         self.__dict__.pop("_lv_base", None)
-        act = step(lv, now, rx, suspect_s=settings.get_int("app.reserve.suspect_seconds", 40),
-                   probe_s=settings.get_int("app.reserve.probe_seconds", 15))
+        act = step(lv, now, rx, suspect_s=settings.get_int("reserve.suspect_seconds", 40),
+                   probe_s=settings.get_int("reserve.probe_seconds", 15))
         notes: list[Notification] = []
         if act == "down":
             lv.told = True

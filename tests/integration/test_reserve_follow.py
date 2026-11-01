@@ -74,7 +74,7 @@ def world(mv, fake_awg, make_active_client, monkeypatch):
     и бот у резерва, резерв их несёт; возврат — «сразу», шлюзов нет."""
     svc = mv.svc
     mv.rsv.gw = False
-    settings.set_value("app.reserve.return", "immediate")
+    settings.set_value("reserve.return", "immediate")
     ivan = make_active_client(name="Иван", tg_id=IVAN_TG)
     idev = svc.add_device(ivan.id, "Телефон")
     svc.db.update_client_fields(ivan.id, period_end=_iso(-1))
