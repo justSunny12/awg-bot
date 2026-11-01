@@ -14,19 +14,25 @@ uplink.py — перерезолв аплинка шлюза: адрес для 
 Адрес, поставленный по авторитетной записи (`reresolve_now`), «приколот» на
 TTL записи (не меньше 300 с): кэш системного резолвера до тех пор может
 отдавать прежний адрес, и периодический проход вернул бы аплинк на него.
+Прикол лежит на диске агента (`/var/lib/awg-gw/uplink-pin.json`, 0600: адрес и
+срок по часам стены): перезапуск агента или шлюза в окно TTL его не теряет.
 """
 from __future__ import annotations
 
 import ipaddress
+import json
 import logging
 import os
 import re
 import socket
 import subprocess
+import threading
 import time
+from pathlib import Path
 
 from awgbot.core import config
 from awgbot.infra import gwguard
+from awgbot.util import fsatomic
 
 log = logging.getLogger(__name__)
 
@@ -83,31 +89,69 @@ def set_endpoint(iface: str, pub: str, endpoint: str) -> bool:
 
 
 _IP_TOLD: set[str] = set()
-_PIN: dict[str, tuple[str, float]] = {}      # аплинк → (адрес по записи, до monotonic)
+PIN_PATH = Path("/var/lib/awg-gw/uplink-pin.json")
+_PIN: dict[str, tuple[str, float, float]] | None = None   # аплинк → (адрес по записи, до time.time(), срок); None — не прочитан
+_PIN_LOCK = threading.Lock()                # проход планировщика и слово резерва — разные потоки
 _PIN_TOLD: set[tuple[str, str]] = set()     # (аплинк, адрес кэша) — строка журнала один раз
+
+
+def _pins() -> dict[str, tuple[str, float, float]]:
+    """Приколы — с диска при первом обращении за запуск (под `_PIN_LOCK`)."""
+    global _PIN
+    if _PIN is None:
+        _PIN = {}
+        try:
+            data = json.loads(PIN_PATH.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            data = {}
+        for iface, v in (data.items() if isinstance(data, dict) else ()):
+            try:
+                ip, until, span = str(v["ip"]), float(v["until"]), float(v["span"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if is_ip(ip):
+                _PIN[str(iface)] = (ip, until, span)
+    return _PIN
+
+
+def _pins_save(pins: dict[str, tuple[str, float, float]]) -> None:
+    try:
+        fsatomic.write_private(PIN_PATH, json.dumps(
+            {k: {"ip": ip, "until": until, "span": span} for k, (ip, until, span) in pins.items()}))
+    except OSError as e:
+        log.warning("аплинк: прикол адреса по записи не записан на диск (%s) — держится до перезапуска агента", e)
 
 
 def _pin(iface: str, ip: str, ttl: int) -> None:
     """Адрес подтверждён записью у авторитетного сервера — кэш резолвера с
     прежним ответом живёт до TTL; до тех пор периодический проход его не ставит."""
-    _PIN[iface] = (ip, time.monotonic() + max(int(ttl or 0), PIN_MIN))
-    _PIN_TOLD.clear()
+    span = float(max(int(ttl or 0), PIN_MIN))
+    with _PIN_LOCK:
+        pins = _pins()
+        pins[iface] = (ip, time.time() + span, span)
+        _pins_save(pins)
+        _PIN_TOLD.clear()
 
 
 def _pinned(iface: str, ip: str) -> bool:
     """Кэш даёт `ip`, а аплинк приколот к другому адресу по записи — не трогать."""
-    pin = _PIN.get(iface)
-    if not pin:
-        return False
-    if time.monotonic() >= pin[1]:
-        _PIN.pop(iface, None)
-        return False
-    if ip == pin[0]:
-        return False
-    if (iface, ip) not in _PIN_TOLD:
+    with _PIN_LOCK:
+        pins = _pins()
+        pin = pins.get(iface)
+        if not pin:
+            return False
+        left = pin[1] - time.time()
+        if left <= 0 or left > pin[2]:        # срок вышел; больше срока — часы ушли назад, срок не доверен
+            pins.pop(iface, None)
+            _pins_save(pins)
+            return False
+        if ip == pin[0]:
+            return False
+        if (iface, ip) in _PIN_TOLD:
+            return True
         _PIN_TOLD.add((iface, ip))
-        log.info("аплинк %s: кэш резолвера даёт %s, а запись у авторитетного сервера — %s; адрес не меняю до истечения TTL",
-                 iface, ip, pin[0])
+    log.info("аплинк %s: кэш резолвера даёт %s, а запись у авторитетного сервера — %s; адрес не меняю до истечения TTL",
+             iface, ip, pin[0])
     return True
 
 

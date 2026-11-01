@@ -108,6 +108,9 @@ def quorum_print(sec: dict | None) -> str:
             canon.append(f"{key}:" + (wgconf.canonical(wgconf.parse(str(probes.get(key) or "")), "rsvlink") if probes.get(key) else ""))
         except wgconf.WgConfError:
             return ""
+    # отпечаток многочлена (`point.qf`) в отпечаток раздела не входит: агент прежней версии его не
+    # хранит, и отпечатки разошлись бы навсегда (документ уходил бы снова и снова); новый многочлен
+    # и так меняет точку `y`
     point = sec.get("point") or {}
     timing = sec.get("timing") if isinstance(sec.get("timing"), dict) else {}
     text = (f"l={norm(sec.get('l'))}\ng={int(sec.get('g') or 0)}\nmembers={','.join(str(m) for m in (sec.get('members') or []))}\n"

@@ -40,8 +40,11 @@
 #      подсетей — правила нет;
 #   3) снимает прежнюю обвязку в iptables (AWGLINK_FWD, MASQUERADE, метки);
 #      при политике DROP в чужой ip filter FORWARD вставляет в неё
-#      ACCEPT своим интерфейсам (линк, аплинк, локальная сеть) — п.3a; по ним
-#      агент и судит, что красной проверки «политика FORWARD» нет;
+#      ACCEPT своим интерфейсам (линк, аплинк, локальная сеть) с меткой
+#      `-m comment --comment awg-bot` — п.3a; по ним агент и судит, что красной
+#      проверки «политика FORWARD» нет; --rollback снимает только помеченные, а
+#      прежние без метки — на линке, аплинке и линке к резерву (не на
+#      интерфейсе локальной сети: там такое мог поставить чужой файервол);
 #   4) автозапуск: юнит зовёт этот же скрипт, таблица ставится ДО подъёма линка;
 #      юнит переписывается целиком на каждом запуске и ставится с правами 0600
 #      (TimeoutStartSec=15min — полный прогон с apt на загрузке идёт минуты;
@@ -429,6 +432,37 @@ legacy_cleanup() {
             run "iptables -t mangle -D OUTPUT -d $n -j MARK --set-mark $TG_MARK"
         done
     done
+}
+
+# ACCEPT в чужой ip filter FORWARD (п.3a) — с меткой FWD_TAG: откат снимает
+# только помеченные. Прежние выпуски ставили их без метки — такие снимаются
+# лишь на своих интерфейсах (линк, аплинк, линк к резерву): на интерфейсе
+# локальной сети такое же правило мог поставить и чужой файервол.
+FWD_TAG="awg-bot"
+fwd_allow() {                  # $1 = -i|-o, $2 = интерфейс
+    [ -n "$2" ] || return 0
+    iptables -w -C FORWARD "$1" "$2" -m comment --comment "$FWD_TAG" -j ACCEPT 2>/dev/null \
+        || run "iptables -w -I FORWARD 1 $1 $2 -m comment --comment $FWD_TAG -j ACCEPT"
+}
+fwd_tagged() {                 # «-i|-o интерфейс» помеченных ACCEPT — по строке на правило
+    iptables -w -S FORWARD 2>/dev/null \
+        | sed -n "s/^-A FORWARD \(-[io]\) \([A-Za-z0-9_.@-]*\) -m comment --comment \"\{0,1\}$FWD_TAG\"\{0,1\} -j ACCEPT\$/\1 \2/p"
+}
+fwd_rollback() {               # $@ = свои интерфейсы (правила без метки — только на них)
+    command -v iptables >/dev/null 2>&1 || return 0
+    fwd_tagged | while read -r _d _i; do
+        run "iptables -w -D FORWARD $_d $_i -m comment --comment $FWD_TAG -j ACCEPT"
+    done
+    for _i in "$@"; do
+        [ -n "$_i" ] || continue
+        for _d in -i -o; do
+            while iptables -w -C FORWARD $_d "$_i" -j ACCEPT 2>/dev/null; do
+                run "iptables -w -D FORWARD $_d $_i -j ACCEPT" || break
+            done
+        done
+    done
+    _left="$(iptables -w -S FORWARD 2>/dev/null | sed -n 's/^-A FORWARD -[io] \([^ ]*\) -j ACCEPT$/\1/p' | sort -u | tr '\n' ' ' | sed 's/ $//')"
+    [ -z "$_left" ] || say "  в ip filter FORWARD остались ACCEPT без метки ($_left) — их ставил прежний выпуск или чужой файервол; не нужны — сними руками"
 }
 
 # ── локальная сеть без VPN: помощники ────────
@@ -1474,15 +1508,8 @@ if [ "$MODE" = "rollback" ]; then
     LINK_CIDR="${LINK_CIDR_PRE:-$(link_cidr_of "$LINK_IF")}"
     legacy_cleanup
     lan_remove
-    if command -v iptables >/dev/null 2>&1; then
-        for _i in "$LINK_IF" $(ip -o link show 2>/dev/null | awk -F': ' '{print $2}' | sed 's/@.*//' | grep -v '^lo$'); do
-            for _d in -i -o; do
-                while iptables -w -C FORWARD $_d "$_i" -j ACCEPT 2>/dev/null; do
-                    run "iptables -w -D FORWARD $_d $_i -j ACCEPT"
-                done
-            done
-        done
-    fi
+    _up_if="$(sed -n 's/^UPLINK_IF=//p' "$GW_STATUS_FILE" 2>/dev/null | head -n1 | tr -cd 'A-Za-z0-9_.-')"
+    fwd_rollback "$LINK_IF" "$_up_if" "$(printf '%s' "${RSV_IF:-awgrsv}" | tr -cd 'A-Za-z0-9_.-')"
     run "nft delete table $GUARD_TABLE 2>/dev/null || true"
     # firewall.env — данные человека (адреса, порт): не удаляем, а откладываем.
     [ -f "$FW_ENV" ] && run "mv -f $FW_ENV $FW_ENV.bak"
@@ -1998,13 +2025,9 @@ fi
 # accept в нашей inet-таблице не отменяет DROP в чужой ip filter FORWARD: её
 # ставит чужой файервол, включивший ip_forward, и транзит из линка,
 # из аплинка и из локальной сети умирает молча. Правила — в его же цепочке,
-# идемпотентно; снимаются при откате. Только когда политика действительно DROP.
+# идемпотентно, с меткой FWD_TAG; при откате снимаются только помеченные (и
+# прежние без метки на своих интерфейсах). Только когда политика действительно DROP.
 step "3a. Чужая политика FORWARD"
-fwd_allow() {                  # $1 = -i|-o, $2 = интерфейс
-    [ -n "$2" ] || return 0
-    iptables -w -C FORWARD "$1" "$2" -j ACCEPT 2>/dev/null \
-        || run "iptables -w -I FORWARD 1 $1 $2 -j ACCEPT"
-}
 if command -v iptables >/dev/null 2>&1 && iptables -w -S FORWARD 2>/dev/null | grep -q '^-P FORWARD DROP'; then
     say "  ip filter FORWARD: DROP (чужой файервол) — открываю транзит своим интерфейсам"
     for _i in "$LINK_IF" "${UPLINK_IF:-}" "${LAN_IF_PRE:-}"; do fwd_allow -i "$_i"; fwd_allow -o "$_i"; done

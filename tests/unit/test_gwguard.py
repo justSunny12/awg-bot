@@ -269,6 +269,18 @@ def test_forward_accepts_lists_our_interface_rules(monkeypatch):
     assert calls[0][:1] == ["iptables"] and "-S" in calls[0] and "FORWARD" in calls[0]
 
 
+def test_forward_accepts_knows_the_tagged_rules_of_3a(monkeypatch):
+    """С меткой `awg-bot` (п.3a, откат снимает только помеченные) — то же наше
+    правило; иная метка — чужое. Иначе на каждом шлюзе за чужим файерволом —
+    ложная красная проверка «политика FORWARD»."""
+    out = ("-P FORWARD DROP\n"
+           "-A FORWARD -o awglink -m comment --comment awg-bot -j ACCEPT\n"
+           '-A FORWARD -i awglink -m comment --comment "awg-bot" -j ACCEPT\n'
+           "-A FORWARD -i eth0 -m comment --comment docker -j ACCEPT\n")
+    _dig(monkeypatch, out=out)
+    assert gwguard.forward_accepts() == {"o:awglink", "i:awglink"}
+
+
 def test_forward_accepts_without_iptables_is_empty(monkeypatch):
     _dig(monkeypatch, exc=FileNotFoundError("iptables"))
     assert gwguard.forward_accepts() == set()

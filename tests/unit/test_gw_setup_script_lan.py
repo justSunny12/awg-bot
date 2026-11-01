@@ -304,9 +304,12 @@ def test_the_link_unit_has_a_start_timeout_and_a_calmer_restart(script):
     assert 'systemctl is-enabled -q awg-link-gw.service 2>/dev/null || run "systemctl enable awg-link-gw.service"' in script
 
 
-def test_rollback_clears_accepts_on_every_interface(script):
+def test_rollback_clears_our_accepts_by_the_tag_not_every_interface(script):
+    """Свои ACCEPT п.3a на любом интерфейсе (локальная сеть переехала на br0) откат
+    находит по метке, а не перебором всех интерфейсов хоста: тот снимал и чужие."""
     rb = script.split('MODE" = "rollback"', 1)[1].split("exit 0", 1)[0]
-    assert "sed 's/@.*//' | grep -v '^lo$'" in rb and "grep -E '^(awg|end|eth|br|wl)'" not in rb
+    assert "grep -v '^lo$'" not in rb and "fwd_rollback " in rb
+    assert "--comment $FWD_TAG -j ACCEPT" in script.split("fwd_rollback() {", 1)[1].split("\n}\n", 1)[0]
 
 
 def test_bundle_values_are_taken_by_form(script):

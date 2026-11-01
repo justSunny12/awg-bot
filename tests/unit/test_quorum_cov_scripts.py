@@ -15,6 +15,8 @@ tests/unit/test_reserve_gw_script.py и tests/unit/test_reserve_zone_netmap.py);
 таблицу целиком, и обвязка линка к резерву не встаёт вовсе; таблица, отвергнутая
 с блоком, без отката — то же; правило 0x53, оставшееся после `--tg off`, — метки
 уже нет, но следующая сборка с блоком без `--tg on` уводит Bot API в мёртвый линк;
+правило 0x53 при опущенном линке или без блока — таблица 152 пуста, а правило
+стоит: Bot API агента зависит от того, что ядро пройдёт мимо пустой таблицы;
 пересылка зоны с линков не только на 443 набора Telegram — второй сервер
 становится открытым выходом в интернет для любого шлюза основы.
 """
@@ -132,6 +134,8 @@ def test_without_the_agents_cgroup_the_table_has_no_tg_block(tg):
     prog = tg.prog()
     assert "table inet awg_rsv_guard {" in prog and "rsv_tgout" not in prog and "tg_nets4" not in prog, prog
     assert tg.kv()["tg"] == "on", "состояние обхода не записано — после появления cgroup блок не встанет"
+    assert tg.rule_marks() == ["0x52"], "правило метки 0x53 без блока tg в таблице"
+    assert "юнита агента нет" in r.stdout, r.stdout
 
 
 def test_a_table_refused_with_the_tg_block_is_redrawn_without_it(tg):
@@ -151,9 +155,36 @@ def test_tg_on_with_the_link_down_only_remembers_and_the_next_up_draws_the_block
     r = g.run("--tg", "on")
     assert r.returncode == 0 and not g.prog(), "таблица нарисована без линка"
     assert g.kv()["tg"] == "on"
+    assert "0x53" not in g.rule_marks(), "правило метки поставлено без таблицы и блока — линк опущен"
+    assert "линк к резерву опущен" in r.stdout, r.stdout
     g.up_with()
     assert "rsv_tgout" in g.prog(), "состояние tg=1 не дошло до таблицы при подъёме линка"
     assert "0x53" in g.rule_marks()
+
+
+def test_tg_on_while_the_link_is_down_takes_a_stale_tg_rule(tg):
+    """Линк опущен мимо `--down`, правило метки осталось от прежнего включения:
+    `--tg on` не оставляет его без блока и таблицы 152, а блок стоящей таблицы —
+    без правила; с подъёмом линка оба встают."""
+    tg.cgroup()
+    tg.run("--tg", "on")
+    tg.up.unlink()
+    r = tg.run("--tg", "on")
+    assert r.returncode == 0 and "линк к резерву опущен" in r.stdout, r.stdout + r.stderr
+    assert tg.rule_marks() == ["0x52"], tg.rules.read_text(encoding="utf-8")
+    assert "nft delete chain inet awg_rsv_guard rsv_tgout" in tg.calls(), \
+        "блок стоящей таблицы остался без правила — метка 0x53 перебивает метку аплинка"
+    assert tg.kv()["tg"] == "on"
+    tg.up.write_text("")
+    tg.run("--reassert")
+    assert "rsv_tgout" in tg.prog() and "0x53" in tg.rule_marks(), "с линком обход не встал"
+
+
+def test_a_refused_tg_block_says_off(tg):
+    tg.cgroup()
+    tg.reject.write_text("")
+    r = tg.run("--tg", "on")
+    assert "tg: off" in r.stdout and "tg: on" not in r.stdout, r.stdout
 
 
 def test_tg_state_survives_open_and_close(tg):

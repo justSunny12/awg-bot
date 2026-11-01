@@ -17,7 +17,9 @@ Endpoint — IP, или на интерфейсе, которого нет, — 
 мусор в журнале; аплинк, не переставленный после переезда, — шлюз без
 связи с сервером до рестарта; адрес, поставленный по авторитетной записи
 при переезде, откаченный периодическим проходом по кэшу резолвера (TTL до
-300 с), — аплинк снова на мёртвом адресе на всё время кэша.
+300 с), — аплинк снова на мёртвом адресе на всё время кэша; прикол только
+в памяти — перезапуск агента в окно TTL (обновление, перезагрузка шлюза)
+снимает его, и первый же проход по кэшу уводит аплинк на мёртвый адрес.
 """
 from __future__ import annotations
 
@@ -96,7 +98,8 @@ class _Host:
 
 @pytest.fixture()
 def host(tmp_path, monkeypatch):
-    monkeypatch.setattr(uplink, "_PIN", {})
+    monkeypatch.setattr(uplink, "_PIN", None)
+    monkeypatch.setattr(uplink, "PIN_PATH", tmp_path / "state" / "uplink-pin.json")
     monkeypatch.setattr(uplink, "_PIN_TOLD", set())
     return _Host(tmp_path, monkeypatch)
 
@@ -193,7 +196,7 @@ class _Clock:
     def __init__(self):
         self.t = 1000.0
 
-    def monotonic(self) -> float:
+    def time(self) -> float:
         return self.t
 
 
@@ -274,6 +277,49 @@ def test_a_new_move_by_the_record_replaces_the_pin(moved):
     moved.live_ip = "198.51.100.7"
     moved.dns["vpn.example.net"] = "203.0.113.5"        # кэш застрял на адресе резерва
     assert uplink.reresolve() == "skip:pinned"
+
+
+def _restart_agent(monkeypatch):
+    """Перезапуск агента: память модуля пуста, диск — тот же."""
+    monkeypatch.setattr(uplink, "_PIN", None)
+    monkeypatch.setattr(uplink, "_PIN_TOLD", set())
+
+
+def test_the_pin_survives_an_agent_restart_within_the_ttl(moved, monkeypatch):
+    assert uplink.reresolve_now("vpn.example.net", "203.0.113.5", move=1) == "set"
+    moved.live_ip = "203.0.113.5"
+    assert uplink.PIN_PATH.stat().st_mode & 0o777 == 0o600
+    _restart_agent(monkeypatch)
+    moved.clock.t += 120
+    assert uplink.reresolve() == "skip:pinned", "перезапуск в окно TTL снял прикол — аплинк ушёл по кэшу"
+    assert moved.sets == [["set", "awgup", "peer", PUB, "endpoint", "203.0.113.5:51820"]]
+
+
+def test_a_restored_pin_still_expires_on_time(moved, monkeypatch):
+    assert uplink.reresolve_now("vpn.example.net", "203.0.113.5") == "set"
+    moved.live_ip = "203.0.113.5"
+    _restart_agent(monkeypatch)
+    moved.clock.t += 301
+    assert uplink.reresolve() == "set"
+    assert moved.sets[-1][-1] == "198.51.100.7:51820"
+    _restart_agent(monkeypatch)
+    assert "awgup" not in uplink._pins(), "истёкший прикол остался на диске"
+
+
+def test_a_clock_jumping_back_does_not_stretch_the_pin(moved, monkeypatch):
+    """Часы стены ушли назад (перезагрузка без RTC до NTP) — остаток больше срока: прикол не доверен."""
+    assert uplink.reresolve_now("vpn.example.net", "203.0.113.5") == "set"
+    moved.live_ip = "203.0.113.5"
+    _restart_agent(monkeypatch)
+    moved.clock.t -= 86400
+    assert uplink.reresolve() == "set"
+
+
+def test_a_broken_pin_file_is_no_pin(moved, monkeypatch):
+    uplink.PIN_PATH.parent.mkdir(parents=True, exist_ok=True)
+    uplink.PIN_PATH.write_text('{"awgup": {"ip": "nope", "until": "x"}', encoding="utf-8")
+    _restart_agent(monkeypatch)
+    assert uplink.reresolve() == "same"
 
 
 # ── задание в планировщике агента ────────────────────────────────────────────

@@ -164,7 +164,9 @@ def test_the_optional_fields_are_only_the_listed_ones_of_st_and_state():
                            # прежней стороны их нет
                            "pkg": frozenset({"jrn", "mf", "db_size"}), "released": frozenset({"epoch", "last"}),
                            # часть многочлена в qkeys — пока кворум линии решает (с сопряжения — только ящик кода)
-                           "qkeys": frozenset({"q_gen", "thr", "y", "qbox", "mf"}), "qkeys_ok": frozenset({"mf"}),
+                           # qf — отпечаток многочлена рядом с q_gen (после копии основы номера не уникальны)
+                           "qkeys": frozenset({"q_gen", "thr", "y", "qbox", "mf", "qf"}),
+                           "qkeys_ok": frozenset({"mf", "qf"}), "qneed": frozenset({"qf"}), "qshare": frozenset({"qf"}),
                            # точка расхождения в jstale — у выпуска с хвостом старой эпохи
                            "jstale": frozenset({"F"}),
                            # длительность паузы лидера — у отправителя, знающего расход часов сторон

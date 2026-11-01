@@ -127,7 +127,9 @@ def parse(msg: dict) -> dict:
                                      "t": _int(quorum.get("t")), "port": _int(quorum.get("port")), "e": _int(quorum.get("e")),
                                      "probes": {k: _s(probes.get(k), _MAX_CONF) for k in ("h", "r") if probes.get(k)},
                                      "point": {"x": _int(point.get("x")), "y": _hex(point.get("y")),
-                                               "q_gen": _int(point.get("q_gen"))},
+                                               "q_gen": _int(point.get("q_gen")),
+                                               # отпечаток многочлена (rsvkeys.q_print); у прежнего сервера нет
+                                               **({"qf": _s(point.get("qf"), 64)} if point.get("qf") else {})},
                                      "timing": {norm(k)[:24]: _int(v) for k, v in (quorum.get("timing") or {}).items()
                                                 if isinstance(k, str)} if isinstance(quorum.get("timing"), dict) else {}}
     return out
