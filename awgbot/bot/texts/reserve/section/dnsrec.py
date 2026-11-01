@@ -6,7 +6,7 @@ from __future__ import annotations
 from awgbot.util.textfmt.base import details
 
 from ...fmt import _e
-from .common import _when
+from ..common import _when
 
 
 # ── Т-Р16: запись DNS ───────────────────────────────────────────────────────

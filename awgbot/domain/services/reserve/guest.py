@@ -203,8 +203,8 @@ class ReserveGuestMixin:
         """Состояние основы глазами резерва — гостю по локальному каналу:
         имя резерва и его адрес, с какого момента и почему несу нагрузку,
         основа жива или нет, рычаг возврата."""
-        from awgbot.core import settings
         from ..selfhost import own_host
+        from .away import return_mode
         inn = self.rsv_get("rsv_in")
         seen = self.reserve_peer_seen()
         ps = self.reserve_peer_state()
@@ -214,7 +214,7 @@ class ReserveGuestMixin:
         rf = self.reserve_rf_via_view() if hasattr(self, "reserve_rf_via_view") else {}
         return {"name": str(config.SERVER_NAME or ""), "self_host": own_host(),
                 "since": str(inn.get("since") or ""), "reason": str(inn.get("why") or inn.get("reason") or "dead"),
-                "primary": primary, "return": str(settings.get("app.reserve.return", "immediate") or "immediate"),
+                "primary": primary, "return": return_mode(),
                 "own_name": self.reserve_peer_name(), "rf_via": bool(rf.get("rf_via")), "rf_cidr": str(rf.get("rf_cidr") or ""),
                 "tg_hold": self.reserve_pult_hold_why(inn)}    # Telegram у основы (пульт) — вебхук не ставить
 

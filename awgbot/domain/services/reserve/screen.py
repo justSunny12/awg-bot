@@ -10,6 +10,8 @@ import ipaddress
 from awgbot.core import config, settings
 from awgbot.util import timeutil
 
+from .away import return_mode
+
 
 class ReserveScreenMixin:
 
@@ -47,7 +49,7 @@ class ReserveScreenMixin:
         out = self.rsv_get("rsv_out")
         return {"peer": peer, "peer_state": ps, "ready": settings.get_bool("app.reserve.ready", False),
                 "rf_on": settings.get_bool("app.reserve.rf_via_mine", True), "has_gateway": bool(self.db.gateways()),
-                "ret_immediate": str(settings.get("app.reserve.return", "immediate") or "immediate") == "immediate",
+                "ret_immediate": return_mode() == "immediate",
                 "online": self.reserve_online(), "seen": self.reserve_peer_seen(), "down_since": self.reserve_down_since(),
                 "out": self.reserve_out(), "out_since": out.get("since") or "", "inn": self.reserve_in(),
                 "dir_out": dirs["out"], "dir_in": dirs["in"],

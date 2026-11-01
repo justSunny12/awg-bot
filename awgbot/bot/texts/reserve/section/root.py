@@ -7,7 +7,7 @@ from awgbot.util import timeutil
 from awgbot.util.textfmt.base import details, plural_ru
 
 from ...fmt import _e
-from .common import _n
+from ..common import _n
 
 
 def ready_on_toast(tools: str) -> str:

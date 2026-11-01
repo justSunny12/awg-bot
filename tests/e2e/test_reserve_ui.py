@@ -306,6 +306,28 @@ async def test_unpair_through_the_dialog(services, paired, fake_bot):
     assert "📤 Пригласить" in labels, "после удаления не раздел без пары"
 
 
+async def test_the_return_lever_flips_and_every_reader_sees_the_same_mode(services, paired, fake_bot):
+    """Рычаг возврата (Т-Р15) читается одним getter'ом (reserve/away.return_mode):
+    кнопка карточки, данные карточки, состояние гостю и флаг «по кнопке» не
+    расходятся. Пустой ключ — «сразу», как по умолчанию; разойдись чтения —
+    карточка показала бы «по кнопке», а гость и автовозврат жили бы «сразу»."""
+    settings.set_value("app.reserve.return", "")
+    _, markup = await card_h.reserve_screen(services)
+    assert "⏱ Возврат: сразу" in _labels(markup)
+    assert services.reserve_card_data()["ret_immediate"] is True
+    assert services.reserve_guest_state_view()["return"] == "immediate"
+    nav = _nav(fake_bot)
+    cb = _cb(nav, fake_bot)
+    await card_h.return_lever(cb, services)
+    assert settings.get("app.reserve.return") == "button" and cb.answers[-1][0] == "Возврат пользователей: по кнопке"
+    assert "⏱ Возврат: по кнопке" in last_screen(nav)[1]
+    assert services.reserve_card_data()["ret_immediate"] is False
+    assert services.reserve_guest_state_view()["return"] == "button"
+    assert services.reserve_return_lever_button() is True
+    await card_h.return_lever(_cb(nav, fake_bot), services)
+    assert settings.get("app.reserve.return") == "immediate" and "⏱ Возврат: сразу" in last_screen(nav)[1]
+
+
 # ── аварийный код ───────────────────────────────────────────────────────────
 
 async def test_the_emergency_screen_without_a_pair_has_no_code_buttons(services, ui, fake_bot):

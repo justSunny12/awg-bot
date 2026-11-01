@@ -34,10 +34,7 @@ def _fp(fp: str) -> str:
 
 def _date(iso: str) -> str:
     from awgbot.util import timeutil
-    try:
-        return timeutil.parse_iso(iso).astimezone(timeutil.TZ).strftime("%d.%m.%y")
-    except (ValueError, TypeError):
-        return "?"
+    return timeutil.iso_date_yy(iso, "?")
 
 
 def keep_question_text(q: dict) -> str:

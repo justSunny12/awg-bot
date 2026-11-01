@@ -43,17 +43,11 @@ def plain(text: str) -> str:
 
 
 def _date(iso: str) -> str:
-    try:
-        return timeutil.parse_iso(iso).astimezone(timeutil.TZ).strftime("%d.%m.%y")
-    except (ValueError, TypeError):
-        return "?"
+    return timeutil.iso_date_yy(iso, "?")
 
 
 def _when(iso: str) -> str:
-    try:
-        return timeutil.fmt_dt_ui(timeutil.parse_iso(iso), year=True)
-    except (ValueError, TypeError):
-        return "?"
+    return timeutil.iso_dt(iso, "?", year=True)
 
 
 # ── раздел «💾 Бэкапы» ───────────────────────────────────────────────────────

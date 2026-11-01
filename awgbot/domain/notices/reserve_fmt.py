@@ -18,7 +18,5 @@ def _n(name: str) -> str:
 
 
 def _when(iso: str) -> str:
-    try:
-        return timeutil.fmt_clock_ui(timeutil.parse_iso(iso))
-    except (ValueError, TypeError):
-        return ""
+    """Время «18:00 (UTC+5)»; пусто или не разобрать — пусто."""
+    return timeutil.iso_clock(iso)

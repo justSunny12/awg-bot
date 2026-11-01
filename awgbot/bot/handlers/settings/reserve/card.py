@@ -17,6 +17,7 @@ from awgbot.bot.keyboards import reserve as rkb
 from awgbot.bot.texts.reserve import notices, section as st_t
 from awgbot.core import settings
 from awgbot.domain.services import ServiceError
+from awgbot.domain.services.reserve.away import RETURN_KEY, return_mode
 
 from .._router import router
 from ..render import _render
@@ -107,9 +108,8 @@ async def rf_mine_off_yes(cb: CallbackQuery, services):
 
 @router.callback_query(RsvCB.filter(F.action == "ret"))
 async def return_lever(cb: CallbackQuery, services):
-    cur = str(settings.get("app.reserve.return", "immediate") or "immediate")
-    nxt = "button" if cur == "immediate" else "immediate"
-    if not await _set(cb, "app.reserve.return", nxt):
+    nxt = "button" if return_mode() == "immediate" else "immediate"
+    if not await _set(cb, RETURN_KEY, nxt):
         return
     await _render(cb, "rsv", services)
     await cb.answer("Возврат пользователей: сразу" if nxt == "immediate" else "Возврат пользователей: по кнопке")

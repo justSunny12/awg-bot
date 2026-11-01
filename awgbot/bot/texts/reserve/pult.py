@@ -3,23 +3,11 @@
 сторон; всплывашка «📤 Отдать Telegram резерву»."""
 from __future__ import annotations
 
-from awgbot.util import timeutil
-
 from ..fmt import _e
+from .common import _n, _when
 
 USER_MAINTENANCE = "🔧 Бот на техработах — VPN работает"
 GIVE_TOAST = "Отдаю Telegram резерву"
-
-
-def _n(name: str) -> str:
-    return f"«{_e(name)}»"
-
-
-def _when(iso: str) -> str:
-    try:
-        return timeutil.fmt_clock_ui(timeutil.parse_iso(iso))
-    except (ValueError, TypeError):
-        return ""
 
 
 def card_lines(v: dict, name: str) -> list[str]:

@@ -3,13 +3,9 @@
 пригласившего, итог."""
 from __future__ import annotations
 
-
 from ..fmt import _e
 from ..routing.join import until_text
-
-
-def _n(name: str) -> str:
-    return f"«{_e(name)}»"
+from .common import _n
 
 
 # ── Т-Р2: приглашение (пригласивший) ─────────────────────────────────────────

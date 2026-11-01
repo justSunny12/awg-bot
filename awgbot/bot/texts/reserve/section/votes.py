@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from ...fmt import _e
-from .common import _n, _when
+from ..common import _n, _when
 
 
 # ── кворум: блок голосов карточки (Т-К1…Т-К3, Т-К20; на вычитку) ───────────

@@ -6,7 +6,8 @@ DNS — зона не снимается (domain/services/reserve/inbound_keep, 
 имена серверов «имя», имена записей и адреса моноширинным, без точки в конце."""
 from __future__ import annotations
 
-from .reserve import _e, _n, hosting_without_bot
+from .reserve_fmt import _e, _n
+from .reserve_move import hosting_without_bot
 
 _TODO = {"record": "смена записи DNS не подтвердилась", "serve": "вход вебхука в зону не настроен",
          "tg": "бот здесь не отвечает в Telegram"}

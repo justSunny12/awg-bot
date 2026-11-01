@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from awgbot.util.textfmt.base import plural_ru
 
-from .reserve import _n
+from .reserve_fmt import _n
 
 
 def pult_taken(reserve: str, minutes: int) -> str:
