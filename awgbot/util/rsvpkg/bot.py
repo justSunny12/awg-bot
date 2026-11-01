@@ -10,7 +10,10 @@ bot.py — часть бота пакета: реплика БД (едет дв�
 сторож в тестах это проверяет по реальной базе.
 
 Настройки — значения из `conf/*.yaml` по белому списку файлов; строки,
-похожие на пути, отбрасываются: файловые ключи резерв ставит сам.
+похожие на пути, отбрасываются: файловые ключи резерв ставит сам. Из
+`reserve.yaml` едут только цифры кворума основы и порт её ответчика
+(`app_guest.reserve`, через Timing — числа известных ключей): гость ведёт её
+линию теми же цифрами, что ушли её шлюзам.
 """
 from __future__ import annotations
 
@@ -109,7 +112,32 @@ def guest_part(conf_dir: str) -> dict:
                 and not _looks_like_path(src[k])}
         if vals:
             out[sec] = vals
+    out["reserve"] = guest_reserve(conf_dir)
     return out
+
+
+def guest_reserve(conf_dir: str) -> dict:
+    """Цифры кворума основы и порт её ответчика (`reserve.quorum`, `reserve.rf_block_minutes`) —
+    гостю: на резерве он ведёт её линию теми же цифрами, что ушли её шлюзам документом, а
+    раздел reserve в настройки пакета не едет. Через Timing: только известные ключи, числа."""
+    import yaml
+    try:
+        with open(os.path.join(conf_dir, "reserve.yaml"), encoding="utf-8") as f:
+            rsv = yaml.safe_load(f) or {}
+    except (OSError, yaml.YAMLError):
+        rsv = {}
+    return guest_reserve_norm(rsv if isinstance(rsv, dict) else {})
+
+
+def guest_reserve_norm(rsv: dict) -> dict:
+    """{quorum: {…, port}, rf_block_minutes} из раздела вида reserve.yaml — тот же разбор, что у
+    сервера (Timing.from_settings), в ту же раскладку: сборка пакета и запись reserve.yaml гостя."""
+    from awgbot.util.quorum.timing import Timing
+    q = rsv.get("quorum")
+    t = Timing.from_settings(q if isinstance(q, dict) else {}, rsv.get("rf_block_minutes"))
+    digits = t.to_settings()
+    rf = digits.pop("rf_block_minutes")
+    return {"quorum": {**digits, "port": t.port}, "rf_block_minutes": rf}
 
 
 LISTS_MAX = 200_000                  # строк в кэше одного вида — потолок части

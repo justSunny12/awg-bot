@@ -39,11 +39,11 @@ def _script() -> Path:
 
 
 def port() -> int:
-    """Порт ответчика — `app.reserve.quorum.port`; настройки недоступны — умолчание."""
+    """Порт ответчика — `reserve.quorum.port`; настройки недоступны — умолчание."""
     from awgbot.util.quorum.timing import DEFAULT_PORT
     try:
         from awgbot.core import settings
-        return int((settings.get("app.reserve.quorum", {}) or {}).get("port") or DEFAULT_PORT)
+        return int((settings.get("reserve.quorum", {}) or {}).get("port") or DEFAULT_PORT)
     except Exception:                                     # noqa: BLE001 — настройки недоступны
         return DEFAULT_PORT
 

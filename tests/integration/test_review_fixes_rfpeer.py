@@ -357,7 +357,7 @@ def test_without_a_generation_change_the_volume_is_the_plain_difference(rf, boot
 def test_offer_now_without_a_pair_does_nothing(rf):
     rf.db.reserve_peer_delete()
     before = dict(rf.rsv_get("rsv_rfpeer"))
-    settings.set_value("app.reserve.rf_via_mine", False)
+    settings.set_value("reserve.rf_via_mine", False)
     rf.reserve_rfpeer_offer_now()
     assert dict(rf.rsv_get("rsv_rfpeer")) == before, "без пары согласие пересчитано"
 
@@ -366,7 +366,7 @@ def test_offer_now_withdraws_the_offer_and_leaves_the_slot_and_the_episode(rf):
     _ready(rf)
     assert rf.k.rules == [rp.RULE151], "подготовка: согласия с правилом 151 нет"
     cur = dict(rf.rsv_get("rsv_rfpeer"))
-    settings.set_value("app.reserve.rf_via_mine", False)
+    settings.set_value("reserve.rf_via_mine", False)
     rf.reserve_rfpeer_offer_now()
     after = rf.rsv_get("rsv_rfpeer")
     assert (after.get("offer") or {}).get("on") is False and after["offer"]["why"] == "off", after.get("offer")

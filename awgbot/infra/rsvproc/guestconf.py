@@ -22,6 +22,8 @@ def _guest_app_yaml(bot_conf: dict, app_guest: dict, iface: str, tz: str, extra:
     from awgbot.infra import rsvzone
     app = dict(bot_conf.get("app") or {})
     for sec, vals in (app_guest or {}).items():
+        if sec == "reserve":                              # цифры кворума основы — в reserve.yaml гостя (rsvopen)
+            continue
         if isinstance(vals, dict):
             app.setdefault(sec, {})
             if isinstance(app[sec], dict):

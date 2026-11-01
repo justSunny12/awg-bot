@@ -312,7 +312,7 @@ def test_no_link_window_when_an_opening_could_not_start_anyway(box, block):
     которого не выполнить."""
     _off_line(box, "keys")
     if block == "ready_off":
-        settings.set_value("app.reserve.ready", False)
+        settings.set_value("reserve.ready", False)
     else:
         box.s.reserve_set_out("away")
     assert box.s.reserve_open_block(), "подготовка: предусловия открытия выполнены"

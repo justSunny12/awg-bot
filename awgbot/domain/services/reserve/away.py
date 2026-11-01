@@ -18,7 +18,7 @@ HOSTING_REFUSED = "Сейчас здесь пользователи и бот «
 AWAY_REFUSED = ("Пользователи и бот сейчас на резерве «{name}» — действия над этим сервером отложены до возврата, "
                 "иначе изменения разойдутся с тем, что происходит на резерве")
 
-RETURN_KEY = "app.reserve.return"          # рычаг возврата (Т-Р15): immediate — сам, button — по кнопке
+RETURN_KEY = "reserve.return"          # рычаг возврата (Т-Р15): immediate — сам, button — по кнопке
 
 
 def return_mode() -> str:

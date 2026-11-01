@@ -33,7 +33,7 @@ MAX_LINE = 256 * 1024              # как у канала шлюзов
 MAX_NAME = 64                      # имя сервера, имя линка, имя записи DNS
 MAX_HOST = 253
 MAX_REASON = 200
-DEFAULT_PAIR_PORT = 8788                 # порт канала пары в /30 линка (app.reserve.pair_channel_port)
+DEFAULT_PAIR_PORT = 8788                 # порт канала пары в /30 линка (reserve.pair_channel_port)
 
 
 def pair_hosts(cidr: str) -> tuple[str, str]:

@@ -269,7 +269,8 @@ def check_reserve(sec: dict) -> dict:
 
 
 _TIMING_KEYS = ("probe_seconds", "no_seconds", "yes_window_seconds", "down_seconds", "up_seconds",
-                "pledge_minutes", "tie_minutes", "rf_block_minutes")    # цифры кворума лидера — голосующим
+                "unfence_seconds", "ask_repeat_seconds", "grace_seconds", "pause_seconds", "tie_clear_seconds",
+                "pledge_minutes", "tie_minutes", "rf_block_minutes")    # цифры кворума лидера — голосующим (Timing.to_settings)
 
 
 def check_quorum(sec: dict) -> dict:

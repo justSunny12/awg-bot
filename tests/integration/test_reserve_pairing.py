@@ -86,7 +86,7 @@ def test_no_invitation_without_an_address_or_with_a_pair(services, rsv):
 
 
 def test_no_invitation_while_readiness_is_off(services, rsv):
-    settings.set_value("app.reserve.ready", False)
+    settings.set_value("reserve.ready", False)
     with pytest.raises(ServiceError, match="Готов быть резервом"):
         services.reserve_invite_issue()
     assert rsv.modes == [] and services.reserve_invite() == {}
@@ -238,7 +238,7 @@ def test_an_invitation_from_a_server_below_4_2_0_is_refused_before_connecting(se
 def test_the_version_refusal_comes_before_the_readiness_and_generation_checks(services, rsv, monkeypatch):
     """Старый пригласивший — первое, что слышит админ: «включи готовность» или
     «обновитесь до одного поколения AWG» ему не помогут."""
-    settings.set_value("app.reserve.ready", False)
+    settings.set_value("reserve.ready", False)
     monkeypatch.setattr(services, "_awg_generation", lambda: 1)
     with pytest.raises(ServiceError, match="4.2.0 или новее"):
         services.reserve_accept_parse(Inviter(version="4.1.1", awg_gen=2).token)
@@ -395,7 +395,7 @@ def test_its_own_invitation_is_refused(services, rsv):
 
 
 def test_readiness_off_refuses(services, rsv):
-    settings.set_value("app.reserve.ready", False)
+    settings.set_value("reserve.ready", False)
     with pytest.raises(ServiceError, match="Готов быть резервом"):
         services.reserve_accept_parse(Inviter().token)
 
@@ -433,7 +433,7 @@ def test_connect_brings_the_link_up_on_the_invitation_keys(services, rsv):
     assert all(env.get(k) == v for k, v in rc.OBF.items()), {k: env.get(k) for k in rc.OBF}
     assert (st["role"], st["state"]) == ("acceptor", "waiting") and services.reserve_link_role() == "acceptor"
     assert rsv.fw == [True], "карантин у принявшего не нарисован строго"
-    assert settings.get_bool("app.reserve.rf_via_mine", True) is False, "выбор РФ-доступа из диалога не сохранён"
+    assert settings.get_bool("reserve.rf_via_mine", True) is False, "выбор РФ-доступа из диалога не сохранён"
     assert services.reserve_channel_secret() == inv.peer_priv, "секрет канала до кода — не ключ из приглашения"
     assert services.reserve_connect_address() == ("10.99.98.2", 8788)
 
@@ -538,7 +538,7 @@ def test_the_channel_listens_on_the_inviters_address_in_the_30(services, rsv, mo
     services.reserve_invite_issue()
     assert services.reserve_link_role() == "inviter"
     assert services.reserve_listen_address() == ("10.99.98.2", 8788)
-    settings.set_value("app.reserve.pair_channel_port", 9100)
+    settings.set_value("reserve.pair_channel_port", 9100)
     assert services.reserve_listen_address() == ("10.99.98.2", 9100)
     assert services.reserve_channel_secret() == services.reserve_invite()["peer_priv"]
 

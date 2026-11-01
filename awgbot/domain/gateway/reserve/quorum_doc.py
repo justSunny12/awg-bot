@@ -140,7 +140,7 @@ class GatewayQuorumDocMixin:
         return {"responder": None, "probes": self.quorum_probe_ifaces()}
 
     def quorum_timing(self) -> Timing:
-        """Цифры лидера из раздела `quorum` документа (те же ключи, что `app.reserve.quorum`);
+        """Цифры лидера из раздела `quorum` документа (те же ключи, что `reserve.quorum`);
         раздел без цифр — умолчания агента (`app.gateway.quorum`)."""
         from awgbot.core import settings
         q = self.quorum_section().get("timing")

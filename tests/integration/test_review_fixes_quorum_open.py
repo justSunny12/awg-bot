@@ -134,10 +134,10 @@ def test_a_failure_before_the_next_tick_drops_the_opened_stage_and_retakes(c):
 
 def test_a_block_at_the_moment_of_the_points_drops_the_opened_stage(c):
     _to_points(c)
-    settings.set_value("app.reserve.ready", False)          # готовность сняли, пока ждали точки
+    settings.set_value("reserve.ready", False)          # готовность сняли, пока ждали точки
     c.share(1)
     assert not c.b.launched and c.s.reserve_in() == "idle", "подготовка: открытие пошло"
-    settings.set_value("app.reserve.ready", True)
+    settings.set_value("reserve.ready", True)
     c.run(5)
     assert c.stage() == "", f"открытие не пошло, а стадия {c.stage()!r}"
     acts = c.run(T_UP + 10)
@@ -216,7 +216,7 @@ def test_a_successful_move_keeps_the_raised_epoch(c):
 def test_the_code_window_outside_a_decision_needs_the_open_preconditions(c, what):
     c.b.peer_admin_opened()
     if what == "ready_off":
-        settings.set_value("app.reserve.ready", False)
+        settings.set_value("reserve.ready", False)
     elif what == "no_pkg":
         c.s.rsv_put("rsv_pkg_in", {})
     else:
@@ -233,13 +233,13 @@ def test_the_code_window_outside_a_decision_needs_the_open_preconditions(c, what
 
 
 def test_the_code_window_outside_a_decision_opens_once_the_block_is_gone(c):
-    settings.set_value("app.reserve.ready", False)
+    settings.set_value("reserve.ready", False)
     for slot in (1, 2):
         c.b.gone(slot)
     c.own("uns")
     c.tick()
     assert not c.s.reserve_code_window()["open"], "подготовка: окно открыто при выключенной готовности"
-    settings.set_value("app.reserve.ready", True)
+    settings.set_value("reserve.ready", True)
     c.run(5)
     assert c.s.reserve_code_window()["open"], "готовность включили — окно кода не открылось"
 
@@ -367,7 +367,16 @@ def test_the_st_quo_carries_the_timing_digits(c):
     from awgbot.util.quorum.timing import Timing
     t = Timing()
     assert c.s.reserve_quorum_timing_digits() == {"p": t.probe_s, "no": t.no_s, "w": t.yes_window_s, "down": t.down_s,
-                                                  "up": t.up_s, "rf": t.rf_block_s}
+                                                  "up": t.up_s, "rf": t.rf_block_s, "pause": t.pause_s}
+
+
+def test_a_diverging_pause_limit_switches_the_candidate_off(c):
+    """Предел плановой паузы у сторон разный: лидер попросил бы паузу дольше, чем держит голосующий
+    второй стороны, — переезд посреди планового обновления; кандидата нет, как при любой цифре."""
+    _peer_digits(c, pause=600)
+    assert c.s.reserve_quorum_peer_timing_off() == "pause"
+    acts = _majority(c) + c.run(T_UP)
+    assert not gw_sent(acts, "qtake") and c.s.__dict__.get("_rsv_qcand") is None
 
 
 def test_equal_digits_keep_the_candidate(c):

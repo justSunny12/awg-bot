@@ -245,7 +245,7 @@ def test_a_cleared_snapshot_quo_stays_cleared():
 
 def test_the_timing_of_the_leader_passes_through_the_check_by_known_keys():
     """Решение 31.10.2026 (вариант 1): цифры кворума едут шлюзу в разделе quorum теми же
-    ключами, что `app.reserve.quorum`; чужие ключи отбрасываются, мусор — отказ."""
+    ключами, что `reserve.quorum`; чужие ключи отбрасываются, мусор — отказ."""
     out = gwcheck.check_quorum(_sec(timing={"probe_seconds": 10, "yes_window_seconds": 30, "junk": 5}))
     assert out["timing"] == {"probe_seconds": 10, "yes_window_seconds": 30}
     assert gwcheck.check_quorum(_sec())["timing"] == {}

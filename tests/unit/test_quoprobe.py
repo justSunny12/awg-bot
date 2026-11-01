@@ -134,12 +134,12 @@ def test_the_conf_dir_from_the_environment_wins(monkeypatch, tmp_path):
 
 
 def test_the_port_follows_the_setting_and_falls_back_on_garbage(monkeypatch):
-    vals = {"app.reserve.quorum": {"port": 9911}}
+    vals = {"reserve.quorum": {"port": 9911}}
     monkeypatch.setattr(settings, "get", lambda k, d=None: vals.get(k, d))
     assert quoprobe.port() == 9911
-    vals["app.reserve.quorum"] = {"port": "мусор"}
+    vals["reserve.quorum"] = {"port": "мусор"}
     assert quoprobe.port() == 8789, "мусор в настройке уронил порт, а не дал умолчание"
-    vals["app.reserve.quorum"] = None
+    vals["reserve.quorum"] = None
     assert quoprobe.port() == 8789
 
 

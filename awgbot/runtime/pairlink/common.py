@@ -15,7 +15,7 @@ SEND_TIMEOUT = 30
 
 
 def channel_port() -> int:
-    return int(settings.get_int("app.reserve.pair_channel_port", DEFAULT_PORT) or DEFAULT_PORT)
+    return int(settings.get_int("reserve.pair_channel_port", DEFAULT_PORT) or DEFAULT_PORT)
 
 
 pair_hosts = pairproto.pair_hosts                      # чистая функция живёт в util — ею пользуется и domain

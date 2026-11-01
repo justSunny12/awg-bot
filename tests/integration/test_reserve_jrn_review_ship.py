@@ -399,7 +399,7 @@ def test_a_big_store_marks_a_snapshot_at_most_once_per_pkg_minutes(duo, monkeypa
     marks = []
     monkeypatch.setattr(duo.a, "reserve_pkg_mark", lambda: marks.append(duo.clock.t))
     big = dict(duo.b.reserve_keep_view(), size=ship.SNAP_BYTES + 1)
-    minutes = max(1, settings.get_int("app.reserve.pkg_minutes", 30))
+    minutes = max(1, settings.get_int("reserve.pkg_minutes", 30))
     for _ in range(20):
         duo.a.reserve_jrn_keep_in(big)
         duo.clock.advance(5)

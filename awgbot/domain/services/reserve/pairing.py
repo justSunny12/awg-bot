@@ -136,7 +136,7 @@ class ReservePairingMixin:
         from awgbot.core.compat import version_key
         if version_key(tok.version) and compat.below_pair_floor(tok.version):
             raise ServiceError(f"Второй сервер на v{tok.version} — для резерва нужен {compat.PAIR_FLOOR} или новее у обоих серверов")
-        if not settings.get_bool("app.reserve.ready", False):
+        if not settings.get_bool("reserve.ready", False):
             raise ServiceError("Сначала включи «Готов быть резервом»")
         my_gen = self._awg_generation()
         if tok.awg_gen and my_gen and tok.awg_gen != my_gen:
@@ -175,7 +175,7 @@ class ReservePairingMixin:
             self.rsv_put("rsv_invite", st)
             priv, pub = joinsas.new_pair()
             _live_set({"id": tok.pair_id, "priv": priv, "pub": pub})
-        settings.set_value("app.reserve.rf_via_mine", bool(rf_via_mine)) if hasattr(settings, "set_value") else None
+        settings.set_value("reserve.rf_via_mine", bool(rf_via_mine)) if hasattr(settings, "set_value") else None
         try:
             self._gw_firewall_refresh(strict=True)
         except ServiceError as e:
@@ -186,7 +186,7 @@ class ReservePairingMixin:
 
     @staticmethod
     def _free_pair_port() -> int:
-        return int(settings.get("app.reserve.pair_port", 47101) or 47101)
+        return int(settings.get("reserve.pair_port", 47101) or 47101)
 
     def reserve_accept_hello_body(self) -> dict:
         """Тело `hello` сессии сопряжения принявшего."""

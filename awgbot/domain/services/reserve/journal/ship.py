@@ -151,7 +151,7 @@ class ReserveShipMixin:
         if int(keep.get("size") or 0) > SNAP_BYTES:
             now = time.monotonic()
             prev = self.__dict__.get("_jrn_size_mark_at")
-            if prev is None or now - float(prev) > max(1, settings.get_int("app.reserve.pkg_minutes", 30)) * 60:
+            if prev is None or now - float(prev) > max(1, settings.get_int("reserve.pkg_minutes", 30)) * 60:
                 self.__dict__["_jrn_size_mark_at"] = now        # не чаще раза в pkg_minutes: слово резерва — не рычаг
                 self.reserve_pkg_mark()                       # плановый снимок: у резерва больше мегабайта событий
         if str(keep.get("line") or "") == line and cnt_bn > self.db.jrn_counts_bn():
@@ -299,7 +299,7 @@ class ReserveShipMixin:
 
     @staticmethod
     def _jrn_cnt_delay() -> float:
-        return backoff.jitter(max(1, settings.get_int("app.reserve.pkg_minutes", 30)) * 60)
+        return backoff.jitter(max(1, settings.get_int("reserve.pkg_minutes", 30)) * 60)
 
     def _jrn_counts_rec(self, side: str, batch) -> bytes | None:
         """Пачка счётчиков записью под K (основа — сторона a, бот основы на резерве — b);

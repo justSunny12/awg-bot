@@ -48,7 +48,7 @@ def _healthy_for(w, seconds: float) -> list:
 def away(mv):
     """Пользователи у резерва, шлюзов нет (иначе здоровье зависит от их связи), рычаг «сразу»."""
     mv.rsv.gw = False
-    settings.set_value("app.reserve.return", "immediate")
+    settings.set_value("reserve.return", "immediate")
     rm.go_away(mv.svc)
     # резерв несёт пользователей (st с in=serving): иначе «резерв на связи без моего гостя» —
     # возврат без реплики сразу, а не просьба реплики
@@ -139,7 +139,7 @@ def test_the_minimum_interval_between_switches_holds_the_return(away):
 
 def test_with_the_button_lever_the_primary_only_raises_the_flag_once(away):
     svc = away.svc
-    settings.set_value("app.reserve.return", "button")
+    settings.set_value("reserve.return", "button")
     live = [a for a in _healthy_for(away, 400) if a == ("live",)]
     assert svc.reserve_out() == "away", "рычаг «по кнопке»: сам не возвращается"
     assert svc.reserve_can_return() is True and len(live) == 1, "флаг поднят один раз, экран перерисован один раз"
@@ -154,11 +154,11 @@ def test_the_lever_is_read_by_one_getter_and_only_immediate_returns_by_itself(aw
     """Рычаг возврата читается одним местом (away.reserve_return_mode): пусто — умолчание
     immediate, значение не из двух — сам не возвращается, как и прежде (только immediate)."""
     svc = away.svc
-    settings.set_value("app.reserve.return", "")
+    settings.set_value("reserve.return", "")
     assert svc.reserve_return_mode() == "immediate" and svc.reserve_return_lever_button() is False
-    settings.set_value("app.reserve.return", "button")
+    settings.set_value("reserve.return", "button")
     assert svc.reserve_return_mode() == "button" and svc.reserve_return_lever_button() is True
-    settings.set_value("app.reserve.return", "immediate")
+    settings.set_value("reserve.return", "immediate")
     monkeypatch.setattr(svc, "reserve_return_mode", lambda: "sometimes")
     _healthy_for(away, 400)
     assert svc.reserve_out() == "away", "такт away прочёл рычаг мимо reserve_return_mode"

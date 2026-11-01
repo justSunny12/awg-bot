@@ -36,7 +36,7 @@ class ReserveZoneLinksMixin:
         return self.rsv_get("rsv_guest_links")
 
     def _rsv_cidr_for(self, slot: int) -> str:
-        cidrs = settings.get("app.reserve.rsv_cidrs", ["10.99.97.0/30", "10.99.97.4/30"]) or []
+        cidrs = settings.get("reserve.rsv_cidrs", ["10.99.97.0/30", "10.99.97.4/30"]) or []
         if not isinstance(cidrs, list):
             cidrs = []
         i = int(slot) - 1

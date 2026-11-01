@@ -124,14 +124,14 @@ def core_covered(core, announced) -> list[str]:
 
 class ReserveTgPoolMixin:
     def _tg_pool_cfg(self) -> dict:
-        asns = settings.get("app.reserve.tg_pool_asns", [62041, 62014, 59930, 44907, 211157]) or []
+        asns = settings.get("reserve.tg_pool_asns", [62041, 62014, 59930, 44907, 211157]) or []
         return {"asns": [int(a) for a in asns if str(a).isdigit() or isinstance(a, int)],
-                "url": str(settings.get("app.reserve.tg_pool_url",
+                "url": str(settings.get("reserve.tg_pool_url",
                                         "https://stat.ripe.net/data/announced-prefixes/data.json?resource=AS{asn}") or ""),
-                "hours": max(1, settings.get_int("app.reserve.tg_pool_hours", 24)),
-                "max": max(1, settings.get_int("app.reserve.tg_pool_max", 256)),
-                "syn": max(1, settings.get_int("app.reserve.tg_pool_learn_syn", 3)),
-                "stale_days": max(1, settings.get_int("app.reserve.tg_pool_stale_days", 3))}
+                "hours": max(1, settings.get_int("reserve.tg_pool_hours", 24)),
+                "max": max(1, settings.get_int("reserve.tg_pool_max", 256)),
+                "syn": max(1, settings.get_int("reserve.tg_pool_learn_syn", 3)),
+                "stale_days": max(1, settings.get_int("reserve.tg_pool_stale_days", 3))}
 
     # ── анонсы ──────────────────────────────────────────────────────────────
     def reserve_tg_pool_due(self, now: float | None = None) -> bool:

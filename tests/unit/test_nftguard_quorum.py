@@ -46,7 +46,7 @@ def awgdir(tmp_path, monkeypatch):
 
 def _spec(awgdir, monkeypatch, conf: str | None, **kw):
     vals = {"app.firewall.enabled": True, "app.firewall.ssh_allow": [], "app.firewall.open_tcp": [8080],
-            "app.firewall.open_udp": [5353], "app.network.ssh_port": 2222, "app.reserve.quorum": {"port": 8789}}
+            "app.firewall.open_udp": [5353], "app.network.ssh_port": 2222, "reserve.quorum": {"port": 8789}}
     vals.update(kw)
     monkeypatch.setattr(settings, "get", lambda k, d=None: vals.get(k, d))
     monkeypatch.setattr(settings, "get_int", lambda k, d=0: int(vals.get(k, d)))
@@ -72,7 +72,7 @@ def test_the_line_b_responder_gives_the_upper_subblock(awgdir, monkeypatch):
 
 
 def test_the_port_follows_the_setting(awgdir, monkeypatch):
-    spec = _spec(awgdir, monkeypatch, WITH_A, **{"app.reserve.quorum": {"port": 9911}})
+    spec = _spec(awgdir, monkeypatch, WITH_A, **{"reserve.quorum": {"port": 9911}})
     assert spec.probe_port == 9911
     assert "udp dport 9911 accept" in nftguard.render(spec)
 

@@ -21,6 +21,11 @@ Dotted-ключ = «<файл>.<путь-внутри-файла>»: первы�
 Запись — через ruamel.yaml (round-trip: комментарии и порядок целы), атомарно
 (temp+rename) и под меткой самозаписи, чтобы вотчдог conf/ не считал её внешним
 изменением.
+
+Раздел, переехавший в свой файл (`_MOVED_SECTIONS`: `app.reserve` →
+`conf/reserve.yaml`, 4.2.0), `init()` переносит до первого чтения: значения
+ложатся поверх шаблона нового файла, раздел в прежнем остаётся копией для отката
+с меткой `moved`. Шим — снять вместе с копией при сдвиге минимумов выше 4.2.0.
 """
 from __future__ import annotations
 
@@ -75,11 +80,72 @@ def _read_yaml(path: Path):
         return _PARSE_ERROR
 
 
+# Разделы, переехавшие в свой файл: (файл, раздел, новый файл). Перенос — при init, до
+# чтения: значения раздела ложатся поверх шаблона нового файла (досеян обновлением). Раздел
+# в прежнем файле остаётся копией для отката на выпуск линии ниже (его код читает только
+# прежнее место) с меткой `moved` — бот её не читает и второй раз не переносит; раздел без
+# метки (восстановлен бэкап прежнего выпуска) переносится снова. Шим: снять вместе с копией
+# при сдвиге COMPAT_FLOOR выше 4.2.0.
+_MOVED_SECTIONS: tuple[tuple[str, str, str], ...] = (("app", "reserve", "reserve"),)
+_MOVED_MARK = "moved"
+
+
+def _merge_into(dst, src) -> None:
+    for k, v in src.items():
+        if isinstance(v, dict) and isinstance(dst.get(k), dict):
+            _merge_into(dst[k], v)
+        else:
+            dst[k] = v
+
+
+def _move_sections(conf_dir: Path) -> None:
+    """Перенести разделы `_MOVED_SECTIONS` в свои файлы (ruamel round-trip, атомарно).
+    Сначала пишется новый файл, потом метка в прежнем: оборванный перенос повторится
+    на следующем старте с тем же итогом. Сбой — строка в журнал, бот работает на
+    прежнем раскладе (ключи нового файла — умолчания шаблона)."""
+    from ruamel.yaml import YAML
+    for src_stem, section, dst_stem in _MOVED_SECTIONS:
+        src_path, dst_path = conf_dir / f"{src_stem}.yaml", conf_dir / f"{dst_stem}.yaml"
+        if not src_path.exists():
+            continue
+        ruamel = YAML()
+        ruamel.preserve_quotes = True
+        try:
+            with src_path.open(encoding="utf-8") as f:
+                src = ruamel.load(f) or {}
+            sec = src.get(section) if isinstance(src, dict) else None
+            if not isinstance(sec, dict) or sec.get(_MOVED_MARK):
+                continue
+            dst = {}
+            if dst_path.exists():
+                with dst_path.open(encoding="utf-8") as f:
+                    dst = ruamel.load(f) or {}
+            _merge_into(dst, sec)
+            sec[_MOVED_MARK] = f"{dst_stem}.yaml"
+            if hasattr(src, "yaml_set_comment_before_after_key"):
+                src.yaml_set_comment_before_after_key(
+                    section, before=f"Раздел перенесён в {dst_stem}.yaml — бот читает его там; здесь копия "
+                                    f"для отката на прежний выпуск, правки в ней не действуют")
+            for path, doc in ((dst_path, dst), (src_path, src)):
+                tmp = path.with_suffix(".yaml.tmp")
+                with tmp.open("w", encoding="utf-8") as f:
+                    ruamel.dump(doc, f)
+                os.replace(tmp, path)
+        except Exception as e:                     # noqa: BLE001 — ruamel-иерархия и ОС
+            log.warning("settings: раздел %s из conf/%s.yaml в conf/%s.yaml не перенесён: %s",
+                        section, src_stem, dst_stem, e)
+            continue
+        log.info("settings: раздел %s перенесён из conf/%s.yaml в conf/%s.yaml (копия для отката — на месте)",
+                 section, src_stem, dst_stem)
+
+
 def init(conf_dir) -> None:
-    """Однократная инициализация: запомнить каталог conf и загрузить все *.yaml."""
+    """Однократная инициализация: запомнить каталог conf, перенести переехавшие
+    разделы и загрузить все *.yaml."""
     global _conf_dir
     with _lock:
         _conf_dir = Path(conf_dir)
+        _move_sections(_conf_dir)
         _cache.clear()
         for p in sorted(_conf_dir.glob("*.yaml")):
             data = _read_yaml(p)

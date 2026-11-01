@@ -34,7 +34,7 @@ class ReserveOpeningMixin:
             return "зона занята"
         if self.reserve_out() != "home":
             return "мои пользователи не на этом сервере"
-        if not settings.get_bool("app.reserve.ready", False):
+        if not settings.get_bool("reserve.ready", False):
             return "готовность выключена"
         ok, why = self.reserve_directions()["in"]
         if not ok:
@@ -69,7 +69,7 @@ class ReserveOpeningMixin:
         last = str(inn.get("since") or "")
         if last and free and inn.get("ended_auto"):
             try:
-                mins = settings.get_int("app.reserve.min_interval_minutes", 30)
+                mins = settings.get_int("reserve.min_interval_minutes", 30)
                 if timeutil.elapsed(timeutil.parse_iso(last)) < mins * 60:
                     return f"между автоматическими переездами не меньше {mins} мин"
             except ValueError:

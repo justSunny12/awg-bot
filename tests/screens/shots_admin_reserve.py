@@ -66,7 +66,7 @@ def _rsv(*, host: str = "vpn.example.org", ready: bool = False, gw: str = "none"
         who = _quiet(services)
         _host(services, mp)
         settings.set_value("app.network.server_host", host)
-        settings.set_value("app.reserve.ready", ready)
+        settings.set_value("reserve.ready", ready)
         if gw != "none":
             from tests.screens.shots_admin_common import ADM
             dev = services.add_device(ADM, "NASPi").device_id
@@ -167,7 +167,7 @@ def _serving(services, mp):
 
 def _not_ready(services, mp):
     from awgbot.core import settings
-    settings.set_value("app.reserve.ready", False)
+    settings.set_value("reserve.ready", False)
 
 
 def _v420(services, mp):

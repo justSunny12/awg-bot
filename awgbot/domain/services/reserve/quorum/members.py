@@ -37,11 +37,11 @@ class ReserveQuorumMembersMixin:
 
     @staticmethod
     def reserve_quorum_settings() -> dict:
-        q = settings.get("app.reserve.quorum", {}) or {}
+        q = settings.get("reserve.quorum", {}) or {}
         return dict(q) if isinstance(q, dict) else {}
 
     def reserve_quorum_timing(self) -> Timing:
-        return Timing.from_settings(self.reserve_quorum_settings(), settings.get_int("app.reserve.rf_block_minutes", 15))
+        return Timing.from_settings(self.reserve_quorum_settings(), settings.get_int("reserve.rf_block_minutes", 15))
 
     def _quorum_gw_nodes(self, side: str) -> tuple[list[str], list[int]]:
         """(узлы шлюзов с агентом quo1, слоты выше предела блока)."""
@@ -179,8 +179,8 @@ class ReserveQuorumMembersMixin:
             cidrs += [str(n) for n in config.routing_client_subnets()]
         except Exception:                                     # noqa: BLE001
             pass
-        for key, default in (("app.reserve.zone_pool", "169.254.96.0/19"), ("app.reserve.zone_cidr", "169.254.77.0/30"),
-                             ("app.reserve.zone_rf_cidr", "169.254.77.4/30")):
+        for key, default in (("reserve.zone_pool", "169.254.96.0/19"), ("reserve.zone_cidr", "169.254.77.0/30"),
+                             ("reserve.zone_rf_cidr", "169.254.77.4/30")):
             cidrs.append(str(settings.get(key, default) or default))
         try:
             from awgbot.util import lanspace
@@ -231,12 +231,12 @@ class ReserveQuorumMembersMixin:
         self.__dict__.pop("_quo_active_cache", None)
 
     def reserve_quorum_act_leftover(self) -> None:
-        """Ключ `app.reserve.quorum.act` снят: оставшийся в app.yaml не читается — строка журнала один раз."""
+        """Ключ `reserve.quorum.act` снят: оставшийся (в reserve.yaml после переноса раздела) не читается — строка журнала один раз."""
         if self.__dict__.get("_quo_act_told"):
             return
         self.__dict__["_quo_act_told"] = True
-        if settings.get("app.reserve.quorum.act", None) is not None:
-            log.warning("кворум: reserve.quorum.act в app.yaml больше не читается — решения по кворуму всегда")
+        if settings.get("reserve.quorum.act", None) is not None:
+            log.warning("кворум: reserve.quorum.act больше не читается — решения по кворуму всегда")
 
     def reserve_quorum_decisions(self) -> bool:
         """Голосов хватает для решений (v ≥ 2: есть шлюз в составе); при v = 1 линия живёт
@@ -271,10 +271,12 @@ class ReserveQuorumMembersMixin:
                 "tm": self.reserve_quorum_timing_digits()}    # цифры лидера — кандидат сверяет со своими
 
     def reserve_quorum_timing_digits(self) -> dict:
-        """Цифры времени, которыми связаны лидер и кандидат: проба, T_no, окно «да», T_down, T_up, T_up_rf."""
+        """Цифры времени, которыми связаны лидер и кандидат: проба, T_no, окно «да», T_down, T_up, T_up_rf и
+        предел плановой паузы (лидер просит паузу, голосующий второй стороны держит её не дольше своего
+        предела — разойдись они, второй сервер начал бы переезд посреди планового обновления)."""
         tm = self.reserve_quorum_timing()
         return {"p": int(tm.probe_s), "no": int(tm.no_s), "w": int(tm.yes_window_s), "down": int(tm.down_s),
-                "up": int(tm.up_s), "rf": int(tm.rf_block_s)}
+                "up": int(tm.up_s), "rf": int(tm.rf_block_s), "pause": int(tm.pause_s)}
 
     def reserve_quorum_epoch(self) -> int:
         """Эпоха своей линии (журнал); без журнала — 0."""

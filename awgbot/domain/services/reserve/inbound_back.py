@@ -222,7 +222,7 @@ class ReserveInboundBackMixin:
         host = self._relay_host_ip(host)                      # в правило nft — адрес: имя резолвится при загрузке таблицы
         ports = [int(p) for p in (peer.get("ports") or []) if isinstance(p, int)]
         to = f"{host}:{ports[0]}" if host and ports and had_clients else ""
-        until = timeutil.to_iso(timeutil.shift(timeutil.now(), settings.get_int("app.reserve.relay_max_days", 7) * 86400))
+        until = timeutil.to_iso(timeutil.shift(timeutil.now(), settings.get_int("reserve.relay_max_days", 7) * 86400))
         try:
             self.reserve_traffic_in_close()
         except Exception as e:                                # noqa: BLE001
@@ -261,7 +261,7 @@ class ReserveInboundBackMixin:
             done = bool(until) and timeutil.parse_iso(until) <= timeutil.now()
         except ValueError:
             done = True
-        idle_h = settings.get_int("app.reserve.relay_idle_hours", 2)
+        idle_h = settings.get_int("reserve.relay_idle_hours", 2)
         if not done and idle_h:
             last = self._relay_last_traffic(inn)
             try:

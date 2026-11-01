@@ -93,4 +93,4 @@ class ReserveRfZoneMixin:
         `rf_cidr` — /30 veth РФ-трафика."""
         from awgbot.core import settings
         ok = self.reserve_rf_offer()[0] if hasattr(self, "reserve_rf_offer") else False
-        return {"rf_via": bool(ok), "rf_cidr": str(settings.get("app.reserve.zone_rf_cidr", "169.254.77.4/30") or "")}
+        return {"rf_via": bool(ok), "rf_cidr": str(settings.get("reserve.zone_rf_cidr", "169.254.77.4/30") or "")}

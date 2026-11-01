@@ -158,7 +158,7 @@ def rf(services, fake_awg, fake_routing, make_active_client, monkeypatch, tmp_pa
     monkeypatch.setattr(s, "_gw_firewall_refresh", lambda strict=False: fw.append(collect.rfpeer()))
     clock = Clock()
     monkeypatch.setattr(timeutil, "now", clock.now)
-    settings.set_value("app.reserve.rf_via_mine", True)
+    settings.set_value("reserve.rf_via_mine", True)
     s.k, s.probe, s.switched, s.fw, s.clock, s.slot_policy = k, probe, switched, fw, clock, policy
     return s
 

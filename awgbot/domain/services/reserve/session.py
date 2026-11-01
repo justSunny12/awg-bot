@@ -55,7 +55,7 @@ class ReserveSessionMixin:
 
     @staticmethod
     def reserve_channel_port() -> int:
-        return int(settings.get_int("app.reserve.pair_channel_port", pairproto.DEFAULT_PAIR_PORT) or pairproto.DEFAULT_PAIR_PORT)
+        return int(settings.get_int("reserve.pair_channel_port", pairproto.DEFAULT_PAIR_PORT) or pairproto.DEFAULT_PAIR_PORT)
 
     def reserve_listen_address(self) -> tuple[str, int] | None:
         _acc, inv = pairproto.pair_hosts(self._pair_cidr())
@@ -108,7 +108,7 @@ class ReserveSessionMixin:
         peer_admin = self.rsv_get("rsv_peer_admin")
         pkg_in = self.rsv_get("rsv_pkg_in")
         me = self._my_hello_fields()
-        return {"ready": settings.get_bool("app.reserve.ready", False), "name": me["name"], "version": me["version"],
+        return {"ready": settings.get_bool("reserve.ready", False), "name": me["name"], "version": me["version"],
                 "caps": me["caps"], "gen": me["gen"], "ports": me["ports"], "self": self._own_host_or_empty(),
                 "out": self.reserve_out(), "in": self.reserve_in(), "gw": self.reserve_has_gateway(),
                 "healthy": bool(self.reserve_away() and self._healthy_safe()), "can_return": bool(self._can_return_safe()),
@@ -321,7 +321,7 @@ class ReserveSessionMixin:
         return notes
 
     def _my_side(self) -> dict:
-        return compat.my_side(ready=settings.get_bool("app.reserve.ready", False),
+        return compat.my_side(ready=settings.get_bool("reserve.ready", False),
                               has_gateway=self.reserve_has_gateway(), ports=self._client_ports())
 
     def reserve_directions(self) -> dict:
