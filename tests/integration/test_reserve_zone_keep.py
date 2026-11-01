@@ -192,6 +192,83 @@ def test_a_serve_failure_after_done_keeps_the_zone_and_retries_serve(host):
     _no_teardown(host)
 
 
+# ── tg_taken раньше, чем такт включил serve ─────────────────────────────────
+# Режим serve зоны (вход вебхука) включает такт, увидев done. Слово гостя «вебхук стоит»
+# могло прийти раньше (такт прочёл record_fact, а процесс положил tg_take и done следом;
+# такт сорвался до serve): переход в serving с отметкой served без serve — вход вебхука
+# закрыт навсегда, бот основы на резерве молчит при живом VPN.
+
+def _tg_take_before_done(host) -> None:
+    host.zone.status = {"step": "record_fact", "name": NAME, "ip": IP}
+    host.svc.reserve_in_tick()                                # такт застал факт записи, done — ещё нет
+    host.zone.take.parent.mkdir(parents=True, exist_ok=True)
+    host.zone.take.write_text("1", encoding="utf-8")          # процесс положил отметку «ставь вебхук»
+
+
+def test_tg_taken_before_the_tick_saw_done_turns_serve_on_first(host):
+    svc = host.svc
+    _emergency(host)
+    _tg_take_before_done(host)
+    assert "serve" not in host.zone.names(), "подготовка: serve до done"
+    acts = svc.reserve_guest_tg_taken()
+    inn = svc.rsv_get("rsv_in")
+    assert host.zone.names().count("serve") == 1, f"вебхук гостя стоит, а вход вебхука в зону не включён: {host.zone.calls}"
+    assert svc.reserve_in() == "serving" and inn.get("tg_taken") and inn.get("served"), inn
+    assert "taken" in sent(acts) and ("fw",) in acts
+    host.zone.status = {"step": "done"}
+    host.clock.advance(inbound_keep.KEEP_RETRY_S + 1)
+    svc.reserve_in_tick()
+    assert host.zone.names().count("serve") == 1, "serve повторился"
+    _no_teardown(host)
+
+
+def test_a_serve_refused_at_tg_taken_keeps_the_zone_and_is_retried(host):
+    svc = host.svc
+    _emergency(host)
+    _tg_take_before_done(host)
+    host.zone.fail_on["serve"] = "порт вебхука занят"
+    acts = svc.reserve_guest_tg_taken()
+    inn = svc.rsv_get("rsv_in")
+    assert host.zone.names() == ["serve"], f"serve не пробовали: {host.zone.calls}"
+    assert svc.reserve_in() == "serving" and inn.get("tg_taken"), "Telegram гость уже взял — слово не потерять"
+    assert inn.get("serve_due") and not inn.get("served") and inn.get("keep_k") == "serve", inn
+    assert "down" not in sent(acts) and "taken" in sent(acts)
+    assert "вход вебхука в зону не настроен" in notices(acts)[0].text
+    _no_teardown(host)
+    del host.zone.fail_on["serve"]
+    host.clock.advance(inbound_keep.KEEP_RETRY_S + 1)
+    svc.reserve_in_tick()
+    inn = svc.rsv_get("rsv_in")
+    assert host.zone.names() == ["serve", "serve"] and inn.get("served") and not inn.get("serve_due"), inn
+    assert "in_keep" not in svc.reserve_st_body()
+
+
+def test_a_serve_refused_at_tg_taken_on_the_key_path_ends_the_hosting_as_on_the_tick(host):
+    svc = host.svc
+    _taking(host, "button")
+    host.zone.status = {"step": "clone_up"}
+    svc.reserve_in_tick()
+    host.zone.fail_on["serve"] = "порт вебхука занят"
+    acts = svc.reserve_guest_tg_taken()
+    assert svc.reserve_in() == "idle" and host.zone.names()[-2:] == ["teardown", "wipe"]
+    assert "down" in sent(acts) and "taken" not in sent(acts)
+
+
+def test_tg_taken_after_a_kept_serve_failure_does_not_claim_serve(host):
+    """Процесс убит между отметкой tg_take и done: serving с повтором serve, вебхук гостя
+    приходит следом — отметка served только по настоящему serve."""
+    svc = host.svc
+    _emergency(host)
+    _tg_take_before_done(host)
+    host.spawn.rc = 137
+    svc.reserve_in_tick()
+    assert svc.reserve_in() == "serving" and svc.rsv_get("rsv_in").get("serve_due"), "подготовка"
+    svc.reserve_guest_tg_taken()
+    inn = svc.rsv_get("rsv_in")
+    assert inn.get("tg_taken") and inn.get("serve_due") and not inn.get("served"), inn
+    assert "serve" not in host.zone.names(), "serve без такта — повтор ведёт inbound_keep"
+
+
 def test_a_bot_failure_after_done_is_the_same_rule_and_loud(host, monkeypatch):
     monkeypatch.setattr(inbound_tgwait, "subprocess", host.spawn)
     monkeypatch.setattr(rsvzone, "guest_unit_active", lambda: False)

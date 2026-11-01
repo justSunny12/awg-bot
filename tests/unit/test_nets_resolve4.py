@@ -74,6 +74,33 @@ def test_the_relay_address_of_a_hung_name_is_cut_at_the_ceiling(hung, monkeypatc
     assert socket.getdefaulttimeout() == before
 
 
+@pytest.mark.resolve_pool
+def test_a_lookup_given_up_in_the_queue_never_reaches_the_resolver(monkeypatch):
+    """Пул разрешения имён общий у процесса и в два потока: при молчащем
+    резолвере два вызова висят до его собственного таймаута, следующие ждут в
+    очереди и отпадают по потолку. Брошенный в очереди вызов к резолверу уже не
+    идёт: иначе пачка просроченных (досев 20 доменов, вайтлист файервола) после
+    отвиса резолвера шла бы первой, и свежий вызов — адрес основы для хвоста,
+    чтение записи DNS — стоял бы за ней и отпадал по потолку сам."""
+    release = threading.Event()
+    asked: list[str] = []
+
+    def gai(host, *a, **kw):
+        asked.append(host)
+        if host == "hung.example.net":
+            release.wait(5)
+        return [(socket.AF_INET, socket.SOCK_DGRAM, 17, "", ("203.0.113.9", 0))]
+    monkeypatch.setattr(socket, "getaddrinfo", gai)
+    try:
+        for _ in range(6):
+            assert nets.resolve4("hung.example.net", 0.05) == ""
+    finally:
+        release.set()
+    assert nets.resolve4("vpn.example.net", 2) == "203.0.113.9", "свежий вызов отпал за очередью просроченных"
+    hung = asked.count("hung.example.net")
+    assert hung <= 2, f"к резолверу ушли {hung} брошенных вызова из шести (потоков пула два)"
+
+
 def test_the_resolver_ceiling_stays_within_the_outbound_rule():
     assert 0 < nets.RESOLVE_TIMEOUT <= 10 and 0 < uplink.RESOLVE_TIMEOUT <= 10
 
