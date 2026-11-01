@@ -6,7 +6,10 @@ voter.py — часть пакета quorum: правило голосующег
 Проба каждые P (с джиттером, ставит вызывающий); ответа нет за `reply_s` —
 пропуск: взгляд `sus`, досылка `resend_n` проб через `resend_s`; ответа нет
 `no_s` подряд — `uns` (с момента последнего ответа). «Вижу» из `uns`/`new` —
-два ответа подряд, из `sus` — один. Взгляд в пробе — до этой пробы.
+два ответа подряд, из `sus` — один. Взгляд в пробе — до этой пробы. Проба, не
+ушедшая из своего сокета (`unsent`: сокета зонда ещё нет — пространство и
+интерфейс поднимаются, повтор через 30 с; ошибка отправки), — моя слепота, а не
+молчание лидера: ответа она не ждёт, и время до неё в `no_s` не идёт.
 
 Обязательство «нет»: отдав кандидату `qview{uns}` под эпохой e, голосующий
 не скажет лидеру «вижу» под той же эпохой — пробы идут со взглядом `held`,
@@ -51,6 +54,7 @@ class Voter:
     started: float = 0.0
     last_reply: float = 0.0       # последний ответ (monotonic), 0 — ещё не было
     last_probe: float = 0.0
+    blind_at: float = 0.0         # последняя проба, не ушедшая из сокета (monotonic), 0 — не было
     next_probe: float = 0.0
     pending: dict = field(default_factory=dict)   # s → когда отправлена
     streak: int = 0               # ответов подряд (для «вижу» из uns/new)
@@ -78,6 +82,13 @@ class Voter:
         self.last_probe = now
         self.next_probe = now + float(interval)
         return self.seq
+
+    def unsent(self, s: int, now: float) -> None:
+        """Проба `s` не ушла (сокета зонда нет, ошибка отправки): ответа на неё не ждать —
+        не пропуск (`sus`, досылки), и молчание до этого момента не «не вижу» (`no_s` —
+        от него). Взгляд не меняется: о лидере проба ничего не узнала."""
+        if self.pending.pop(int(s), None) is not None:
+            self.blind_at = max(self.blind_at, float(now))
 
     def reply_in(self, r: Reply, now: float) -> list[str]:
         """Ответ ответчика. Действия: `see` (взгляд стал «вижу»), `adopt:<e>`."""
@@ -127,7 +138,7 @@ class Voter:
                 self.resends += 1
                 self.next_probe = min(self.next_probe, now + t.resend_s)
         # «не вижу»: ответа нет no_s
-        base = self.last_reply or self.started
+        base = max(self.last_reply or self.started, self.blind_at)   # время слепоты (проба не ушла) — не молчание
         if base and now - base >= t.no_s and self.view != "uns" and not self.paused(now):
             self._set("uns", now)
             out.append("uns")

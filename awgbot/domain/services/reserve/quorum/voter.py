@@ -81,6 +81,16 @@ class ReserveQuorumVoterMixin:
                 log.info("кворум: ответ линии %s несёт эпоху %s — запомнил", v.l, act[6:])
         return actions
 
+    def reserve_quorum_probe_unsent(self, name: str, data: bytes) -> None:
+        """Проба зонда `name` не ушла из сокета (его ещё нет — пространство и интерфейс
+        поднимает этот же такт, сокет — следующим через 30 с; ошибка отправки): ответа на неё
+        не ждать, и молчание до этого момента — не «не вижу» о второй стороне (иначе через
+        no_s после старта зонда — «не вижу» о живом сервере и окно аварийного кода)."""
+        v = self._qvoters.get(name)
+        p = Probe.parse(data)
+        if v is not None and p is not None:
+            v.unsent(int(p.s), time.monotonic())
+
     def _quorum_view_changed(self, name: str, rec: dict, v: Voter, w: str) -> list[tuple]:
         target = "клон" if rec.get("target") == "r" else "сервер"
         log.info("кворум: %s линии %s — %s", target, rec.get("l"), {"see": "вижу", "sus": "ответ пропущен", "uns": "не вижу"}[w])
