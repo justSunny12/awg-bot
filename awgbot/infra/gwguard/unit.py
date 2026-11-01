@@ -126,7 +126,7 @@ def unit_text() -> str:
     """Текст юнита обвязки с кэшем по mtime, размеру и inode: за тик его
     читали больше десяти раз регуляркой, а перезапись из потока канала посреди
     тика давала снимок из двух версий. Inode в ключе обязателен: замена файла
-    через tmp.replace даёт новый inode, а mtime на Linux грубый — две записи
+    через os.replace (util/fsatomic) даёт новый inode, а mtime на Linux грубый — две записи
     подряд того же размера иначе неразличимы, и unit_env вернул бы прежний
     текст. Нет файла — пусто."""
     global _unit_cache
@@ -206,28 +206,35 @@ def unit_set_env(values: dict[str, str]) -> str:
             if anchor is None:
                 raise pkg.GwGuardError("скрипт обвязки без ExecStart — не трогаю")
             new = new[:anchor.start()] + line + "\n" + new[anchor.start():]
-    tmp = path.with_suffix(".tmp")
-    if tmp.exists():
-        tmp.unlink()                                  # остаток прерванной записи (упало между шагами)
+    _drop_legacy_tmp(path)
     if new != text:
-        pkg._write_private(tmp, new)                  # права юнита — 0600, как ставит скрипт
-        tmp.replace(path)
+        pkg._write_private(path, new)                 # права юнита — 0600, как ставит скрипт
         try:
             pkg._daemon_reload()
         except pkg.GwGuardError:
             # Юнит переписан, а systemd о нём не узнал: «не применилось» при новых
             # значениях в файле — худший исход, следующая доставка увидела бы
             # «совпало» и не перезапустила бы ничего. Возвращаем прежний текст.
-            pkg._write_private(tmp, text)
-            tmp.replace(path)
+            pkg._write_private(path, text)
             raise
     return text
 
 
+def _drop_legacy_tmp(path: Path) -> None:
+    """Остаток прерванной записи прежних выпусков (`<юнит>.tmp` рядом, общий у
+    всех писателей): запись теперь — свой временный файл util/fsatomic, а
+    старый хвост с текстом юнита в /etc/systemd/system ни к чему."""
+    tmp = path.with_suffix(".tmp")
+    try:
+        tmp.unlink()
+    except FileNotFoundError:
+        pass
+
+
 def _write_private(path: Path, text: str) -> None:
-    """Файл с секретом: 0600 с первого байта, атомарно (util/fsatomic)."""
-    from awgbot.util.fsatomic import write_private
-    write_private(path, text)
+    """Файл с секретом: 0600 с первого байта, атомарно (util/fsatomic: свой
+    временный файл рядом, подмена одна)."""
+    fsatomic.write_private(path, text)
 
 
 def _daemon_reload() -> None:
@@ -243,9 +250,8 @@ def _daemon_reload() -> None:
 def unit_restore(text: str) -> None:
     """Вернуть юнит к прежнему тексту (откат неудачного применения)."""
     path = pkg.unit_path()
-    tmp = path.with_suffix(".tmp")
-    pkg._write_private(tmp, text)
-    tmp.replace(path)
+    _drop_legacy_tmp(path)
+    pkg._write_private(path, text)
     pkg._daemon_reload()
 
 
