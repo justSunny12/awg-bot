@@ -89,9 +89,6 @@ class ReserveGuestMixin:
         if self.__dict__.get("_guest_snap_due") is None:   # первая запись после снимка — начало пачки
             self.__dict__["_guest_snap_due"] = time.monotonic()
 
-    def guest_snapshot_mark(self) -> None:
-        self.__dict__["_guest_snap_due"] = time.monotonic()
-
     def guest_snapshot_due(self) -> bool:
         due = self.__dict__.get("_guest_snap_due")
         return due is not None and time.monotonic() - due >= SNAPSHOT_BATCH_SECONDS
