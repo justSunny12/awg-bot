@@ -23,7 +23,7 @@ import pytest
 from awgbot.core import config
 from awgbot.domain.services.reserve import package
 from awgbot.infra import awg
-from awgbot.util import rsvkeys
+from awgbot.util import pairproto, rsvkeys
 from awgbot.util.rsvpkg import seal
 
 pytestmark = pytest.mark.integration
@@ -514,7 +514,7 @@ def small_chunks(monkeypatch):
 
 def test_the_package_is_cut_into_chunks_that_fit_the_line_and_join_back(built, small_chunks):
     from awgbot.util import pairproto
-    chunks = package.ReservePackageMixin.pkg_chunks(built["blob"])
+    chunks = pairproto.chunks(built["blob"])
     assert len(chunks) > 20, "пакет ступени 64 КБ в частях по 2 КБ"
     assert "".join(chunks) == built["blob"]
     assert all(len(c) <= pairproto.MAX_BLOB for c in chunks)
@@ -539,10 +539,9 @@ async def test_send_package_sends_numbered_chunks_and_stops_at_the_first_failure
     assert await pairlink.send_package(built) is False
     assert len(sent) == 2, "после оборванной части остальные уходить не должны"
     assert [(k, b["i"]) for k, b in sent] == [("pkg", 0), ("pkg", 1)]
-    assert sent[0][1]["n"] == len(package.ReservePackageMixin.pkg_chunks(built["blob"]))
+    assert sent[0][1]["n"] == len(pairproto.chunks(built["blob"]))
     assert sent[0][1]["fp"] == built["fp"]
     assert "share" not in sent[0][1] and "m_gen" not in sent[0][1], f"часть пакета несёт долю: {sorted(sent[0][1])}"
-    from awgbot.util import pairproto
     for _kind, body in sent:                            # каждая часть проходит схему канала второй стороны
         pairproto.check(pairproto.PAIR_PROTO, "pkg", dict(body), pairproto.INVITER)
 
@@ -574,7 +573,7 @@ class _Inbox:
         self.handler = inbound.InboundMixin._in_pkg
 
     async def deliver(self, built, order=None, **over):
-        chunks = package.ReservePackageMixin.pkg_chunks(built["blob"])
+        chunks = pairproto.chunks(built["blob"])
         for i in (order if order is not None else range(len(chunks))):
             body = {"gen": built["gen"], "fp": built["fp"], "i": i, "n": len(chunks), "blob": chunks[i]}
             body.update(over)
@@ -583,7 +582,7 @@ class _Inbox:
 
 async def test_chunks_arriving_in_any_order_make_one_package_and_one_confirmation(paired, built, small_chunks, monkeypatch, tmp_path):
     inbox = _Inbox(paired, monkeypatch)
-    n = len(package.ReservePackageMixin.pkg_chunks(built["blob"]))
+    n = len(pairproto.chunks(built["blob"]))
     await inbox.deliver(built, order=list(reversed(range(n))))
     assert [k for k, _ in inbox.out] == ["pkg_ok", "st"], "ответ — один pkg_ok и st с новым отпечатком"
     assert inbox.out[0][1] == {"gen": built["gen"], "fp": built["fp"]}
