@@ -58,7 +58,7 @@ def invite_screen(link: str, client, *, new: bool = True) -> str:
     d = _n_devices(client.device_limit) if client.device_limit else "∞ устройств"
     t = f"{volume(client.traffic_limit)} в месяц" if client.traffic_limit else "∞ ГБ в месяц"
     end = client.effective_period_end
-    till = f"до {timeutil.fmt_date_ui(timeutil.parse_iso(end))}" if end else "бессрочно"
+    till = f"до {timeutil.iso_date_ui(end, '?')}" if end else "бессрочно"
     name = _e(client.name)
     head = (f"☝️ Отправь приглашение владельцу профиля {name} — по нему откроется профиль:" if new
             else f"☝️ Новое приглашение для профиля {name} — отправь его владельцу, прежнее больше не работает:")

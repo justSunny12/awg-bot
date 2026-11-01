@@ -29,10 +29,7 @@ def update_available(tag: str, body: str, installed: str | None = None) -> str:
 
 def _seen_date(seen: str) -> str:
     from awgbot.util import timeutil
-    try:
-        return timeutil.fmt_date_ui(timeutil.parse_iso(seen)) if seen else ""
-    except ValueError:
-        return ""
+    return timeutil.iso_date_ui(seen)
 
 
 _NAMES_SHOWN = 3            # пропущенных релизов в строках раздела

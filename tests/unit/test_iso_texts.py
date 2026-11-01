@@ -142,3 +142,15 @@ def test_no_text_keeps_its_own_try_around_parse_iso():
                         and isinstance(sub.args[0], ast.Call) and name(sub.args[0].func) == "parse_iso"):
                     hits.append(f"{path.relative_to(ROOT)}:{sub.lineno}")
     assert not hits, f"своя копия разбора момента в try: {hits}"
+
+
+def test_profile_and_update_dates_survive_a_broken_mark():
+    """Дата периода профиля и «последний раз виден» — через timeutil.iso_date_ui/iso_dt:
+    битая отметка в базе даёт «?», а не падение всего экрана профиля."""
+    from types import SimpleNamespace
+    from awgbot.util import timeutil
+    assert timeutil.iso_date_ui("мусор", "?") == "?" and timeutil.iso_date_ui("") == ""
+    assert timeutil.iso_date_ui("2026-11-15T10:00:00+03:00") == "15.11" or timeutil.iso_date_ui("2026-11-15T10:00:00+03:00").startswith("15.11")
+    from awgbot.bot.texts.admin import profiles
+    c = SimpleNamespace(name="Иван", period_start="мусор", period_end="мусор")
+    assert "сейчас ?" in profiles.period_start_prompt(c) and "сейчас ?" in profiles.period_end_prompt(c)

@@ -101,6 +101,15 @@ def fmt_date_ui(dt: datetime, ref: Optional[datetime] = None) -> str:
     return dt.strftime("%d.%m") + ("" if dt.year == ref.year else dt.strftime(".%y"))
 
 
+def iso_date_ui(iso, fallback: str = "") -> str:
+    """fmt_date_ui по ISO-строке: «12.10», другой год — «12.10.27»; пусто или не
+    разобрать — fallback (битая отметка в базе не роняет экран)."""
+    try:
+        return fmt_date_ui(pkg.parse_iso(iso))
+    except (ValueError, TypeError):
+        return fallback
+
+
 def fmt_period_ui(start: datetime, end: datetime) -> str:
     """«12.09 → 12.10» — начало и конец периода на экранах; границы в разных
     годах — год у обеих: «12.10.25 → 12.10.26»."""

@@ -63,7 +63,7 @@ def _sub_line(client) -> str:
         return "💳 🟢 бессрочная"
     end = timeutil.parse_iso(client.period_end)
     kind = _KIND_SHORT.get(str(client.period_kind or ""), "")
-    since = f", с {timeutil.fmt_date_ui(timeutil.parse_iso(client.period_start))}" if client.period_start else ""
+    since = f", с {timeutil.iso_date_ui(client.period_start, '?')}" if client.period_start else ""
     tail = f" · {kind}{since}" if kind else since.lstrip(",").strip() and f" · {since[2:]}"
     if client.status != SubStatus.ACTIVE or timeutil.remaining_seconds(end) <= 0:
         # срок вышел, а статус ещё не переключён (профиль ждёт активации,
@@ -255,13 +255,12 @@ def _period_hint() -> str:
 
 
 def period_start_prompt(client) -> str:
-    cur = timeutil.fmt_dt_ui(timeutil.parse_iso(client.period_start), seconds=True) if client.period_start else "—"
+    cur = timeutil.iso_dt(client.period_start, "?", seconds=True) if client.period_start else "—"
     return ui.head(f"📅 Начало периода профиля {_e(client.name)}", meta=[f"сейчас {cur}"]) + f"\n\n{_period_hint()}"
 
 
 def period_end_prompt(client) -> str:
-    cur = (timeutil.fmt_dt_ui(timeutil.parse_iso(client.period_end), seconds=True)
-           if client.period_end else "бессрочно")
+    cur = timeutil.iso_dt(client.period_end, "?", seconds=True) if client.period_end else "бессрочно"
     return ui.head(f"📅 Окончание периода профиля {_e(client.name)}", meta=[f"сейчас {cur}"]) + f"\n\n{_period_hint()}"
 
 
