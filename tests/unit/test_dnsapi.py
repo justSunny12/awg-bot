@@ -73,6 +73,13 @@ class _Dns:
         monkeypatch.setattr(common, "_system_resolvers", lambda: ["192.0.2.53"])
         monkeypatch.setattr(common.socket, "socket", self._socket)
         monkeypatch.setattr(common.socket, "getaddrinfo", self._gai)
+        # адрес имени NS — ответом подставного резолвера сразу, а не через общий пул потоков с
+        # потолком 3 с: на перегруженной машине (полный прогон под нагрузкой) поток пула не
+        # успевал к сроку, read_system отдавал [] — «авторитетные серверы не ответили»; срок
+        # проверяет свой тест (test_a_hung_system_resolver_is_cut_at_the_timeout…)
+        from awgbot.util import nets
+        monkeypatch.setattr(nets, "getaddrinfo_timed",
+                            lambda host, *, timeout=0, family=0, proto=0: self._gai(host, None, family))
 
     def _gai(self, host, port, family=0, type=0, *a, **kw):
         addrs = self.ns_addr.get(host) or self.a.get(host)
