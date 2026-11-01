@@ -25,6 +25,7 @@ from pathlib import Path
 import pytest
 
 from tests.botscript import flat
+from tests.conftest import tmp_env
 
 from tests.unit.test_cli_script import _extract_func
 
@@ -103,7 +104,7 @@ class Host:
 def run(script: str, h: Host, *args: str, **kw) -> subprocess.CompletedProcess:
     prog = "\n".join(prelude(script, h, **kw) + ['cmd_restore "$@"'])
     return subprocess.run(["bash", "-c", prog, "x", *args], capture_output=True, text=True, timeout=30,
-                          env={"PATH": "/usr/bin:/bin", "TMPDIR": str(h.tmp)})
+                          env=tmp_env(h.tmp))
 
 
 def prelude(script: str, h: Host, *, merge_fails: bool = False, mv_fail_at: int = 0,

@@ -66,7 +66,8 @@
 #      sync <файл> — полный список, fill <файл> — адреса новых доменов «в
 #      туннель» в lan_vpn4 без блокировки, оба зовёт только агент; одна блокировка
 #      lists.lock с фидами, исключения «напрямую» вычитаются из фида заново,
-#      наборы чистятся) и
+#      наборы чистятся; у обоих сбой рабочего шага — код 1: до записи файлы
+#      не тронуты, после — откат) и
 #      awg-lan-services.sh (записи сервисов соседних сетей для dnsmasq —
 #      сервисы соседних сетей: SMB-серверы сети другого шлюза видны
 #      в Finder через домен обзора awg.internal; PEER_LAN_NETS пуст — файл
@@ -541,6 +542,8 @@ cat > "$LAN_LISTS.new" <<'LISTSEOF'
 # Google. Проверки те же, что для скачанного: формат, длина, dnsmasq --test
 # (с conf-dir, как у init-скрипта Debian); отказ --test или рестарта dnsmasq —
 # откат прежнего фида и rc=1. Копия для отката — $DUMP/rollback/vpn-feed.conf.prev.
+# Сбой рабочего шага (временные файлы, сборка фида и набора, копия, запись) —
+# rc=1 и строка об этом: до записи фид и набор не тронуты, после — откат.
 # Один запуск за раз: ждём блокировку lists.lock до 120 с, не дождались —
 # выход 75 («занято»), не успех: иначе фиды из канала пропали бы молча.
 #   фид доменов  → /etc/dnsmasq.d/awg-gw-vpn-feed.conf (nftset= в lan_vpn4), минус исключения
@@ -565,8 +568,15 @@ ITDOG="https://raw.githubusercontent.com/itdoginfo/allow-domains/main"
 DOMAINS_URL="${AWG_LAN_DOMAINS_URL:-$ITDOG/Russia/inside-dnsmasq-ipset.lst}"
 SUBNET_SERVICES="${AWG_LAN_SUBNET_SERVICES:-telegram meta twitter cloudflare discord}"
 GOOG_URL="https://www.gstatic.com/ipranges/goog.json"
-TMP="$(mktemp)"; TMP2="$(mktemp)"; NETS="$(mktemp)"
-trap 'rm -f "$TMP" "$TMP2" "$NETS"' EXIT
+# Сбой рабочего шага (временные файлы, сборка фида и набора, копия для отката,
+# запись — нет места, только чтение, процесс не запустился) — rc=1 и строка об
+# этом, а не «фид подозрительно короткий», фид без вычета исключений «напрямую»
+# или пустой набор подсетей с кодом 0. До записи фид не тронут, после — откат
+# без рестарта dnsmasq: с новым фидом он ещё не перезапускался
+TMP=""; TMP2=""; NETS=""; NETS2=""
+trap 'rm -f "$TMP" "$TMP2" "$NETS" "$NETS2"' EXIT
+TMP="$(mktemp)" && TMP2="$(mktemp)" && NETS="$(mktemp)" && NETS2="$(mktemp)" \
+    || { echo "рабочий шаг сборки списков не прошёл — списки не тронуты" >&2; exit 1; }
 rc=0
 
 FROM="${AWG_LAN_FROM:-}"
@@ -574,14 +584,13 @@ get_domains() {
     if [ -n "$FROM" ]; then cp "$FROM/domains.lst" "$TMP" 2>/dev/null
     else curl -4 -sf --connect-timeout 5 --speed-time 10 --speed-limit 1024 "$DOMAINS_URL" -o "$TMP"; fi
 }
-# ── домены: во временный файл (недокачанный .new в conf-dir читался бы демоном)
-if get_domains && [ -s "$TMP" ]; then
+build_feed() {                 # скачанное в $TMP → фид в $TMP, исходник в vpn-feed.src.tmp; _n — директив
     # sed -i без суффикса — GNU-изм: правим через временный файл
-    sed 's|^ipset=\(/.*/\)vpn_domains$|nftset=\1inet#awg_lan#lan_vpn4|' "$TMP" > "$TMP2" && mv "$TMP2" "$TMP"
+    sed 's|^ipset=\(/.*/\)vpn_domains$|nftset=\1inet#awg_lan#lan_vpn4|' "$TMP" > "$TMP2" && mv -f "$TMP2" "$TMP" || return 1
     # исходник до вычитания — awg-lan-domain.sh пересобирает фид по нему, когда
     # меняются исключения «напрямую» (иначе новое исключение ждало бы новых фидов);
     # кладётся только после проверки длины ниже, чтобы обрезанный фид не стал исходником
-    cp "$TMP" "$DUMP/vpn-feed.src.tmp"
+    cp "$TMP" "$DUMP/vpn-feed.src.tmp" || return 1
     # исключения побеждают: dnsmasq применяет одну директиву на домен, и какая
     # из двух победит, зависело бы от порядка чтения каталога — вычитаем
     if [ -s "$RU" ]; then
@@ -589,43 +598,60 @@ if get_domains && [ -s "$TMP" ]; then
             NR==FNR { if ($0 ~ /^nftset=/) for (i=2; i<NF; i++) skip[$i]=1; next }
             $0 !~ /^nftset=/ { print; next }
             { out=$1; n=0; for (i=2; i<NF; i++) if (!($i in skip)) { out=out "/" $i; n++ }
-              if (n) print out "/" $(NF) }' "$RU" "$TMP" > "$TMP2" && mv "$TMP2" "$TMP"
+              if (n) print out "/" $(NF) }' "$RU" "$TMP" > "$TMP2" && mv -f "$TMP2" "$TMP" || return 1
     fi
     # Только директивы нашего набора и комментарии: HTTP 200 с HTML (заглушка
     # провайдера, страница блокировки) иначе уехал бы в conf-dir и уронил бы
     # dnsmasq на «bad option» — локальная сеть без DNS до следующего удачного фида.
-    # сегмент — только имя домена: `#` или `.` у dnsmasq значат «все домены»
+    # сегмент — только имя домена: `#` или `.` у dnsmasq значат «все домены»;
+    # grep без строк — код 1, ошибка — 2
     grep -Ei '^(#.*|nftset=(/([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+([a-z]{2,63}|xn--[a-z0-9-]{1,59}))+/inet#awg_lan#lan_vpn4)$' "$TMP" > "$TMP2"
-    mv "$TMP2" "$TMP"
-    feed_ok=0
-    if [ "$(grep -c '^nftset=' "$TMP")" -lt 10 ]; then
+    [ $? -le 1 ] && mv -f "$TMP2" "$TMP" || return 1
+    _n="$(grep -c '^nftset=' "$TMP")"; [ $? -le 1 ] || return 1
+}
+prev_feed="$RB/vpn-feed.conf.prev"
+restore_feed() { if [ -f "$prev_feed" ]; then mv -f "$prev_feed" "$FEED"; else rm -f "$FEED"; fi; }
+# ── домены: во временный файл (недокачанный .new в conf-dir читался бы демоном)
+feed_ok=0
+if get_domains && [ -s "$TMP" ]; then
+    if ! build_feed; then
+        echo "домены: рабочий шаг сборки фида не прошёл — фид не тронут" >&2; rc=1
+    elif [ "$_n" -lt 10 ]; then
         echo "домены: фид подозрительно короткий — не применяю" >&2; rc=1
     # дифф-скип: рестарт роняет кэш всей сети, а список меняется не каждые 6 ч
     elif ! cmp -s "$TMP" "$FEED"; then
-        # копия для отката — вне conf-dir: оттуда dnsmasq читает всё, кроме .dpkg-*
-        mkdir -p "$RB"; [ -f "$FEED" ] && cp -p "$FEED" "$RB/vpn-feed.conf.prev" 2>/dev/null || true
-        install -m 644 "$TMP" "$FEED"
+        # копия для отката — вне conf-dir: оттуда dnsmasq читает всё, кроме .dpkg-*;
+        # не легла — фид не трогаем: откатывать было бы нечем (прежде — удаление фида)
+        if ! { mkdir -p "$RB" && rm -f "$prev_feed" && { [ ! -f "$FEED" ] || cp -p "$FEED" "$prev_feed"; }; }; then
+            rm -f "$prev_feed"
+            echo "домены: копия фида для отката не легла — фид не тронут" >&2; rc=1
+        elif ! install -m 644 "$TMP" "$FEED"; then
+            echo "домены: запись фида не прошла — откатываю" >&2; rc=1; restore_feed
         # conf-dir Debian подключает ключом из init-скрипта (CONFIG_DIR в
         # /etc/default/dnsmasq), и голый --test наш фид не видел вовсе
-        if dnsmasq --test "--conf-dir=$D,.dpkg-dist,.dpkg-old,.dpkg-new" >/dev/null 2>&1; then
+        elif dnsmasq --test "--conf-dir=$D,.dpkg-dist,.dpkg-old,.dpkg-new" >/dev/null 2>&1; then
             # именно restart: SIGHUP конфиги не перечитывает; отказ — откат фида
             if systemctl restart dnsmasq; then
-                rm -f "$RB/vpn-feed.conf.prev"; feed_ok=1
+                rm -f "$prev_feed"; feed_ok=1
             else
                 echo "домены: dnsmasq не поднялся с новым фидом — откатываю" >&2; rc=1
-                if [ -f "$RB/vpn-feed.conf.prev" ]; then mv -f "$RB/vpn-feed.conf.prev" "$FEED"; else rm -f "$FEED"; fi
+                restore_feed
                 systemctl restart dnsmasq || true
             fi
         else
             echo "домены: dnsmasq --test отверг новый фид — откатываю" >&2; rc=1
-            if [ -f "$RB/vpn-feed.conf.prev" ]; then mv -f "$RB/vpn-feed.conf.prev" "$FEED"; else rm -f "$FEED"; fi
+            restore_feed
         fi
     else
         feed_ok=1
     fi
     # исходник — только от принятого (или не изменившегося) фида: отвергнутый
-    # исходником не становится, иначе каждая правка «напрямую» падала бы на нём
-    if [ "$feed_ok" = 1 ]; then mv -f "$DUMP/vpn-feed.src.tmp" "$DUMP/vpn-feed.src"; else rm -f "$DUMP/vpn-feed.src.tmp"; fi
+    # исходником не становится, иначе каждая правка «напрямую» падала бы на нём;
+    # не лёг — rc=1: следующий запуск (тот же фид, без рестарта) положит его снова
+    if [ "$feed_ok" = 1 ]; then
+        mv -f "$DUMP/vpn-feed.src.tmp" "$DUMP/vpn-feed.src" || { echo "домены: исходник фида не сохранён" >&2; rc=1; }
+    fi
+    rm -f "$DUMP/vpn-feed.src.tmp"
 else
     if [ -n "$FROM" ]; then echo "домены: фида нет в $FROM (привозит канал)" >&2
     else echo "домены: фид не скачался ($DOMAINS_URL)" >&2; fi
@@ -633,7 +659,6 @@ else
 fi
 
 # ── подсети: itdoginfo по сервисам + официальный фид Google
-: > "$NETS"
 if [ -n "$FROM" ]; then
     cat "$FROM/nets.lst" >> "$NETS" 2>/dev/null || { echo "подсети: нет $FROM/nets.lst" >&2; rc=1; }
 else
@@ -648,8 +673,16 @@ else
         | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+' >> "$NETS" \
         || { echo "подсети: goog.json не скачался" >&2; rc=1; nets_rc=1; }
 fi
-# префикс не короче /8: «0.0.0.0/1» из битого фида увёл бы в туннель полсети
-elems="$(grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/([89]|[12][0-9]|3[0-2])$' "$NETS" | sort -u | paste -sd, -)"
+# префикс не короче /8: «0.0.0.0/1» из битого фида увёл бы в туннель полсети;
+# отбор, сортировка и склейка — порознь: в конвейере упавший шаг дал бы пустой
+# набор с кодом 0, и в итог ушло бы «подсетей 0» при нетронутом наборе
+elems=""; nets_built=0
+grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/([89]|[12][0-9]|3[0-2])$' "$NETS" > "$NETS2"
+if [ $? -le 1 ] && sort -u -o "$NETS2" "$NETS2" && elems="$(paste -sd, - < "$NETS2")"; then
+    nets_built=1
+else
+    elems=""; echo "подсети: рабочий шаг сборки набора не прошёл — набор не тронут" >&2; rc=1
+fi
 if [ -n "$elems" ]; then
     if [ "${nets_rc:-0}" = "0" ]; then
         # одной транзакцией: между flush и add окна нет
@@ -666,12 +699,21 @@ fi
 # ── слепки: при старте таблица пуста, пока агент не сходит за фидами
 mkdir -p "$DUMP"
 for s in lan_vpn4 lan_vpn_nets4; do
-    nft list set $TABLE $s > "$DUMP/$s.nft.tmp" 2>/dev/null && mv -f "$DUMP/$s.nft.tmp" "$DUMP/$s.nft"
+    nft list set $TABLE $s > "$DUMP/$s.nft.tmp" 2>/dev/null && mv -f "$DUMP/$s.nft.tmp" "$DUMP/$s.nft" || rm -f "$DUMP/$s.nft.tmp"
 done
 _dom="$(grep -c '^nftset=' "$FEED" 2>/dev/null)"; _dom="${_dom:-0}"
-_nets="$(printf '%s' "$elems" | tr ',' '\n' | grep -c .)"; _nets="${_nets:-0}"
+if [ "$nets_built" = 1 ]; then
+    _nets="$(printf '%s' "$elems" | tr ',' '\n' | grep -c .)"
+else
+    # набор не тронут — в итоге прежнее число, а не ноль
+    _nets="$(sed -n 's/^nets=//p' "$DUMP/lists.status" 2>/dev/null | head -n 1)"
+fi
+_nets="${_nets:-0}"
+# итог — во временный файл и mv: недописанный итог агент прочёл бы как «списков нет»
 printf 'updated_at=%s\ndomains=%s\nnets=%s\nrc=%s\nsource=%s\n' "$(date -Iseconds)" "$_dom" "$_nets" "$rc" \
-    "$([ -n "$FROM" ] && echo channel || echo net)" > "$DUMP/lists.status"
+    "$([ -n "$FROM" ] && echo channel || echo net)" > "$DUMP/lists.status.tmp" \
+    && mv -f "$DUMP/lists.status.tmp" "$DUMP/lists.status" \
+    || { rm -f "$DUMP/lists.status.tmp"; echo "итог списков не записан" >&2; rc=1; }
 exit $rc
 LISTSEOF
 chmod 0755 "$LAN_LISTS.new" && mv -f "$LAN_LISTS.new" "$LAN_LISTS"
@@ -791,15 +833,22 @@ tag() { if [ "${AWG_HTML:-0}" = "1" ]; then printf '<code>%s</code>' "$1"; else 
 say() { printf '%s\n' "$1" >> "$TMPD/said"; }
 : > "$TMPD/said"
 if [ "$cmd" = "sync" ]; then
-    if grep -Ev "^(vpn|ru) $DOMAIN_RE\$" "$1" | grep -q . || ! awk 'length($2) > 253 { bad=1 } END { exit bad }' "$1"; then
+    # каждый шаг — отдельно, без конвейеров: в конвейере код первой команды
+    # теряется, и упавший grep проверки сошёл бы за «чужих строк нет», а упавшие
+    # sed/sort — за пустой список, которым sync стёр бы оба файла с кодом 0
+    grep -Ev "^(vpn|ru) $DOMAIN_RE\$" "$1" > "$TMPD/bad"; [ $? -le 1 ] || untouched
+    awk 'length($2) > 253 { bad=1 } END { if (bad) exit 3 }' "$1"; _long=$?
+    [ "$_long" = 0 ] || [ "$_long" = 3 ] || untouched
+    if [ -s "$TMPD/bad" ] || [ "$_long" = 3 ]; then
         echo "в файле есть строка не вида «vpn <домен>» / «ru <домен>» — не применяю" >&2; exit 2
     fi
-    sed -n 's/^ru //p' "$1" | sort -u > "$TMPD/want_ru"
+    sed -n 's/^ru //p' "$1" > "$TMPD/ru.in" && sort -u "$TMPD/ru.in" > "$TMPD/want_ru" || untouched
     # домен в обоих видах — «напрямую», как решает nft; адрес сервера AWG — пропущен с пометкой
-    sed -n 's/^vpn //p' "$1" | sort -u | grep -vxF -f "$TMPD/want_ru" > "$TMPD/want_vpn" || true
+    sed -n 's/^vpn //p' "$1" > "$TMPD/vpn.in" && sort -u "$TMPD/vpn.in" > "$TMPD/vpn.all" || untouched
+    grep -vxF -f "$TMPD/want_ru" "$TMPD/vpn.all" > "$TMPD/want_vpn"; [ $? -le 1 ] || untouched
     if [ -n "$deny" ]; then
-        for f in want_vpn want_ru; do
-            if grep -qxF "$deny" "$TMPD/$f"; then echo "$deny: это адрес самого сервера AWG — пропущен"; drop_from "$deny" "${f#want_}"; fi
+        for f in vpn ru; do
+            if in_list "$deny" "$f"; then echo "$deny: это адрес самого сервера AWG — пропущен"; drop_from "$deny" "$f"; fi
         done
     fi
 else

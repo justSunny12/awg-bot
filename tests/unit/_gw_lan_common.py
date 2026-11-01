@@ -16,7 +16,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from tests.conftest import SH, fake_cmd
+from tests.conftest import _MKTEMP_IN_TMPDIR, SH, fake_cmd, fake_mktemp
 
 
 SCRIPT = Path(__file__).resolve().parents[2] / "install" / "routing-gw-setup.sh"
@@ -34,6 +34,15 @@ def _heredoc(script: str, var: str, tag: str) -> str:
 
 def _fake(bin_dir: Path, name: str, body: str) -> None:
     fake_cmd(bin_dir / name, body)
+
+
+def _own_tmpdir(bin_dir: Path, tmp_path: Path) -> dict:
+    """Временное скрипта — в каталоге теста: TMPDIR и mktemp, который его
+    слушает и на macOS (tests.conftest.tmp_env). Оборванный или упавший мимо
+    своей ловушки скрипт иначе оставлял tmp.* в каталоге временного пользователя."""
+    fake_mktemp(bin_dir)
+    d = tmp_path / "tmpdir"; d.mkdir(exist_ok=True)
+    return {"TMPDIR": str(d)}
 
 
 def _sh(prog: str, *, env: dict, cwd=None) -> subprocess.CompletedProcess:
@@ -59,7 +68,8 @@ def domain_env(script, tmp_path):
     tool.write_text(_heredoc(script, "LAN_DOMAIN", "DOMEOF"), encoding="utf-8"); tool.chmod(0o755)
     # AWG_LAN_DUMP — каталог блокировки lists.lock и исходника фида vpn-feed.src
     env = {"PATH": f"{bin_dir}:/usr/bin:/bin", "AWG_DNSMASQ_D": str(dns_d), "AWG_UPLINK_CONF": str(conf),
-           "AWG_LAN_DUMP": str(tmp_path / "dump"), "AWG_HTML": "1"}     # как зовёт агент: домены в <code>
+           "AWG_LAN_DUMP": str(tmp_path / "dump"), "AWG_HTML": "1",     # как зовёт агент: домены в <code>
+           **_own_tmpdir(bin_dir, tmp_path)}
     return tool, dns_d, log, env
 
 
@@ -94,7 +104,7 @@ def lists_env(script, tmp_path):
     tool = tmp_path / "awg-lan-lists.sh"
     tool.write_text(_heredoc(script, "LAN_LISTS", "LISTSEOF"), encoding="utf-8"); tool.chmod(0o755)
     env = {"PATH": f"{bin_dir}:/usr/bin:/bin", "AWG_DNSMASQ_D": str(dns_d), "AWG_LAN_DUMP": str(dump),
-           "AWG_LAN_SUBNET_SERVICES": "telegram"}
+           "AWG_LAN_SUBNET_SERVICES": "telegram", **_own_tmpdir(bin_dir, tmp_path)}
     return tool, dns_d, dump, log, env
 
 
@@ -145,7 +155,8 @@ def svc_env(script, tmp_path):
     _fake(bin_dir, "id", 'echo "${FAKE_UID:-0}"\n')
     tool = tmp_path / "awg-lan-services.sh"
     tool.write_text(_heredoc(script, "LAN_SERVICES", "SVCEOF"), encoding="utf-8"); tool.chmod(0o755)
-    env = {"PATH": f"{bin_dir}:/usr/bin:/bin", "AWG_DNSMASQ_D": str(dns_d), "AWG_LAN_DUMP": str(dump)}
+    env = {"PATH": f"{bin_dir}:/usr/bin:/bin", "AWG_DNSMASQ_D": str(dns_d), "AWG_LAN_DUMP": str(dump),
+           **_own_tmpdir(bin_dir, tmp_path)}
     new = tmp_path / "peer-services.conf.new"
 
     def go(text: str | None, **extra) -> subprocess.CompletedProcess:
@@ -352,3 +363,19 @@ def _snapshots(snap: Path) -> list[tuple[set, set]]:
 
 def _no_copies(names: set) -> bool:
     return not any(".prev" in n or n.endswith((".bak", ".tmp", ".new")) for n in names)
+
+
+# ── сбой рабочего шага: подставная утилита ──────────────────────────────────
+
+def _flaky(env: dict, name: str, *, when: str = "*", nth: int = 1, how: str = "exit 1") -> Path:
+    """Подмена `name`, которая на `nth`-м вызове с аргументами под шаблон case
+    `when` делает `how` (по умолчанию — код 1), остальные вызовы отдаёт
+    настоящей утилите из /usr/bin:/bin (mktemp — с шаблоном из TMPDIR, как
+    fake_mktemp). Возвращает файл счётчика вызовов."""
+    cnt = _bin(env).parent / f"{name}.calls"
+    _fake(_bin(env), name,
+          f'case "$*" in {when})\n'
+          f'  n=$(cat {cnt} 2>/dev/null || echo 0); n=$((n+1)); echo $n > {cnt}\n'
+          f'  [ "$n" = {nth} ] && {{ {how}; }} ;;\nesac\n'
+          + (_MKTEMP_IN_TMPDIR if name == "mktemp" else f'PATH=/usr/bin:/bin exec {name} "$@"\n'))
+    return cnt

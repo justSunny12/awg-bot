@@ -20,6 +20,7 @@ import tarfile
 import pytest
 
 from tests.botscript import flat
+from tests.conftest import tmp_env
 from tests.unit.test_restore_safety import Host, prelude
 
 pytestmark = pytest.mark.unit
@@ -53,7 +54,7 @@ def _run(script, h: Host) -> subprocess.CompletedProcess:
           f'esac; }}')
     prog = "\n".join(prelude(script, h) + [sh, 'cmd_restore "$@"'])
     return subprocess.run(["bash", "-c", prog, "x", "--yes", str(h.src)], capture_output=True, text=True, timeout=30,
-                          env={"PATH": "/usr/bin:/bin", "TMPDIR": str(h.tmp)})
+                          env=tmp_env(h.tmp))
 
 
 def test_a_pair_config_from_the_backup_is_laid_out_and_adopted_before_the_service_starts(script, tmp_path):
