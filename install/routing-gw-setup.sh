@@ -66,8 +66,9 @@
 #      sync <файл> — полный список, fill <файл> — адреса новых доменов «в
 #      туннель» в lan_vpn4 без блокировки, оба зовёт только агент; одна блокировка
 #      lists.lock с фидами, исключения «напрямую» вычитаются из фида заново,
-#      наборы чистятся; у обоих сбой рабочего шага — код 1: до записи файлы
-#      не тронуты, после — откат) и
+#      наборы чистятся; у обоих сбой рабочего шага — код 1: у sync до записи
+#      файлы не тронуты, после — откат, у fill и у наборов после рестарта
+#      набор не тронут) и
 #      awg-lan-services.sh (записи сервисов соседних сетей для dnsmasq —
 #      сервисы соседних сетей: SMB-серверы сети другого шлюза видны
 #      в Finder через домен обзора awg.internal; PEER_LAN_NETS пуст — файл
@@ -78,7 +79,9 @@
 #      awg-lan-services.sh <файл> ставит записи, собранные агентом из данных
 #      канала: каждая строка — по белому списку шаблонов (LINE_RES в
 #      awgbot/domain/gwservices.py), dnsmasq --test, рестарт с откатом, та же
-#      блокировка lists.lock; без аргумента — снять; rc=2 — строка вне списка.
+#      блокировка lists.lock; без аргумента — снять; rc=2 — строка вне списка;
+#      сбой рабочего шага — rc=1: до записи файл не тронут, после — откат
+#      (и у снятия: отказ dnsmasq возвращает файл).
 #      Фид доменов принимается только строками nftset=, где каждый сегмент —
 #      имя домена (одиночный `#` или `.` у dnsmasq значат «все домены»);
 #      подсети — с префиксом не короче /8.
@@ -731,9 +734,12 @@ cat > "$LAN_DOMAIN.new" <<'DOMEOF'
 #                    делает fill, которым агент зовёт скрипт фоном после sync
 #   fill <файл>    — домены по одному на строку: их адреса (dig) — в lan_vpn4,
 #                    затем слепок набора; без блокировки списков (набор пополняет
-#                    и сам dnsmasq первым запросом устройства локальной сети, это лишь ускорение)
+#                    и сам dnsmasq первым запросом устройства локальной сети, это лишь ускорение).
+#                    Сбой рабочего шага — код 1, набор не тронут; домен без ответа
+#                    DNS и отказ nft — не сбой
 # Домен накрывает поддомены. Схема и www. отбрасываются. Хост сервера AWG
-# (Endpoint аплинка) добавить нельзя: увести туннель в туннель — запереть себя.
+# (Endpoint аплинка) добавить нельзя: увести туннель в туннель — запереть себя;
+# не вычислился (сбой шага) — правка не идёт, код 1.
 # Одна блокировка со скриптом фидов (lists.lock): два писателя одних файлов и
 # два рестарта dnsmasq разом не бывает; занято дольше 120 с — код 75. list —
 # без блокировки. Исключения «напрямую» вычитаются из фида доменов заново по
@@ -744,6 +750,8 @@ cat > "$LAN_DOMAIN.new" <<'DOMEOF'
 # адресам dig, ошибки глушатся (адрес мог слиться в интервал или принадлежать
 # домену фида). Копии для отката обоих файлов и фида — $DUMP/rollback/<имя>.prev.
 # Сбой рабочего шага правки — код 1: до записи списки не тронуты, после — откат.
+# Сбой сбора адресов для наборов после рестарта — код 1 без отката списков (они
+# применены, адреса наберёт и dnsmasq): набор не тронут, lan_ru4 — не пустой.
 # Правило домена — DOMAIN_RE (зона буквами или punycode «xn--»);
 # то же правило применит сервер AWG к общему списку (этап 2 синхронизации).
 # AWG_HTML=1 (ставит агент: вывод уходит в чат) — домены в строках итога в
@@ -776,17 +784,35 @@ case "$cmd" in
     sync|fill) [ $# -eq 1 ] && [ -f "${1:-}" ] || { echo "usage: $0 $cmd <файл>"; exit 1; } ;;
     *) echo "usage: $0 add|ru|del <домен…> | list | sync <файл> | fill <файл>"; exit 1 ;;
 esac
-valid() { [ "${#1}" -le 253 ] && [ "$(printf '%s' "$1" | grep -c '')" -le 1 ] && printf '%s' "$1" | grep -Eq "^$DOMAIN_RE$"; }
+# 0 — домен, 1 — нет, 2 — проверка не прошла (grep не запустился, упал):
+# упавший grep не должен сходить за «не похоже на домен»
+valid() {
+    [ "${#1}" -le 253 ] || return 1
+    _vl="$(printf '%s' "$1" | grep -c '')"; [ -n "$_vl" ] || return 2; [ "$_vl" -le 1 ] || return 1
+    printf '%s' "$1" | grep -Eq "^$DOMAIN_RE$"; set -- $?; [ "$1" -le 1 ] || return 2; return "$1"
+}
 resolve() { dig +short +time=3 +tries=1 @127.0.0.1 "$1" A 2>/dev/null | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; }
 set_op() {                     # set_op add|delete <набор> <домен> — адреса домена в набор / из набора
     for ip in $(resolve "$3"); do nft "$1" element $TABLE "$2" "{ $ip }" 2>/dev/null || true; done
 }
-fill_set() {                   # fill_set <набор> <файл доменов> — параллельный dig, один nft на все адреса
+gather_ips() {                 # gather_ips <файл доменов> → $_ips: адреса через запятую, параллельный dig
     # 8 запросов разом: dnsmasq и апстрим через аплинк держат это легко, а
-    # 500 доменов по одному шли бы минуты; nft — одним вызовом со всем списком
-    _ips="$(xargs -r -P 8 -I{} sh -c 'dig +short +time=3 +tries=1 @127.0.0.1 "$1" A 2>/dev/null' _ {} < "$2" \
-           | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | sort -u | paste -sd, -)"
-    [ -n "$_ips" ] && nft add element $TABLE "$1" "{ $_ips }" 2>/dev/null || true
+    # 500 доменов по одному шли бы минуты.
+    # Шаги — порознь, в рабочем каталоге $TMPD: в конвейере упавший шаг (xargs не
+    # запустил запросы, отбор, сортировка, склейка адресов) давал пустой список
+    # адресов, и набор молча оставался прежним — теперь код 1. Домен без ответа —
+    # не сбой: `exit 0` после dig, иначе по коду xargs его не отличить от сбоя
+    # самого xargs (BSD отдаёт 1 и на то, и на другое)
+    xargs -r -P 8 -I{} sh -c 'dig +short +time=3 +tries=1 @127.0.0.1 "$1" A 2>/dev/null; exit 0' _ {} \
+        < "$1" > "$TMPD/fill.dig" || return 1
+    grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' "$TMPD/fill.dig" > "$TMPD/fill.ips"; [ $? -le 1 ] || return 1
+    sort -u -o "$TMPD/fill.ips" "$TMPD/fill.ips" && _ips="$(paste -sd, - < "$TMPD/fill.ips")" || return 1
+}
+fill_set() {                   # fill_set <набор> <файл доменов> — адреса доменов одним nft; 1 — сбой сбора
+    # отказ nft — не сбой (адрес внутри интервала): набор пополнит и сам dnsmasq
+    gather_ips "$2" || return 1
+    [ -n "$_ips" ] && nft add element $TABLE "$1" "{ $_ips }" 2>/dev/null
+    return 0
 }
 snapshot_vpn() {               # слепок набора грузится при старте: без него снятый адрес вернулся бы с загрузкой
     nft list set $TABLE lan_vpn4 > "$DUMP/lan_vpn4.nft.tmp" 2>/dev/null && mv -f "$DUMP/lan_vpn4.nft.tmp" "$DUMP/lan_vpn4.nft" || rm -f "$DUMP/lan_vpn4.nft.tmp"
@@ -795,11 +821,20 @@ plural_dom() {                 # адреса 1 домена, 2 доменов, 
     case "$1" in *1[0-9]) echo доменов;; *1) echo домена;; *) echo доменов;; esac
 }
 if [ "$cmd" = "fill" ]; then
-    # без блокировки: файлы dnsmasq не трогаем, только набор и его слепок
-    _ok="$(mktemp)"; trap 'rm -f "$_ok"' EXIT
-    while read -r d; do valid "$d" && printf '%s\n' "$d"; done < "$1" > "$_ok"
-    n="$(grep -c . "$_ok")"
-    fill_set lan_vpn4 "$_ok"
+    # без блокировки: файлы dnsmasq не трогаем, только набор и его слепок.
+    # Сбой рабочего шага (временный каталог, чтение файла, отбор и счёт доменов,
+    # сбор адресов) — код 1 и строка об этом, а не «взяты в обработку» с пустым
+    # или нулевым числом при нетронутом наборе
+    unfilled() { echo "рабочий шаг наполнения набора не прошёл — набор lan_vpn4 не тронут" >&2; exit 1; }
+    TMPD="$(mktemp -d)" || unfilled
+    trap 'rm -rf "$TMPD"' EXIT
+    # тело кончается case с кодом 0 (упавший printf выходит сам): ненулевой код
+    # цикла — только не открылся файл доменов или рабочий файл
+    while read -r d; do
+        valid "$d"; case $? in 0) printf '%s\n' "$d" || unfilled ;; 1) ;; *) unfilled ;; esac
+    done < "$1" > "$TMPD/ok" || unfilled
+    n="$(grep -c . "$TMPD/ok")"; [ $? -le 1 ] || unfilled
+    fill_set lan_vpn4 "$TMPD/ok" || unfilled
     snapshot_vpn
     echo "набор lan_vpn4: адреса $n $(plural_dom "$n") взяты в обработку"
     exit 0
@@ -814,7 +849,14 @@ if command -v flock >/dev/null 2>&1 && ! flock -w 120 9; then echo "обновл
 untouched() { echo "рабочий шаг правки не прошёл — списки не тронуты" >&2; exit 1; }
 TMPD="$(mktemp -d)" || untouched
 trap 'rm -rf "$TMPD"' EXIT
-deny="$(sed -n 's/^Endpoint *= *\([^:]*\):.*/\1/p' "$UPLINK_CONF" 2>/dev/null | head -n1 | tr 'A-Z' 'a-z')"
+# Хост сервера AWG — шагами порознь: в конвейере упавший sed, head или tr давал
+# пустой запрет, и хост ВПС можно было направить «в туннель» — запереть себя.
+# Конфига аплинка нет — запрета нет, как прежде; есть, но шаг не прошёл — сбой
+deny=""
+if [ -e "$UPLINK_CONF" ]; then
+    sed -n 's/^Endpoint *= *\([^:]*\):.*/\1/p' "$UPLINK_CONF" > "$TMPD/endpoint" \
+        && deny="$(head -n1 "$TMPD/endpoint")" && deny="$(printf '%s' "$deny" | tr 'A-Z' 'a-z')" || untouched
+fi
 in_list() {                    # $1 домен, $2 vpn|ru; сбой чтения — не «в списках нет»
     grep -qxF "$1" "$TMPD/want_$2"; set -- $?; [ "$1" -le 1 ] || untouched; return "$1"
 }
@@ -853,8 +895,11 @@ if [ "$cmd" = "sync" ]; then
     fi
 else
     for raw in "$@"; do
-        d="$(printf '%s' "$raw" | sed -E 's|^[a-zA-Z]+://||; s|/.*$||; s|^www\.||' | tr 'A-Z' 'a-z')"
-        valid "$d" || { echo "$d: не похоже на домен, пропущен"; continue; }
+        # разбор и регистр — порознь: в конвейере упавший sed давал пустое имя,
+        # и верный домен уходил в «не похоже на домен» с кодом 0
+        d="$(printf '%s' "$raw" | sed -E 's|^[a-zA-Z]+://||; s|/.*$||; s|^www\.||')" \
+            && d="$(printf '%s' "$d" | tr 'A-Z' 'a-z')" || untouched
+        valid "$d"; case $? in 0) ;; 1) echo "$d: не похоже на домен, пропущен"; continue ;; *) untouched ;; esac
         if [ "$cmd" = "del" ]; then
             if in_list "$d" vpn || in_list "$d" ru; then
                 drop_from "$d" vpn; drop_from "$d" ru; say "$(tag "$d"): убран"
@@ -921,14 +966,31 @@ for f in $changed; do rm -f "$(prev "$f")"; done
 cat "$TMPD/said"
 sleep 1
 # ── наборы nft
+# Сбой рабочего шага наборов (сбор адресов) — код 1 и строка о наборе, а не «N
+# адрес(а) в наборе» про адреса, которых там нет. Без отката списков: к этому
+# моменту они применены и верны (dnsmasq с ними поднялся), набор — ускорение,
+# адреса наберёт и сам dnsmasq по первым запросам; откат стоил бы второго
+# рестарта (сброс кэша DNS всей сети) и упёрся бы в те же упавшие шаги
+set_rc=0
+set_failed() {
+    echo "рабочий шаг наполнения набора не прошёл — набор $1 не тронут; списки применены, адреса наберёт dnsmasq по запросам" >&2
+    set_rc=1
+}
 # ушедшие из «в туннель» — вынуть адреса (ошибки глушатся: интервал auto-merge, домен фида)
 grep -vxF -f "$TMPD/want_vpn" "$TMPD/before_vpn" 2>/dev/null | while read -r d; do
     [ -n "$d" ] && set_op delete lan_vpn4 "$d"
 done
 # «напрямую» изменилось — набор целиком заново: он маленький и наполняется только отсюда
+# адреса — до сброса: упавший сбор оставляет набор прежним, а не пустым (иначе
+# все исключения «напрямую» шли бы в туннель до первых запросов)
+ru_ok=1
 if ! cmp -s "$TMPD/want_ru" "$TMPD/before_ru"; then
-    nft flush set $TABLE lan_ru4 2>/dev/null || true
-    fill_set lan_ru4 "$TMPD/want_ru"
+    if gather_ips "$TMPD/want_ru"; then
+        nft flush set $TABLE lan_ru4 2>/dev/null || true
+        [ -n "$_ips" ] && nft add element $TABLE lan_ru4 "{ $_ips }" 2>/dev/null
+    else
+        ru_ok=0; set_failed lan_ru4
+    fi
 fi
 if [ "$cmd" = "sync" ]; then
     grep -vxF -f "$TMPD/before_vpn" "$TMPD/want_vpn" 2>/dev/null | sed 's|^|+ |; s|$| (в туннель)|'
@@ -941,25 +1003,53 @@ if [ "$cmd" = "sync" ]; then
     # ни блокировку списков, ни агента. Слепок — здесь: снятые выше адреса без
     # него вернулись бы с перезагрузкой; fill после своих добавлений снимет свой
     snapshot_vpn
+    [ "$set_rc" = 0 ] || exit 1
     echo "свои списки: $(grep -c . "$TMPD/want_vpn") в туннель, $(grep -c . "$TMPD/want_ru") напрямую"
     exit 0
 fi
 if [ -n "$added" ]; then
     # в одном вызове набор один: add → lan_vpn4, ru → lan_ru4
     set_="${added##*:}"
-    for pair in $added; do printf '%s\n' "${pair%%:*}"; done > "$TMPD/added"
-    # dig — 16 запросами разом, адреса каждого домена в свой файл; в набор — одним
-    # nft на все адреса: 500 доменов по одному (dig до 3 с + nft на адрес) не
-    # укладывались в таймаут агента, а списки к тому моменту уже применены
-    xargs -r -P 16 -I{} sh -c 'dig +short +time=3 +tries=1 @127.0.0.1 "$1" A 2>/dev/null | grep -E "^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$" > "$2/ips_$1"' _ {} "$TMPD" < "$TMPD/added"
-    if [ "$set_" = "lan_vpn4" ]; then
-        _ips="$(cat "$TMPD"/ips_* 2>/dev/null | sort -u | paste -sd, -)"
-        [ -n "$_ips" ] && nft add element $TABLE lan_vpn4 "{ $_ips }" 2>/dev/null || true
+    # «напрямую» перестроен целиком выше: не перестроен — о нём уже сказано, и
+    # строк «в наборе lan_ru4» не будет
+    if [ "$set_" = "lan_vpn4" ] || [ "$ru_ok" = 1 ]; then
+        added_ok=1
+        # строка — «номер домен»: файл адресов зовётся по номеру, а не по имени —
+        # домен до 253 знаков с «ips_» не влезал в предел имени файла (255), и его
+        # адреса терялись молча
+        _i=0
+        for pair in $added; do _i=$((_i + 1)); printf '%s %s\n' "$_i" "${pair%%:*}" || added_ok=0; done > "$TMPD/added" \
+            || added_ok=0
+        # dig — 16 запросами разом, адреса каждого домена в свой файл; в набор — одним
+        # nft на все адреса: 500 доменов по одному (dig до 3 с + nft на адрес) не
+        # укладывались в таймаут агента, а списки к тому моменту уже применены.
+        # Файл адресов есть у каждого домена (пустой — DNS не ответил, это не сбой);
+        # ненулевой код xargs — не запустились запросы или не лёг файл. Шаги сбора —
+        # порознь: в конвейере упавший давал пустой список, nft не звался, а в
+        # выводе стояло «N адрес(а) в наборе»
+        [ "$added_ok" = 1 ] && xargs -r -P 16 -L 1 sh -c 'dig +short +time=3 +tries=1 @127.0.0.1 "$3" A 2>/dev/null | grep -E "^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$" > "$1/ips_$2"; [ $? -le 1 ]' _ "$TMPD" < "$TMPD/added" \
+            || added_ok=0
+        if [ "$added_ok" = 1 ] && [ "$set_" = "lan_vpn4" ]; then
+            if cat "$TMPD"/ips_* > "$TMPD/added.ips" && sort -u -o "$TMPD/added.ips" "$TMPD/added.ips" \
+                && _ips="$(paste -sd, - < "$TMPD/added.ips")"; then
+                # отказ nft — не сбой (адрес внутри интервала), как в fill
+                [ -n "$_ips" ] && nft add element $TABLE lan_vpn4 "{ $_ips }" 2>/dev/null
+            else
+                added_ok=0
+            fi
+        fi
+        # «напрямую» уже наполнен целиком выше — только считаем
+        if [ "$added_ok" = 1 ]; then
+            while read -r _i d; do
+                _n="$(grep -c . "$TMPD/ips_$_i")"; [ $? -le 1 ] || { added_ok=0; break; }
+                echo "  $d → $_n адрес(а) в наборе $set_"
+            done < "$TMPD/added"
+        fi
+        [ "$added_ok" = 1 ] || set_failed "$set_"
     fi
-    # «напрямую» уже наполнен целиком выше — только считаем
-    while read -r d; do echo "  $d → $(grep -c . "$TMPD/ips_$d" 2>/dev/null || echo 0) адрес(а) в наборе $set_"; done < "$TMPD/added"
 fi
 snapshot_vpn
+exit "$set_rc"
 DOMEOF
 chmod 0755 "$LAN_DOMAIN.new" && mv -f "$LAN_DOMAIN.new" "$LAN_DOMAIN"
 cat > "$LAN_SERVICES.new" <<'SVCEOF'
@@ -973,6 +1063,12 @@ cat > "$LAN_SERVICES.new" <<'SVCEOF'
 # откат прежнего файла (копия — $DUMP/rollback/peer-services.conf.prev) и
 # rc=1. Блокировка общая с awg-lan-lists.sh: двух
 # рестартов dnsmasq разом не бывает. rc=2 — файл не прошёл проверку.
+# Сбой рабочего шага (проверка строк, копия для отката, запись, снятие файла —
+# нет места, только чтение, процесс не запустился) — rc=1 и строка об этом, а не
+# непроверенный файл, «применены» с прежними записями или «сняты» при файле на
+# месте. До записи файл не тронут, после — откат. Снятие откатывается так же:
+# отказ --test или рестарта возвращает файл, иначе следующий заход агента
+# увидел бы «снимать нечего» и объявил успех, пока демон держит прежние записи.
 set -u
 D="${AWG_DNSMASQ_D:-/etc/dnsmasq.d}"
 CONF="$D/awg-gw-peer-services.conf"
@@ -984,18 +1080,32 @@ exec 9>"$DUMP/lists.lock"
 if command -v flock >/dev/null 2>&1 && ! flock -w 120 9; then echo "обновление списков или записей SMB ещё идёт" >&2; exit 75; fi
 # conf-dir Debian подключает ключом из init-скрипта — голый --test файл не видит
 test_conf() { dnsmasq --test "--conf-dir=$D,.dpkg-dist,.dpkg-old,.dpkg-new" >/dev/null 2>&1; }
-restart_dnsmasq() { test_conf && systemctl restart dnsmasq; }
 rollback() { if [ -f "$PREV" ]; then mv -f "$PREV" "$CONF"; else rm -f "$CONF"; fi; }
+untouched() { echo "рабочий шаг записей SMB не прошёл — записи не тронуты" >&2; exit 1; }
 if [ $# -eq 0 ]; then
     [ -f "$CONF" ] || exit 0
-    rm -f "$CONF"
-    restart_dnsmasq || { echo "dnsmasq не поднялся после снятия записей SMB: journalctl -u dnsmasq -o short-iso -e" >&2; exit 1; }
-    echo "записи SMB подсетей других шлюзов сняты"
-    exit 0
+    # снятие — переносом в копию для отката: не прошло — файл на месте
+    { mkdir -p "$RB" && mv -f "$CONF" "$PREV"; } || { rm -f "$PREV"; untouched; }
+    if ! test_conf; then
+        # демон не перезапускался и держит прежние записи — файл обратно, без рестарта
+        echo "dnsmasq --test отверг conf-dir после снятия записей SMB — откатываю" >&2; rollback; exit 1
+    fi
+    if systemctl restart dnsmasq; then
+        rm -f "$PREV"
+        echo "записи SMB подсетей других шлюзов сняты"
+        exit 0
+    fi
+    echo "dnsmasq не поднялся после снятия записей SMB — откатываю: journalctl -u dnsmasq -o short-iso -e" >&2
+    rollback
+    systemctl restart dnsmasq || true
+    exit 1
 fi
 SRC="$1"
 [ -s "$SRC" ] || { echo "файл записей пуст или не найден: $SRC" >&2; exit 2; }
-if grep -Ev -e '^#.*$' -e '^$' \
+# grep: 0 — нашлась строка вне списка, 1 — таких нет, больше — проверка не
+# прошла: прежде упавший grep сходил за «чужих строк нет», и файл ставился
+# непроверенным
+grep -Ev -e '^#.*$' -e '^$' \
     -e "^local=/$DOMAIN/\$" \
     -e "^ptr-record=l?b\\._dns-sd\\._udp\\.([0-9]{1,3}\\.){4}in-addr\\.arpa,$DOMAIN\$" \
     -e "^ptr-record=l?b\\._dns-sd\\._udp\\.$DOMAIN,$DOMAIN\$" \
@@ -1004,13 +1114,20 @@ if grep -Ev -e '^#.*$' -e '^$' \
     -e "^srv-host=\"[A-Za-z0-9 _-]{1,63}\\._smb\\._tcp\\.$DOMAIN\",[A-Za-z0-9-]{1,63}\\.$DOMAIN,[0-9]{1,5}\$" \
     -e "^txt-record=\"[A-Za-z0-9 _-]{1,63}\\._smb\\._tcp\\.$DOMAIN\",\"\"\$" \
     -e "^host-record=[A-Za-z0-9-]{1,63}\\.$DOMAIN,[0-9]{1,3}(\\.[0-9]{1,3}){3}\$" \
-    "$SRC" >/dev/null; then
-    echo "в файле записей есть строка вне белого списка — не применяю" >&2; exit 2
-fi
+    "$SRC" >/dev/null
+case $? in
+    0) echo "в файле записей есть строка вне белого списка — не применяю" >&2; exit 2 ;;
+    1) ;;
+    *) untouched ;;
+esac
 if cmp -s "$SRC" "$CONF" 2>/dev/null; then echo "записи SMB подсетей других шлюзов без изменений"; exit 0; fi
-# копия для отката — вне conf-dir: оттуда dnsmasq читает всё, кроме .dpkg-*
-if [ -f "$CONF" ]; then cp -p "$CONF" "$PREV" 2>/dev/null || true; fi
-install -m 0644 "$SRC" "$CONF"
+# копия для отката — вне conf-dir: оттуда dnsmasq читает всё, кроме .dpkg-*.
+# Прежняя копия (от оборванного запуска) — долой: файла нет — откат его снимет,
+# а не вернёт старые записи. Копия не легла — файл не трогаем: откатывать было
+# бы нечем (прежде откат при отказе dnsmasq удалял записи совсем)
+{ rm -f "$PREV" && { [ ! -f "$CONF" ] || cp -p "$CONF" "$PREV"; }; } || { rm -f "$PREV"; untouched; }
+# демон с новым файлом ещё не перезапускался — откат без рестарта
+install -m 0644 "$SRC" "$CONF" || { echo "установка записей SMB не прошла — откатываю" >&2; rollback; exit 1; }
 if ! test_conf; then
     # демон с плохим файлом не перезапускался — откат без рестарта, кэш сети цел
     echo "dnsmasq --test отверг записи SMB — откатываю" >&2; rollback; exit 1
