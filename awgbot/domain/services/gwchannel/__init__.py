@@ -1,6 +1,6 @@
 """
 gwchannel/ — сторона ВПС: приём того, что привёз канал линка (части: session, snapshot,
-own, bundle, services, settings, feeds, card, claim, cfg — по смыслу сообщений;
+own, services, settings, feeds, card, claim, cfg — по смыслу сообщений;
 smbtunnel — «SMB в туннеле»: записи резолвера админа из SMB всех слотов;
 keep — копия настроек шлюза для бэкапа сервера; версии агентов для набора
 обновлений — domain/fleet/plan.py).
@@ -22,7 +22,6 @@ from .common import drift_lines      # noqa: F401
 from .session import SessionMixin
 from .snapshot import SnapshotMixin
 from .own import OwnListsMixin
-from .bundle import BundleMixin
 from .services import ServicesMixin
 from .settings import SettingsMixin
 from .feeds import FeedsMixin
@@ -33,7 +32,7 @@ from .smbtunnel import SmbTunnelMixin
 from .keep import KeepMixin
 
 
-class GwChannelMixin(SessionMixin, SnapshotMixin, OwnListsMixin, BundleMixin, ServicesMixin,
+class GwChannelMixin(SessionMixin, SnapshotMixin, OwnListsMixin, ServicesMixin,
                      SettingsMixin, FeedsMixin, CardMixin, ClaimMixin, CfgMixin, SmbTunnelMixin,
                      KeepMixin):
     """Сторона ВПС канала линка — собирается из частей пакета (см. шапку)."""

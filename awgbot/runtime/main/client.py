@@ -228,7 +228,7 @@ async def main() -> None:
 
     # Крючки канала линка — ДО планировщика и слушателя: агент, подключившийся
     # во время старта, шлёт installed сразу, и без крючка «шлюз настроен»
-    # терялось бы навсегда (повтора не будет, файл с ключом остаётся в чате).
+    # терялось бы навсегда (повтора не будет).
     try:
         from awgbot.runtime import linkserver as _linkserver
         from awgbot.bot.handlers.settings import bundle_installed
@@ -251,12 +251,6 @@ async def main() -> None:
         from awgbot.bot.handlers.settings.reserve import events as _rsv_events
         _pairlink.set_on_notes(_on_notes)
         _pairlink.set_on_event(_rsv_events.make_on_event(bot, services))
-
-        async def _on_rekeyed(slot_id: int) -> None:
-            # прежний файл конфигурации слота несёт старые ключи линка — из чата прочь
-            from awgbot.bot.handlers.settings.render import _drop_bundle_msgs
-            await _drop_bundle_msgs(bot, services, slot_id)
-        _linkserver.set_on_rekeyed(_on_rekeyed)
 
         async def _on_restore(slot_id: int, blob: bytes, name: str) -> str:
             # бэкап сервера из чата бота шлюза: штатные рельсы — вопрос в чате

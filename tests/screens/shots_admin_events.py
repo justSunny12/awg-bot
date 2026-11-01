@@ -19,16 +19,6 @@ def _ks_expiring(services):
     return who
 
 
-def _gw_file_in_chat(plain: bool):
-    """Слот NASPi, в чате админа лежит его файл конфигурации (#40) под
-    погасшей карточкой (#39); plain — файл первого применения."""
-    def build(services, mp):
-        who = _slots(1)(services, mp)
-        services.gw_bundle_msg_set(1, config.ADMIN_ID, 40, 39)
-        return who
-    return build
-
-
 async def _ev_installed(services, bot):
     from awgbot.bot.handlers.settings import bundle_installed
     await bundle_installed(bot, services, 1)
@@ -171,7 +161,7 @@ async def _ev_added_by_admin(services, bot):
 EVENTS = [
     # ── события без действия человека ───────────────────────────────────────
     Shot("adm.ev.gw_installed", role="admin", call=("bundle_installed", _ev_installed),
-         data=_gw_file_in_chat(True), title="A146: шлюз настроен"),
+         data=_slots(1), title="A146: шлюз настроен"),
     Shot("adm.ev.upd_available", role="admin", call=("notify_update_available", _ev_update_available),
          data=_people, title="доступна новая версия"),
     Shot("adm.ev.upd_done", role="admin", call=("report_update_result", _ev_update_result),

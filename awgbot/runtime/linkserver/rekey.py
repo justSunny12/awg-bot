@@ -53,11 +53,6 @@ class RekeyMixin:
         переключился — сессия закрывается молча (False): шлюз придёт снова."""
         res = await asyncio.to_thread(self.services.gateway_rekey_hello, slot_id, session_key)
         await self.notes(res.get("notes"))
-        if res.get("rekeyed") and pkg._on_rekeyed is not None:
-            try:
-                await pkg._on_rekeyed(slot_id)
-            except Exception as e:                        # noqa: BLE001
-                log.warning("канал линка: после смены ключей слота %s: %s", slot_id, e)
         return not res.get("hold")
 
     async def rekey_ack_in(self, slot_id: int, msg: dict) -> None:

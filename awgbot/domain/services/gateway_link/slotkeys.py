@@ -55,7 +55,6 @@ KEYS: dict[str, SlotKey] = {
     "gwlink_lists": SlotKey(DEVICE, "link"),
     "gwlink_svc": SlotKey(DEVICE, "link"),
     "gwlink_peer_svc": SlotKey(DEVICE, "link"),
-    "gwlink_bundle_msg": SlotKey(DEVICE, "link"),
     "gwlink_own_upto": SlotKey(DEVICE, "link"),
     "gwlink_own_ack": SlotKey(DEVICE, "link"),
     "gwlink_own_rej": SlotKey(DEVICE, "link"),
@@ -64,6 +63,9 @@ KEYS: dict[str, SlotKey] = {
     # 3.3.1: код их больше не пишет, у слотов, заведённых раньше, они ещё лежат
     "gwlink_ack": SlotKey(DEVICE, "link"),
     "gwlink_applied": SlotKey(DEVICE, "link"),
+    # где в чате лежал файл первого применения — не пишется с 3.4.0 (файлов нет),
+    # у слотов, заведённых раньше, ещё может лежать: снятие слота его чистит
+    "gwlink_bundle_msg": SlotKey(DEVICE, "link"),
     # смена ключей линка каналом (gateway_link/rekey.py): замена устройства
     # снимает переход своим путём (gateway_rekey_abort), со слотом — ключи
     "gwlink_rekey": SlotKey(SLOT, "rekey"),
@@ -71,7 +73,7 @@ KEYS: dict[str, SlotKey] = {
     # I1 живым линкам (gateway_link/rekey_i1.py): план попыток — с устройством:
     # новое устройство слота неудач прежнего (tries, next_at, rid) не наследует
     "gwlink_i1": SlotKey(DEVICE, "link"),
-    # слот: файл первого применения, расхождение, бот, токен, порт, живость
+    # слот: расхождение, бот, токен, порт, живость
     "gw_drift_notified": SlotKey(SLOT, "slot"),
     "gw_bot_me": SlotKey(SLOT, "slot"),
     "gw_token_push": SlotKey(SLOT, "slot"),

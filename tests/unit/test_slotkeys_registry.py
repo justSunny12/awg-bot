@@ -29,9 +29,10 @@ SERVICES = REPO / "awgbot" / "domain" / "services"
 SCANNED = ("gwchannel", "gateway_link", "routing", "gwjoin")
 FLEET = REPO / "awgbot" / "domain" / "fleet"        # набор обновлений: gwupd_<слот>
 
-# в реестре, но в коде пакетов не встречаются: ключи доставки, снятой в 3.3.1
-# (лежат у слотов, заведённых раньше)
-NOT_IN_CODE = {"gwlink_ack", "gwlink_applied"}
+# в реестре, но в коде пакетов не встречаются: ключи доставки, снятой в 3.3.1, и
+# место файла первого применения в чате (не пишется с 3.4.0) — лежат у слотов,
+# заведённых раньше
+NOT_IN_CODE = {"gwlink_ack", "gwlink_applied", "gwlink_bundle_msg"}
 
 _SLOT_NAMES = {"slot_id", "sid", "slot", "k"}
 _STATE_CALLS = {"get_state", "set_state", "get_state_json", "set_state_json"}

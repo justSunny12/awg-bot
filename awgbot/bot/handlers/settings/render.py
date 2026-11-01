@@ -1,6 +1,6 @@
 """render.py — экраны ролевых разделов основного бота (_screen — его
-br.role_screens; общие разделы рисует bot/sections) и сообщения о файле
-первого применения шлюза."""
+br.role_screens; общие разделы рисует bot/sections) и уведомление «шлюз
+настроен»."""
 
 from __future__ import annotations
 
@@ -11,8 +11,6 @@ from awgbot.core import settings
 from awgbot.bot import texts
 from awgbot.bot.roles import MAIN
 from awgbot.bot import keyboards as kb
-from awgbot.domain.services import ServiceError
-from awgbot.bot.handlers.common import send_menu_to
 from awgbot.bot.handlers.common import call, edit, send_menu, card_is_from_main, edit_nav
 
 log = logging.getLogger("awgbot.handlers.settings")
@@ -170,10 +168,6 @@ async def _record(cb: CallbackQuery, text: str, services):
                     keep_id=cb.message.message_id)
 
 
-def _bundle_chat(where: dict) -> int:
-    return int(where.get("chat") or config.ADMIN_ID)
-
-
 async def _bundle_display(services, slot_id: int) -> tuple[str, dict]:
     """(«имя» слота для подписи, бот шлюза); слота уже нет — «шлюз N»."""
     gw = await call(services.db.gateway, slot_id)
@@ -182,55 +176,13 @@ async def _bundle_display(services, slot_id: int) -> tuple[str, dict]:
     return await call(services._gw_display, gw), (await call(services.gw_bot_identity, gw.id) or {})
 
 
-async def _drop_bundle_msgs(bot, services, slot_id: int, where: dict | None = None) -> bool:
-    """Убрать из чата выданный файл слота с его инструкцией и забыть о них.
-    Вернуть, было ли что убирать."""
-    if where is None:
-        where = await call(services.gw_bundle_msg_get, slot_id)
-    if not where:
-        return False
-    chat_id = _bundle_chat(where)
-    for mid in (where.get("instr"), where.get("file")):
-        if mid:
-            try:
-                await bot.delete_message(chat_id, int(mid))
-            except Exception:                              # noqa: BLE001
-                pass
-    await call(services.gw_bundle_msg_clear, slot_id)
-    return True
-
-
-async def _show_card_anew(bot, services, chat_id: int, slot_id: int) -> None:
-    """Карточка слота новым сообщением как живое меню чата — без входящего
-    сообщения (по событию канала). Слота уже нет — главная."""
-    try:
-        st = await call(services.gateway_screen_state, slot_id)
-    except ServiceError:
-        st = None
-    if st is None:
-        from awgbot.bot.handlers.admin import _panel_parts
-        text, markup = await _panel_parts(services)
-    else:
-        text, markup = texts.gateway_card_text(st, st["states"]), card_kb(st, chat_id)
-    await send_menu_to(bot, services, chat_id, text, markup)
-
-
 async def bundle_installed(bot, services, slot_id: int) -> None:
     """Агент нового шлюза впервые вышел на связь каналом: админу «✅ Шлюз …
-    успешно настроен» со ссылкой на бота шлюза — без кнопок, как контент.
-    Файл первого применения и инструкция, если ещё в чате, уходят, и тогда
-    следом новым сообщением идёт карточка слота — куда вела «В меню» на файле,
-    единственная живая кнопка. Файл уже убрали — меню выше и так живое,
-    второго не нужно."""
-    where = await call(services.gw_bundle_msg_get, slot_id)
-    chat_id = _bundle_chat(where)
-    dropped = await _drop_bundle_msgs(bot, services, slot_id, where=where)
+    успешно настроен» со ссылкой на бота шлюза — без кнопок, как контент;
+    живое меню выше остаётся живым, второго не нужно."""
     display, agent_bot = await _bundle_display(services, slot_id)
-    sent = await bot.send_message(chat_id, texts.gateway_installed_text(display, agent_bot))
-    await call(services.db.add_content_msg_id, chat_id, sent.message_id)
-    if dropped:
-        await _show_card_anew(bot, services, chat_id, slot_id)
-
+    sent = await bot.send_message(config.ADMIN_ID, texts.gateway_installed_text(display, agent_bot))
+    await call(services.db.add_content_msg_id, config.ADMIN_ID, sent.message_id)
 
 
 def card_kb(st: dict, chat_id: int | None) -> InlineKeyboardMarkup:

@@ -742,22 +742,6 @@ async def test_a_failed_switch_keeps_the_session(services, slot, vps, monkeypatc
     assert dropped == [] and "вернул прежние" in wire.notes[0]
 
 
-async def test_the_rekeyed_hook_fires_once_when_hello_fixes_the_transition(services, slot, vps, monkeypatch):
-    """После фиксации main поднимает зависящее от ключей (крючок пакета) —
-    один раз; hello вне перехода крючок не дёргает."""
-    wire = _Wire(services, monkeypatch)
-    seen: list[int] = []
-
-    async def on_rekeyed(slot_id):
-        seen.append(slot_id)
-    monkeypatch.setattr(linkserver, "_on_rekeyed", on_rekeyed)
-    assert await wire.server.rekey_hello(1) is True and seen == []
-    _switched(services, vps)
-    assert await wire.server.rekey_hello(1) is True
-    assert await wire.server.rekey_hello(1) is True
-    assert seen == [1], seen
-
-
 async def test_the_startup_return_is_reported_once_whoever_calls_first(services, slot, vps, monkeypatch):
     """rekey_boot зовут старт слушателя и такт живости: возврат и уведомление — один раз."""
     _switched(services, vps)

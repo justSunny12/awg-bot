@@ -3758,26 +3758,9 @@ uci commit</pre>
   [⬅️ Назад | gws:card:1:]
 ~ (пустой ответ)
 
-### adm.gw.bundle.card — «🛰 Карточка шлюза» под файлом первого применения
+### adm.gw.bundle.card — «🛰 Карточка шлюза» под файлом первого применения прежнего выпуска — сообщение прочь, главная
 > press set:rt:do:bundle_cancel:1
 - delete #1
-~ (пустой ответ)
-+ send #2
-🛰 <b>NASPi</b> — 🟢 Активен
-📡 <code>awglink:443</code> · хендшейка нет · 61 мс
-🌐 <code>203.0.113.10</code>
-🔧 Канал конфигурации 🔴 ещё не подключался — линк не поднят или агент шлюза не запущен
-🗺 Подсети не заданы — без них сеть шлюза из туннеля не открыть · 🔀 VPN-транзит ☑️
-Бот шлюза: <a href="https://t.me/naspi_gw_bot">NASPi</a>
-  [📡 Пинг | gws:ping:1:]
-  [☑️ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:lan_nets:1:]
-  [✏️ Изменить | gws:edit:1:]
-  [⬅️ Назад | set:rt:open::]
-
-### adm.gw.bundle.home — «⬅️ В меню» под файлом первого применения
-> press set:rt:do:bundle_home:1
-- delete #1
-~ (пустой ответ)
 + send #2
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
@@ -3796,6 +3779,30 @@ uci commit</pre>
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
   [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
   [⚙️ Настройки | set:root:open::]
+~ (пустой ответ)
+
+### adm.gw.bundle.home — «⬅️ В меню» под файлом первого применения прежнего выпуска — сообщение прочь, главная
+> press set:rt:do:bundle_home:1
+- delete #1
++ send #2
+🛠 <b>pi</b> 🟢 работает · 3 дн
+
+📈 CPU 12% · RAM 3 200/7 812 МБ
+       диск 10/200 ГБ
+
+🇷🇺 РФ-доступ: 🟢 работает
+       шлюз: <a href="https://t.me/test_bot?start=gw-1">NASPi</a>
+📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 профиля, 2 устройства</a> · 🟡 Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
+📊 Трафик за сентябрь: <a href="https://t.me/test_bot?start=traffic">6,7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0,6 ГБ
+
+<i>обновлено <a href="https://t.me/test_bot?start=refresh">15.09 12:00:00 (UTC+5) 🔄</a></i>
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Мои устройства | m:devices] [🇷🇺 Мой РФ-доступ | rt:panel:2:-1:]
+  [👥 Профили | m:clients] [➕ Профиль | m:add_client]
+  [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
+  [⚙️ Настройки | set:root:open::]
+~ (пустой ответ)
 
 ### adm.gw.lan_nets — локальные подсети: приглашение
 > press gws:lan_nets:1:
@@ -4930,22 +4937,9 @@ IMAP и SMTP отвечают, вход выполнен
 
 ### adm.ev.gw_installed — A146: шлюз настроен
 > call bundle_installed
-- delete #39
-- delete #40
 + send #2
 ✅ Шлюз <b>NASPi</b> успешно настроен 🎉
 <b>Бот шлюза:</b> <a href="https://t.me/naspi_gw_bot">NASPi</a>
-+ send #3
-🛰 <b>NASPi</b> — 🟢 Активен
-📡 <code>awglink:443</code> · хендшейка нет · 61 мс
-🌐 <code>203.0.113.10</code>
-🔧 Канал конфигурации 🔴 ещё не подключался — линк не поднят или агент шлюза не запущен
-🗺 Подсети не заданы — без них сеть шлюза из туннеля не открыть · 🔀 VPN-транзит ☑️
-Бот шлюза: <a href="https://t.me/naspi_gw_bot">NASPi</a>
-  [📡 Пинг | gws:ping:1:]
-  [☑️ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:lan_nets:1:]
-  [✏️ Изменить | gws:edit:1:]
-  [⬅️ Назад | set:rt:open::]
 
 ### adm.ev.upd_available — доступна новая версия
 > call notify_update_available
@@ -9837,10 +9831,9 @@ add action=accept chain=forward comment=asym-via-gw src-address=192.168.1.0/24 d
   [⬅️ В меню | m:main]
 ~ (пустой ответ)
 
-### adm.gw.bundle.card.gone — «🛰 Карточка шлюза» под файлом снятого слота — главная
+### adm.gw.bundle.card.gone — «🛰 Карточка шлюза» под старым файлом снятого слота — сообщение прочь, главная
 > press set:rt:do:bundle_cancel:2
 - delete #1
-~! Такого шлюза нет
 + send #2
 🛠 <b>pi</b> 🟢 работает · 3 дн
 
@@ -9859,46 +9852,20 @@ add action=accept chain=forward comment=asym-via-gw src-address=192.168.1.0/24 d
   [👥 Профили | m:clients] [➕ Профиль | m:add_client]
   [📢 Объявление | bc:pick:0] [🛰 Шлюзы | set:rt:open::]
   [⚙️ Настройки | set:root:open::]
+~ (пустой ответ)
 
 ### adm.ev.gw_installed.label — шлюз слота 2 настроен — подпись слота и экранированное имя бота
 > call bundle_installed
-- delete #39
-- delete #40
 + send #2
 ✅ Шлюз <b>Pi4 (дача 2)</b> успешно настроен 🎉
 <b>Бот шлюза:</b> <a href="https://t.me/pi2_gw_bot">Шлюз &lt;Pi2&gt;</a>
-+ send #3
-🛰 <b>Pi4 (дача 2)</b> — 🟢 Резерв
-📡 <code>awglink2:8443</code> · хендшейка нет · 43 мс
-🌐 <code>198.51.100.7</code>
-🔧 Канал конфигурации 🔴 ещё не подключался — линк не поднят или агент шлюза не запущен
-🗺 Подсети не заданы — без них сеть шлюза из туннеля не открыть · 🔀 VPN-транзит ☑️
-Бот шлюза: <a href="https://t.me/pi2_gw_bot">Шлюз &lt;Pi2&gt;</a>
-  [▶️ Сделать активным | gws:switch_ask:2:]
-  [📡 Пинг | gws:ping:2:]
-  [☑️ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
-  [✏️ Изменить | gws:edit:2:]
-  [⬅️ Назад | gws:list:0:]
 
 ### adm.ev.gw_installed.nobot — шлюз настроен, бот неизвестен — без строки бота
 > call bundle_installed
-- delete #39
-- delete #40
 + send #2
 ✅ Шлюз <b>Pi4</b> успешно настроен 🎉
-+ send #3
-🛰 <b>Pi4</b> — 🟢 Резерв
-📡 <code>awglink2:8443</code> · хендшейка нет · 43 мс
-🌐 <code>198.51.100.7</code>
-🔧 Канал конфигурации 🔴 ещё не подключался — линк не поднят или агент шлюза не запущен
-🗺 Подсети не заданы — без них сеть шлюза из туннеля не открыть · 🔀 VPN-транзит ☑️
-  [▶️ Сделать активным | gws:switch_ask:2:]
-  [📡 Пинг | gws:ping:2:]
-  [☑️ VPN-транзит | gws:lan_ask:2:] [🗺 Подсети | gws:lan_nets:2:]
-  [✏️ Изменить | gws:edit:2:]
-  [⬅️ Назад | gws:list:0:]
 
-### adm.ev.gw_installed.nofile — шлюз настроен, файла в чате нет — одно уведомление
+### adm.ev.gw_installed.nofile — шлюз настроен, живое меню в чате — одно уведомление
 > call bundle_installed
 + send #2
 ✅ Шлюз <b>Pi4</b> успешно настроен 🎉
