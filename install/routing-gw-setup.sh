@@ -67,7 +67,8 @@
 #      туннель» в lan_vpn4 без блокировки, оба зовёт только агент; одна блокировка
 #      lists.lock с фидами, исключения «напрямую» вычитаются из фида заново,
 #      наборы чистятся; у обоих сбой рабочего шага — код 1: у sync до записи
-#      файлы не тронуты, после — откат, у fill набор не тронут) и
+#      файлы не тронуты, после — откат, у fill и у наборов после рестарта
+#      набор не тронут) и
 #      awg-lan-services.sh (записи сервисов соседних сетей для dnsmasq —
 #      сервисы соседних сетей: SMB-серверы сети другого шлюза видны
 #      в Finder через домен обзора awg.internal; PEER_LAN_NETS пуст — файл
@@ -748,6 +749,8 @@ cat > "$LAN_DOMAIN.new" <<'DOMEOF'
 # адресам dig, ошибки глушатся (адрес мог слиться в интервал или принадлежать
 # домену фида). Копии для отката обоих файлов и фида — $DUMP/rollback/<имя>.prev.
 # Сбой рабочего шага правки — код 1: до записи списки не тронуты, после — откат.
+# Сбой сбора адресов для наборов после рестарта — код 1 без отката списков (они
+# применены, адреса наберёт и dnsmasq): набор не тронут, lan_ru4 — не пустой.
 # Правило домена — DOMAIN_RE (зона буквами или punycode «xn--»);
 # то же правило применит сервер AWG к общему списку (этап 2 синхронизации).
 # AWG_HTML=1 (ставит агент: вывод уходит в чат) — домены в строках итога в
@@ -791,19 +794,22 @@ resolve() { dig +short +time=3 +tries=1 @127.0.0.1 "$1" A 2>/dev/null | grep -E 
 set_op() {                     # set_op add|delete <набор> <домен> — адреса домена в набор / из набора
     for ip in $(resolve "$3"); do nft "$1" element $TABLE "$2" "{ $ip }" 2>/dev/null || true; done
 }
-fill_set() {                   # fill_set <набор> <файл доменов> — параллельный dig, один nft на все адреса
+gather_ips() {                 # gather_ips <файл доменов> → $_ips: адреса через запятую, параллельный dig
     # 8 запросов разом: dnsmasq и апстрим через аплинк держат это легко, а
-    # 500 доменов по одному шли бы минуты; nft — одним вызовом со всем списком.
+    # 500 доменов по одному шли бы минуты.
     # Шаги — порознь, в рабочем каталоге $TMPD: в конвейере упавший шаг (xargs не
     # запустил запросы, отбор, сортировка, склейка адресов) давал пустой список
     # адресов, и набор молча оставался прежним — теперь код 1. Домен без ответа —
     # не сбой: `exit 0` после dig, иначе по коду xargs его не отличить от сбоя
-    # самого xargs (BSD отдаёт 1 и на то, и на другое). Отказ nft — тоже не сбой
-    # (адрес внутри интервала): набор пополнит и сам dnsmasq
+    # самого xargs (BSD отдаёт 1 и на то, и на другое)
     xargs -r -P 8 -I{} sh -c 'dig +short +time=3 +tries=1 @127.0.0.1 "$1" A 2>/dev/null; exit 0' _ {} \
-        < "$2" > "$TMPD/fill.dig" || return 1
+        < "$1" > "$TMPD/fill.dig" || return 1
     grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' "$TMPD/fill.dig" > "$TMPD/fill.ips"; [ $? -le 1 ] || return 1
     sort -u -o "$TMPD/fill.ips" "$TMPD/fill.ips" && _ips="$(paste -sd, - < "$TMPD/fill.ips")" || return 1
+}
+fill_set() {                   # fill_set <набор> <файл доменов> — адреса доменов одним nft; 1 — сбой сбора
+    # отказ nft — не сбой (адрес внутри интервала): набор пополнит и сам dnsmasq
+    gather_ips "$2" || return 1
     [ -n "$_ips" ] && nft add element $TABLE "$1" "{ $_ips }" 2>/dev/null
     return 0
 }
@@ -881,7 +887,10 @@ if [ "$cmd" = "sync" ]; then
     fi
 else
     for raw in "$@"; do
-        d="$(printf '%s' "$raw" | sed -E 's|^[a-zA-Z]+://||; s|/.*$||; s|^www\.||' | tr 'A-Z' 'a-z')"
+        # разбор и регистр — порознь: в конвейере упавший sed давал пустое имя,
+        # и верный домен уходил в «не похоже на домен» с кодом 0
+        d="$(printf '%s' "$raw" | sed -E 's|^[a-zA-Z]+://||; s|/.*$||; s|^www\.||')" \
+            && d="$(printf '%s' "$d" | tr 'A-Z' 'a-z')" || untouched
         valid "$d"; case $? in 0) ;; 1) echo "$d: не похоже на домен, пропущен"; continue ;; *) untouched ;; esac
         if [ "$cmd" = "del" ]; then
             if in_list "$d" vpn || in_list "$d" ru; then
@@ -949,14 +958,31 @@ for f in $changed; do rm -f "$(prev "$f")"; done
 cat "$TMPD/said"
 sleep 1
 # ── наборы nft
+# Сбой рабочего шага наборов (сбор адресов) — код 1 и строка о наборе, а не «N
+# адрес(а) в наборе» про адреса, которых там нет. Без отката списков: к этому
+# моменту они применены и верны (dnsmasq с ними поднялся), набор — ускорение,
+# адреса наберёт и сам dnsmasq по первым запросам; откат стоил бы второго
+# рестарта (сброс кэша DNS всей сети) и упёрся бы в те же упавшие шаги
+set_rc=0
+set_failed() {
+    echo "рабочий шаг наполнения набора не прошёл — набор $1 не тронут; списки применены, адреса наберёт dnsmasq по запросам" >&2
+    set_rc=1
+}
 # ушедшие из «в туннель» — вынуть адреса (ошибки глушатся: интервал auto-merge, домен фида)
 grep -vxF -f "$TMPD/want_vpn" "$TMPD/before_vpn" 2>/dev/null | while read -r d; do
     [ -n "$d" ] && set_op delete lan_vpn4 "$d"
 done
 # «напрямую» изменилось — набор целиком заново: он маленький и наполняется только отсюда
+# адреса — до сброса: упавший сбор оставляет набор прежним, а не пустым (иначе
+# все исключения «напрямую» шли бы в туннель до первых запросов)
+ru_ok=1
 if ! cmp -s "$TMPD/want_ru" "$TMPD/before_ru"; then
-    nft flush set $TABLE lan_ru4 2>/dev/null || true
-    fill_set lan_ru4 "$TMPD/want_ru"
+    if gather_ips "$TMPD/want_ru"; then
+        nft flush set $TABLE lan_ru4 2>/dev/null || true
+        [ -n "$_ips" ] && nft add element $TABLE lan_ru4 "{ $_ips }" 2>/dev/null
+    else
+        ru_ok=0; set_failed lan_ru4
+    fi
 fi
 if [ "$cmd" = "sync" ]; then
     grep -vxF -f "$TMPD/before_vpn" "$TMPD/want_vpn" 2>/dev/null | sed 's|^|+ |; s|$| (в туннель)|'
@@ -969,25 +995,53 @@ if [ "$cmd" = "sync" ]; then
     # ни блокировку списков, ни агента. Слепок — здесь: снятые выше адреса без
     # него вернулись бы с перезагрузкой; fill после своих добавлений снимет свой
     snapshot_vpn
+    [ "$set_rc" = 0 ] || exit 1
     echo "свои списки: $(grep -c . "$TMPD/want_vpn") в туннель, $(grep -c . "$TMPD/want_ru") напрямую"
     exit 0
 fi
 if [ -n "$added" ]; then
     # в одном вызове набор один: add → lan_vpn4, ru → lan_ru4
     set_="${added##*:}"
-    for pair in $added; do printf '%s\n' "${pair%%:*}"; done > "$TMPD/added"
-    # dig — 16 запросами разом, адреса каждого домена в свой файл; в набор — одним
-    # nft на все адреса: 500 доменов по одному (dig до 3 с + nft на адрес) не
-    # укладывались в таймаут агента, а списки к тому моменту уже применены
-    xargs -r -P 16 -I{} sh -c 'dig +short +time=3 +tries=1 @127.0.0.1 "$1" A 2>/dev/null | grep -E "^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$" > "$2/ips_$1"' _ {} "$TMPD" < "$TMPD/added"
-    if [ "$set_" = "lan_vpn4" ]; then
-        _ips="$(cat "$TMPD"/ips_* 2>/dev/null | sort -u | paste -sd, -)"
-        [ -n "$_ips" ] && nft add element $TABLE lan_vpn4 "{ $_ips }" 2>/dev/null || true
+    # «напрямую» перестроен целиком выше: не перестроен — о нём уже сказано, и
+    # строк «в наборе lan_ru4» не будет
+    if [ "$set_" = "lan_vpn4" ] || [ "$ru_ok" = 1 ]; then
+        added_ok=1
+        # строка — «номер домен»: файл адресов зовётся по номеру, а не по имени —
+        # домен до 253 знаков с «ips_» не влезал в предел имени файла (255), и его
+        # адреса терялись молча
+        _i=0
+        for pair in $added; do _i=$((_i + 1)); printf '%s %s\n' "$_i" "${pair%%:*}" || added_ok=0; done > "$TMPD/added" \
+            || added_ok=0
+        # dig — 16 запросами разом, адреса каждого домена в свой файл; в набор — одним
+        # nft на все адреса: 500 доменов по одному (dig до 3 с + nft на адрес) не
+        # укладывались в таймаут агента, а списки к тому моменту уже применены.
+        # Файл адресов есть у каждого домена (пустой — DNS не ответил, это не сбой);
+        # ненулевой код xargs — не запустились запросы или не лёг файл. Шаги сбора —
+        # порознь: в конвейере упавший давал пустой список, nft не звался, а в
+        # выводе стояло «N адрес(а) в наборе»
+        [ "$added_ok" = 1 ] && xargs -r -P 16 -L 1 sh -c 'dig +short +time=3 +tries=1 @127.0.0.1 "$3" A 2>/dev/null | grep -E "^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$" > "$1/ips_$2"; [ $? -le 1 ]' _ "$TMPD" < "$TMPD/added" \
+            || added_ok=0
+        if [ "$added_ok" = 1 ] && [ "$set_" = "lan_vpn4" ]; then
+            if cat "$TMPD"/ips_* > "$TMPD/added.ips" && sort -u -o "$TMPD/added.ips" "$TMPD/added.ips" \
+                && _ips="$(paste -sd, - < "$TMPD/added.ips")"; then
+                # отказ nft — не сбой (адрес внутри интервала), как в fill
+                [ -n "$_ips" ] && nft add element $TABLE lan_vpn4 "{ $_ips }" 2>/dev/null
+            else
+                added_ok=0
+            fi
+        fi
+        # «напрямую» уже наполнен целиком выше — только считаем
+        if [ "$added_ok" = 1 ]; then
+            while read -r _i d; do
+                _n="$(grep -c . "$TMPD/ips_$_i")"; [ $? -le 1 ] || { added_ok=0; break; }
+                echo "  $d → $_n адрес(а) в наборе $set_"
+            done < "$TMPD/added"
+        fi
+        [ "$added_ok" = 1 ] || set_failed "$set_"
     fi
-    # «напрямую» уже наполнен целиком выше — только считаем
-    while read -r d; do echo "  $d → $(grep -c . "$TMPD/ips_$d" 2>/dev/null || echo 0) адрес(а) в наборе $set_"; done < "$TMPD/added"
 fi
 snapshot_vpn
+exit "$set_rc"
 DOMEOF
 chmod 0755 "$LAN_DOMAIN.new" && mv -f "$LAN_DOMAIN.new" "$LAN_DOMAIN"
 cat > "$LAN_SERVICES.new" <<'SVCEOF'

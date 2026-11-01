@@ -86,6 +86,31 @@ def test_a_failed_domain_check_is_not_taken_for_a_bad_name(own_env):
     assert "systemctl" not in _log(log)
 
 
+def test_a_failed_name_cleanup_is_not_taken_for_a_bad_name(own_env):
+    """sed разбора введённого (схема, путь, www.) упал: прежде имя выходило
+    пустым — «: не похоже на домен, пропущен» и код 0, хотя домен верный."""
+    tool, dns_d, dump, log, env = own_env
+    before = _two_exceptions(own_env)
+    _flaky(env, "sed", when="-E*")
+    r = _run(tool, env, "add", "https://www.alpha.com/path")
+    assert r.returncode == 1 and UNTOUCHED in r.stderr, r.stdout + r.stderr
+    assert "не похоже на домен" not in r.stdout, r.stdout
+    assert _state(dns_d) == before
+    assert "systemctl" not in _log(log)
+
+
+def test_a_failed_case_fold_is_not_taken_for_a_bad_name(own_env):
+    """tr перевода в нижний регистр упал — то же: пустое имя не «не домен».
+    Первый такой tr — хост сервера AWG из аплинка, второй — введённое имя."""
+    tool, dns_d, dump, log, env = own_env
+    before = _two_exceptions(own_env)
+    _flaky(env, "tr", when='"A-Z a-z"', nth=2)
+    r = _run(tool, env, "add", "Alpha.com")
+    assert r.returncode == 1 and UNTOUCHED in r.stderr, r.stdout + r.stderr
+    assert "не похоже на домен" not in r.stdout, r.stdout
+    assert _state(dns_d) == before
+
+
 def test_a_failed_feed_rebuild_rolls_the_lists_back(own_env):
     """awk пересборки фида упал: прежде пустой результат молча не ставился —
     «убран» с кодом 0, а домен в фид не вернулся (идёт напрямую, хотя исключение снято)."""
