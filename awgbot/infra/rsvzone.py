@@ -32,6 +32,7 @@ import subprocess
 from pathlib import Path
 
 from awgbot.core import config
+from awgbot.infra import scriptrun
 from awgbot.util import fsatomic, jsonfile, kvfile
 
 log = logging.getLogger(__name__)
@@ -243,17 +244,9 @@ def _zone_env() -> dict:
 def run(mode: str, *, env: dict | None = None, stdin: str | None = None, timeout: int = 240) -> str:
     """Один режим скрипта (`--shell`, `--take`, …). Ненулевой код — ZoneError
     с хвостом вывода; `--status` и `--plan` возвращают текст как есть."""
-    args = ["bash", str(_script()), f"--{mode.lstrip('-')}"]
-    full_env = {**os.environ, **_zone_env(), **{k: str(v) for k, v in (env or {}).items()}}
-    try:
-        proc = subprocess.run(args, capture_output=True, timeout=timeout, env=full_env,
-                              input=(stdin.encode() if stdin is not None else None))
-    except (OSError, subprocess.SubprocessError) as e:
-        raise ZoneError(f"скрипт зоны не запустился: {e}") from e
-    out = (proc.stdout + proc.stderr).decode(errors="replace").strip()
-    if proc.returncode != 0:
-        tail = "\n".join(out.splitlines()[-4:]) if out else f"код {proc.returncode}"
-        raise ZoneError(tail)
+    out = scriptrun.run_script(["bash", str(_script()), f"--{mode.lstrip('-')}"], error=ZoneError,
+                               what="скрипт зоны", timeout=timeout, env={**_zone_env(), **(env or {})},
+                               stdin=stdin, tail=4)
     for line in out.splitlines():                        # код 0: предупреждения скрипта — в журнал, прочее — отладкой
         if line.startswith("ВНИМАНИЕ"):
             log.warning("резерв: зона --%s: %s", mode.lstrip("-"), line)

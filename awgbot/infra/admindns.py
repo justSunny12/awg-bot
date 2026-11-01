@@ -15,6 +15,7 @@ import tempfile
 from pathlib import Path
 
 from awgbot.core import config, settings
+from awgbot.infra import scriptrun
 
 log = logging.getLogger(__name__)
 
@@ -71,16 +72,9 @@ def _script() -> Path:
 def run(mode: str, arg: str = "") -> str:
     """install|records|remove|status — через скрипт. AdminDnsError при
     ненулевом коде (кроме status: там код — состояние)."""
-    args = ["bash", str(_script()), mode] + ([arg] if arg else [])
-    env = {**os.environ, "ADMIN_ADDR": addr(), "ADMIN_DIR": str(ADMIN_DIR)}
-    try:
-        proc = subprocess.run(args, capture_output=True, timeout=120, env=env)
-    except (OSError, subprocess.SubprocessError) as e:
-        raise AdminDnsError(f"скрипт резолвера админа не запустился: {e}")
-    out = (proc.stdout + proc.stderr).decode(errors="replace").strip()
-    if proc.returncode != 0 and mode != "status":
-        raise AdminDnsError("\n".join(out.splitlines()[-3:]) or f"код {proc.returncode}")
-    return out
+    return scriptrun.run_script(["bash", str(_script()), mode] + ([arg] if arg else []), error=AdminDnsError,
+                                what="скрипт резолвера админа", timeout=120,
+                                env={"ADMIN_ADDR": addr(), "ADMIN_DIR": str(ADMIN_DIR)}, check=mode != "status")
 
 
 def installed() -> bool:

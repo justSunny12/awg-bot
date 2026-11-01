@@ -15,6 +15,7 @@ import subprocess
 from pathlib import Path
 
 from awgbot.core import config
+from awgbot.infra import scriptrun
 from awgbot.util import kvfile
 
 RSV_IF = "awgrsv"
@@ -32,15 +33,8 @@ def _script() -> Path:
 
 
 def run(mode: str, *args: str, env: dict | None = None, timeout: int = SCRIPT_TIMEOUT) -> str:
-    argv = ["sh", str(_script()), f"--{mode.lstrip('-')}", *args]
-    try:
-        proc = subprocess.run(argv, capture_output=True, timeout=timeout, env={**os.environ, **(env or {})})
-    except (OSError, subprocess.SubprocessError) as e:
-        raise RsvError(f"скрипт линка к резерву не запустился: {e}") from e
-    out = (proc.stdout + proc.stderr).decode(errors="replace").strip()
-    if proc.returncode != 0:
-        raise RsvError("\n".join(out.splitlines()[-3:]) or f"код {proc.returncode}")
-    return out
+    return scriptrun.run_script(["sh", str(_script()), f"--{mode.lstrip('-')}", *args], error=RsvError,
+                                what="скрипт линка к резерву", timeout=timeout, env=env)
 
 
 def status() -> dict:
