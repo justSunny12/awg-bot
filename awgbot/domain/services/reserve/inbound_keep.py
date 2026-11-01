@@ -153,6 +153,7 @@ class ReserveInboundKeepMixin:
             if str(self._inn().get("state") or "") != "taking":
                 return []
             rsvzone.open_status_write("launching")           # прежний итог не должен сойти за ход нового процесса
+            self._rsvopen_forget()                            # и код прежнего процесса — за его итог
             # up_sent — заново: на clone_up нового процесса такт перерисует файервол хоста под его клоны
             self.rsv_update("rsv_in", relaunch=False, relaunch_n=n, deadline=now + OPEN_WAIT_S, served=False,
                             done_mono=0, up_sent=False, step="open", step_at=timeutil.now_iso())

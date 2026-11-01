@@ -176,6 +176,7 @@ class ReserveInboundMixin:
             self._relay_yield()                               # хвост уступает новому клону
             from awgbot.infra import rsvzone
             rsvzone.open_status_write("launching")           # прежний open.status не должен сойти за ход этого открытия
+            self._rsvopen_forget()                            # и код прошлого процесса — за его итог (запуск — после замка)
             self.reserve_set_in("taking", kind=str(kind or "button"), gen=int(gen), why=str(kind or "button"), by="k",
                                 open_started=timeutil.now_iso(), deadline=time.monotonic() + OPEN_WAIT_S,
                                 up_sent=False, tg_taken=False, tg_take_forced=False, tg_wait="", **KEEP_RESET,
