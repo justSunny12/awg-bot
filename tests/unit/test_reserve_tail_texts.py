@@ -44,6 +44,20 @@ def test_a_date_goes_with_a_two_digit_year():
     assert got == "профиль Иван: срок до 15.11.26 — на «Beta» осталось до 01.11.26", got
 
 
+@pytest.mark.parametrize("zone", ["America/New_York", "Europe/London", "Asia/Yekaterinburg"])
+def test_a_bare_date_is_the_same_day_in_any_display_zone(monkeypatch, zone):
+    """Чистая дата «2026-11-15» — тот же день в любом поясе показа: прочитанная
+    полночью +03, западнее UTC+3 она стала бы 14.11 — срок в споре на день
+    раньше, чем у профиля. Момент со временем — по-прежнему в поясе показа."""
+    from zoneinfo import ZoneInfo
+    from awgbot.util import timeutil
+    monkeypatch.setattr(timeutil, "TZ", ZoneInfo(zone))
+    got = line(col("client_subscription", "period_end", "2026-11-15", "2026-11-01"))
+    assert got == "профиль Иван: срок до 15.11.26 — на «Beta» осталось до 01.11.26", got
+    west = zone != "Asia/Yekaterinburg"                 # 01:00 +03 западнее UTC+3 — ещё 14.11
+    assert rn._date_yy("2026-11-15T01:00:00+03:00") == ("14.11.26" if west else "15.11.26")
+
+
 @pytest.mark.parametrize("table, c, tail, kept, want", [
     ("clients", "routing_allowed", 1, 0, "РФ-доступ вкл — на «Beta» осталось выкл"),
     ("device_traffic", "traffic_limit", 5 * 1024 ** 3, 0, "лимит трафика 5 ГБ — на «Beta» осталось без ограничения"),
