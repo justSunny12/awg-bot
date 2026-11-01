@@ -150,6 +150,21 @@ def test_with_the_button_lever_the_primary_only_raises_the_flag_once(away):
         "основа опять нездорова — кнопка у резерва должна исчезнуть"
 
 
+def test_the_lever_is_read_by_one_getter_and_only_immediate_returns_by_itself(away, monkeypatch):
+    """Рычаг возврата читается одним местом (away.reserve_return_mode): пусто — умолчание
+    immediate, значение не из двух — сам не возвращается, как и прежде (только immediate)."""
+    svc = away.svc
+    settings.set_value("app.reserve.return", "")
+    assert svc.reserve_return_mode() == "immediate" and svc.reserve_return_lever_button() is False
+    settings.set_value("app.reserve.return", "button")
+    assert svc.reserve_return_mode() == "button" and svc.reserve_return_lever_button() is True
+    settings.set_value("app.reserve.return", "immediate")
+    monkeypatch.setattr(svc, "reserve_return_mode", lambda: "sometimes")
+    _healthy_for(away, 400)
+    assert svc.reserve_out() == "away", "такт away прочёл рычаг мимо reserve_return_mode"
+    assert svc.reserve_can_return() is True
+
+
 def test_the_return_cannot_start_when_the_clients_are_not_away_or_the_reserve_is_gone(away):
     svc = away.svc
     svc.rsv_update("rsv_peer_state", session=False)

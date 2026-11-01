@@ -36,7 +36,7 @@ import pytest
 from awgbot.bot.texts.reserve.section import card_text
 from awgbot.domain.services.reserve import inbound, inbound_keep, inbound_tgwait
 from awgbot.infra import rsvzone
-from awgbot.util import pairproto
+from awgbot.util import backoff, pairproto
 
 from tests.integration import _reserve_common as rc
 from tests.integration import _reserve_move as rm
@@ -54,7 +54,7 @@ POINTS = {"qpoints": [[1, "ab" * 16], [2, "cd" * 16]], "qbox": "00" * 56}
 
 @pytest.fixture(autouse=True)
 def _steady(monkeypatch):
-    monkeypatch.setattr(inbound_keep.random, "uniform", lambda a, b: 1.0)   # разброс — отдельным тестом
+    monkeypatch.setattr(backoff.random, "uniform", lambda a, b: 1.0)   # разброс — отдельным тестом
 
 
 def _emergency(host, *, moved: bool = True) -> None:
@@ -311,7 +311,7 @@ def test_the_relaunch_comes_up_and_finishes_the_usual_way(host, monkeypatch):
 
 def test_the_relaunch_interval_is_jittered(host, monkeypatch):
     seen = []
-    monkeypatch.setattr(inbound_keep.random, "uniform", lambda a, b: seen.append((a, b)) or 1.4)
+    monkeypatch.setattr(backoff.random, "uniform", lambda a, b: seen.append((a, b)) or 1.4)
     _by_points(host, monkeypatch)
     _clones_gone(host)
     host.clock.advance(inbound_keep.KEEP_RETRY_S * 1.3)

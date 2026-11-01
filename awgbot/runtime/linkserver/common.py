@@ -48,5 +48,6 @@ class _Session:
         self.sn = gwlink.new_nonce()     # наш нонс: им шлюз подписывает всё после hello
         self.cn = b""                    # нонс шлюза из hello: им подписываем мы
         self.sn_sent = False             # первое наше сообщение несёт sn
+        self.unknown: set[str] = set()   # незнакомые виды, уже записанные в журнал этой сессии
 
 

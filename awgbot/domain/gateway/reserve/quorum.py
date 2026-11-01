@@ -16,149 +16,42 @@ quorum.py — часть пакета reserve агента (см. __init__): к�
 Поколение точки — номер `q_gen` и отпечаток многочлена `qf` (rsvkeys.same_q):
 после восстановления основы из копии номера идут заново; сервер прежней версии
 отпечатка не шлёт — тогда по номеру.
+
+Части класса: раздел документа, интерфейсы зондов и цифры лидера — quorum_doc;
+эпоха, обязательства и отданная точка на диске — quorum_disk; свой взгляд,
+панель и снимок — quorum_view; здесь — подъём зондов, такт голосующего, ответы,
+взгляды и слова кандидата.
 """
 from __future__ import annotations
 
 import json
-import os
 import time
-from pathlib import Path
 
-from awgbot.util import fsatomic, livestep, rsvkeys, timeutil
+from awgbot.util import livestep, timeutil
 from awgbot.util.quorum import timing as qt
 from awgbot.util.quorum.probe import Probe, Reply
-from awgbot.util.quorum.timing import Timing
 from awgbot.util.quorum.voter import Voter
 
 from ..base import log
+# части класса и прежние имена модуля (STORE_PATH, _read, _write, _point_prev, …) — отсюда же
+from .quorum_disk import EPOCH_STEP_MAX, GatewayQuorumDiskMixin
+from .quorum_doc import _KEEP_KEYS, STORE_PATH, GatewayQuorumDocMixin, _point_of_gen, _point_prev, _read, _write
+from .quorum_view import GatewayQuorumViewMixin
 from .store import STORE_LOCK                                 # один замок на reserve.json и quorum.json
 
-STORE_PATH = Path("/var/lib/awg-gw/quorum.json")
-_KEEP_KEYS = ("views", "pledges", "told", "apply_mono", "share_given_at", "e_known", "e_take", "point_given")
 APPLY_EVERY_S = 300
-EPOCH_STEP_MAX = 1000          # эпоха из слова или ответа — не дальше известной на столько (мусор, поломка)
+
+__all__ = ["APPLY_EVERY_S", "EPOCH_STEP_MAX", "STORE_PATH", "GatewayQuorumMixin", "_KEEP_KEYS", "_point_of_gen",
+           "_point_prev", "_read", "_write"]
 
 
-def _read(path: Path = STORE_PATH) -> dict:
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    return data if isinstance(data, dict) else {}
-
-
-def _write(data: dict, path: Path = STORE_PATH) -> None:
-    fsatomic.write_private(path, json.dumps(data, ensure_ascii=False))
-
-
-def _point_prev(cur: dict, new_point: dict) -> dict:
-    """Точка прежнего многочлена — после смены поколения точки: второй сервер получает свои
-    точки и ящики (`qkeys`) только по живому линку, документ шлюзу приходит раньше; кандидат
-    в этом окне просит точку своего (прежнего) поколения. Держится одно прежнее поколение;
-    без точки (голосование выключено) — и прежней нет."""
-    if not new_point.get("y"):
-        return {}
-    old = dict(cur.get("point") or {})
-    if old.get("y") and not rsvkeys.same_q(old, new_point):
-        return old
-    prev = dict(cur.get("point_prev") or {})
-    return prev if prev.get("y") and not rsvkeys.same_q(prev, new_point) else {}
-
-
-def _point_of_gen(sec: dict, want: dict) -> dict:
-    """Точка того поколения (`q_gen`, `qf`), которое просит кандидат: текущая или прежняя;
-    иначе — текущая (отказ по несовпадению скажет, какое у меня)."""
-    point = dict(sec.get("point") or {})
-    prev = dict(sec.get("point_prev") or {})
-    if not rsvkeys.same_q(point, want) and prev.get("y") and rsvkeys.same_q(prev, want):
-        return prev
-    return point
-
-
-class GatewayQuorumMixin:
+class GatewayQuorumMixin(GatewayQuorumDocMixin, GatewayQuorumDiskMixin, GatewayQuorumViewMixin):
+    """Кворум на шлюзе: раздел документа и зонды (quorum_doc), эпоха, обязательства и точка на
+    диске (quorum_disk), взгляд, панель и снимок (quorum_view); здесь — пробы, ответы, взгляды
+    голосующего и слова кандидата (их часы — `time` этого модуля)."""
     _QUO_STORE = STORE_PATH
 
-    # ── раздел документа ────────────────────────────────────────────────────
-    def quorum_section(self) -> dict:
-        return _read(self._QUO_STORE)
-
-    def quorum_present(self) -> bool:
-        return bool((self.quorum_section().get("probes") or {}).get("h"))
-
-    def quorum_print(self) -> str:
-        from awgbot.domain import gwcfg
-        sec = self.quorum_section()
-        return gwcfg.quorum_print(sec) if sec.get("l") else ""
-
-    def quorum_apply(self, checked: dict | None) -> dict:
-        """Раздел из документа (проверенный) или None — у сервера раздела нет."""
-        if checked is None:
-            if not self.quorum_section():
-                return {"changed": False, "note": ""}
-            self.quorum_remove()
-            return {"changed": True, "note": "🗳 Голосование о сервере AWG снято — зонды опущены"}
-        new = {"l": str(checked.get("l") or ""), "g": int(checked.get("g") or 0),
-               "members": list(checked.get("members") or []), "t": int(checked.get("t") or 0),
-               "port": int(checked.get("port") or 0), "probes": dict(checked.get("probes") or {}),
-               "point": dict(checked.get("point") or {}), "e": int(checked.get("e") or 0),
-               "timing": dict(checked.get("timing") or {}), "applied_at": timeutil.now_iso()}
-        with STORE_LOCK:
-            cur = self.quorum_section()
-            for k in _KEEP_KEYS:
-                if k in cur:
-                    new[k] = cur[k]
-            prev = _point_prev(cur, new["point"])
-            if prev:
-                new["point_prev"] = prev
-            changed = any(cur.get(k) != new[k] for k in ("l", "g", "members", "t", "port", "probes", "point"))
-            _write(new, self._QUO_STORE)
-        if int(cur.get("e") or 0) < new["e"]:
-            self._quorum_epoch_in(new["e"])
-        note = ""
-        if not cur.get("l"):
-            note = "🗳 Голосование о сервере AWG включено — зонд к нему поднят"
-        self.quorum_probes_apply(force=True)
-        return {"changed": changed, "note": note}
-
-    def quorum_remove(self) -> None:
-        from awgbot.infra import quoprobe
-        try:
-            quoprobe.wipe()
-        except quoprobe.QuoError as e:
-            log.warning("quorum: зонды не сняты: %s", e)
-        try:
-            os.unlink(str(self._QUO_STORE))
-        except OSError:
-            pass
-        self.__dict__.pop("_gw_qvoters", None)
-
-    # ── интерфейсы зондов ───────────────────────────────────────────────────
-    def quorum_probe_ifaces(self) -> dict:
-        """Имя → {conf, l, target, node_addr, resp, port}: `h` всегда, `r` — пока
-        пользователи основы у резерва."""
-        sec = self.quorum_section()
-        l = str(sec.get("l") or "")
-        probes = sec.get("probes") or {}
-        if not l or not probes.get("h"):
-            return {}
-        out = {f"awgq{l}h": {"conf": str(probes["h"]), "l": l, "target": "h", **self._conf_addrs(str(probes["h"]), sec)}}
-        if probes.get("r") and self._primary_away():
-            out[f"awgq{l}r"] = {"conf": str(probes["r"]), "l": l, "target": "r", **self._conf_addrs(str(probes["r"]), sec)}
-        return out
-
-    def _primary_away(self) -> bool:
-        rs = self.reserve_section() if hasattr(self, "reserve_section") else {}
-        return str(rs.get("state") or "") == "away" or str(rs.get("reserve_state") or "") == "serving"
-
-    @staticmethod
-    def _conf_addrs(conf: str, sec: dict) -> dict:
-        import re
-        addr = re.search(r"(?m)^\s*Address\s*=\s*([0-9.]+)", conf)
-        resp = re.search(r"(?m)^\s*AllowedIPs\s*=\s*([0-9.]+)", conf)
-        from awgbot.infra import quoprobe
-        return {"node_addr": addr.group(1) if addr else "", "resp": resp.group(1) if resp else "",
-                "port": int(sec.get("port") or quoprobe.port())}
-
+    # ── зонды: подъём по разделу ────────────────────────────────────────────
     def quorum_probes_apply(self, force: bool = False) -> dict:
         from awgbot.infra import quoprobe
         want = self.quorum_probe_ifaces()
@@ -187,105 +80,6 @@ class GatewayQuorumMixin:
     @property
     def _gw_qvoters(self) -> dict:
         return self.__dict__.setdefault("_gw_qvoters", {})
-
-    def quorum_timing(self) -> Timing:
-        """Цифры лидера из раздела `quorum` документа (те же ключи, что `app.reserve.quorum`);
-        раздел без цифр — умолчания агента (`app.gateway.quorum`)."""
-        from awgbot.core import settings
-        q = self.quorum_section().get("timing")
-        if not isinstance(q, dict) or not q:
-            q = settings.get("app.gateway.quorum", {}) or {}
-        q = q if isinstance(q, dict) else {}
-        rf = q.get("rf_block_minutes", settings.get_int("app.gateway.rf_block_minutes", 15))
-        return Timing.from_settings(q, rf)
-
-    def quorum_my_node(self) -> str:
-        sec = self.quorum_section()
-        slot = int((self.reserve_section() if hasattr(self, "reserve_section") else {}).get("slot") or 0)
-        return f"{sec.get('l')}{slot}" if sec.get("l") and slot else ""
-
-    def quorum_own_view(self) -> tuple[str, str]:
-        """Свой взгляд зонда на сервер AWG линии: (see | held | sus | uns | new | "", с какого момента);
-        пусто — зонда нет (раздела quorum нет или шлюз не в составе)."""
-        sec = self.quorum_section()
-        l = str(sec.get("l") or "")
-        if not l:
-            return "", ""
-        name = f"awgq{l}h"
-        v = self._gw_qvoters.get(name)
-        stored = dict((sec.get("views") or {}).get(name) or {})
-        if v is not None:
-            return str(v.view or ""), str(stored.get("since") or "")
-        return str(stored.get("w") or ""), str(stored.get("since") or "")
-
-    def _quorum_epoch_known(self) -> int:
-        sec = self.quorum_section()
-        return max([int(sec.get("e") or 0), int(sec.get("e_known") or 0)] + [int(v.epoch) for v in self._gw_qvoters.values()])
-
-    def _quorum_epoch_sane(self, e: int) -> bool:
-        """Эпоха годится: известной нет (первый документ) или она недалеко впереди — скачок на тысячи
-        принятым завёл бы линию под эпоху, которой никто не держит (пробы несут её, лидер следует)."""
-        known = self._quorum_epoch_known()
-        return 0 <= int(e) < 2 ** 62 and (known <= 0 or int(e) <= known + EPOCH_STEP_MAX)
-
-    def _quorum_epoch_in(self, e: int) -> None:
-        if not self._quorum_epoch_sane(int(e)):
-            log.warning("quorum: эпоха %s далеко впереди известной (%s) — не принята", e, self._quorum_epoch_known())
-            return
-        for v in self._gw_qvoters.values():
-            v.epoch_in(int(e))
-        self._quorum_epoch_persist(int(e))
-
-    def _quorum_epoch_settle(self) -> None:
-        """Резерв сказал `state{idle}`: пользователей основы у него нет — эпоха, поднятая у
-        голосующих по `qtake` без факта, назад к факту (сорванное «забираю» иначе держало бы
-        шлюзы под e + 1 бессрочно, а живая основа принимала бы эту эпоху по первой пробе)."""
-        top = 0
-        for v in self._gw_qvoters.values():
-            if v.rollback():
-                log.warning("quorum: пользователей основы у резерва нет — эпоха снова %s (поднятую по qtake снял)", v.epoch)
-            top = max(top, int(v.epoch))
-        if self._gw_qvoters:
-            self._quorum_take_unpersist()
-
-    def _quorum_take_persist(self, e: int) -> None:
-        """Эпоха, поднятая по `qtake` (e + 1), — на диск отдельно от факта (`e_take`): после
-        перезапуска агента голосующий снова под ней, но `qrel{e}` и `state{idle}` её снимают;
-        лежала бы она в `e_known` — стала бы фактом, и откат после перезапуска был бы невозможен."""
-        with STORE_LOCK:
-            sec = self.quorum_section()
-            if sec.get("l") and int(sec.get("e_take") or 0) < int(e):
-                sec["e_take"] = int(e)
-                _write(sec, self._QUO_STORE)
-
-    def _quorum_take_unpersist(self) -> None:
-        """«Забираю» отменено (qrel, state{idle}) — поднятая по qtake эпоха с диска прочь."""
-        with STORE_LOCK:
-            sec = self.quorum_section()
-            if sec.get("l") and sec.get("e_take"):
-                sec["e_take"] = 0
-                _write(sec, self._QUO_STORE)
-
-    def _quorum_epoch_persist(self, e: int) -> None:
-        """Известная эпоха — факт (ответ ответчика, `qstate`, `state{e}`, документ) — на диск
-        (`e_known`): после перезапуска агента пробы идут с ней, а не с эпохой документа. Факт не
-        ниже поднятой по qtake — поднятая больше не нужна."""
-        with STORE_LOCK:
-            sec = self.quorum_section()
-            if not sec.get("l"):
-                return
-            changed = False
-            if int(sec.get("e_known") or 0) < int(e):
-                sec["e_known"] = int(e)
-                changed = True
-            if sec.get("e_take") and int(sec["e_take"]) <= int(e):
-                sec["e_take"] = 0
-                changed = True
-            if changed:
-                _write(sec, self._QUO_STORE)
-
-    def quorum_runtime_plan(self) -> dict:
-        return {"responder": None, "probes": self.quorum_probe_ifaces()}
 
     def quorum_tick(self, now: float | None = None) -> list[tuple]:
         """Такт голосующего (5 с): интерфейсы, пробы, взгляды → qview."""
@@ -455,29 +249,6 @@ class GatewayQuorumMixin:
             return []
         return []
 
-    def _quorum_word_without_voter(self, name: str, kind: str, body: dict) -> list[tuple]:
-        """Слово кандидата до создания голосующего (первый такт после перезапуска агента):
-        `qtake{e}` — эпоха e + 1 на диск (e_take, отдельно от факта), обязательство на диске снято;
-        `qrel{e}` — обязательство под той эпохой снято, поднятая эпоха прочь. Голосующий при
-        создании берёт всё с диска."""
-        e = int(body.get("e") or 0)
-        if kind == "qtake" and self._quorum_epoch_sane(e + 1):
-            self._quorum_take_persist(e + 1)
-            self._pledge_store(name, None)
-            log.warning("quorum: кандидат забирает основу под эпоху %s (голосующего ещё нет) — записано, обязательство снято", e + 1)
-        elif kind == "qrel":
-            sec = self.quorum_section()
-            pledge = (sec.get("pledges") or {}).get(name)
-            if isinstance(pledge, dict) and int(pledge.get("e") or -1) == e:
-                self._pledge_store(name, None)
-                log.info("quorum: обязательство «нет» под эпохой %s снято (qrel, голосующего ещё нет)", e)
-            if int(sec.get("e_take") or 0) == e + 1:
-                self._quorum_take_unpersist()                 # «забираю» под e отменено — поднятая по qtake эпоха прочь
-                log.warning("quorum: «забираю» под эпоху %s отменено (qrel, голосующего ещё нет)", e + 1)
-            if hasattr(self, "reserve_share_released"):
-                self.reserve_share_released()
-        return []
-
     def _quorum_asked(self, name: str, v: Voter, now: float) -> list[tuple]:
         """`qask`: взгляд uns/sus — qview сразу; see и ответ свежее fresh_s — qview{see, i}
         сразу; see со старым ответом — три пробы за ≤ 15 с, qview после них."""
@@ -503,96 +274,3 @@ class GatewayQuorumMixin:
             v.said_no(time.monotonic())
             self._pledge_store(name, {"e": int(v.epoch), "at": timeutil.now_iso()})
         return ([("guest", "qview", body)] if rec.get("target") != "r" else []) + [("link", "qview", body)]
-
-    def _quorum_need_in(self, sec: dict, v: Voter, want: dict, since: str) -> list[tuple]:
-        point = _point_of_gen(sec, want)
-        q_gen = int(want.get("q_gen") or 0)
-        if v.view != "uns":
-            log.info("quorum: кандидат просит точку (с %s), а сервер AWG виден — отказ", since)
-            return []
-        if not point.get("y") or not rsvkeys.same_q(point, want):
-            log.warning("quorum: кандидат просит точку поколения %s, у меня %s (или многочлен другой — отпечаток) — отказ",
-                        q_gen, point.get("q_gen"))
-            return []
-        qf = rsvkeys.m_print_of(point.get("qf"))
-        log.warning("quorum: отдаю точку ключа кворума кандидату (сервер AWG не отвечает с %s)", since)
-        from .store import _write as _write_rsv
-        with STORE_LOCK:
-            rs = self.reserve_section()                       # отметку читает слово state{idle, reason} — Т-РА5
-            rs["share_given_at"], rs["share_move"] = timeutil.now_iso(), None   # попытку свяжет первый serving
-            _write_rsv(rs, self._RSV_STORE)
-            cur = self.quorum_section()                       # факт для основы — снимком (`quo.pg`): точка какого
-            cur["point_given"] = {"q": int(q_gen), "at": timeutil.now_iso(),   # многочлена ушла; qrel и новый
-                                  **({"qf": qf} if qf else {})}          # документ не стирают
-            _write(cur, self._QUO_STORE)
-        return [("guest", "qshare", {"l": str(sec.get("l") or ""), "q_gen": int(q_gen), "x": int(point.get("x") or 0),
-                                     "y": str(point.get("y")), **({"qf": qf} if qf else {})})]
-
-    def _pledge_store(self, name: str, pledge: dict | None) -> None:
-        with STORE_LOCK:
-            cur = self.quorum_section()
-            pledges = dict(cur.get("pledges") or {})
-            if pledge is None:
-                pledges.pop(name, None)
-            else:
-                pledges[name] = pledge
-            cur["pledges"] = pledges
-            _write(cur, self._QUO_STORE)
-
-    def _pledge_restore(self, name: str, v: Voter, now: float) -> None:
-        """Обязательство «нет» переживает перезапуск агента (срок — по отметке)."""
-        pledge = (self.quorum_section().get("pledges") or {}).get(name)
-        if not isinstance(pledge, dict):
-            return
-        try:
-            age = timeutil.elapsed(timeutil.parse_iso(str(pledge.get("at") or "")))
-        except (ValueError, TypeError):
-            age = v.timing.pledge_s + 1
-        # стенные часы после перезагрузки могут стоять позади отметки (часы без батарейки до NTP):
-        # отрицательный возраст продлил бы обязательство без предела — не дольше pledge_s от старта
-        age = max(0.0, float(age))
-        if age < v.timing.pledge_s:
-            v.pledge = {"e": int(pledge.get("e") or 0), "at": now - age}
-            if int(pledge.get("e") or 0) > v.epoch:
-                v.epoch = int(pledge.get("e") or 0)
-        else:
-            self._pledge_store(name, None)
-
-    # ── панель и снимок ─────────────────────────────────────────────────────
-    def quorum_panel_view(self) -> dict:
-        """Т-К17: {name, w, since, y, v} по зонду к основе; пусто — раздела нет."""
-        sec = self.quorum_section()
-        if not sec.get("l"):
-            return {}
-        name = f"awgq{sec['l']}h"
-        v = self._gw_qvoters.get(name)
-        view = dict((sec.get("views") or {}).get(name) or {})
-        out = {"name": str((self.reserve_section() if hasattr(self, "reserve_section") else {}).get("name") or ""),
-               "w": v.view if v is not None else str(view.get("w") or ""), "since": str(view.get("since") or ""),
-               "reserve_online": bool(getattr(self, "_quo_reserve_online", False))}
-        if v is not None and v.last is not None:
-            out.update(y=int(v.last.y), v=int(v.last.v), r=str(v.last.r))
-        return out
-
-    def quorum_snapshot(self) -> dict | None:
-        """Поле `quo` снимка: взгляд на основу, поколение, эпоха; `pg` — точка какого многочлена
-        и когда отдана кандидату (основа по нему узнаёт о возможно известном ключе, даже если
-        резерв промолчал)."""
-        sec = self.quorum_section()
-        if not sec.get("l"):
-            return None
-        name = f"awgq{sec['l']}h"
-        v = self._gw_qvoters.get(name)
-        view = dict((sec.get("views") or {}).get(name) or {})
-        out = {"w": v.view if v is not None else str(view.get("w") or ""), "since": str(view.get("since") or ""),
-               "g": int(sec.get("g") or 0), "e": int(v.epoch) if v is not None else int(sec.get("e") or 0),
-               "q": int((sec.get("point") or {}).get("q_gen") or 0)}      # поколение моей точки — подтверждение ключей
-        qf = rsvkeys.m_print_of((sec.get("point") or {}).get("qf"))
-        if qf:
-            out["qf"] = qf                                    # и её многочлен: номер после копии основы не уникален
-        pg = sec.get("point_given")
-        if isinstance(pg, dict) and int(pg.get("q") or 0):
-            out["pg"] = {"q": int(pg["q"]), "at": str(pg.get("at") or "")}
-            if rsvkeys.m_print_of(pg.get("qf")):
-                out["pg"]["qf"] = rsvkeys.m_print_of(pg.get("qf"))
-        return out

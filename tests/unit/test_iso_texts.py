@@ -79,9 +79,8 @@ def test_reserve_texts_keep_one_set_of_name_and_time_helpers():
 
 
 def test_the_return_mode_is_read_in_one_place():
-    """Ключ рычага возврата читает только reserve/away.return_mode; outbound.py
-    ждёт своей очереди (его делит соседняя ветка) — в списке исключений до тех пор."""
-    allowed = {ROOT / "domain" / "services" / "reserve" / "away.py",
-               ROOT / "domain" / "services" / "reserve" / "outbound.py"}
+    """Ключ рычага возврата читает только reserve/away.return_mode (метод сервиса
+    reserve_return_mode — тот же вызов); больше ни один модуль."""
+    allowed = {ROOT / "domain" / "services" / "reserve" / "away.py"}
     hits = [p for p in ROOT.rglob("*.py") if '"app.reserve.return"' in p.read_text() and p not in allowed]
     assert not hits, f"ключ рычага возврата читают мимо return_mode: {hits}"

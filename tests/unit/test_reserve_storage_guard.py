@@ -205,7 +205,9 @@ STATE_SETTERS = {"rsv_update", "rsv_put", "reserve_set_in", "reserve_set_out", "
 SECRET_KEYS = {"k", "k_hex", "eph_priv", "priv", "envelope"}
 # `sealed` в rsv_in — признак пути (конверт ждём), не сам конверт: значение обязано быть булевым выражением
 FLAG_KEYS = {"sealed"}
-MOVE_MODULES = ("awgbot/domain/services/reserve/inbound.py", "awgbot/domain/services/reserve/outbound.py",
+MOVE_MODULES = ("awgbot/domain/services/reserve/inbound.py", "awgbot/domain/services/reserve/inbound_go.py",
+                "awgbot/domain/services/reserve/outbound.py",
+                "awgbot/domain/services/reserve/outbound_move.py", "awgbot/domain/services/reserve/outbound_health.py",
                 "awgbot/domain/services/reserve/openproc.py")
 
 

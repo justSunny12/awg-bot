@@ -2,7 +2,10 @@
 inbound_back.py — часть пакета reserve (см. __init__): «пользователи основы у
 меня» — их возврат основе и пересылка хвоста (вынесено из inbound).
 
-Ожидание реплики гостя после `stop` (`_tick_releasing`: молчит — `rep.bin` с
+`back_req` основы — гостю `stop` (открытие ещё шло — юнит открытия стоп),
+releasing до реплики; повтор просьбы — та же реплика из `rep.bin` (с
+журналом — его `released{epoch, last}`), зоны нет — `rep.bin` с диска или
+`released` без реплики. Ожидание реплики гостя после `stop` (`_tick_releasing`: молчит — `rep.bin` с
 диска или `released` без реплики). После `released` без `back`: основа сказала `away`
 (слияние у неё сорвалось) или прислала `resume` — гость снова у меня
 (`reserve_resume`: юнит гостя, serving), иначе бот нем с обеих сторон.
@@ -12,7 +15,8 @@ inbound_back.py — часть пакета reserve (см. __init__): «поль
 `wiped`, Т-РУ5 → relay до `relay_max_days` или тишины
 `relay_idle_hours` (по счётчику правила DNAT — nftguard.relay_packets) → idle.
 Новое открытие при relay — пересылка уступает (`_relay_yield`); открытие
-сорвалось — возвращается (`_relay_restore`).
+сорвалось — возвращается (`_relay_restore`). `evict` — просьба вернуть
+пользователей по кнопке у резерва (в боте основы на нём).
 """
 from __future__ import annotations
 
@@ -24,6 +28,7 @@ from awgbot.util import livestep, nets, timeutil
 
 from ..types import Notification
 from ..gateway_link.common import log
+from .inbound import REPLICA_WAIT_S
 from .outbound import RELEASED_WAIT_S
 from .state import _LOCK
 
@@ -291,3 +296,69 @@ class ReserveInboundBackMixin:
         if seen is None or int(pkts) != int(seen) or not inn.get("relay_last_traffic"):
             self.rsv_update("rsv_in", relay_pkts=int(pkts), relay_last_traffic=last)
         return last
+
+    # ── возврат: back_req основы, реплика гостя ─────────────────────────────
+    def reserve_back_req_in(self) -> list[tuple]:
+        """`back_req` основы: гостю `stop`, ждать реплику (с журналом — его `released{epoch,
+        last}`; повтор просьбы — тот же ответ снова; гостя нет — его журнал данных с диска)."""
+        from awgbot.infra import rsvzone
+        inn = self._inn()
+        if str(inn.get("state") or "") == "releasing" and inn.get("released_at") and inn.get("jrn_back"):
+            return [("send_released", {"gen": int(inn.get("gen") or 0), "blob": "", **dict(inn["jrn_back"])})]
+        if str(inn.get("state") or "") == "releasing" and inn.get("released_at"):
+            # повторная просьба (обрыв канала на частях released): отдать последнюю реплику снова
+            try:
+                blob = rsvzone.REP_PATH.read_bytes()
+            except OSError:
+                blob = b""
+            return [("send_released", {"gen": int(inn.get("gen") or 0), "blob": blob.hex()})]
+        if str(inn.get("state") or "") == "releasing":
+            return []                                         # реплика ещё в пути (гость останавливается) — ждать
+        if str(inn.get("state") or "") not in ("serving", "taking"):
+            jrn = self.reserve_guest_journal_release()
+            if jrn:
+                return jrn                                    # журнал данных гостя на диске — основе, без реплики
+            # зоны нет (перезагрузка резерва посреди обслуживания, teardown мимо бота): что есть на
+            # диске — rep.bin под K основы — отдать, иначе released без реплики; основа вернёт
+            # пользователей без слияния, а не будет просить вечно
+            try:
+                blob = rsvzone.REP_PATH.read_bytes()
+            except OSError:
+                blob = b""
+            gen = int(self.rsv_get("rsv_pkg_in").get("gen") or 0)
+            log.warning("резерв: back_req при зоне в состоянии %s — отдаю %s", inn.get("state") or "idle",
+                        "rep.bin" if blob else "released без реплики")
+            return [("send_released", {"gen": gen, "blob": blob.hex()})]
+        with _LOCK:
+            self.reserve_set_in("releasing", kind=str(inn.get("kind") or ""), gen=int(inn.get("gen") or 0),
+                                deadline=time.monotonic() + REPLICA_WAIT_S, taken_at=str(inn.get("taken_at") or ""))
+        if str(inn.get("state") or "") == "taking":
+            try:
+                self._rsvopen_stop()                          # открытие ещё шло — юнит прочь
+            except Exception as e:                            # noqa: BLE001
+                log.info("резерв: юнит процесса открытия не остановлен: %s", e)
+        return [("guest", "stop", {})]
+
+    def reserve_guest_replica_in(self, blob: bytes) -> list[tuple]:
+        """Реплика от гостя (или его `rep.bin`): `released` основе частями."""
+        inn = self._inn()
+        if str(inn.get("state") or "") != "releasing":
+            return []
+        self.rsv_update("rsv_in", released_at=timeutil.now_iso())
+        return [("send_released", {"gen": int(inn.get("gen") or 0), "blob": blob.hex()})]
+
+    # ── возврат по кнопке у резерва ─────────────────────────────────────────
+    def reserve_evict_check(self) -> str:
+        if not self.reserve_hosting():
+            return f"пользователей «{self.reserve_peer_name()}» здесь нет"
+        if not self.reserve_online():
+            return f"«{self.reserve_peer_name()}» не на связи"
+        if self.reserve_in() == "releasing":
+            return "возврат уже идёт"
+        return ""
+
+    def reserve_guest_back_req(self) -> list[tuple]:
+        """Кнопка «↩️ Вернуть пользователей» в боте основы на резерве → `evict` основе."""
+        if self.reserve_evict_check():
+            return []
+        return [("send", "evict", {})]

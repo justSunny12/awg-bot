@@ -37,6 +37,7 @@ class SessionMixin:
         self._fill_task: asyncio.Task | None = None   # наполнение набора после sync — фоном
         self._inbox: collections.deque = collections.deque()   # входящие на обработку (dispatch._take)
         self._inbox_task: asyncio.Task | None = None
+        self._unknown: set[str] = set()       # незнакомые виды, уже записанные в журнал этой сессии
 
     # ── соединение ───────────────────────────────────────────────────────────
 
@@ -76,6 +77,7 @@ class SessionMixin:
             self._rev = 0
             self._prev = {}
             self._parts = {}                      # части фидов прошлой сессии — не наши
+            self._unknown = set()                 # строка о незнакомом виде — раз на вид за сессию
             self._confirmed = False
             self._cn, self._sn = gwlink.new_nonce(), b""
             log.info("канал линка: подключился к %s:%s", host, port)

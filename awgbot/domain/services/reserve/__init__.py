@@ -18,8 +18,11 @@ reserve — взаимный резерв серверов AWG на сторон
 - `package` — пакет переезда: отметки, сборка, досылка, приём;
 - `guest` — бот основы на резерве: снимки, состояние, отказы хостовых сервисов;
 - `dns` — запись DNS: провайдер, смена, факт, надзор;
-- `outbound` — «мои пользователи»: переезд кнопкой, away, здоровье, зависший
-  вебхук резерва;
+- `outbound` — «мои пользователи»: автомат, такт и шаги переезда кнопкой,
+  передача бота;
+- `outbound_move` — «мои пользователи»: проверка, старт и срыв переезда кнопкой,
+  слова резерва на переезде, живое сообщение хода;
+- `outbound_health` — «мои пользователи»: away — здоровье основы и возврат сам;
 - `outbound_stuck` — «мои пользователи»: зависший вебхук резерва (away и home);
 - `outbound_forced` — «мои пользователи»: срок шага переезда, а бот уже у гостя
   принудительным захватом (`st.in_tg = forced`) — away, а не срыв;
@@ -28,8 +31,12 @@ reserve — взаимный резерв серверов AWG на сторон
 - `outbound_return` — «мои пользователи»: возврат с резерва (в том числе без
   реплики и рычагом «вернуть без резерва»);
 - `merge_ops` — слияние реплики при возврате: базы, пиры, блокировки, отчёт;
-- `inbound` — «пользователи основы у меня»: автомат приёма, зона, handback;
-- `inbound_back` — их возврат основе (`back`), пересылка хвоста, relay;
+- `inbound` — «пользователи основы у меня»: автомат приёма, такт процесса
+  открытия, зона, обслуживание;
+- `inbound_go` — переезд кнопкой со стороны резерва: `go_req`/`go` основы, конверт
+  с ключом пакета процессу открытия;
+- `inbound_back` — их возврат основе (`back_req`, `back`, `evict`), пересылка
+  хвоста, relay;
 - `inbound_tgwait` — VPN основы у меня, а её бот здесь Telegram не взял: зона
   остаётся, захват повторяется (`st.in_tg`);
 - `inbound_keep` — запись DNS уже сменил процесс открытия, а приём сорвался: зона
@@ -73,6 +80,7 @@ from .guest import ReserveGuestMixin
 from .gwside import ReserveGwSideMixin
 from .inbound import ReserveInboundMixin
 from .inbound_back import ReserveInboundBackMixin
+from .inbound_go import ReserveInboundGoMixin
 from .inbound_keep import ReserveInboundKeepMixin
 from .inbound_tgwait import ReserveInboundTgWaitMixin
 from .journal import ReserveJournalMixin
@@ -83,6 +91,8 @@ from .merge_ops import ReserveMergeOpsMixin
 from .notify import ReserveNotifyMixin
 from .openproc import ReserveOpenProcMixin
 from .outbound import ReserveOutboundMixin
+from .outbound_health import ReserveOutHealthMixin
+from .outbound_move import ReserveMoveMixin
 from .outbound_return import ReserveReturnMixin
 from .outbound_stuck import ReserveStuckMixin
 from .outbound_forced import ReserveForcedTakeMixin
@@ -112,7 +122,8 @@ class ReserveMixin(ReserveStateMixin, ReserveKeysMixin, ReserveInviteMixin, Rese
                    ReserveOpeningMixin, ReserveRfZoneMixin, ReserveRfPeerMixin, ReserveTgPoolMixin, ReserveMergeOpsMixin,
                    ReserveCodeWindowMixin, ReserveReturnMixin, ReserveOpenProcMixin, ReserveJournalMixin,
                    ReserveInboundBackMixin, ReserveInboundTgWaitMixin, ReserveInboundKeepMixin, ReserveStuckMixin,
-                   ReserveForcedTakeMixin, ReserveOutKeepMixin, ReserveQuorumMixin, ReservePultMixin):
+                   ReserveForcedTakeMixin, ReserveOutKeepMixin, ReserveQuorumMixin, ReservePultMixin,
+                   ReserveMoveMixin, ReserveOutHealthMixin, ReserveInboundGoMixin):
     """Резерв серверов: всё о паре — в одном месте сервисов."""
 
 

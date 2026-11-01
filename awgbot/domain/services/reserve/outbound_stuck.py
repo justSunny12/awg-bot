@@ -14,10 +14,9 @@ outbound_stuck.py — часть пакета reserve (см. __init__): «мои
 """
 from __future__ import annotations
 
-import random
 
 from awgbot.core import config
-from awgbot.util import livestep, timeutil
+from awgbot.util import backoff, livestep, timeutil
 
 from ..types import Notification
 from ..gateway_link.common import log
@@ -31,7 +30,7 @@ class ReserveStuckMixin:
         запись указывает на меня (проба не чаще раза в 2 мин), а резерв говорит
         `in = idle` (или пары нет на связи дольше STUCK_PAIR_S). Возврат оборвался
         после передачи бота — снять вебхук и поллить самому."""
-        if not livestep.mono_due(out.get("stuck_probe"), now, 120 * random.uniform(0.6, 1.4)):
+        if not livestep.mono_due(out.get("stuck_probe"), now, backoff.jitter(120)):
             return False
         self.rsv_update("rsv_out", stuck_probe=now)
         own = self.reserve_own_ip()
@@ -72,7 +71,7 @@ class ReserveStuckMixin:
         self.reserve_set_poll("mine")
         self.reserve_set_out("home", step="", kind=str(out.get("kind") or "") if forced else "",
                              await_merge=forced, last_switch=timeutil.now_iso())
-        if self.rsv_get("rsv_qlog").get("adopted"):
+        if self.reserve_quorum_adopted():
             # эпоха принята по кворуму, а пользователи и запись здесь, резерв моих не несёт — отметка
             # принятия снята: роль дома вернёт эпоху сюда (иначе — следование бессрочно, Q8)
             self.rsv_update("rsv_qlog", adopted=None)

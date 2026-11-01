@@ -114,8 +114,13 @@ class ReserveAwayMixin:
         self.__dict__["_rsv_blocks_sent"] = addrs
         return addrs
 
+    def reserve_return_mode(self) -> str:
+        """Рычаг возврата для такта и рычага сервиса — то же единственное чтение
+        return_mode() (метод — точка подмены в тестах такта)."""
+        return return_mode()
+
     def reserve_return_lever_button(self) -> bool:
-        return return_mode() == "button"
+        return self.reserve_return_mode() == "button"
 
 
 def _when(iso: str) -> str:

@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import asyncio
 
+from awgbot.util import pairproto
+
 from .common import log
 
 QUORUM_WORDS = ("qask", "qtake", "qrel", "qneed", "qpause", "qstate")
@@ -152,4 +154,5 @@ class DispatchMixin:
             if hasattr(self.services, "join_state"):
                 await self._join_in(msg)
             return
-        log.info("канал линка: с ВПС пришло неизвестное «%s» — игнорирую", msg.get("t"))
+        if pairproto.first_unknown(self._unknown, str(msg.get("t"))[:32]):   # строка — раз на вид за сессию
+            log.info("канал линка: с ВПС пришло неизвестное «%s» — игнорирую", msg.get("t"))

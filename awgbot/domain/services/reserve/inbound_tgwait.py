@@ -29,12 +29,11 @@ inbound_tgwait.py — часть пакета reserve (см. __init__): «пол
 """
 from __future__ import annotations
 
-import random
 import subprocess
 import time
 
 from awgbot.core import config
-from awgbot.util import livestep, timeutil
+from awgbot.util import backoff, livestep, timeutil
 
 from ..types import Notification
 from ..gateway_link.common import log
@@ -72,7 +71,7 @@ class ReserveInboundTgWaitMixin:
         гостя, если не активен; вебхук гость ставит сам, `tg_taken` уведёт в обычный serving."""
         from awgbot.infra import rsvzone
         now = time.monotonic()
-        if not livestep.mono_due(inn.get("tg_retry_mono"), now, TG_RETRY_S * random.uniform(0.6, 1.4)):
+        if not livestep.mono_due(inn.get("tg_retry_mono"), now, backoff.jitter(TG_RETRY_S)):
             return []
         self.rsv_update("rsv_in", tg_retry_mono=now)
         try:
