@@ -297,11 +297,21 @@ except Exception:
 print(json.dumps(v, ensure_ascii=False) if not isinstance(v, str) else v)' "$PL/$1/status.json" "$2"
 }
 
+# Разметка времени: каждое дождавшееся ожидание (pl_wait, wait_t) — строка «с начала · с прошлой отметки ·
+# что ждали» в /var/tmp/lab-steps-<сценарий>.txt (остаётся после сценария): куда уходит время сценария.
+PL_STEPS="/var/tmp/lab-steps-$(basename "$0" .sh).txt"; PL_T_START=$(date +%s); PL_T_MARK=$PL_T_START
+: > "$PL_STEPS" 2>/dev/null
+pl_mark() {
+    local now; now=$(date +%s)
+    printf '%5d %5d  %s\n' $((now - PL_T_START)) $((now - PL_T_MARK)) "$1" >> "$PL_STEPS" 2>/dev/null
+    PL_T_MARK=$now
+}
+
 pl_wait() {  # pl_wait <узел> <выражение> <срок> [что ждём]
     local n="$1" expr="$2" budget="$3" what="${4:-$2}"
     local i
     for i in $(seq 1 "$budget"); do
-        [ "$(pl_q "$n" "bool($expr)")" = "true" ] && return 0
+        [ "$(pl_q "$n" "bool($expr)")" = "true" ] && { pl_mark "$n: $what"; return 0; }
         sleep 1
     done
     printf 'не дождался за %s с на %s: %s\n' "$budget" "$n" "$what"

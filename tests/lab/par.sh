@@ -12,6 +12,12 @@
 # тому же пути. Вывод ВМ — /var/tmp/lab-par.txt в ней; здесь — строки PASS/FAIL с
 # именем ВМ и итог. Набор тестов не гоняется: он — run.sh --no-scenarios (под
 # блокировкой полных прогонов, в одной ВМ). LAB_PAR_DRY=1 — только раскладка по ВМ.
+#
+# Остановленные ВМ par.sh поднимает сам и после прогона гасит (память Mac — назад; уже
+# запущенные не трогает; LAB_KEEP_VMS=1 — не гасить). На время прогона в каждой ВМ —
+# проба ресурсов (res.sh, /var/tmp/lab-res.txt): в конце — пик памяти, средний и 95-й
+# процентиль CPU по ВМ, по ним подбирается размер ВМ. Время по шагам сценариев — в ВМ,
+# /var/tmp/lab-steps-<сценарий>.txt (pairlab.sh, pl_mark).
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
@@ -45,11 +51,21 @@ for i in "${!VMS[@]}"; do
     [ -z "${part[i]}" ] || printf '%s (~%s мин):%s\n' "${VMS[i]}" "${load[i]}" "${part[i]}"
 done
 [ -z "${LAB_PAR_DRY:-}" ] || exit 0
+
+started=()
+for i in "${!VMS[@]}"; do
+    [ -n "${part[i]}" ] || continue
+    st="$(limactl list --format '{{.Status}}' "${VMS[i]}" 2>/dev/null)"
+    [ "$st" = Running ] && continue
+    limactl start "${VMS[i]}" >/dev/null 2>&1 || { printf 'ВМ %s не поднялась\n' "${VMS[i]}" >&2; exit 2; }
+    started+=("${VMS[i]}")
+done
 pids=()
 for i in "${!VMS[@]}"; do
     [ -n "${part[i]}" ] || continue
     limactl shell "${VMS[i]}" -- bash -c "sudo rm -rf /var/lib/awglab-pair /var/lib/awglab-quo; cd '$ROOT' && \
-        sudo -E tests/lab/run.sh $FAST --no-suite --only '${part[i]# }' > /var/tmp/lab-par.txt 2>&1" &
+        { tests/lab/res.sh /var/tmp/lab-res.txt & r=\$!; \
+          sudo -E tests/lab/run.sh $FAST --no-suite --only '${part[i]# }' > /var/tmp/lab-par.txt 2>&1; rc=\$?; kill \$r; exit \$rc; }" &
     pids+=("$!")
 done
 rc=0
@@ -57,5 +73,9 @@ for p in "${pids[@]}"; do wait "$p" || rc=1; done
 for i in "${!VMS[@]}"; do
     [ -n "${part[i]}" ] || continue
     limactl shell "${VMS[i]}" -- bash -c 'grep -E "^(PASS|FAIL)|итог" /var/tmp/lab-par.txt' | LC_ALL=C cut -c1-200 | sed "s/^/[${VMS[i]}] /"
+    limactl shell "${VMS[i]}" -- bash "$ROOT/tests/lab/res.sh" --sum /var/tmp/lab-res.txt | sed "s/^/[${VMS[i]}] /"
 done
+if [ "${LAB_KEEP_VMS:-}" != 1 ]; then
+    for vm in ${started[@]+"${started[@]}"}; do limactl stop "$vm" >/dev/null 2>&1; done
+fi
 exit "$rc"

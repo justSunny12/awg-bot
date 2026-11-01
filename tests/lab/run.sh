@@ -48,8 +48,9 @@ if [ "$SCEN" -eq 1 ]; then
         bash "$HERE/net.sh" heal >/dev/null 2>&1
         # итог пройденного — последняя строка вывода сценария (замеры времени, «ok (…)»), без строк bash о снятых
         # фоновых процессах (trap снимает узлы kill -9)
-        if out="$(bash "$s" 2>&1)"; then printf 'PASS %s: %s\n' "$name" "$(printf '%s\n' "$out" | grep -v ' Killed  ' | tail -n1)"; passed=$((passed + 1))
-        else printf 'FAIL %s\n%s\n' "$name" "$out"; fail=$((fail + 1)); fi
+        t_s=$(date +%s)
+        if out="$(bash "$s" 2>&1)"; then printf 'PASS %s (%d мин): %s\n' "$name" $(( ($(date +%s) - t_s + 30) / 60 )) "$(printf '%s\n' "$out" | grep -v ' Killed  ' | tail -n1)"; passed=$((passed + 1))
+        else printf 'FAIL %s (%d мин)\n%s\n' "$name" $(( ($(date +%s) - t_s + 30) / 60 )) "$out"; fail=$((fail + 1)); fi
     done
     bash "$HERE/net.sh" heal >/dev/null 2>&1
     bash "$HERE/lab.sh" down >/dev/null
