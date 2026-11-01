@@ -162,6 +162,7 @@ class ReserveInboundBackMixin:
             self.rsv_update("rsv_in", resume_mono=now)
         name = self.reserve_peer_name()
         try:
+            rsvzone.guest_fit()                               # потолок памяти — по базе, с которой гость стартует сейчас
             proc = subprocess.run(["systemctl", "start", rsvzone.GUEST_UNIT], capture_output=True, timeout=60)
             if proc.returncode != 0:
                 raise subprocess.SubprocessError(f"код {proc.returncode}")

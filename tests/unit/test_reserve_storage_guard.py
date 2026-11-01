@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 # снятие K/M и разбор частей пакета — единственный потребитель tools/rsvopen.py
 # сборка M из точек и ящика (по точкам кворума, по коду) и сам ящик — тоже снятие M
-OPENERS = {"open_k", "open_dns", "open_parts", "recover_m_quorum", "recover_m_code", "open_box"}
+OPENERS = {"open_k", "open_dns", "open_parts", "open_blob", "recover_m_quorum", "recover_m_code", "open_box"}
 OPENER_HOMES = {"awgbot/util/rsvpkg/seal.py", "awgbot/util/rsvkeys.py", "tools/rsvopen.py"}
 
 # модули бота основы на резерве и обёртки зоны: всё, что работает в гостевом режиме
@@ -35,7 +35,7 @@ GUEST_SIDE = (
 # единственные места, где гостевая сторона создаёт файлы: приватная запись хранилища, статус открытия (без секретов)
 # и временная копия базы для снимка (в хранилище в памяти, удаляется сразу)
 WRITE_ALLOWED = {
-    ("awgbot/infra/rsvzone.py", "write_private"),
+    ("awgbot/infra/rsvzone.py", "write_private_with"),          # write_private — через неё; потоком — база из снимка
     ("awgbot/infra/rsvzone.py", "open_status_write"),
     ("awgbot/domain/services/reserve/guest.py", "ReserveGuestMixin._guest_db_bytes"),
 }
@@ -90,6 +90,7 @@ def test_the_guard_sees_the_open_process_so_it_can_fail():
     ("from awgbot.util.rsvpkg import seal\nseal.open_parts(b, k)", {"open_parts"}),
     ("from awgbot.util.rsvpkg.seal import open_k\nopen_k(b, m)", {"open_k"}),
     ("from awgbot.util.rsvpkg.seal import open_dns as od\nod(b, m)", {"open_dns"}),
+    ("seal.open_blob(b, k, seal.DB_PART)", {"open_blob"}),
     ("rsvkeys.recover_m_quorum(pts, box)", {"recover_m_quorum"}),
     ("from awgbot.util.rsvkeys import recover_m_code\nrecover_m_code(c, p, b)", {"recover_m_code"}),
     ("rsvkeys.open_box(key, box)", {"open_box"}),
@@ -188,6 +189,8 @@ def test_the_replica_and_the_key_reach_the_disk_through_the_private_helper():
     opener = (ROOT / "tools/rsvopen.py").read_text(encoding="utf-8")
     assert "rsvzone.write_private(rsvzone.K_FILE" in opener
     assert "rsvzone.write_private(run / \"data\" / \"bot.db\"" in opener
+    assert "rsvzone.write_private_with(run / \"data\" / \"bot.db\", db.write_to)" in opener, \
+        "база из пакета пишется в хранилище не потоком"
     for line in opener.splitlines():
         assert not ('open(' in line and '"w' in line), f"прямая запись в rsvopen: {line.strip()}"
 

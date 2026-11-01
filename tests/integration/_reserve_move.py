@@ -211,7 +211,7 @@ def snapshot_blob(svc, edit=None, *, gen: int = 7, k: bytes | None = None) -> by
     with open(path, "rb") as f:
         data = f.read()
     shutil.rmtree(tmp, ignore_errors=True)
-    return seal.snapshot_seal(k or svc.reserve_k(), {"pkg_gen": gen, "at": timeutil.now_iso(), "db": data.hex()})
+    return seal.snapshot_seal(k or svc.reserve_k(), {"pkg_gen": gen, "at": timeutil.now_iso()}, data)
 
 
 def put_base(svc, gen: int = 7) -> str:

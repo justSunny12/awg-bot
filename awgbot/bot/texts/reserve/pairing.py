@@ -29,6 +29,11 @@ def invite_message(st: dict, token: str) -> str:
 def invite_tail(st: dict) -> str:
     ends = list(st.get("endpoints") or [])
     state = st.get("state") or ""
+    if st.get("old_peer_version") and state not in ("connected", "accepted"):
+        name = str(st.get("old_peer_name") or "")
+        who = f"{_n(name)} на v{_e(st['old_peer_version'])}" if name else f"сервер на v{_e(st['old_peer_version'])}"
+        return (f"⛔ Подключался {who} — для резерва нужен 4.2.0 или новее у обоих серверов: "
+                "пусть админ обновит его бот и подключится заново, приглашение ждёт")
     if len(ends) > 1:
         return (f"⚠️ К приглашению подключались с двух адресов: <code>{_e(ends[-2])}</code> и "
                 f"<code>{_e(ends[-1])}</code>. Если один из них не резерва — отмени приглашение и выпусти новое")

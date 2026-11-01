@@ -46,6 +46,16 @@ HOST_ONLY: tuple[str, ...] = (
 )
 
 
+def _stream_from(path: str):
+    """Наполнитель для rsvzone.write_private_with: содержимое файла кусками по мегабайту —
+    прежняя база в `.prev` без её полной копии в памяти гостя."""
+    def fill(out) -> None:
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(1 << 20), b""):
+                out.write(chunk)
+    return fill
+
+
 class ReserveGuestMixin:
     @property
     def guest(self) -> bool:
@@ -115,8 +125,8 @@ class ReserveGuestMixin:
         from awgbot.util.rsvpkg import seal
         k = bytes.fromhex(rsvzone.K_FILE.read_text(encoding="utf-8").strip())
         meta = rsvzone.read_json(rsvzone.RUN_DIR / "pkg.json")
-        obj = {"pkg_gen": int(meta.get("pkg_gen") or 0), "at": timeutil.now_iso(), "db": self._guest_db_bytes().hex()}
-        return seal.snapshot_seal(k, obj)
+        return seal.snapshot_seal(k, {"pkg_gen": int(meta.get("pkg_gen") or 0), "at": timeutil.now_iso()},
+                                  self._guest_db_bytes())
 
     def _guest_db_bytes(self) -> bytes:
         fd, tmp = tempfile.mkstemp(prefix="rsv-snap-", suffix=".db", dir=str(config.DATA_DIR))
@@ -356,12 +366,13 @@ class ReserveGuestMixin:
         except (OSError, ValueError):
             return False
         try:
-            snap = seal.snapshot_open(k, blob)
+            snap, snap_db = seal.snapshot_open(k, blob)
         except seal.PackageError as e:
             log.warning("гость: rep.bin не открылся: %s", e)
             return False
+        del blob
         meta = rsvzone.read_json(rsvzone.RUN_DIR / "pkg.json")
-        if not isinstance(snap, dict) or str(snap.get("at") or "") <= str(meta.get("db_at") or ""):
+        if str(snap.get("at") or "") <= str(meta.get("db_at") or ""):
             return False
         # живая база в хранилище новее снимка (перезапуск гостя юнитом, не возврат) — снимок
         # откатил бы правки последних секунд; сравнение по времени записи файла базы
@@ -375,17 +386,13 @@ class ReserveGuestMixin:
         if older and str(meta.get("db_at") or ""):
             log.info("гость: rep.bin от %s старее живой базы — не подхватываю", snap.get("at"))
             return False
-        try:
-            db_bytes = bytes.fromhex(str(snap.get("db") or ""))
-        except ValueError:
-            return False
-        if not db_bytes:
+        if not snap_db.size:
             return False
         path = str(config.DB_PATH)
         try:
-            with open(path, "rb") as f:
-                rsvzone.write_private(rsvzone.RUN_DIR / "data" / "bot.db.prev", f.read())
-            rsvzone.write_private(rsvzone.RUN_DIR / "data" / "bot.db", db_bytes)
+            rsvzone.write_private_with(rsvzone.RUN_DIR / "data" / "bot.db.prev", _stream_from(path))
+            # база снимка — потоком прямо в файл: ни hex, ни полной копии в памяти гостя
+            rsvzone.write_private_with(rsvzone.RUN_DIR / "data" / "bot.db", snap_db.write_to)
             for suffix in ("-wal", "-shm"):
                 try:
                     os.unlink(path + suffix)
@@ -393,7 +400,7 @@ class ReserveGuestMixin:
                     pass
             meta["db_at"] = str(snap.get("at") or "")
             rsvzone.write_private(rsvzone.RUN_DIR / "pkg.json", json.dumps(meta))
-        except OSError as e:
+        except (OSError, seal.PackageError) as e:
             log.warning("гость: база из rep.bin не подменена: %s", e)
             return False
         log.info("гость: база взята из снимка rep.bin от %s", snap.get("at"))

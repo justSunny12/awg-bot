@@ -387,11 +387,13 @@ def test_the_package_opens_with_k_from_m_and_carries_no_host_secrets(paired, mak
     assert seal.open_k(blob, bytes.fromhex(keys["m"])) == bytes.fromhex(keys["k"])
     parts = seal.open_parts(blob, bytes.fromhex(keys["k"]))
     assert set(parts) == {"vpn", "bot"}
-    assert set(parts["bot"]) == {"db", "conf", "app_guest", "env", "lists"}
+    assert set(parts["bot"]) == {"conf", "app_guest", "env", "lists"}, "база внутри JSON части бота"
+    db = seal.open_blob(blob, bytes.fromhex(keys["k"]), seal.DB_PART).read()
+    assert db[:16] == b"SQLite format 3\x00", "реплика — не двоичной частью"
     assert parts["bot"]["lists"].get("tun_domains") == ["gosuslugi.ru"], \
         "кэш списков РФ-доступа не уехал гостю — маршрутизация в зоне без базового списка"
     assert parts["vpn"]["ifaces"][0]["addr"] == "10.8.1.1/24"
-    assert "DUMMY-phrase" not in bytes.fromhex(parts["bot"]["db"]).decode("latin-1"), "фраза бэкапов уехала в реплике"
+    assert "DUMMY-phrase" not in db.decode("latin-1"), "фраза бэкапов уехала в реплике"
     other = seal.new_k()
     with pytest.raises(seal.PackageError):
         seal.open_parts(blob, other)
@@ -441,8 +443,8 @@ def test_the_base_snapshot_is_the_replica_of_that_package(paired, make_active_cl
     finally:
         con.close()
     assert "Первый" in names
-    parts = seal.open_parts(bytes.fromhex(b1["blob"]), paired.reserve_k())
-    assert (tmp_path / "reserve" / "out" / "base-1.db").read_bytes() == bytes.fromhex(parts["bot"]["db"])
+    db = seal.open_blob(bytes.fromhex(b1["blob"]), paired.reserve_k()).read()
+    assert (tmp_path / "reserve" / "out" / "base-1.db").read_bytes() == db
 
 
 # ── приём на резерве ─────────────────────────────────────────────────────────

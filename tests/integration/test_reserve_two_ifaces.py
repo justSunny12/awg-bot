@@ -42,10 +42,11 @@ LIVE2 = (LIVE.replace(f"PrivateKey = {_b64(1)}", f"PrivateKey = {_b64(3)}").repl
 def _package(box: Box, ifaces) -> None:
     """Пакет с интерфейсами `ifaces` — как Box.write_package, но с выбором частей VPN."""
     vpn = pkgvpn.build(ifaces, admin=["10.8.1.2"], dns=["10.8.1.1"], upstreams=["198.51.100.53"], tz="Asia/Yekaterinburg")
-    bot_part = {"db": box.replica.hex(), "conf": {"app": {"client_config": {"server_name": "Альфа"}}},
+    bot_part = {"conf": {"app": {"client_config": {"server_name": "Альфа"}}},
                 "app_guest": {"network": {"server_host": "203.0.113.7", "server_port": 51820}},
                 "env": {"BOT_TOKEN": TOKEN, "ADMIN_ID": 77}}
-    blob = seal.seal({"vpn": vpn, "bot": bot_part}, k=box.k, m=box.m, pkg_gen=5, m_gen=box.m_gen, dns=None)
+    blob = seal.seal({"vpn": vpn, "bot": bot_part}, k=box.k, m=box.m, pkg_gen=5, m_gen=box.m_gen, dns=None,
+                     blobs={seal.DB_PART: box.replica})
     path = config.DATA_DIR / "reserve" / "guest.pkg"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(blob)

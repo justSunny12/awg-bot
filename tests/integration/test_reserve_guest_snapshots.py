@@ -107,10 +107,11 @@ def test_the_snapshot_is_ciphertext_private_and_opens_only_with_the_package_key(
     assert b"SQLite format" not in blob and "СекретноеИмяПрофиля".encode() not in blob, "снимок читается без ключа"
     with pytest.raises(seal.PackageError):
         seal.snapshot_open(bytes.fromhex("22" * 32), blob)
-    snap = seal.snapshot_open(K, blob)
+    snap, db = seal.snapshot_open(K, blob)
     assert snap["pkg_gen"] == 7, "поколение пакета, с которого открыто, — для сверки «снимок новее пакета»"
+    assert seal.snapshot_db_size(blob) == db.size > 0, "размер базы снимка не открыт боту резерва"
     out = rsvzone.REP_PATH.with_name("check.db")
-    out.write_bytes(bytes.fromhex(snap["db"]))
+    out.write_bytes(db.read())
     con = sqlite3.connect(out)
     try:
         assert ("СекретноеИмяПрофиля",) in con.execute("SELECT name FROM clients").fetchall()
@@ -124,9 +125,9 @@ def test_the_snapshot_keeps_the_history_of_the_guest_period(guest, make_active_c
     client = _make(guest, make_active_client)
     guest.db.delete_client(client.id)
     guest.guest_snapshot_tick(force=True)
-    snap = seal.snapshot_open(K, rsvzone.REP_PATH.read_bytes())
+    _snap, db = seal.snapshot_open(K, rsvzone.REP_PATH.read_bytes())
     path = rsvzone.REP_PATH.with_name("h.db")
-    path.write_bytes(bytes.fromhex(snap["db"]))
+    path.write_bytes(db.read())
     con = sqlite3.connect(path)
     try:
         assert con.execute("SELECT COUNT(*) FROM clients_histories").fetchone()[0] >= 1

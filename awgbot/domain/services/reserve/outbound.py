@@ -498,8 +498,8 @@ class ReserveOutboundMixin:
         except pkgbot.BotPartError as e:
             log.warning("резерв: финальная реплика не прошла сторожа: %s", e)
             return None
-        blob = seal.snapshot_seal(self.reserve_k(), {"pkg_gen": int(out.get("gen") or 0), "at": timeutil.now_iso(),
-                                                     "db": db_bytes.hex()})
+        blob = seal.snapshot_seal(self.reserve_k(), {"pkg_gen": int(out.get("gen") or 0), "at": timeutil.now_iso()},
+                                  db_bytes)
         too_big = self.pkg_too_big(blob)
         if too_big:
             # до смены шага: иначе ProtocolError при нарезке частей оставил бы шаг released без поллинга
