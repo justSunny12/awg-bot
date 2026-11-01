@@ -309,6 +309,57 @@ async def test_the_right_returns_to_the_primary_through_wake_after_a_conflict(la
     assert await lab.until(lambda: lab.ctl.polling() and paired.reserve_poll() == "mine")
 
 
+def _take_on_loop(lab) -> None:
+    """Как take() из такта rsvactions: вебхук снят без сброса очереди, цикл разбужен."""
+    lab.mock.delete_webhook(False)
+    lab.ctl.wake()
+
+
+async def test_a_wake_right_after_the_away_mark_of_a_conflict_is_not_lost(lab, paired, monkeypatch):
+    """take() из такта увидел away конфликта и разбудил цикл, пока поллинг ещё
+    останавливается (stop_polling ждёт текущий getUpdates). Прежде run() снимал wake
+    уже после остановки — этот wake() пропадал, и основа со снятым вебхуком молчала
+    до перепроверки права (RECHECK_S ± 40 %, до 7 мин). Срок перепроверки здесь — час:
+    поллинг снова может начаться только по wake."""
+    monkeypatch.setattr(pollctl, "RECHECK_S", 3600)
+    loop = asyncio.get_running_loop()
+    real = paired.reserve_set_poll
+
+    def set_poll(state, **why):
+        out = real(state, **why)
+        if state == "away" and why.get("why") == "webhook":
+            # раньше, чем _stop_after_conflict получит ответ потока и начнёт остановку
+            loop.call_soon_threadsafe(_take_on_loop, lab)
+        return out
+    monkeypatch.setattr(paired, "reserve_set_poll", set_poll)
+    lab.run()
+    assert await lab.until(lambda: lab.ctl.polling())
+    lab.webhook()
+    assert await lab.until(lambda: lab.starts == 2 and lab.ctl.polling()), \
+        "wake() после отметки away потерян — поллинг ждёт перепроверки права"
+    assert paired.reserve_poll() == "mine"
+
+
+async def test_a_wake_during_the_webhook_check_is_not_lost(lab, paired, monkeypatch):
+    """take() пришёл, пока цикл ждал ответа getWebhookInfo, и ответ ещё со старым адресом:
+    цикл ставит away, но wake() take() — повод перепроверить сразу, а не через RECHECK_S."""
+    monkeypatch.setattr(pollctl, "RECHECK_S", 3600)
+    lab.webhook()
+    real = lab.bot.get_webhook_info
+    taken = []
+
+    async def info(*a, **kw):
+        out = await real(*a, **kw)
+        if not taken:
+            taken.append(1)
+            _take_on_loop(lab)                               # ответ уже с адресом, вебхук снят после него
+        return out
+    monkeypatch.setattr(lab.bot, "get_webhook_info", info)
+    lab.run()
+    assert await lab.until(lambda: lab.ctl.polling()), "wake() во время проверки права потерян"
+    assert paired.reserve_poll() == "mine" and lab.calls.count("getWebhookInfo") == 2
+
+
 async def test_a_failing_webhook_info_falls_back_to_the_stored_right(lab, paired, monkeypatch):
     async def boom(*a, **kw):
         raise RuntimeError("нет сети")
