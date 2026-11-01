@@ -21,12 +21,12 @@ rsvhome.py — запасной путь рычага «вернуть без р
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import time
 from pathlib import Path
 
 from awgbot.core import config
+from awgbot.util import jsonfile
 
 log = logging.getLogger(__name__)
 
@@ -48,16 +48,11 @@ def _take_request() -> dict | None:
     p = req_path()
     if not p.exists():
         return None
-    try:
-        req = json.loads(p.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        req = {}
+    req = jsonfile.read_dict(p)
     try:
         p.unlink()
     except OSError as e:
         log.warning("резерв: запрос awg-bot reserve home не убран: %s", e)
-        return None
-    if not isinstance(req, dict):
         return None
     rid = str(req.get("id") or "")
     if not rid or len(rid) > 64 or not rid.isalnum():
@@ -74,8 +69,7 @@ def _take_request() -> dict | None:
 
 
 def _write_result(rid: str, rc: int, text: str) -> None:
-    from awgbot.infra import rsvzone
-    rsvzone.write_private(res_path(), json.dumps({"id": rid, "rc": int(rc), "text": str(text)}, ensure_ascii=False))
+    jsonfile.write(res_path(), {"id": rid, "rc": int(rc), "text": str(text)})
 
 
 def _done_text(d: dict) -> str:

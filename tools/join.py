@@ -27,7 +27,6 @@ AWG_UPDATE_THEN_JOIN) и `awg-bot join` руками.
 """
 from __future__ import annotations
 
-import json
 import os
 import subprocess
 import sys
@@ -157,10 +156,10 @@ def cmd_join(text: str) -> int:
     os.makedirs(os.path.dirname(JOIN_FILE), exist_ok=True)
     conf_path = os.path.join(os.path.dirname(JOIN_FILE), "join.conf")
     write_private(conf_path, _link_conf(tok))
-    write_private(JOIN_FILE, json.dumps({
+    jsonfile.write(JOIN_FILE, {
         "id": tok.join_id, "slot": tok.slot, "version": tok.version, "expires": tok.expires,
         "host": tok.host, "channel_port": tok.channel_port, "link_port": tok.link_port,
-        "state": "pairing", "name": ""}, ensure_ascii=False))
+        "state": "pairing", "name": ""})
     try:
         os.remove(STATUS_FILE)                            # ход прошлой команды — не о ней
     except OSError:

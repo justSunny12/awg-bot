@@ -8,11 +8,16 @@
 у каждого читателя и писателя (зона резерва и её статус открытия, пул
 Telegram, согласие пары на РФ-трафик, хранилище резерва у шлюза, сопряжение и
 его ход, смена ключей линка, команда подключения, метка отката обновления,
-фиды транзита) — одно поведение.
+фиды транзита; режим сопряжения агента и порт канала, приколы аплинка по
+записи, пул Telegram в файерволе, запасной рычаг «вернуть без резерва»,
+эпоха линии у резерва при открытии, журнал транзакции аплинка) — одно
+поведение.
 
 Цена ошибки: файл со списком вместо объекта ронял `.get` у сопряжения и у
 команды подключения (терминал падал трассировкой); общий `.tmp` — смесь двух
-записей пула или согласия пары; файл хода сопряжения шире 0600 — код
+записей пула или согласия пары; журнал транзакции аплинка списком ронял
+откат (прежний юнит не возвращался), пул числом — сборку файервола; файл хода
+сопряжения шире 0600 — код
 подтверждения читает любой пользователь шлюза; битая метка отката, снятая
 молча, — админ не узнал бы об откате.
 """
@@ -177,3 +182,128 @@ def test_the_transit_feeds_on_the_server(tmp_path, monkeypatch):
     assert me.gwlink_lan_feeds() == {}, "фиды без отпечатка — нет фидов"
     (tmp_path / "lan-feeds.json").write_text('{"hash": "h", "domains": "x"}', encoding="utf-8")
     assert me.gwlink_lan_feeds() == {"hash": "h", "domains": "x"}
+
+
+def test_the_agent_join_mode_and_the_channel_port(tmp_path, monkeypatch):
+    from awgbot.core import config
+    from awgbot.domain.gateway import join
+    from awgbot.infra import gwguard
+    from awgbot.runtime import linkclient
+    from awgbot.runtime.main import join as mjoin
+    jf = tmp_path / "join.json"
+    monkeypatch.setattr(join, "JOIN_FILE", str(jf))
+    monkeypatch.setattr(config, "ROLE", "gateway")
+    monkeypatch.setattr(config, "BOT_TOKEN", "")
+    monkeypatch.setattr(gwguard, "unit_env", lambda key: "9999")
+    for raw in ("[1]", "{", '"pairing"'):
+        jf.write_text(raw, encoding="utf-8")
+        assert mjoin.join_pending() is False and linkclient.server_port() == 9999, raw
+    jf.write_text('{"state": "pairing", "channel_port": "x"}', encoding="utf-8")
+    assert mjoin.join_pending() is True and linkclient.server_port() == 9999, "порт не число — из юнита"
+    jf.write_text('{"state": "pairing", "channel_port": 8787}', encoding="utf-8")
+    assert linkclient.server_port() == 8787
+
+
+def test_the_uplink_pins(tmp_path, monkeypatch):
+    from awgbot.domain.gateway.reserve import uplink
+    monkeypatch.setattr(uplink, "_PIN", None)
+    monkeypatch.setattr(uplink, "PIN_PATH", tmp_path / "state" / "uplink-pin.json")
+    uplink.PIN_PATH.parent.mkdir()
+    uplink.PIN_PATH.write_text("[1]", encoding="utf-8")
+    assert uplink._pins() == {}
+    os.makedirs(f"{uplink.PIN_PATH}.tmp")
+    uplink._pin("awgup", "203.0.113.7", 300)
+    assert _mode(uplink.PIN_PATH) == 0o600
+    on_disk = json.loads(uplink.PIN_PATH.read_text(encoding="utf-8"))
+    assert list(on_disk) == ["awgup"] and on_disk["awgup"]["ip"] == "203.0.113.7" and on_disk["awgup"]["span"] == 300
+    monkeypatch.setattr(uplink, "_PIN", None)
+    assert uplink._pins()["awgup"][0] == "203.0.113.7", "прикол не перечитался с диска"
+
+
+@pytest.mark.parametrize("raw", ["[1]", "{", '{"pool": 7}', '{"pool": "1.2.3.0/24"}'],
+                         ids=["list", "garbage", "number", "string"])
+def test_the_telegram_pool_in_the_firewall(tmp_path, monkeypatch, raw):
+    from awgbot.core import config
+    from awgbot.infra import nftguard
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    (tmp_path / "reserve").mkdir()
+    (tmp_path / "reserve" / "tg_pool.json").write_text(raw, encoding="utf-8")
+    assert nftguard.tg_pool() == nftguard.noverlap(list(nftguard.DEFAULT_TG_POOL))
+    (tmp_path / "reserve" / "tg_pool.json").write_text('{"pool": ["95.161.64.0/20", "нет", "95.161.64.0/20"]}',
+                                                       encoding="utf-8")
+    assert "95.161.64.0/20" in nftguard.tg_pool() and "нет" not in nftguard.tg_pool()
+
+
+def test_the_home_lever_request_and_its_result(tmp_path, monkeypatch):
+    import time
+    from awgbot.core import config
+    from awgbot.runtime import rsvhome
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    rsvhome.req_path().parent.mkdir()
+    rsvhome.req_path().write_text("[1]", encoding="utf-8")
+    assert rsvhome._take_request() is None and not rsvhome.req_path().exists(), "запрос не объект — взят и пропущен"
+    rsvhome.req_path().write_text(json.dumps({"id": "abc1", "until": time.time() + 30}), encoding="utf-8")
+    assert rsvhome._take_request() == {"id": "abc1"}
+    os.makedirs(f"{rsvhome.res_path()}.tmp")
+    rsvhome._write_result("abc1", 3, "отказ: резерв молчит")
+    assert rsvhome.res_path().read_text(encoding="utf-8") == '{"id": "abc1", "rc": 3, "text": "отказ: резерв молчит"}'
+    assert _mode(rsvhome.res_path()) == 0o600
+
+
+def test_the_line_epoch_known_to_the_reserve(tmp_path):
+    from awgbot.util.rsvjrn import opener
+    assert opener._meta_e(tmp_path, "L1") == 0
+    for raw in ("[1]", "{", '{"line": "L1", "e": "x"}', '{"line": "L2", "e": 5}'):
+        (tmp_path / "meta.json").write_text(raw, encoding="utf-8")
+        assert opener._meta_e(tmp_path, "L1") == 0, raw
+    (tmp_path / "meta.json").write_text('{"line": "L1", "e": 5}', encoding="utf-8")
+    assert opener._meta_e(tmp_path, "L1") == 5
+
+
+@pytest.mark.parametrize("raw", ["[1]", "{", '"x"'], ids=["list", "garbage", "string"])
+def test_an_uplink_txn_journal_that_is_not_an_object_is_rolled_back_without_a_crash(tmp_path, monkeypatch, raw):
+    """Журнал транзакции аплинка списком (или строкой) ронял откат на `.get`:
+    файлы транзакции с ключом устройства оставались, а такт восстановления
+    падал на каждом тике. Теперь — пустой журнал: юнит не трогается, файлы прочь."""
+    from awgbot.domain.gateway.cfg.uplinktxn import CfgUplinkTxnMixin
+    from awgbot.infra import gwguard
+    monkeypatch.setattr(gwguard, "GW_ETC", str(tmp_path))
+    restored = []
+    monkeypatch.setattr(gwguard, "unit_restore", lambda text: restored.append(text))
+    me = type("_U", (CfgUplinkTxnMixin,), {})()
+    nxt, txn = me._cfg_uplink_paths()
+    (tmp_path / "uplink.txn").write_text(raw, encoding="utf-8")
+    (tmp_path / "uplink.next").write_text("[Interface]\n", encoding="utf-8")
+    assert me._cfg_uplink_back("", txn, finish=False) is True
+    assert restored == [] and not os.path.exists(txn) and not os.path.exists(nxt)
+    (tmp_path / "uplink.txn").write_text('{"iface": "awgup", "unit": "[Unit]\\n"}', encoding="utf-8")
+    assert me._cfg_uplink_back("", txn, finish=False) is True and restored == ["[Unit]\n"]
+
+
+def test_the_join_command_writes_the_join_file_private_and_unescaped(tmp_path, monkeypatch):
+    """Файл сопряжения команды подключения — 0600, JSON без экранирования
+    не-ASCII, поля прежние: его читают агент (режим сопряжения) и клиент канала."""
+    import types
+    from awgbot.domain.gateway import join
+    from awgbot.infra import gwguard
+    from awgbot.util import jointoken
+    from tools import join as cli
+    jf = tmp_path / "awg-gw" / "join.json"
+    monkeypatch.setattr(join, "JOIN_FILE", str(jf))
+    monkeypatch.setattr(join, "STATUS_FILE", str(tmp_path / "join.status"))
+    tok = types.SimpleNamespace(join_id="j1", slot=2, version="4.2.0", expires=4102444800, host="сервер.example",
+                                channel_port=8787, link_port=51820)
+    monkeypatch.setattr(jointoken, "decode", lambda text: tok)
+    monkeypatch.setattr(cli, "_link_conf", lambda t: "[Interface]\n")
+    seen = {}
+
+    def link(conf, port, script=""):
+        seen["text"] = jf.read_text(encoding="utf-8")
+        seen["mode"] = _mode(jf)
+        return False, "отказ"
+    monkeypatch.setattr(gwguard, "join_link", link)
+    assert cli.cmd_join("токен") == 1
+    assert seen["mode"] == 0o600
+    assert seen["text"] == ('{"id": "j1", "slot": 2, "version": "4.2.0", "expires": 4102444800, '
+                            '"host": "сервер.example", "channel_port": 8787, "link_port": 51820, '
+                            '"state": "pairing", "name": ""}')

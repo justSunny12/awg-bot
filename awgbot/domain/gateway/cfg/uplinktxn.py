@@ -6,7 +6,7 @@ import json
 import os
 import time
 
-from awgbot.util import wgconf
+from awgbot.util import jsonfile, wgconf
 
 from .. import base
 from ..base import log
@@ -180,11 +180,7 @@ class CfgUplinkTxnMixin:
                 # настоящая причина — в итог для человека, а не только в журнал
                 self.__dict__["_uplink_back_why"] = _reason(out)
                 log.warning("gateway: прежний конфиг аплинка не вернулся: %s", _reason(out))
-        try:
-            with open(txn, encoding="utf-8") as f:
-                unit_before = json.load(f).get("unit")
-        except (OSError, ValueError):
-            unit_before = None
+        unit_before = jsonfile.read_dict(txn).get("unit")
         if unit_before:
             try:
                 gwguard.unit_restore(unit_before)
@@ -213,11 +209,7 @@ class CfgUplinkTxnMixin:
         nxt, txn = self._cfg_uplink_paths()
         if not os.path.exists(txn):
             return ""
-        try:
-            with open(txn, encoding="utf-8") as f:
-                iface = str(json.load(f).get("iface") or "")
-        except (OSError, ValueError):
-            iface = ""
+        iface = str(jsonfile.read_dict(txn).get("iface") or "")
         ok = self._cfg_uplink_back(iface or self.cfg_uplink_if(), txn, finish=True)
         log.warning("gateway: применение конфига аплинка прервано перезапуском — прежний %s",
                     "на месте" if ok else "не вернулся")

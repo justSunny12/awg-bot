@@ -22,10 +22,11 @@ opener.py — часть пакета rsvjrn (см. __init__): база бота
 """
 from __future__ import annotations
 
-import json
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
+
+from awgbot.util import jsonfile
 
 from . import apply as _apply, counts, event
 from .segments import Store
@@ -62,10 +63,10 @@ def _events(store: Store, k: bytes, line: str, after: int) -> tuple[list[_apply.
 
 def _meta_e(keep_dir: Path, line: str) -> int:
     """Эпоха линии, известная резерву (его отметка в хранилище); не та линия или нет — 0."""
+    data = jsonfile.read_dict(keep_dir / "meta.json")
     try:
-        data = json.loads((keep_dir / "meta.json").read_text(encoding="utf-8"))
         return int(data.get("e") or 0) if str(data.get("line") or "") == line else 0
-    except (OSError, ValueError, TypeError, AttributeError):
+    except (ValueError, TypeError):
         return 0
 
 
