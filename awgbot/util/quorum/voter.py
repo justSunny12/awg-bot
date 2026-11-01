@@ -15,7 +15,11 @@ voter.py — часть пакета quorum: правило голосующег
 не скажет лидеру «вижу» под той же эпохой — пробы идут со взглядом `held`,
 пока кандидат не скажет `qrel{e}` (снято) или `qtake{e}` (эпоха e + 1), но не
 дольше `pledge_s`. `qpause{until, dur}` лидера — «не вижу» кандидату не уходит до
-срока (`dur` — длительность, если есть: часы сторон могут расходиться). Эпоха — наибольшая из ответов пробы, `qstate`, `state{e}`.
+срока (`dur` — длительность, если есть: часы сторон могут расходиться) или до ответа
+после молчания под паузой (лидер замолк и вернулся): лидер шлёт qpause до остановки, и
+ответ, пришедший, пока процесс ещё завершается, паузу не снимает — иначе она гасла бы
+до остановки и второй сервер забирал пользователей посреди планового обновления.
+Эпоха — наибольшая из ответов пробы, `qstate`, `state{e}`.
 
 Машина без ввода-вывода: такт отдаёт действия: `probe` (пора слать),
 `see`/`uns`/`sus` (взгляд сменился — `qview` кандидату и копия лидеру),
@@ -61,6 +65,7 @@ class Voter:
     seq: int = 0
     pledge: dict | None = None    # {"e": эпоха, "at": monotonic}
     pause_until: float = 0.0
+    pause_silent: bool = False    # под паузой пропала проба: лидер замолк — следующий ответ снимает паузу
     last: Reply | None = None     # последний ответ (роль, счёт, справка)
 
     # ── пробы ───────────────────────────────────────────────────────────────
@@ -96,7 +101,8 @@ class Voter:
         self.pending.clear()
         self.last_reply, self.last = now, r
         self.resends = 0
-        self.pause_until = 0.0                                # пауза — до срока или первого ответа
+        if self.pause_silent:                                 # пауза — до срока или ответа после молчания
+            self.pause_until, self.pause_silent = 0.0, False
         if int(r.e) > int(self.fact):
             self.fact = int(r.e)
         if int(r.e) > int(self.epoch):
@@ -142,6 +148,8 @@ class Voter:
             for s in lost:
                 del self.pending[s]
             self.streak = 0                                    # «вижу» из uns/new — два ответа ПОДРЯД
+            if self.paused(now):
+                self.pause_silent = True
             if self.view == "see":
                 self._set("sus", now)
                 out.append("sus")
@@ -221,6 +229,7 @@ class Voter:
 
     def pause(self, now: float, seconds: float) -> None:
         self.pause_until = now + min(float(seconds), float(self.timing.pause_s))
+        self.pause_silent = False
 
     def info(self) -> Info | None:
         return self.last.i if self.last is not None else None

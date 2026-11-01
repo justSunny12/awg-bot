@@ -141,6 +141,32 @@ def test_a_pause_holds_uns_back_for_at_most_five_minutes():
     assert acts == [(20 + T.pause_s, "uns")]
 
 
+def test_a_reply_before_the_leader_stops_does_not_lift_the_pause():
+    """Лидер шлёт qpause до остановки: ответ, пришедший, пока процесс ещё завершается, паузу не
+    снимает — иначе после остановки «не вижу» через no_s и переезд посреди планового обновления
+    (стенд, s06b_quorum_move «е»: B забрал за 6 с до конца паузы)."""
+    v = _seeing()
+    v.pause(T0 + 20, 100)
+    _probe_answered(v, T0 + 22)                       # лидер ещё отвечает — останавливается
+    acts = [(k, a) for k in range(23, 200) for a in v.tick(T0 + k) if a == "uns"]
+    assert acts == [(120, "uns")], "пауза снята ответом до остановки лидера"
+
+
+def test_a_reply_after_silence_under_the_pause_lifts_it():
+    """Под паузой лидер замолк (проба пропала) и вернулся — пауза снята: дальше «не вижу» по
+    обычному сроку, а не по сроку паузы."""
+    v = _seeing()
+    v.pause(T0 + 20, 300)
+    s = v.probe_out(T0 + 25, T.probe_s)
+    v.tick(T0 + 25 + T.reply_s)                       # ответа нет — молчание под паузой
+    assert v.pause_silent
+    s = v.probe_out(T0 + 40, T.probe_s)
+    v.reply_in(_reply(s), T0 + 40.1)                  # лидер вернулся
+    assert not v.paused(T0 + 41) and not v.pause_silent
+    acts = [(k, a) for k in range(41, 200) for a in v.tick(T0 + k) if a == "uns"]
+    assert acts == [(86, "uns")], f"«не вижу» не по обычному сроку от ответа (+40,1 + {T.no_s}): {acts}"
+
+
 # ── обязательство «нет» ──────────────────────────────────────────────────────
 
 def test_after_said_no_a_restored_see_goes_out_as_held():

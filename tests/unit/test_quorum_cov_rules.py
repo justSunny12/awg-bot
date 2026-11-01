@@ -277,17 +277,23 @@ def test_the_probe_number_wraps_and_still_matches_its_reply():
     assert v.last_reply == T0 + 0.1, "ответ на пробу после переполнения номера не сопоставлен"
 
 
-def test_the_first_reply_lifts_a_pause_before_its_term():
-    """Пауза лидера (`qpause`) — до срока или до первого ответа: лидер вернулся
-    раньше — следующий провал снова считается без отсрочки."""
+def test_a_reply_after_silence_lifts_a_pause_before_its_term():
+    """Пауза лидера (`qpause`) — до срока или до ответа после молчания под паузой: лидер
+    вернулся раньше — следующий провал снова считается без отсрочки. Ответ без молчания
+    (лидер ещё не остановился) паузу не снимает."""
     v = _voter()
     v.pause(T0, 240)
     assert v.paused(T0 + 1)
     s = v.probe_out(T0 + 2, T.probe_s)
     v.reply_in(Reply("a", 4, EPOCH, "lead", s, 2, 3), T0 + 3)
-    assert not v.paused(T0 + 4), "ответ лидера не снял паузу"
-    acts = [(k, a) for k in range(4, 200) for a in v.tick(T0 + k) if a == "uns"]
-    assert acts and acts[0][0] == 3 + T.no_s, f"после снятой паузы «не вижу» не через T_no от ответа: {acts}"
+    assert v.paused(T0 + 4), "ответ до остановки лидера снял паузу"
+    v.probe_out(T0 + 5, T.probe_s)
+    v.tick(T0 + 5 + T.reply_s)                                 # молчание под паузой
+    s = v.probe_out(T0 + 10, T.probe_s)
+    v.reply_in(Reply("a", 4, EPOCH, "lead", s, 2, 3), T0 + 11)
+    assert not v.paused(T0 + 12), "ответ после молчания не снял паузу"
+    acts = [(k, a) for k in range(12, 200) for a in v.tick(T0 + k) if a == "uns"]
+    assert acts and acts[0][0] == 11 + T.no_s, f"после снятой паузы «не вижу» не через T_no от ответа: {acts}"
 
 
 def test_a_reply_of_a_lower_epoch_does_not_lower_the_known_one():
