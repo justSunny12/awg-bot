@@ -33,12 +33,17 @@ class ReserveQuorumCandidateMixin:
     def _qcand(self) -> Candidate | None:
         return self.__dict__.get("_rsv_qcand")
 
-    def _quorum_candidate_setup(self) -> Candidate | None:
+    def _quorum_candidate_setup(self, now: float | None = None) -> Candidate | None:
         """Машина кандидата по составу линии второй стороны; None — я не кандидат
         (пары нет, её кворум не включён, её пользователи у меня, у меня нет зонда)."""
         side = self.reserve_quorum_side()
         peer = self.reserve_quorum_peer_line()
-        if not side or not peer.get("active") or not peer.get("members") or self.reserve_hosting():
+        if self.reserve_hosting():
+            self.__dict__["_quo_hosted_in"] = self.reserve_in()   # последнее состояние обслуживания — для возврата ниже
+            self.__dict__.pop("_rsv_qcand", None)
+            return None
+        self._quorum_after_return(side, time.monotonic() if now is None else now)
+        if not side or not peer.get("active") or not peer.get("members"):
             self.__dict__.pop("_rsv_qcand", None)
             return None
         off = self.reserve_quorum_peer_timing_off()
@@ -72,6 +77,19 @@ class ReserveQuorumCandidateMixin:
         elif tuple(c.voters) != tuple(n for n in voters if n != side) or c.v != len(voters):
             c.set_members(voters, len(voters))
         return c
+
+    def _quorum_after_return(self, side: str, now: float) -> None:
+        """Обслуживание кончилось возвратом (releasing или пересылка хвоста — вторая сторона
+        забрала своих пользователей, значит жива): свой взгляд на её AWG — заново. «Не вижу»,
+        набранное до возврата (разрез, авария, пока её пользователи были у меня), кандидат без
+        этого взял бы как свежее и при v = 1 открыл окно кода при живой основе — до двух ответов
+        подряд (стенд, s06_return_tail). Умерла после возврата — «не вижу» через no_s от сброса."""
+        last = self.__dict__.pop("_quo_hosted_in", None)
+        if last is None or not side or (last != "releasing" and self.reserve_in() != "relay"):
+            return
+        v = self._qvoters.get(f"awgq{probenet.other_side(side)}h")
+        if v is not None and v.restart(now):
+            log.info("кворум: «%s» забрала своих пользователей — свой взгляд на неё заново", self.reserve_peer_name())
 
     def reserve_quorum_peer_timing_off(self) -> str:
         """Цифры времени из `st.quo` второй стороны расходятся с моими: какие (через запятую);
@@ -121,7 +139,7 @@ class ReserveQuorumCandidateMixin:
     def reserve_quorum_candidate_tick(self, now: float | None = None) -> list[tuple]:
         now = time.monotonic() if now is None else now
         took = self._quorum_took_tick() + self._quorum_code_settle()
-        c = self._quorum_candidate_setup()
+        c = self._quorum_candidate_setup(now)
         if c is None:
             self.__dict__.pop("_quo_exec", None)
             return took

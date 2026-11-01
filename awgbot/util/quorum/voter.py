@@ -112,6 +112,20 @@ class Voter:
             out.append("see")
         return out
 
+    def restart(self, now: float) -> bool:
+        """Взгляд заново: вторая сторона только что забрала своих пользователей (возврат) — она
+        жива, и «не вижу», набранное до этого факта (разрез, авария), о ней сейчас ничего не
+        говорит. Взгляд `new`, молчание — от `now`, проба — сразу; эпоха и обязательство —
+        как были. Уже «вижу» — не трогать. True — взгляд сброшен."""
+        if self.view == "see":
+            return False
+        self.view, self.since, self.started = "new", now, now
+        self.last_reply = self.blind_at = 0.0
+        self.pending.clear()
+        self.streak = self.resends = 0
+        self.next_probe = min(self.next_probe, now)
+        return True
+
     def _set(self, w: str, now: float) -> None:
         if w != self.view:
             self.view, self.since = w, now
