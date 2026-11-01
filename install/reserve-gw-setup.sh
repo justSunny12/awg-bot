@@ -33,8 +33,8 @@
 #             только вместе с блоком (линк поднят, cgroup юнита агента есть)
 # Маскарад подсетей пользователей (@tunnel_nets4) наружу делает таблица обвязки.
 # Чужая политика DROP в ip filter FORWARD (iptables) — ACCEPT для awgrsv в обе
-# стороны (fwd_allow при --up/--reassert, снимается --down/--remove), как у
-# обвязки шлюза.
+# стороны с меткой `-m comment --comment awg-bot` (fwd_allow при --up/--reassert,
+# снимается --down/--remove вместе с прежними без метки), как у обвязки шлюза.
 #
 # Режимы (root, кроме --status):
 #   --up <conf>     конфиг линка (из документа конфигурации сервера AWG;
@@ -214,16 +214,27 @@ EOF2
 EOF
 }
 
+# ACCEPT в чужой ip filter FORWARD — с меткой FWD_TAG (как у обвязки шлюза,
+# routing-gw-setup.sh): откат снимает помеченные на awgrsv, а без метки (их
+# ставили прежние выпуски) — тоже только на awgrsv: интерфейс наш, чужой
+# файервол правил на нём не держит.
+FWD_TAG="awg-bot"
 fwd_allow() {   # чужой файервол с политикой DROP в ip filter FORWARD (iptables): транзит линку — как обвязка шлюза
     command -v iptables >/dev/null 2>&1 || return 0
     iptables -w -S FORWARD 2>/dev/null | grep -q '^-P FORWARD DROP' || return 0
     for d in -i -o; do
-        iptables -w -C FORWARD "$d" "$RSV_IF" -j ACCEPT 2>/dev/null || iptables -w -I FORWARD 1 "$d" "$RSV_IF" -j ACCEPT 2>/dev/null || true
+        iptables -w -C FORWARD "$d" "$RSV_IF" -m comment --comment "$FWD_TAG" -j ACCEPT 2>/dev/null \
+            || iptables -w -I FORWARD 1 "$d" "$RSV_IF" -m comment --comment "$FWD_TAG" -j ACCEPT 2>/dev/null || true
+        # правило прежнего выпуска без метки — помеченным заменено
+        while iptables -w -C FORWARD "$d" "$RSV_IF" -j ACCEPT 2>/dev/null; do iptables -w -D FORWARD "$d" "$RSV_IF" -j ACCEPT 2>/dev/null || break; done
     done
 }
 fwd_disallow() {
     command -v iptables >/dev/null 2>&1 || return 0
     for d in -i -o; do
+        while iptables -w -C FORWARD "$d" "$RSV_IF" -m comment --comment "$FWD_TAG" -j ACCEPT 2>/dev/null; do
+            iptables -w -D FORWARD "$d" "$RSV_IF" -m comment --comment "$FWD_TAG" -j ACCEPT 2>/dev/null || break
+        done
         while iptables -w -C FORWARD "$d" "$RSV_IF" -j ACCEPT 2>/dev/null; do iptables -w -D FORWARD "$d" "$RSV_IF" -j ACCEPT 2>/dev/null || break; done
     done
 }
