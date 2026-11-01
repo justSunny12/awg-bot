@@ -26,27 +26,23 @@ pairtoken.py — приглашение в пару серверов (`AWGP1.<ba
     32  H1–H4 — нижняя и верхняя граница диапазона, uint32
      1  поколение AWG пригласившего
      4  контрольная сумма: BLAKE2b (4 байта) от всего выше
+
+Кадр (версия, base64url с префиксом и суммой, выпуск, хост, Jc…H4) — общий с
+токеном подключения шлюза, util/tokenwire.py.
 """
 from __future__ import annotations
 
 import base64
-import hashlib
-import hmac
 import ipaddress
-import re
 import struct
 from dataclasses import dataclass
 
+from awgbot.util import tokenwire as tw
+from awgbot.util.tokenwire import FORMAT, TokenError
+
 PREFIX = "AWGP1."
-FORMAT = 1
-HOST_MAX = 63
-_HOST_RE = re.compile(r"[A-Za-z0-9.-]{1,63}\Z")
-_SUM = 4
-_FIXED = 1 + 4 + 8 + 4 + 1 + 2 + 4 + 32 + 32 + 3 + 4 + 32 + 1   # без хоста и суммы
-
-
-class TokenError(ValueError):
-    """Приглашение не разобралось: не наше, повреждено, другой версии формата."""
+_DAMAGED = "приглашение повреждено"
+_FIXED = 1 + 4 + 8 + 4 + 1 + 2 + 4 + 32 + 32 + tw.OBF_LEN + 1   # без хоста и суммы
 
 
 @dataclass(frozen=True)
@@ -87,89 +83,45 @@ class PairToken:
 
     def obfuscation(self) -> dict:
         """Jc…H4 строками — как их пишет скрипт линка."""
-        out = {"Jc": str(self.jc), "Jmin": str(self.jmin), "Jmax": str(self.jmax)}
-        for i, v in enumerate(self.s, 1):
-            out[f"S{i}"] = str(v)
-        for i, (lo, hi) in enumerate(self.h, 1):
-            out[f"H{i}"] = f"{lo}-{hi}"
-        return out
-
-
-def _version_bytes(version: str) -> bytes:
-    parts = [int(x) for x in str(version).lstrip("v").split(".")]
-    if not 3 <= len(parts) <= 4 or any(not 0 <= p <= 255 for p in parts):
-        raise TokenError(f"выпуск {version!r} не укладывается в приглашение")
-    parts += [0] * (4 - len(parts))
-    return bytes(parts)
-
-
-def _version_str(raw: bytes) -> str:
-    x, y, z, p = raw
-    return f"{x}.{y}.{z}" + (f".{p}" if p else "")
-
-
-def _sum(body: bytes) -> bytes:
-    return hashlib.blake2b(body, digest_size=_SUM).digest()
+        return tw.obfuscation(self)
 
 
 def encode(tok: PairToken) -> str:
     """Приглашение строкой `AWGP1.<base64url без =>`."""
-    if not _HOST_RE.match(tok.host):
+    if not tw.host_ok(tok.host):
         raise TokenError("собственный адрес не укладывается в приглашение")
-    host = tok.host.encode("ascii")
     if len(tok.inviter_pub) != 32 or len(tok.peer_priv) != 32:
         raise TokenError("ключ линка не 32 байта")
     pid = bytes.fromhex(tok.pair_id)
     if len(pid) != 8:
         raise TokenError("id приглашения — 8 байт")
-    body = (struct.pack(">B", FORMAT) + _version_bytes(tok.version) + pid
-            + struct.pack(">I", int(tok.expires)) + struct.pack(">B", len(host)) + host
+    body = (struct.pack(">B", FORMAT) + tw.version_bytes(tok.version, "приглашение") + pid
+            + struct.pack(">I", int(tok.expires)) + tw.pack_host(tok.host)
             + struct.pack(">H", int(tok.pair_port))
             + ipaddress.IPv4Address(tok.peer_addr).packed + tok.inviter_pub + tok.peer_priv
-            + struct.pack(">BBB", tok.jc, tok.jmin, tok.jmax) + struct.pack(">BBBB", *tok.s)
-            + b"".join(struct.pack(">II", lo, hi) for lo, hi in tok.h)
+            + tw.pack_obf(tok.jc, tok.jmin, tok.jmax, tok.s, tok.h)
             + struct.pack(">B", int(tok.awg_gen)))
-    raw = body + _sum(body)
-    return PREFIX + base64.urlsafe_b64encode(raw).decode().rstrip("=")
+    return tw.wrap(PREFIX, body)
 
 
 def decode(text: str) -> PairToken:
     """Разобрать строку приглашения; не наше, повреждено, другой версии — TokenError."""
-    s = str(text or "").strip()
-    if not s.startswith(PREFIX):
-        raise TokenError("это не приглашение в пару")
-    b64 = s[len(PREFIX):]
-    if not re.fullmatch(r"[A-Za-z0-9_-]{40,400}", b64):
-        raise TokenError("приглашение повреждено")
+    body = tw.unwrap(PREFIX, text, min_body=_FIXED + 1, not_ours="это не приглашение в пару", damaged=_DAMAGED,
+                     newer="приглашение другого формата — обнови бот")
     try:
-        raw = base64.urlsafe_b64decode(b64 + "=" * (-len(b64) % 4))
-    except (ValueError, TypeError) as e:
-        raise TokenError("приглашение повреждено") from e
-    if len(raw) < _FIXED + 1 + _SUM:
-        raise TokenError("приглашение повреждено")
-    body, got = raw[:-_SUM], raw[-_SUM:]
-    if not hmac.compare_digest(_sum(body), got):
-        raise TokenError("приглашение повреждено")
-    if body[0] != FORMAT:
-        raise TokenError("приглашение другого формата — обнови бот")
-    try:
-        version = _version_str(body[1:5])
+        version = tw.version_str(body[1:5])
         pair_id = body[5:13].hex()
         (expires,) = struct.unpack(">I", body[13:17])
-        hlen = body[17]
-        host = body[18:18 + hlen].decode("ascii")
-        p = 18 + hlen
+        host, p = tw.unpack_host(body, 17)
         (pair_port,) = struct.unpack(">H", body[p:p + 2]); p += 2
         peer_addr = str(ipaddress.IPv4Address(body[p:p + 4])); p += 4
         inviter_pub, peer_priv = body[p:p + 32], body[p + 32:p + 64]; p += 64
-        jc, jmin, jmax = body[p:p + 3]; p += 3
-        s4 = tuple(body[p:p + 4]); p += 4
-        hs = tuple(struct.unpack(">II", body[p + 8 * i:p + 8 * i + 8]) for i in range(4)); p += 32
+        jc, jmin, jmax, s4, hs, p = tw.unpack_obf(body, p)
         awg_gen = body[p]; p += 1
     except (IndexError, struct.error, UnicodeDecodeError, ValueError) as e:
-        raise TokenError("приглашение повреждено") from e
-    if p != len(body) or len(inviter_pub) != 32 or len(peer_priv) != 32 or not _HOST_RE.match(host):
-        raise TokenError("приглашение повреждено")
+        raise TokenError(_DAMAGED) from e
+    if p != len(body) or len(inviter_pub) != 32 or len(peer_priv) != 32 or not tw.host_ok(host):
+        raise TokenError(_DAMAGED)
     return PairToken(version=version, pair_id=pair_id, expires=expires, host=host, pair_port=pair_port,
                      peer_addr=peer_addr, inviter_pub=inviter_pub, peer_priv=peer_priv,
                      jc=jc, jmin=jmin, jmax=jmax, s=s4, h=hs, awg_gen=awg_gen)
@@ -178,5 +130,4 @@ def decode(text: str) -> PairToken:
 def find(text: str) -> str:
     """Приглашение из текста (пересланное сообщение целиком): первая строка
     вида `AWGP1.…` или пусто."""
-    m = re.search(r"AWGP1\.[A-Za-z0-9_-]{40,400}", str(text or ""))
-    return m.group(0) if m else ""
+    return tw.find(PREFIX, text)

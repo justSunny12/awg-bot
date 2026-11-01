@@ -12,10 +12,9 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
-import re
 import secrets
 
-from awgbot.util import gwlink, joinsas, timeutil
+from awgbot.util import gwlink, joinsas, timeutil, tokenwire
 
 from ..gateway_link.common import log
 from .state import JOIN_TTL, MAX_ATTEMPTS, MAX_SESSIONS, OPEN, OPEN_OR_CLOSING, PAIRING, _LOCK
@@ -29,14 +28,13 @@ def _older(iso, seconds: int) -> bool:
     except ValueError:
         return False
 
-_HOST_RE = re.compile(r"[A-Za-z0-9.-]{1,63}\Z")
-
 
 def clean_host(value) -> str:
     """hostname из hello сопряжения: данные с чужой машины — не длиннее
-    63 знаков, только A-Za-z0-9.-, иначе отброшено молча."""
+    63 знаков, только A-Za-z0-9.-, иначе отброшено молча (правило хоста
+    токенов, util/tokenwire)."""
     s = str(value or "")
-    return s if _HOST_RE.match(s) else ""
+    return s if tokenwire.host_ok(s) else ""
 
 
 class GwJoinPairingMixin:
