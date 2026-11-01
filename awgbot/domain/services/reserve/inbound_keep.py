@@ -29,11 +29,10 @@ outbound_keep). Снимают зону только `back` основы и `awg
 """
 from __future__ import annotations
 
-import random
 import time
 
 from awgbot.core import config
-from awgbot.util import livestep, timeutil
+from awgbot.util import backoff, livestep, timeutil
 
 from ..types import Notification, ServiceError
 from ..gateway_link.common import log
@@ -133,7 +132,7 @@ class ReserveInboundKeepMixin:
         from awgbot.infra import rsvzone
         from .inbound import OPEN_WAIT_S
         now = time.monotonic()
-        if not livestep.mono_due(inn.get("keep_mono"), now, KEEP_RETRY_S * random.uniform(0.6, 1.4)):
+        if not livestep.mono_due(inn.get("keep_mono"), now, backoff.jitter(KEEP_RETRY_S)):
             return []
         self.rsv_update("rsv_in", keep_mono=now)
         reason, name = str(inn.get("keep_why") or "клон не поднят"), self.reserve_peer_name()
@@ -186,7 +185,7 @@ class ReserveInboundKeepMixin:
 
     def _keep_due(self, inn: dict) -> bool:
         now = time.monotonic()
-        if not livestep.mono_due(inn.get("keep_mono"), now, KEEP_RETRY_S * random.uniform(0.6, 1.4)):
+        if not livestep.mono_due(inn.get("keep_mono"), now, backoff.jitter(KEEP_RETRY_S)):
             return False
         self.rsv_update("rsv_in", keep_mono=now)
         return True

@@ -25,7 +25,7 @@ import pytest
 from awgbot.core import config, settings
 from awgbot.domain.services.reserve import outbound
 from awgbot.runtime import rsvactions
-from awgbot.util import timeutil
+from awgbot.util import backoff, timeutil
 
 from tests.integration import _reserve_common as rc
 from tests.integration import _reserve_move as rm
@@ -527,8 +527,7 @@ def test_pinning_without_a_substituted_resolver_does_not_go_to_the_network(servi
 def test_the_stuck_probe_is_jittered(stuck, monkeypatch):
     """Проба зависшего вебхука — сетевая задача по расписанию: строго
     периодический запрос к DNS выглядит маячком."""
-    from awgbot.domain.services.reserve import outbound_stuck
     seen = []
-    monkeypatch.setattr(outbound_stuck.random, "uniform", lambda a, b: seen.append((a, b)) or 1.0)
+    monkeypatch.setattr(backoff.random, "uniform", lambda a, b: seen.append((a, b)) or 1.0)
     stuck.svc.reserve_out_tick()
     assert (0.6, 1.4) in seen, f"проба без джиттера: {seen}"

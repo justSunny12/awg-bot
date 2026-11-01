@@ -33,7 +33,7 @@ import pytest
 from awgbot.bot.texts.reserve.section import card_text
 from awgbot.domain.services.reserve import inbound, inbound_tgwait, outbound, outbound_forced
 from awgbot.infra import rsvzone
-from awgbot.util import pairproto, timeutil
+from awgbot.util import backoff, pairproto, timeutil
 
 from tests.integration import _reserve_common as rc
 from tests.integration import _reserve_move as rm
@@ -91,7 +91,7 @@ def test_without_the_record_change_a_bot_failure_still_ends_the_hosting(host, mo
 
 def test_the_takeover_is_retried_about_once_a_minute_and_restarts_an_inactive_guest(host, monkeypatch):
     svc = host.svc
-    monkeypatch.setattr(inbound_tgwait.random, "uniform", lambda a, b: 1.0)
+    monkeypatch.setattr(backoff.random, "uniform", lambda a, b: 1.0)
     _emergency_done(host, monkeypatch, active=False)
     _past_taken_wait(host)
     host.zone.take.unlink(missing_ok=True)                    # отметку стёрли — повтор вернёт
@@ -111,7 +111,7 @@ def test_the_takeover_is_retried_about_once_a_minute_and_restarts_an_inactive_gu
 
 def test_the_retry_interval_is_jittered(host, monkeypatch):
     seen = []
-    monkeypatch.setattr(inbound_tgwait.random, "uniform", lambda a, b: seen.append((a, b)) or 1.4)
+    monkeypatch.setattr(backoff.random, "uniform", lambda a, b: seen.append((a, b)) or 1.4)
     _emergency_done(host, monkeypatch, active=True)
     _past_taken_wait(host)
     first = host.svc.rsv_get("rsv_in").get("tg_retry_mono")

@@ -136,7 +136,8 @@ def test_the_guest_resumed_after_a_failed_return_starts_under_the_ceiling_of_its
 
 def test_the_takeover_retry_starts_an_inactive_guest_under_a_fresh_ceiling(host, monkeypatch):
     from awgbot.domain.services.reserve import inbound_tgwait
-    monkeypatch.setattr(inbound_tgwait.random, "uniform", lambda a, b: 1.0)
+    from awgbot.util import backoff
+    monkeypatch.setattr(backoff.random, "uniform", lambda a, b: 1.0)
     _emergency_done(host, monkeypatch, active=False)
     _past_taken_wait(host)
     host.zone.events.clear()

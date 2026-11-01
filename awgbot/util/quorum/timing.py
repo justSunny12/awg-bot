@@ -10,8 +10,11 @@ timing.py — часть пакета quorum: цифры времени квор
 """
 from __future__ import annotations
 
-import random
 from dataclasses import dataclass
+
+from awgbot.util.backoff import jitter              # разброс пробы и повтора опроса — общий (util/backoff)
+
+__all__ = ["DEFAULT_PORT", "Timing", "jitter"]
 
 DEFAULT_PORT = 8789
 
@@ -96,8 +99,3 @@ class Timing:
         return {"probe_seconds": self.probe_s, "no_seconds": self.no_s, "yes_window_seconds": self.yes_window_s,
                 "down_seconds": self.down_s, "up_seconds": self.up_s, "pledge_minutes": self.pledge_s // 60,
                 "tie_minutes": self.tie_s // 60, "rf_block_minutes": self.rf_block_s // 60}
-
-
-def jitter(base: float, frac: float = 0.4, rnd=random.random) -> float:
-    """base ± frac (равномерно): интервал пробы, повтор опроса — не по расписанию."""
-    return float(base) * (1.0 - frac + 2.0 * frac * rnd())
