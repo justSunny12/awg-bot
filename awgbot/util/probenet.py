@@ -127,7 +127,6 @@ def line_net(side: str) -> ipaddress.IPv4Network:
 # сервера, .3 зонд основы (к своему клону), .4 зонд второго сервера, .4+N зонд
 # шлюза основы слота N; слот выше MAX_SLOT в /26 не помещается.
 MAX_SLOT = 58
-RESPONDER_PORT = 8789
 
 
 def _at(side: str, k: int) -> str:

@@ -77,6 +77,22 @@ def test_the_port_follows_the_setting(awgdir, monkeypatch):
     assert "udp dport 9911 accept" in nftguard.render(spec)
 
 
+def test_an_unreadable_port_falls_back_to_the_quorum_default(awgdir, monkeypatch):
+    """Порт не прочитался — правило на умолчание кворума (timing.DEFAULT_PORT), то
+    же, что слушает ответчик: своё число в файерволе разошлось бы с ответчиком
+    при смене умолчания."""
+    from awgbot.infra import quoprobe
+    from awgbot.util.quorum import timing
+
+    def _boom():
+        raise RuntimeError("настройки недоступны")
+
+    monkeypatch.setattr(quoprobe, "port", _boom)
+    monkeypatch.setattr(timing, "DEFAULT_PORT", 8790)
+    spec = _spec(awgdir, monkeypatch, WITH_A)
+    assert spec.probe_port == 8790
+
+
 @pytest.mark.parametrize("conf", [CLIENTS, None, "мусор"], ids=["без второго адреса", "нет конфига", "битый"])
 def test_without_a_responder_there_are_no_probe_rules(awgdir, monkeypatch, conf):
     spec = _spec(awgdir, monkeypatch, conf)
