@@ -35,13 +35,11 @@ async def _ev_installed(services, bot):
 
 
 def _upd_pending(tag: str):
-    """Перед рестартом запущено обновление до tag, в чате — «дождись» (#30);
-    тело релиза — без сети."""
+    """Перед рестартом запущено обновление до tag; тело релиза — без сети."""
     def build(services, mp):
         from awgbot.infra import updates
         who = _people(services)
         services.db.set_state("update_pending", tag)
-        services.set_update_wait(config.ADMIN_ID, 30)
         mp.setattr(updates, "release_body", lambda t: "- исправлено одно\n- добавлено другое")
         return who
     return build

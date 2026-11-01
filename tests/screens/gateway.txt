@@ -3261,9 +3261,8 @@ IMAP и SMTP отвечают, вход выполнен
   [🩺 Здоровье | gw:health:]
   [⚙️ Настройки | gw:settings:]
 
-### gw.event.updated — обновление руками применилось: «дождись» убрано, итог со списком изменений
+### gw.event.updated — обновление руками применилось: итог со списком изменений
 > call report_update_result
-- delete #1
 + send #2
 ✅ Обновлено до v1.2.3
 <blockquote expandable>- панель: строка SSH с владельцем порта
@@ -3279,7 +3278,6 @@ IMAP и SMTP отвечают, вход выполнен
 
 ### gw.event.update_failed — обновление не применилось
 > call report_update_result
-- delete #1
 + send #2
 ⚠️ Обновление до v1.2.4 не применилось, работает v1.2.3 — журнал: <code>journalctl -u awg-bot-selfupdate* -o short-iso</code>
   [⬅️ В меню | upd:menu]

@@ -289,23 +289,6 @@ class SelfUpdateCoreMixin:
             self.clear_update_pending()
             raise
 
-    def set_update_wait(self, chat_id: int, message_id: int) -> None:
-        """Запомнить «дождись завершения»-сообщение: после рестарта новый процесс
-        удалит его перед итоговым сообщением."""
-        self.db.set_state("update_wait", f"{chat_id}:{message_id}")
-
-    def pop_update_wait(self):
-        """(chat_id, message_id) «дождись»-сообщения или None. Одноразово."""
-        raw = self.db.get_state("update_wait")
-        if not raw:
-            return None
-        self.db.set_state("update_wait", "")
-        try:
-            chat_s, msg_s = raw.split(":", 1)
-            return int(chat_s), int(msg_s)
-        except ValueError:
-            return None
-
     def confirm_applied_update(self):
         """Стартовая сверка результата self-update. Если перед рестартом было
         запущено обновление (update_pending) — вернуть Notification с итогом и

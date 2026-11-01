@@ -84,7 +84,6 @@ class _Host:
     uplink_pending: str = ""                               # конфиг ожидающего аплинка (uplink.pending)
     # старт процесса
     update_pending: str = ""                               # перед рестартом шло обновление до …
-    update_wait: bool = False                              # «дождись завершения» — #1
     restart_wait: bool = False                             # «бот перезапускается» — #1
 
 
@@ -357,8 +356,6 @@ def _agent(**opts):
             h.uplink_mine = h.uplink_after
         if h.update_pending:
             services.db.set_state("update_pending", h.update_pending)
-        if h.update_wait:
-            services.set_update_wait(config.ADMIN_ID, 1)
         if h.restart_wait:
             services.set_restart_wait(config.ADMIN_ID, 1)
         # хост и сеть — мимо: конфиги интерфейсов копии сверяются с пустым

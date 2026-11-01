@@ -158,7 +158,6 @@ async def test_only_the_last_update_finisher_keeps_its_menu_button(
                             reply_markup=kb.update_done_menu())
 
     monkeypatch.setattr(services, "confirm_applied_update", fake_confirm)
-    monkeypatch.setattr(services, "pop_update_wait", lambda: None)
 
     await report_update_result(fake_bot, services)       # ступень 1
     await report_update_result(fake_bot, services)       # ступень 2 (рестарт)
@@ -214,7 +213,6 @@ async def test_a_finisher_delivered_by_a_deferred_retry_still_loses_its_button(
         return Notification(cfg.ADMIN_ID, f"обновлён, ступень {step['n']}",
                             reply_markup=kb.update_done_menu())
     monkeypatch.setattr(services, "confirm_applied_update", fake_confirm)
-    monkeypatch.setattr(services, "pop_update_wait", lambda: None)
 
     await report_update_result(fake_bot, services)       # ступень 1: 429 на 300 с
     assert not [r for r in fake_bot.records if r[0] == "send_message"], "ждали паузу на месте"
@@ -271,7 +269,6 @@ async def test_a_finisher_delivered_after_the_next_stage_was_announced_drops_its
     monkeypatch.setattr(fake_bot, "send_message", send_message)
     monkeypatch.setattr(services, "confirm_applied_update",
                         lambda: Notification(cfg.ADMIN_ID, "обновлён, ступень 1", reply_markup=kb.update_done_menu()))
-    monkeypatch.setattr(services, "pop_update_wait", lambda: None)
 
     await report_update_result(fake_bot, services)           # 429 на 300 с — повтор фоном
     await notify_update_available(fake_bot, services, types.SimpleNamespace(tag="v9.9.9", body="- следующая"))

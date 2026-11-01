@@ -193,9 +193,9 @@ async def main() -> None:
         await asyncio.to_thread(services.reconcile_blocks, restored)
     except Exception as e:                               # noqa: BLE001
         log.warning("reconcile_blocks на старте: %s", e)
-    # итог self-update: если перед рестартом запускалось обновление — удалить
-    # «дождись завершения» и отчитаться админу («успешно обновлен…» + changelog
-    # с кнопкой «В меню» / «не применилось»). Флаги стираются однократно.
+    # итог self-update: если перед рестартом запускалось обновление — отчитаться
+    # админу («успешно обновлен…» + changelog с кнопкой «В меню» / «не
+    # применилось»). Флаг стирается однократно.
     try:
         await pkg.report_update_result(bot, services)       # тот же финишер, что у агента
     except Exception as e:                               # noqa: BLE001
