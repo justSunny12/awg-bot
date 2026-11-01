@@ -7,7 +7,7 @@ from __future__ import annotations
 from awgbot.util.textfmt.base import details
 
 from ..fmt import _e
-from .section import _n, _when
+from .common import _n, _when
 
 from awgbot.domain.services.reserve.guest import DEVICE_CONFIG_LATER, GUEST_REFUSED
 

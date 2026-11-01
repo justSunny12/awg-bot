@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from ...fmt import _e
-from .common import _n, _when
+from ..common import _n, _when
 
 
 # ── Т-Р10: переезд кнопкой ───────────────────────────────────────────────────

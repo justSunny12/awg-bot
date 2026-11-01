@@ -174,3 +174,29 @@ def test_grant_and_revoke_notify_holders_too(services, make_active_client, fake_
     notes = services.set_routing_allowed(owner.id, False)
     assert [n.tg_id for n in notes] == [704, 9704]
     assert notes[1].text.startswith('🇷🇺 РФ-доступ для устройств от профиля <a href="tg://user?id=704">Вася</a> больше')
+
+
+def test_single_grant_is_the_bulk_path_and_a_repeat_changes_nothing(
+        services, db, make_active_client, fake_routing, monkeypatch):
+    """Разрешение одному профилю идёт той же дорогой, что «Выбрать все»
+    (set_routing_allowed_many): выдача — флаг, все устройства, одна
+    реконсиляция, уведомление; повтор с тем же флагом — ничего: устройство,
+    которое человек выключил после выдачи, само не включается, реконсиляции
+    (рестарта dnsmasq) и уведомления нет. Прежняя одиночная копия на повторе
+    включала устройства обратно и реконсилировала каждый раз."""
+    calls = []
+    real = services.reconcile_routing
+    monkeypatch.setattr(services, "reconcile_routing", lambda *a, **kw: (calls.append(1), real(*a, **kw))[1])
+    c = make_active_client(tg_id=705)
+    d1, d2 = _device(services, c, "A"), _device(services, c, "B")
+    notes = services.set_routing_allowed(c.id, True)
+    assert [n.tg_id for n in notes] == [705] and len(calls) == 1
+    assert sorted(fake_routing.sets[_srcset(c.id)]) == sorted([d1.address, d2.address]), "выдача — все устройства"
+    services.set_routing_device(d2.device_id, False)                 # человек выключил одно
+    calls.clear()
+    assert services.set_routing_allowed(c.id, True) == [] and calls == [], "повтор выдачи — молча и без реконсиляции"
+    assert db.get_device(d2.device_id).routing_on == 0, "повтор выдачи включил выключенное человеком"
+    assert [n.tg_id for n in services.set_routing_allowed(c.id, False)] == [705]
+    assert services.set_routing_allowed_many([c.id], False) == [], "повтор отзыва — молча"
+    assert db.get_client(c.id).routing_allowed == 0 and db.get_device(d1.device_id).routing_on == 1, \
+        "отзыв гасит эффект, флаги устройств целы"

@@ -10,7 +10,7 @@ from __future__ import annotations
 from awgbot.util import timeutil
 from awgbot.util.textfmt.base import plural_ru
 
-from .reserve import _e, _n
+from .reserve_fmt import _e, _n
 
 TAIL_LINES_MAX = 5
 
@@ -97,13 +97,13 @@ def tail_self_failed(name: str, why: str) -> str:
 def _date_yy(iso: str) -> str:
     """Дата с годом двумя цифрами: «15.11.26»; ISO-дата без времени — тоже."""
     from datetime import date
+    shown = timeutil.iso_date_yy(iso)
+    if shown:
+        return shown
     try:
-        return timeutil.fmt_date_yy(timeutil.parse_iso(iso))
-    except (ValueError, TypeError):
-        try:
-            return date.fromisoformat(str(iso)[:10]).strftime("%d.%m.%y")
-        except ValueError:
-            return str(iso)
+        return date.fromisoformat(str(iso)[:10]).strftime("%d.%m.%y")
+    except ValueError:
+        return str(iso)
 
 
 def _tail_value(col: str, v) -> str:

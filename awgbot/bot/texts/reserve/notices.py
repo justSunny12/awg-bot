@@ -5,10 +5,7 @@
 from __future__ import annotations
 
 from ..fmt import _e
-
-
-def _n(name: str) -> str:
-    return f"«{_e(name)}»"
+from .common import _n
 
 
 def linked(peer: str, bot_username: str) -> str:

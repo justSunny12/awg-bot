@@ -43,6 +43,7 @@ from aiogram.methods import (DeleteMessage, EditMessageCaption, EditMessageReply
                              SendAnimation, SendDocument, SendMessage, SendPhoto, SendVideo)
 from aiogram.types import Message
 
+from awgbot.infra.db.listsnap import kb_has_hide
 from awgbot.util import timeutil
 
 from . import NOTE, OWN, REISSUE, scan
@@ -124,7 +125,7 @@ class ListMsgWatch(BaseRequestMiddleware):
                 NOTE.set("")
             else:
                 note = ""
-            if isinstance(method, _SENDS) and not keys and not note and not scan.has_hide(kb):
+            if isinstance(method, _SENDS) and not keys and not note and not kb_has_hide(kb):
                 return                                 # причин нет — база не трогается
             sent = _sent_iso(result)
             bound = await call(db.list_msg_put, chat, mid, sent, html, kb, keys, note, cap)
@@ -188,6 +189,6 @@ class ListMsgWatch(BaseRequestMiddleware):
         такт не успеет снять до предела удаления, в чате не стоит — снять сразу той
         же задачей. Моложе — стоит до такта, как у всех."""
         from awgbot.infra.db.listsnap import hide_hopeless
-        if scan.has_hide(kb) and hide_hopeless({"sent": sent}):
+        if kb_has_hide(kb) and hide_hopeless({"sent": sent}):
             from . import heal
             await heal.heal_one(bot, self.services, {"chat": chat, "mid": mid}, in_action=True)

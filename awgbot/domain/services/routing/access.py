@@ -222,41 +222,22 @@ class RoutingAccessMixin:
         return self.db.get_state(self._RT_LINK_KEY) != "0"
 
     def set_routing_allowed(self, client_id: int, allowed: bool) -> list["Notification"]:
-        """Разрешение админа — верхний слой флага. Возвращает уведомление
-        владельцу (0 или 1).
-
-        Выдача включает режим на ВСЕХ устройствах профиля сразу: человеку
-        обещано «функция включена для всех твоих устройств», и включать их
-        руками после выдачи приходилось админу. Отзыв флаги устройств НЕ
-        трогает: он гасит эффект, а не разрушает настройку.
-        """
-        client = self.db.get_client(client_id)
-        if client is None:
-            return []
-        changed = bool(client.routing_allowed) != bool(allowed)
-        self.db.update_client_fields(client_id, routing_allowed=1 if allowed else 0)
-        if allowed:
-            self.db.set_owner_devices_routing(client_id, True)   # и переданные тоже
-        self.reconcile_routing()
-        if not changed:
-            return []
-        notes: list[Notification] = []
-        if client.tg_id:
-            notes.append(Notification(client.tg_id, ROUTING_GRANTED_NOTICE if allowed
-                                      else ROUTING_REVOKED_NOTICE))
-        # держателям переданных устройств — то же, с оговоркой, от кого
-        seen: set[int] = set()
-        for dev in self.db.list_lent_out_devices(client_id):
-            if dev.holder_tg_id and dev.holder_tg_id not in seen:
-                seen.add(dev.holder_tg_id)
-                notes.append(Notification(
-                    dev.holder_tg_id,
-                    routing_granted_holder_notice(client) if allowed
-                    else routing_revoked_holder_notice(client)))
-        return notes
+        """Разрешение админа одному профилю — то же, что set_routing_allowed_many
+        с одним профилем (одна логика выдачи и отзыва на оба пути)."""
+        return self.set_routing_allowed_many([client_id], allowed)
 
     def set_routing_allowed_many(self, client_ids, allowed: bool) -> list["Notification"]:
-        """«Выбрать все»: флаг у всех, одна реконсиляция (и один перезапуск
+        """Разрешение админа — верхний слой флага; возвращает уведомления
+        владельцам и держателям переданных устройств.
+
+        Выдача включает режим на ВСЕХ устройствах профиля сразу (и переданных
+        тоже): человеку обещано «функция включена для всех твоих устройств», и
+        включать их руками после выдачи приходилось админу. Отзыв флаги
+        устройств НЕ трогает: он гасит эффект, а не разрушает настройку.
+        Профиль, у которого флаг уже такой, не трогается вовсе — ни устройства,
+        ни уведомления, ни реконсиляция.
+
+        «Выбрать все»: флаг у всех, одна реконсиляция (и один перезапуск
         dnsmasq) вместо полной реконсиляции на каждый профиль — 15 профилей
         давали 15 рестартов и сброс DNS-кэша всем."""
         notes: list[Notification] = []

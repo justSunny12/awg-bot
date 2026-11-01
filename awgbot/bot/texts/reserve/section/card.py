@@ -8,7 +8,7 @@ from awgbot.util.textfmt.base import details
 from ...fmt import _e
 from ..c9wait import card_line as c9_card_line
 from ..pult import card_lines as pult_card_lines, peer_card_line as pult_peer_line
-from .common import _date, _n, _when
+from ..common import _date, _n, _when
 from .rf import rfpeer_mine_lines, rfpeer_peer_lines
 from .votes import quorum_mine_lines, quorum_peer_lines
 

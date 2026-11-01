@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from awgbot.util.textfmt.base import (  # noqa: F401
     deep_link, refreshed_link, profile_link, admin_device_link, _SUB, tree, sub_line, access_status_line, _e,
-    _num, gb, _BYTES_PER_TB, unit_for, amount, volume, human_bytes, used_of_limit, _updown,
-    rf_value, updown_brief, _BYTES_PER_GB, gb_str, _limit_devices_str, device_state, details,
+    _num, gb, _BYTES_PER_TB, unit_for, amount, volume, used_of_limit, _updown,
+    rf_value, updown_brief, _BYTES_PER_GB, _limit_devices_str, device_state, details,
     plain_ip, tg_link, client_link, owner_name, holder_name, owner_link, holder_link,
     _n_devices, num, more, unlimited, plural_ru, _days_word, _days, frac2)
 
@@ -68,7 +68,7 @@ def rf_line(rx: int, tx: int, label: str = "", *, arrows: bool = True) -> str:
 __all__ = [
     "deep_link", "refreshed_link", "profile_link", "admin_device_link", "_SUB", "tree", "sub_line",
     "access_status_line", "_e", "_num", "gb", "_BYTES_PER_TB", "unit_for", "amount", "volume",
-    "human_bytes", "used_of_limit", "_updown", "rf_value", "updown_brief", "_BYTES_PER_GB",
-    "gb_str", "_limit_devices_str", "device_state", "details", "plain_ip", "tg_link",
+    "used_of_limit", "_updown", "rf_value", "updown_brief", "_BYTES_PER_GB",
+    "_limit_devices_str", "device_state", "details", "plain_ip", "tg_link",
     "client_link", "owner_name", "holder_name", "owner_link", "holder_link", "_n_devices", "num",
     "more", "unlimited", "plural_ru", "_days_word", "_days", "rf_line"]

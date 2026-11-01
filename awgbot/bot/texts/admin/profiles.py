@@ -7,7 +7,7 @@ from awgbot.util import timeutil
 from awgbot.bot import ui
 from awgbot.core.enums import ActivationStatus, SubStatus
 from ..fmt import (
-    _e, human_bytes, gb, gb_str, _limit_devices_str, rf_line, updown_brief, profile_link,
+    _e, volume, gb, _limit_devices_str, rf_line, updown_brief, profile_link,
     access_status_line, holder_link, _n_devices, plural_ru)
 
 
@@ -118,7 +118,7 @@ def admin_client_card(d: dict, bot_username: str = "") -> str:
         bonus = f"(+{gb(client.bonus_bytes)})" if client.bonus_bytes else ""
         lines.append(f"📊 {gb(rx + tx)} из {gb(client.traffic_limit)}{bonus} ГБ{arrows}")
     elif rx + tx:
-        lines.append(f"📊 {human_bytes(rx + tx)}{arrows}")
+        lines.append(f"📊 {volume(rx + tx)}{arrows}")
     else:
         lines.append("📊 0 ГБ (безлимит)")
     rf = d.get("rf")                              # None — строка не положена; ноль при
@@ -143,7 +143,7 @@ def client_edit_text(client) -> str:
     else:
         period = "Период: бессрочно"
     devs = _n_devices(client.device_limit) if client.device_limit else "∞ устройств"
-    traf = f"{gb_str(client.traffic_limit)} в месяц" if client.traffic_limit else "∞ ГБ в месяц"
+    traf = f"{volume(client.traffic_limit)} в месяц" if client.traffic_limit else "∞ ГБ в месяц"
     return f"{ui.head(f'✏️ {_e(client.name)}')} — изменить\n{period} · {devs} · {traf}"
 
 
@@ -176,7 +176,7 @@ def devs_limit_note(old: int, new: int, used: int) -> str:
 
 
 def _traffic_cur(client) -> str:
-    return gb_str(client.traffic_limit) if client.traffic_limit else "∞"
+    return volume(client.traffic_limit) if client.traffic_limit else "∞"
 
 
 def traffic_limit_prompt(client) -> str:

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from ...fmt import _e
-from .common import _n, _when
+from ..common import _n, _when
 
 
 def unpair_dialog(name: str, rfpeer: dict | None = None) -> str:

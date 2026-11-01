@@ -23,7 +23,7 @@ from awgbot.bot.handlers.settings.reserve import card as card_h
 from awgbot.bot.texts.reserve import section as st_t
 from awgbot.core import config, settings
 from awgbot.util import timeutil
-from awgbot.util.textfmt.base import human_bytes
+from awgbot.util.textfmt.base import volume
 from tests.conftest import FakeCallback, FakeMessage, last_screen
 from tests.integration import _rfpeer_common as rp
 
@@ -69,7 +69,7 @@ async def test_the_card_shows_the_peer_using_my_gateways_with_the_volume(ui):
     ui.k.up, ui.k.dn = MB + 120 * MB, MB + 1434 * MB
     text, _ = await card_h.reserve_screen(ui)
     want = (f"└ 🇷🇺 РФ-доступ пользователей «Beta» идёт через мои шлюзы с {_at(since)} · "
-            f"(↑ {human_bytes(120 * MB)} | ↓ {human_bytes(1434 * MB)})")   # вид как на главной
+            f"(↑ {volume(120 * MB)} | ↓ {volume(1434 * MB)})")   # вид как на главной
     assert want in text.splitlines(), text
     lines = text.splitlines()
     assert lines.index(want) > lines.index("📥 Пользователи «Beta»: на его сервере"), "Т-РТ3 не в блоке «📥»"

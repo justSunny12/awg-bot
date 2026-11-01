@@ -155,11 +155,6 @@ def volume(num_bytes: int) -> str:
     return f"{amount(num_bytes, ub)} {unit}"
 
 
-def human_bytes(n: int) -> str:
-    """Объём с единицей (см. volume)."""
-    return volume(n)
-
-
 def used_of_limit(used: int, limit_bytes: int, note: str = "") -> str:
     """«8,99 из 50 ГБ» (единица одна — не повторяем, от терабайта — «ТБ»);
     без лимита — «8,99 ГБ». note — чей лимит, в скобках: «… (лимит
@@ -171,12 +166,12 @@ def used_of_limit(used: int, limit_bytes: int, note: str = "") -> str:
 
 
 def _updown(rx: int, tx: int) -> str:
-    return f"(↑ {human_bytes(rx)} | ↓ {human_bytes(tx)})"
+    return f"(↑ {volume(rx)} | ↓ {volume(tx)})"
 
 
 def rf_value(rx: int, tx: int, *, arrows: bool = True) -> str:
     """«7.1 ГБ (↑0.7 ↓6.4)» — объём РФ-части; без стрелок — только сумма."""
-    total = human_bytes(int(rx) + int(tx))
+    total = volume(int(rx) + int(tx))
     return f"{total} {updown_brief(rx, tx)}" if arrows else total
 
 
@@ -186,18 +181,13 @@ def updown_brief(rx: int, tx: int) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Трафик. Расход — автоформатом human_bytes; лимит — в ГБ с 2 знаками.
+# Трафик. Расход и лимит — volume (единица по величине: ГБ, от терабайта — ТБ).
 # Пользователь/друг видят СУММУ (up+down) без разбивки; админ — тотал + разбивку ↑↓.
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Дубль services.BYTES_PER_GB — НАМЕРЕННО: физическая константа (разойтись не
 # может), а импорт services сюда тащил бы весь сервис-слой в текст-слой.
 _BYTES_PER_GB = 1024 ** 3
-
-
-def gb_str(num_bytes: int) -> str:
-    """Лимит с единицей: «100 ГБ», «0.5 ГБ», «2 ТБ». 0 трактуется вызывающим как безлимит."""
-    return volume(num_bytes)
 
 
 def _limit_devices_str(limit: int) -> str:

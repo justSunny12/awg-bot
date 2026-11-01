@@ -11,7 +11,7 @@ from awgbot.domain.notices.lanmap import lan_map_failed_line, lan_space_off_line
 from awgbot.util import listlink
 from awgbot.util.textfmt import deep_link, more_link
 
-from ..fmt import _e, human_bytes, updown_brief, plain_ip, plural_ru, details
+from ..fmt import _e, volume, updown_brief, plain_ip, plural_ru, details
 from ..updates import _ver
 
 from .slots import _slot_note, _slot_ping_tail, agent_bot_line, lan_example, lan_pairs, slot_name, slot_status
@@ -207,7 +207,7 @@ def _gw_traffic(dev) -> str:
     if rx + tx <= 0:
         return ""
     # стрелки — со стороны шлюза: его исходящее — это tx сервера
-    return f" · 📊 {human_bytes(rx + tx)} {updown_brief(tx, rx)}"
+    return f" · 📊 {volume(rx + tx)} {updown_brief(tx, rx)}"
 
 
 PEER_LINKS_SHOWN = 3         # соседей по имени в строке «Связь подсетей» карточки, дальше «и ещё N»

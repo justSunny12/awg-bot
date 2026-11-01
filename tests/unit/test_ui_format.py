@@ -196,8 +196,13 @@ def test_volumes_switch_to_terabytes_from_a_terabyte():
     from awgbot.bot import texts
     from awgbot.bot.texts import client as tc
     TB, GB = 1024 ** 4, 1024 ** 3
-    assert texts.human_bytes(2 * TB) == "2 ТБ" and texts.human_bytes(500 * GB) == "500 ГБ"
-    assert texts.gb_str(int(1.5 * TB)) == "1,5 ТБ"
+    assert texts.volume(2 * TB) == "2 ТБ" and texts.volume(500 * GB) == "500 ГБ"
+    assert texts.volume(int(1.5 * TB)) == "1,5 ТБ"
+    from awgbot.util import textfmt
+    from awgbot.util.textfmt import base
+    for mod in (texts, textfmt, base, texts.fmt):
+        assert not hasattr(mod, "human_bytes") and not hasattr(mod, "gb_str"), \
+            f"{mod.__name__}: второе имя объёма рядом с volume — одно из них однажды поменяют без другого"
     assert texts.used_of_limit(TB // 2, 2 * TB) == "0,5 из 2 ТБ"
     assert texts.used_of_limit(3 * GB, 2 * TB) == "0 из 2 ТБ" or texts.used_of_limit(3 * GB, 2 * TB) == "0,01 из 2 ТБ"
     assert texts.used_of_limit(3 * GB, 50 * GB) == "3 из 50 ГБ"

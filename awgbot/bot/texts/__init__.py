@@ -26,7 +26,7 @@ traffic_rx_* = аплоад, traffic_tx_* = даунлоад. В карточк�
 from __future__ import annotations
 
 from .fmt import (
-    _e, gb, human_bytes, used_of_limit, gb_str, device_state, details, deep_link,
+    _e, gb, volume, used_of_limit, device_state, details, deep_link,
     profile_link, admin_device_link, tree, sub_line, rf_value, updown_brief, access_status_line,
     plain_ip, tg_link, client_link, owner_name,
     holder_name, owner_link, holder_link, _n_devices, plural_ru)
@@ -140,7 +140,7 @@ from .gateway import (
 from .common import HB_SERVER_DOWN, HB_SERVER_UP, cancelled, BOT_RESTARTED, stale_finisher
 
 __all__ = [
-    "_e", "gb", "human_bytes", "used_of_limit", "gb_str", "plain_ip", "tg_link", "client_link",
+    "_e", "gb", "volume", "used_of_limit", "plain_ip", "tg_link", "client_link",
     "owner_name", "holder_name", "owner_link", "holder_link", "_n_devices", "plural_ru", "device_state", "details", "deep_link", "access_status_line", "profile_link", "admin_device_link", "tree", "sub_line", "rf_value", "updown_brief", "migration_pending_page", "migration_orphans_page", "migration_start_confirm",
     "migration_started", "migration_finish_confirm", "migration_cancel_confirm",
     "migration_hello", "migration_ready",

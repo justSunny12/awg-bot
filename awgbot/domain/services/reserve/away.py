@@ -18,6 +18,15 @@ HOSTING_REFUSED = "Сейчас здесь пользователи и бот «
 AWAY_REFUSED = ("Пользователи и бот сейчас на резерве «{name}» — действия над этим сервером отложены до возврата, "
                 "иначе изменения разойдутся с тем, что происходит на резерве")
 
+RETURN_KEY = "app.reserve.return"          # рычаг возврата (Т-Р15): immediate — сам, button — по кнопке
+
+
+def return_mode() -> str:
+    """Рычаг возврата пользователей с резерва — одно чтение на всех (карточка,
+    гость, автовозврат, рычаг в обработчике): «immediate» или «button»; ключа
+    нет или пуст — «immediate», как по умолчанию в app.yaml."""
+    return str(settings.get(RETURN_KEY, "immediate") or "immediate")
+
 
 class ReserveAwayMixin:
     def reserve_refuse_if_away(self) -> None:
@@ -106,18 +115,12 @@ class ReserveAwayMixin:
         return addrs
 
     def reserve_return_lever_button(self) -> bool:
-        return str(settings.get("app.reserve.return", "immediate") or "immediate") == "button"
+        return return_mode() == "button"
 
 
 def _when(iso: str) -> str:
-    try:
-        return timeutil.fmt_clock_ui(timeutil.parse_iso(iso))
-    except (ValueError, TypeError):
-        return "?"
+    return timeutil.iso_clock(iso, "?")
 
 
 def _date(iso: str) -> str:
-    try:
-        return timeutil.fmt_dt_ui(timeutil.parse_iso(iso))
-    except (ValueError, TypeError):
-        return "?"
+    return timeutil.iso_dt(iso, "?")

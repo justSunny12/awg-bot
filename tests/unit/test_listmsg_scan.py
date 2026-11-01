@@ -25,6 +25,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeybo
 from awgbot.bot import keyboards as kb
 from awgbot.bot import links
 from awgbot.bot.lists.msgs import scan
+from awgbot.infra.db.listsnap import kb_has_hide
 
 pytestmark = pytest.mark.unit
 
@@ -142,7 +143,10 @@ def test_kb_json_round_trips_and_ignores_non_inline_keyboards():
 
 
 def test_has_hide_and_has_action():
-    assert scan.has_hide(HIDE) and not scan.has_action(HIDE)
+    """«Скрыть» в клавиатуре записи — одна проверка на всех, listsnap.kb_has_hide
+    (своей обёртки у scan нет: две проверки однажды разошлись бы)."""
+    assert kb_has_hide(HIDE) and not scan.has_action(HIDE)
     menu = _kb_json([("⬅️ В меню", "upd:menu")])
-    assert scan.has_action(menu) and not scan.has_hide(menu)
-    assert not scan.has_hide("") and not scan.has_action("")
+    assert scan.has_action(menu) and not kb_has_hide(menu)
+    assert not kb_has_hide("") and not scan.has_action("")
+    assert not hasattr(scan, "has_hide")

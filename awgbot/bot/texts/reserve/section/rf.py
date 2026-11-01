@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from ...fmt import _e
-from .common import _n, _when
+from ..common import _n, _when
 
 
 # ── РФ-доступ через второй сервер: строки карточки (Т-РТ1…Т-РТ3, на вычитку) ─

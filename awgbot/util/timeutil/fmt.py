@@ -64,6 +64,36 @@ def fmt_date_yy(dt: datetime) -> str:
     return dt.astimezone(pkg.TZ).strftime("%d.%m.%y")
 
 
+# ── то же из ISO-строки (БД, состояние, линк) ────────────────────────────────
+# Текстам нужен момент, который лежит строкой и может быть пустым или битым:
+# тогда показывают fallback, а не падают («с …» просто не выводится).
+
+def iso_clock(iso, fallback: str = "", **kw) -> str:
+    """fmt_clock_ui по ISO-строке: «08:08 (UTC+5)»; пусто или не разобрать — fallback."""
+    try:
+        return fmt_clock_ui(pkg.parse_iso(iso), **kw)
+    except (ValueError, TypeError):
+        return fallback
+
+
+def iso_dt(iso, fallback: str = "", **kw) -> str:
+    """fmt_dt_ui по ISO-строке: «12.10 18:00 (UTC+5)» (year=True — с годом);
+    пусто или не разобрать — fallback."""
+    try:
+        return fmt_dt_ui(pkg.parse_iso(iso), **kw)
+    except (ValueError, TypeError):
+        return fallback
+
+
+def iso_date_yy(iso, fallback: str = "") -> str:
+    """fmt_date_yy по ISO-строке: «15.11.26» в поясе показа; пусто или не
+    разобрать — fallback."""
+    try:
+        return fmt_date_yy(pkg.parse_iso(iso))
+    except (ValueError, TypeError):
+        return fallback
+
+
 def fmt_date_ui(dt: datetime, ref: Optional[datetime] = None) -> str:
     """Дата для экранов: «12.10», другой год — «12.10.27»."""
     dt = dt.astimezone(pkg.TZ)

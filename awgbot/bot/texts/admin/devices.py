@@ -5,7 +5,7 @@ from __future__ import annotations
 from awgbot.util import timeutil
 from awgbot.bot import ui
 from ..fmt import (
-    _e, human_bytes, gb, device_state, plain_ip, rf_line, updown_brief, profile_link,
+    _e, volume, gb, device_state, plain_ip, rf_line, updown_brief, profile_link,
     holder_link)
 from .common import LIMIT_REACHED
 
@@ -32,7 +32,7 @@ def _admin_usage(dev, profile_limit_bytes: int) -> str:
     arrows = f" {updown_brief(rx, tx)}" if rx + tx else ""
     if limit:
         return f"{gb(rx + tx)} из {gb(limit)} ГБ{arrows}{whose}"
-    return f"{human_bytes(rx + tx)}{arrows}"
+    return f"{volume(rx + tx)}{arrows}"
 
 
 def client_devices_header(client, used: int, limit: int) -> str:

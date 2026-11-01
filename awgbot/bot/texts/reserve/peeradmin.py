@@ -3,20 +3,8 @@
 «Alpha»."""
 from __future__ import annotations
 
-from awgbot.util import timeutil
-
 from ..fmt import _e
-
-
-def _n(name: str) -> str:
-    return f"«{_e(name)}»"
-
-
-def _when(iso: str) -> str:
-    try:
-        return timeutil.fmt_clock_ui(timeutil.parse_iso(iso))
-    except ValueError:
-        return ""
+from .common import _n, _when
 
 
 def screen(d: dict) -> str:

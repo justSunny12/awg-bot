@@ -1,17 +1,18 @@
 """section — раздел «🛟 Резерв» без пары (Т-Р1) и карточка резерва (Т-Р9),
 диалоги удаления и выключения готовности, экран «🆘 Аварийный код».
 
-Части: common — имя сервера «…», время и дата по поясу показа; root — раздел
+Части: root — раздел
 без пары, строка DNS-записи, «▸ подробнее», всплывашка готовности; card —
 карточка резерва; votes — блок голосов кворума карточки; rf — РФ-доступ через
 второй сервер (строки карточки и диалог выключения); dialogs — удаление пары,
 выключение готовности, аварийный код; move — переезд и возврат кнопкой, возврат
 без резерва; dnsrec — экран «🌐 DNS-запись» и приглашения токена.
 
-Имена берутся по-прежнему из пакета (section.card_text, from .section import _n)."""
+Имена берутся по-прежнему из пакета (section.card_text, from .section import _n); имя
+сервера «…», время и дата — из общего ../common (его берут и соседи section)."""
 from __future__ import annotations
 
-from .common import _n, _when, _date
+from ..common import _n, _when, _date
 from .root import ready_on_toast, ABOUT, MORE, more_text, _checked, dns_line, section_text
 from .card import LOW_MEM_MB, _KEEP_LINES, _move_step, card_text
 from .votes import _W, _qn, _quorum_off_why, quorum_mine_lines, quorum_peer_lines, _cand_tail
