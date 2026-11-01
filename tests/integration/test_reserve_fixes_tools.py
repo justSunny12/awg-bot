@@ -3,7 +3,7 @@
 пары (util/rsvpkg/bot.py), ключи сторон зоны не в бэкап
 (domain/backup/archive.py), фильтр вебхука по адресу сокета
 (runtime/webhook.py), мусор от подписанного собеседника рвёт гостевой канал
-(runtime/guestlink.py), одна сборка пакета на сессию
+(незнакомый вид — пропуск, runtime/guestlink.py), одна сборка пакета на сессию
 (runtime/pairlink/inbound.py), перепроверка getWebhookInfo в ожидании права
 отвечать (runtime/pollctl.py), отметка `tgpool refresh` (tgpool.py).
 
@@ -157,14 +157,17 @@ async def test_a_foreign_socket_address_is_401_whatever_the_header_says(peer, xf
         await _through(peer, xff)
 
 
-# ── гостевой канал: мусор рвёт сессию ───────────────────────────────────────
+# ── гостевой канал: мусор рвёт сессию, незнакомый вид — пропуск ─────────────
 
 async def test_a_message_that_does_not_parse_breaks_the_guest_session():
+    """Известный вид с неверным телом — разрыв; незнакомый вид (слово выпуска новее) —
+    пропуск без разрыва, до сервисов не доходит."""
     calls = []
     svc = types.SimpleNamespace(reserve_guest_in=lambda *a: calls.append(a) or [])
     client = guestlink.GuestClient(svc)
+    await client._handle({"t": "нет-такого", "seq": 1})
     with pytest.raises(ConnectionError):
-        await client._handle({"t": "нет-такого", "seq": 1})
+        await client._handle({"t": "state", "seq": 2})          # state без полей
     assert calls == [], "мусор дошёл до сервисов"
 
 

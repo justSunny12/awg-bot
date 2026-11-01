@@ -221,3 +221,13 @@ def test_the_same_numbers_of_another_epoch_do_not_hide_the_asked_epoch(store):
     got = store.events(after=10, epoch=5)
     assert [(event.head(r).e, event.head(r).n) for r in got] == [(5, 11), (5, 12), (5, 13)], got
     assert store.events(after=12, epoch=3) == []
+
+
+def test_epoch_starts_are_the_first_numbers_of_each_epoch_by_segment_names(tmp_path):
+    """Начало эпохи — первый номер её сегментов (досылка резерва по `jneed` берёт
+    записи эпохи, которая держит просимый номер)."""
+    st = Store(tmp_path)
+    assert st.epoch_starts() == {}
+    st.append_events([rec(i, 2) for i in range(1, 8)])
+    st.append_events([rec(i, 3) for i in range(5, 7)])
+    assert st.epoch_starts() == {2: 1, 3: 5}

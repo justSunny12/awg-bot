@@ -44,6 +44,7 @@ class GuestClient:
         self._seq = 0
         self._cn = b""
         self._sn = b""
+        self._unknown: set[str] = set()
         self._wake = asyncio.Event()
         self._confirmed = False
         self.online = False
@@ -104,6 +105,7 @@ class GuestClient:
                 asyncio.open_connection(host, port, limit=gwlink.MAX_LINE), timeout=gwlink.CONNECT_S)
             gwlink.tcp_keepalive(writer)
             self._seq, self._cn, self._sn = 0, gwlink.new_nonce(), b""
+            self._unknown = set()                         # незнакомые виды — в журнал раз за сессию
             body = await asyncio.to_thread(self.services.reserve_guest_hello_body)
             if not body:
                 raise OSError("взгляда на основу ещё нет — hello позже")
@@ -140,9 +142,14 @@ class GuestClient:
                     writer.close()
 
     async def _handle(self, msg: dict) -> None:
-        kind = str(msg.get("t") or "")
+        kind = str(msg.get("t") or "")[:32]
         try:
             body = pairproto.check(pairproto.GUEST_PROTO, kind, msg, pairproto.RESERVE)
+        except pairproto.UnknownKind:
+            # слово выпуска новее (или снятое): пропуск — разрыв рвал бы сессию на каждом подъёме
+            if pairproto.first_unknown(self._unknown, kind):
+                log.info("гостевой канал: резерв прислал незнакомое «%s» — пропускаю", kind)
+            return
         except pairproto.ProtocolError as e:
             log.warning("гостевой канал: сообщение «%s» не разобрано: %s — сессия разорвана", kind[:16], e)
             raise ConnectionError(str(e))                     # подписанный собеседник шлёт мусор — поломка или чужой

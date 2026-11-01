@@ -103,7 +103,8 @@ class ReserveOpeningMixin:
                                 by="code" if "code" in secret else "share",
                                 open_started=timeutil.now_iso(), deadline=time.monotonic() + self._open_wait_s(),
                                 up_sent=False, tg_taken=False, tg_take_forced=False, tg_wait="", **KEEP_RESET,
-                                webhook_foreign=False, peer_tg_taken="", jrn_released=None, pult_back="", pult_told="",   # о прошлом эпизоде, не об этом
+                                webhook_foreign=False, webhook_stalled=False, peer_tg_taken="", jrn_released=None, pult_back="",
+                                pult_told="",   # о прошлом эпизоде, не об этом
                                 ended_auto="code" not in secret,   # по коду — не автоматический
                                 dead_since=str(self.rsv_get("rsv_view").get("code", {}).get("since") or ""))
             self._in_step("open")

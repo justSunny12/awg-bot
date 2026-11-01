@@ -2,7 +2,9 @@
 AllowedIPs пира) маскарадится наружу цепочкой `rsv_post`; ответы самого шлюза
 на соединения с меткой линка получают марку маршрута в `rsv_output` (хук
 route, output); при чужой политике DROP в iptables FORWARD линку резерва
-открывается транзит (`--up`/`--reassert`), а `--down` его снимает.
+открывается транзит (`--up`/`--reassert`) правилами с меткой
+`-m comment --comment awg-bot` (прежние без метки на awgrsv заменяются), а
+`--down` снимает помеченные и прежние на awgrsv, не трогая чужого.
 
 Обвязка — `_Gw` из test_reserve_gw_script (sh, подставные nft/ip/awg/systemctl
 с журналом, программа `nft -f -` целиком); `iptables` — подставной, правила
@@ -16,7 +18,8 @@ FORWARD — файл-модель. Таблицу с новыми цепочка
 транзита в FORWARD с политикой DROP (Docker, OMV-плагины) — РФ-доступ
 пользователей основы у резерва мёртв, хотя набор открыт; транзит, оставшийся после
 `--down`, — дыра в чужом файерволе навсегда; повторный `--reassert`,
-дописывающий правила, — FORWARD пухнет каждые несколько минут.
+дописывающий правила, — FORWARD пухнет каждые несколько минут; транзит без
+метки — откат и проверки обвязки не отличают его от правила чужого файервола.
 """
 from __future__ import annotations
 
@@ -27,6 +30,7 @@ from tests.unit.test_reserve_gw_script import CONF, _chain, _Gw
 
 pytestmark = pytest.mark.unit
 
+TAGGED = ["-i awgrsv -m comment --comment awg-bot -j ACCEPT", "-o awgrsv -m comment --comment awg-bot -j ACCEPT"]
 ZONE_CONF = CONF.replace("AllowedIPs = 10.99.97.1/32\n", "AllowedIPs = 10.99.97.1/32, 198.51.100.0/24\n")
 
 
@@ -91,7 +95,7 @@ def test_a_foreign_drop_policy_gets_transit_for_the_reserve_link_both_ways(gw):
     _iptables(gw, "DROP")
     r = gw.up_with(ZONE_CONF)
     assert r.returncode == 0, r.stdout + r.stderr
-    assert sorted(_fwd(gw)) == ["-i awgrsv -j ACCEPT", "-o awgrsv -j ACCEPT"], _fwd(gw)
+    assert sorted(_fwd(gw)) == TAGGED, f"транзит без метки awg-bot: {_fwd(gw)}"
     assert any(c.startswith("iptables -w -I FORWARD 1 ") for c in gw.calls()), "транзит не в начало цепочки"
 
 
@@ -101,7 +105,7 @@ def test_a_repeated_reassert_adds_no_second_copy(gw):
     r = gw.run("--reassert")
     assert r.returncode == 0, r.stdout + r.stderr
     r = gw.run("--reassert")
-    assert sorted(_fwd(gw)) == ["-i awgrsv -j ACCEPT", "-o awgrsv -j ACCEPT"], f"FORWARD пухнет: {_fwd(gw)}"
+    assert sorted(_fwd(gw)) == TAGGED, f"FORWARD пухнет: {_fwd(gw)}"
 
 
 def test_an_accept_policy_is_left_alone(gw):
@@ -113,11 +117,22 @@ def test_an_accept_policy_is_left_alone(gw):
 def test_down_takes_the_transit_away_however_many_copies_there_are(gw):
     _iptables(gw, "DROP")
     gw.up_with(ZONE_CONF)
-    (gw.tmp / "fwd.rules").write_text("-i awgrsv -j ACCEPT\n-o awgrsv -j ACCEPT\n-i awgrsv -j ACCEPT\n-i eth0 -j ACCEPT\n",
+    (gw.tmp / "fwd.rules").write_text("\n".join(TAGGED + [TAGGED[0], "-i awgrsv -j ACCEPT", "-o awgrsv -j ACCEPT",
+                                                          "-i eth0 -j ACCEPT",
+                                                          "-i awglink -m comment --comment awg-bot -j ACCEPT"]) + "\n",
                                      encoding="utf-8")
     r = gw.run("--down")
     assert r.returncode == 0 and "down: ok" in r.stdout, r.stdout + r.stderr
-    assert _fwd(gw) == ["-i eth0 -j ACCEPT"], f"после --down в чужом FORWARD осталось наше: {_fwd(gw)}"
+    assert _fwd(gw) == ["-i eth0 -j ACCEPT", "-i awglink -m comment --comment awg-bot -j ACCEPT"], \
+        f"после --down в чужом FORWARD осталось наше (или снято правило обвязки шлюза): {_fwd(gw)}"
+
+
+def test_a_transit_of_the_previous_release_without_the_tag_is_replaced_by_the_tagged_one(gw):
+    _iptables(gw, "DROP")
+    (gw.tmp / "fwd.rules").write_text("-i awgrsv -j ACCEPT\n-o awgrsv -j ACCEPT\n-i eth0 -j ACCEPT\n", encoding="utf-8")
+    r = gw.up_with(ZONE_CONF)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert sorted(_fwd(gw)) == sorted(TAGGED + ["-i eth0 -j ACCEPT"]), f"правило без метки не заменено: {_fwd(gw)}"
 
 
 def test_without_iptables_up_and_down_go_on(gw):

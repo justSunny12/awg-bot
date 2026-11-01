@@ -141,11 +141,16 @@ async def run_gateway() -> None:
         if not token_dead and await asyncio.to_thread(services.cfg_token_note_pending):
             from awgbot.bot.notifier import notify_one
             from awgbot.bot import texts as _texts
-            if await notify_one(bot, config.ADMIN_ID, _texts.GW_TOKEN_SWITCHED):
+
+            async def _switched(_msg) -> None:
+                # по факту доставки — и отложенным повтором 429, когда notify_one уже вернул None:
+                # по возврату отметка оставалась, и сообщение пришло бы ещё раз на следующем старте
                 await asyncio.to_thread(services.cfg_token_note_clear)   # не дошло — скажем при следующем старте
                 # вопросы из того же документа показывал бы прежний, мёртвый бот
                 from awgbot.bot.handlers import gateway as gateway_handlers
                 await gateway_handlers.show_cfg_question(bot, services, config.ADMIN_ID)
+
+            await notify_one(bot, config.ADMIN_ID, _texts.GW_TOKEN_SWITCHED, on_message=_switched)
     except Exception as e:                               # noqa: BLE001
         log.warning("итог смены токена не ушёл: %s", e)
 

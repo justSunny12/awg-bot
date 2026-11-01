@@ -65,13 +65,26 @@ class ReserveJournalRouteMixin:
     def _keep_serve_base(self, frm: int) -> list[tuple]:
         """`jneed` основы по её линии: подряд с `frm` — из хранилища её событий (она их
         потеряла: пропажа питания после отправки), иначе из журнала данных гостя на диске
-        (гость ушёл, не досказав). Нет ни там, ни там — пусто (спросит гостя)."""
+        (гость ушёл, не досказав). Только записи эпохи, которая держит номер `frm`
+        (`_keep_need_epoch`): тот же номер прежней эпохи после точки расхождения новой —
+        запись, которую новая эпоха заменила, основе она чужая. Нет ни там, ни там —
+        пусто (спросит гостя)."""
         from awgbot.util.rsvjrn import event
         line = self.reserve_keep_line()
-        recs = self._store_run(self.reserve_keep_store(), line, frm)
-        if not recs:
+        keep = self.reserve_keep_store()
+        try:
+            guest = self.guest_jrn_store()
+            guest_starts = guest.epoch_starts()
+        except Exception as e:                                # noqa: BLE001 — журнала гостя нет
+            log.debug("резерв: журнал гостя на диске не прочитан: %s", e)
+            guest, guest_starts = None, {}
+        want = self._keep_need_epoch(frm, keep.epoch_starts(), guest_starts)
+        if want is None:
+            return []
+        recs = self._store_run(keep, line, frm, want)
+        if not recs and guest is not None:
             try:
-                recs = self._store_run(self.guest_jrn_store(), line, frm)
+                recs = self._store_run(guest, line, frm, want)
             except Exception as e:                            # noqa: BLE001 — журнала гостя нет
                 log.debug("резерв: журнал гостя на диске не прочитан: %s", e)
                 recs = []
@@ -82,13 +95,26 @@ class ReserveJournalRouteMixin:
                  frm, len(recs), h.e)
         return [("send", "jev", {"line": line, "e": h.e, "from": h.n, "n": len(recs), "blob": b"".join(recs).hex()})]
 
+    def _keep_need_epoch(self, frm: int, *starts: dict[int, int]) -> int | None:
+        """Эпоха, которая держит номер `frm`: старшая из начавшихся не позже него. Начала —
+        первые номера эпох в хранилищах и, пока гость поднят и сказал о себе, его эпоха с
+        номера после его точки. Ни одна не начиналась — None."""
+        first: dict[int, int] = {}
+        for got in starts:
+            for e, n in got.items():
+                first[e] = min(first.get(e, n), n)
+        ge, gf = self._keep_guest_int("e"), self._keep_guest_int("fork")
+        if ge and gf:
+            first[ge] = min(first.get(ge, gf + 1), gf + 1)
+        return max((e for e, n in first.items() if n <= frm), default=None)
+
     @staticmethod
-    def _store_run(store, line: str, frm: int) -> list[bytes]:
-        """Записи линии подряд с номера `frm`, одной эпохи, не больше EV_BYTES; первая не
-        `frm` — пусто (разрыв не прикрывать)."""
+    def _store_run(store, line: str, frm: int, epoch: int | None = None) -> list[bytes]:
+        """Записи линии подряд с номера `frm` (только эпохи `epoch`, если задана), одной
+        эпохи, не больше EV_BYTES; первая не `frm` — пусто (разрыв не прикрывать)."""
         from awgbot.util.rsvjrn import event
         from .ship import EV_BYTES
-        recs = [r for r in store.events(after=max(0, frm - 1)) if event.head(r).line == line]
+        recs = [r for r in store.events(after=max(0, frm - 1), epoch=epoch) if event.head(r).line == line]
         if not recs or event.head(recs[0]).n != frm:
             return []
         return event.runs(recs, EV_BYTES)[0]

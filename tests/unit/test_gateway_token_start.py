@@ -7,7 +7,9 @@
 Цена ошибки: агент, упавший на отозванном токене, — шлюз без канала, и новый
 токен довезти нечем: только визит к машине; поллинг на мёртвом токене — цикл
 отказов в журнале; сообщение о смене, снятое до доставки, — человек так и не
-узнает, что бот снова жив; показанное повторно — шум на каждом старте.
+узнает, что бот снова жив; показанное повторно — шум на каждом старте (в том
+числе доставленное отложенным повтором 429: отметку снимает факт доставки, а
+не возврат отправки).
 
 Сборка роли настоящая до конца run_gateway. Подменены: Telegram (двойник
 aiogram.Bot из теста имени бота агента), диспетчер (поллинг записывается и
@@ -42,13 +44,19 @@ class _Start:
     def __init__(self, monkeypatch, tmp_path):
         self.agent = _Agent(monkeypatch, tmp_path)
         self.tmp = tmp_path
-        self.notify_ok = True
+        self.notify_ok = True                             # True | False | "later" (отложенный повтор 429)
+        self.later: list = []                             # on_message отложенных повторов
         self.events: list = []
         st = self
 
-        async def notify_one(bot, chat_id, text, *a, **k):
+        async def notify_one(bot, chat_id, text, *a, on_message=None, **k):
             st.events.append(("notify", text))
-            return st.notify_ok
+            if st.notify_ok == "later":                   # 429 дольше предела: повтор фоном, возврат None
+                st.later.append(on_message)
+                return None
+            if st.notify_ok and on_message is not None:
+                await on_message(object())
+            return st.notify_ok or None
 
         async def show_question(bot, services, chat_id):
             st.events.append("question")
@@ -182,3 +190,18 @@ async def test_an_undelivered_switch_note_stays_for_the_next_start(start):
 async def test_no_switch_note_without_the_mark(start):
     await start.run_to_polling()
     assert texts.GW_TOKEN_SWITCHED not in start.notes and "question" not in start.events
+
+
+async def test_a_switch_note_delivered_by_a_deferred_retry_clears_the_mark(start):
+    """Пауза 429 дольше предела: notify_one вернул None, сообщение дошло отложенным
+    повтором — отметка снята и вопросы показаны по факту доставки; следующий старт
+    молчит (прежде отметка оставалась, и сообщение приходило второй раз)."""
+    start.note_pending()
+    start.notify_ok = "later"
+    await start.run_to_polling()
+    assert start.notes.count(texts.GW_TOKEN_SWITCHED) == 1 and "question" not in start.events
+    assert start.pending_now(), "до доставки метку снимать нельзя"
+    assert len(start.later) == 1 and start.later[0] is not None, "отправка без on_message — факт повтора потерян"
+    await start.later[0](object())                       # повтор дошёл
+    assert not start.pending_now(), "доставленное отложенным повтором не сняло метку"
+    assert start.events[-1] == "question", "вопросы документа не показаны после доставки"
