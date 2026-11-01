@@ -40,6 +40,9 @@ class ReserveQuorumTickMixin:
     def quorum_reply_in(self, name: str, data: bytes) -> list[tuple]:
         return self.reserve_quorum_reply_in(name, data)
 
+    def quorum_probe_unsent(self, name: str, data: bytes) -> None:
+        self.reserve_quorum_probe_unsent(name, data)
+
     # ── такт ────────────────────────────────────────────────────────────────
     def quorum_tick(self) -> list[tuple]:
         now = time.monotonic()

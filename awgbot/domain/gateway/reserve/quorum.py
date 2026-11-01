@@ -369,6 +369,14 @@ class GatewayQuorumMixin:
             self._quorum_epoch_persist(int(v.fact))           # факт догнал поднятую по qtake — на диск (e_take прочь)
         return actions
 
+    def quorum_probe_unsent(self, name: str, data: bytes) -> None:
+        """Проба не ушла из сокета зонда (его ещё нет, ошибка отправки): ответа не ждать,
+        время до неё — не молчание лидера (иначе qview{uns} о живом сервере после старта)."""
+        v = self._gw_qvoters.get(name)
+        p = Probe.parse(data)
+        if v is not None and p is not None:
+            v.unsent(int(p.s), time.monotonic())
+
     def _quorum_view_changed(self, name: str, rec: dict, v: Voter, w: str) -> list[tuple]:
         target = "клон" if rec.get("target") == "r" else "сервер AWG"
         log.info("quorum: %s — %s", target, {"see": "вижу", "sus": "ответ пропущен", "uns": "не вижу"}[w])

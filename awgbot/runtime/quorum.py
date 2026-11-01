@@ -15,7 +15,11 @@ quorum.py — сокеты кворума резерва: ответчик ли�
 
 Домен обязан давать: `quorum_runtime_plan()` → {"responder": (адрес, порт) | None,
 "probes": {имя: {node_addr, resp, port}}}, `quorum_probe_in(data, src)` → ответ,
-`quorum_reply_in(имя, data)` → действия, `quorum_tick()` → действия.
+`quorum_reply_in(имя, data)` → действия, `quorum_tick()` → действия; по
+желанию — `quorum_probe_unsent(имя, data)`: проба не ушла (сокета зонда ещё
+нет — пространство и интерфейс поднимает такт домена, повтор сокета через 30 с;
+ошибка отправки) — голосующий не ждёт на неё ответа и не считает это время
+молчанием лидера (иначе «не вижу» о живом сервере через `no_s` после старта).
 """
 from __future__ import annotations
 
@@ -101,22 +105,33 @@ class QuorumRuntime:
 
     async def run(self, actions) -> None:
         rest = []
+        unsent = []
         for a in actions or []:
             if a and a[0] == "probe":
-                await self._send_probe(str(a[1]), bytes(a[2]), tuple(a[3]))
+                if not await self._send_probe(str(a[1]), bytes(a[2]), tuple(a[3])):
+                    unsent.append((str(a[1]), bytes(a[2])))
             else:
                 rest.append(a)
+        if unsent and hasattr(self.services, "quorum_probe_unsent"):
+            for name, data in unsent:
+                try:
+                    await asyncio.to_thread(self.services.quorum_probe_unsent, name, data)
+                except Exception as e:                        # noqa: BLE001
+                    log.info("кворум: неушедшая проба %s не отмечена: %s", name, e)
         if rest:
             await self.act(rest)
 
-    async def _send_probe(self, name: str, data: bytes, target: tuple) -> None:
+    async def _send_probe(self, name: str, data: bytes, target: tuple) -> bool:
+        """Проба ушла из сокета зонда; False — сокета нет или отправка отказала."""
         ent = self._probes.get(name)
         if ent is None:
-            return
+            return False
         try:
             ent[1].sendto(data, (str(target[0]), int(target[1])))
         except OSError as e:
             log.info("кворум: проба %s не ушла: %s", name, e)
+            return False
+        return True
 
     async def _ensure_responder(self, want, iface: str = "") -> None:
         want = (str(want[0]), int(want[1])) if want else None
