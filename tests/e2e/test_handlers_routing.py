@@ -365,10 +365,14 @@ async def test_bulk_completes_partial_selection(services, make_active_client, fa
 
 # ── раздел маршрутизации в настройках админа: списки, бандл, подразделы ──────
 
+@pytest.mark.parametrize("key", ["bundle", "gone"])
 async def test_an_old_bundle_button_is_stale_and_issues_nothing(
-        services, make_active_client, fake_bot, monkeypatch):
-    """Кнопка выпуска файла прежней версии — устаревшая: файла нет, кнопки
-    сообщения сняты, всплывашка «Кнопка устарела — открыл меню»."""
+        services, make_active_client, fake_bot, monkeypatch, key):
+    """Кнопка выпуска файла прежней версии («📤 Выпустить файл», key=bundle) и
+    любое другое снятое действие раздела — устаревшая: своей ветки у неё нет,
+    фильтр раздела забирает колбэк у общего stale-роутера и отвечает так же —
+    файла нет, кнопки сообщения сняты, всплывашка «Кнопка устарела — открыл
+    меню»."""
     from awgbot.bot.handlers.stale import STALE_BUTTON
     from awgbot.bot.handlers import settings as sh
     from awgbot.bot.callbacks import SetCB
@@ -381,7 +385,7 @@ async def test_an_old_bundle_button_is_stale_and_issues_nothing(
         sent_docs.append((caption, reply_markup)); return msg
     msg.answer_document = answer_document
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
-    await sh.routing_action(cb, SetCB(sec="rt", act="do", key="bundle"), services)
+    await sh.routing_action(cb, SetCB(sec="rt", act="do", key=key), services)
     assert not sent_docs, "по кнопке прежней версии выдан файл"
     assert any(r[0] == "edit_reply_markup" for r in fake_bot.records), "кнопки старого сообщения не сняты"
     assert cb.answers and cb.answers[0][0] == STALE_BUTTON, cb.answers

@@ -145,7 +145,8 @@ def _keys(srv, pi):
     out = pi.s.rekey_go({"id": nxt["id"]})
     assert out["ok"], (out, pi.runs)
     assert srv.gateway_rekey_commit(1)[0] is True
-    assert srv.gateway_rekey_hello(1)["rekeyed"]        # hello агента новым ключом
+    assert not srv.gateway_rekey_hello(1)["hold"]      # hello агента новым ключом
+    assert srv.gateway_rekey(1) == {}, "переход не зафиксирован"
     answered = pi.s.rekey_server_answered()            # первое слово сервера в этой сессии
     assert answered["done"] and answered["done"]["ok"], answered
 

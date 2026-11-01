@@ -248,5 +248,5 @@ def accept(services, vps, gwside: Gateway, slot: int) -> dict:
     services.gateway_rekey_go(slot)
     assert services.gateway_rekey_commit(slot)[0] is True
     out = services.gateway_rekey_hello(slot)
-    assert out["rekeyed"], out
+    assert not out["hold"] and services.gateway_rekey(slot) == {}, out
     return res

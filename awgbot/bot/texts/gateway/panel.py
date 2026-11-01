@@ -159,18 +159,12 @@ def reserve_panel_line(rsv: dict) -> str:
         return ""
     from awgbot.util import timeutil
     name = f"«{_e(rsv.get('name') or 'резерв')}»"
-
-    def when(iso: str) -> str:
-        try:
-            return timeutil.fmt_clock_ui(timeutil.parse_iso(iso))
-        except (ValueError, TypeError):
-            return ""
     if rsv.get("seen") in ("down", "absent"):
-        since = when(str(rsv.get("since") or ""))
+        since = timeutil.iso_clock(str(rsv.get("since") or ""))
         return (f"⚠️ Резерв {name}: нет связи" + (f" с {since}" if since else "")
                 + " — при падении сервера AWG этот шлюз не голосует")
     if rsv.get("open"):
-        since = when(str(rsv.get("since_open") or ""))
+        since = timeutil.iso_clock(str(rsv.get("since_open") or ""))
         rx, tx = int(rsv.get("rx") or 0), int(rsv.get("tx") or 0)
         tail = f" · через резервный линк {updown_brief(rx, tx)}" if rx + tx else ""
         return f"🛟 Резерв {name}: пользователи на нём" + (f" с {since}" if since else "") + tail
@@ -188,10 +182,7 @@ def reserve_tg_lines(rsv: dict) -> list[str]:
     peer = f"«{_e(rsv['peer_name'])}»" if rsv.get("peer_name") else "резерв"
     out = []
     if rsv.get("tg_via"):
-        try:
-            since = timeutil.fmt_clock_ui(timeutil.parse_iso(str(rsv.get("tg_since") or "")))
-        except (ValueError, TypeError):
-            since = ""
+        since = timeutil.iso_clock(str(rsv.get("tg_since") or ""))
         out.append(f"📨 Telegram — через {peer}: аплинк до {name} молчит" + (f" с {since}" if since else ""))
     if rsv.get("uplink_ip"):
         out.append(f"⚠️ Аплинк смотрит на адрес <code>{_e(rsv['uplink_ip'])}</code>, а не на имя — после переезда "
@@ -211,10 +202,7 @@ def quorum_panel_line(quo: dict) -> str:
         y, v = int(quo.get("y") or 0), int(quo.get("v") or 0)
         return f"🗳 Голосую о {name}: вижу" + (f" · видят {y} из {v}" if v else "")
     if w in ("uns", "sus"):
-        try:
-            since = timeutil.fmt_clock_ui(timeutil.parse_iso(str(quo.get("since") or "")))
-        except (ValueError, TypeError):
-            since = ""
+        since = timeutil.iso_clock(str(quo.get("since") or ""))
         tail = " — голос у резерва" if quo.get("reserve_online") else " — резерв не на связи, голос не дошёл"
         return f"🗳 Голосую о {name}: не вижу" + (f" с {since}" if since else "") + (tail if w == "uns" else "")
     return f"🗳 Голосую о {name}: ещё нет ответа"

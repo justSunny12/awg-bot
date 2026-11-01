@@ -398,11 +398,11 @@ def test_hello_with_the_new_key_fixes_the_transition_once(services, slot, vps):
     убираются (drop), админу — «ключи линка сменены» один раз."""
     _switched(services, vps)
     res = services.gateway_rekey_hello(1)
-    assert res["hold"] is False and res["rekeyed"] is True, res
+    assert set(res) == {"notes", "hold"} and res["hold"] is False, res     # фиксация — пустое состояние смены
     assert len(res["notes"]) == 1 and "ключи линка сменены" in res["notes"][0].text, _texts(res["notes"])
     assert vps.modes[-1] == "--rekey-drop" and vps.extra_files() == set(), "прежние ключи остались на диске"
     assert services.gateway_rekey(1) == {} and vps.peer_pub() == vps.new["gw_pub"]
-    assert services.gateway_rekey_hello(1) == {"notes": [], "hold": False, "rekeyed": False}, (
+    assert services.gateway_rekey_hello(1) == {"notes": [], "hold": False}, (
         "второе «сменены» на следующем hello")
 
 
@@ -412,10 +412,10 @@ def test_hello_before_the_vps_switched_is_not_a_proof(services, slot, vps):
     ВПС: её закрывают молча (hold), шлюз придёт снова. В staged/asked hello —
     обычное подключение."""
     st = _asked(services, vps)
-    assert services.gateway_rekey_hello(1) == {"notes": [], "hold": False, "rekeyed": False}
+    assert services.gateway_rekey_hello(1) == {"notes": [], "hold": False}
     services.gateway_rekey_ack_in(1, {"id": st["id"], "state": "ready"})
     services.gateway_rekey_go(1)
-    assert services.gateway_rekey_hello(1) == {"notes": [], "hold": True, "rekeyed": False}
+    assert services.gateway_rekey_hello(1) == {"notes": [], "hold": True}
     assert services.gateway_rekey(1)["state"] == "switched" and "--rekey-drop" not in vps.modes
 
 
@@ -808,10 +808,10 @@ def test_hello_signed_with_the_old_key_after_the_switch_is_held(services, slot, 
     old_key = vps.session_key()
     _switched(services, vps)
     res = services.gateway_rekey_hello(1, old_key)
-    assert res == {"notes": [], "hold": True, "rekeyed": False}, res
+    assert res == {"notes": [], "hold": True}, res
     assert services.gateway_rekey(1)["state"] == "switched" and "--rekey-drop" not in vps.modes
     fixed = services.gateway_rekey_hello(1, vps.session_key())
-    assert fixed["rekeyed"] is True and services.gateway_rekey(1) == {}
+    assert fixed["hold"] is False and services.gateway_rekey(1) == {}
 
 
 def test_a_return_queues_link_cancel_for_the_next_session(services, slot, vps, clock):
@@ -924,5 +924,5 @@ def test_a_fixed_transition_asks_for_a_fresh_backup(services, slot, vps):
     services.backup_set_passphrase("correct horse battery")
     _switched(services, vps)
     assert not services.db.get_state("backup_event_due")
-    assert services.gateway_rekey_hello(1)["rekeyed"] is True
+    assert services.gateway_rekey_hello(1)["hold"] is False and services.gateway_rekey(1) == {}
     assert [w["kind"] for w in json.loads(services.db.get_state("backup_event_due"))["why"]] == ["rekey"]

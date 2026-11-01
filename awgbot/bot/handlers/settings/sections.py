@@ -124,12 +124,6 @@ async def routing_action(cb: CallbackQuery, callback_data: SetCB, services, stat
     if callback_data.key == "provision":
         await _routing_provision(cb, services)
         return
-    if callback_data.key == "bundle":
-        # «📤 Выпустить файл» в старом сообщении: файла перевыпуска больше нет —
-        # кнопка устаревшая (снимается со следующим сдвигом минимума)
-        from awgbot.bot.handlers.stale import answer_stale
-        await answer_stale(cb, services, "admin")
-        return
     if callback_data.key == "lists_refresh":
         # Колбэк отвечается ОДИН раз — второй ответ Telegram молча роняет.
         # Обновление занимает секунды, спиннер на кнопке их покрывает; итог —
@@ -165,7 +159,10 @@ async def routing_action(cb: CallbackQuery, callback_data: SetCB, services, stat
     if callback_data.key in ("allow", "allow_all", "allow_apply"):
         await _users_action(cb, callback_data, services, state)
         return
-    await cb.answer(ui.Toast.stale, show_alert=True)
+    # снятое действие раздела — кнопка старого сообщения: фильтр раздела забрал
+    # колбэк у общего stale-роутера, ответ — тот же, что у него
+    from awgbot.bot.handlers.stale import answer_stale
+    await answer_stale(cb, services, "admin")
 
 
 async def _users_action(cb: CallbackQuery, callback_data: SetCB, services, state) -> None:

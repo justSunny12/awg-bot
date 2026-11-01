@@ -84,7 +84,8 @@ def test_auto_i1_goes_without_a_question_and_commits_by_hello(server, vps, clock
     server.gateway_rekey_go(1)
     assert server.gateway_rekey_commit(1)[0] is True
     res = server.gateway_rekey_hello(1, vps.session_key())
-    assert res["rekeyed"] and all(n.silent for n in res["notes"]), "итог смены без вопроса — со звуком"
+    assert not res["hold"] and server.gateway_rekey(1) == {}, res
+    assert all(n.silent for n in res["notes"]), "итог смены без вопроса — со звуком"
     assert wgconf.parse(vps.gw.read_text(encoding="utf-8")).get("Interface", "I1") == I1
     server.gateway_i1_tick()
     assert server.gateway_i1_plan(1) == {}, "план пережил вставший I1"
@@ -205,7 +206,7 @@ def test_the_slot_is_on_i1_only_after_the_hello(server, vps, clock, caplog):
     with caplog.at_level(logging.INFO):
         server.gateway_i1_tick()
         assert "на I1 интерфейса AWG сервера" not in caplog.text
-        assert server.gateway_rekey_hello(1, vps.session_key())["rekeyed"]
+        assert not server.gateway_rekey_hello(1, vps.session_key())["hold"] and server.gateway_rekey(1) == {}
         server.gateway_i1_tick()
     assert server.gateway_i1_plan(1) == {} and "на I1 интерфейса AWG сервера" in caplog.text
 

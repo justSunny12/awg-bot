@@ -95,8 +95,14 @@ def tail_self_failed(name: str, why: str) -> str:
 # ── хвост старой эпохи (Т-Ж4…Т-Ж6) ───────────────────────────────────────────
 
 def _date_yy(iso: str) -> str:
-    """Дата с годом двумя цифрами: «15.11.26»; ISO-дата без времени — тоже."""
+    """Дата с годом двумя цифрами: «15.11.26»; ISO-дата без времени — тоже. Чистая
+    дата «2026-11-15» — дата как есть, без пересчёта пояса: через parse_iso она
+    читалась бы полночью +03 и западнее UTC+3 показала бы предыдущий день."""
     from datetime import date
+    try:
+        return date.fromisoformat(str(iso)).strftime("%d.%m.%y")
+    except ValueError:
+        pass
     shown = timeutil.iso_date_yy(iso)
     if shown:
         return shown

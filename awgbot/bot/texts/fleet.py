@@ -24,10 +24,7 @@ def _name(g: dict, user: str) -> str:
 
 def _clock(iso: str) -> str:
     from awgbot.util import timeutil
-    try:
-        return timeutil.fmt_clock_ui(timeutil.parse_iso(iso))
-    except ValueError:
-        return "?"
+    return timeutil.iso_clock(iso, "?")
 
 
 def _since(g: dict) -> str:

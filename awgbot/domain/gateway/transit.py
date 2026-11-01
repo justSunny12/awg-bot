@@ -179,7 +179,7 @@ class TransitMixin:
                         quiet = 0.0
                     ok = quiet < self._LAN_QUIET_SECONDS
                     detail = "" if ok else (f"пакетов из локальной сети нет с "
-                                            f"{timeutil.fmt_dt_ui(timeutil.parse_iso(at)) if at else '?'}: {why}")
+                                            f"{timeutil.iso_dt(at, '?')}: {why}")
                 info[f"{key}_pkts"] = cur[key]
                 last[key] = cur[key]
                 last[f"{key}_at"] = at

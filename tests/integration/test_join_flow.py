@@ -197,7 +197,7 @@ def test_the_right_code_makes_the_slot_and_rekeys_without_asking(services, vps):
     assert action == "go"
     services.gateway_rekey_go(1)
     assert services.gateway_rekey_commit(1)[0] is True
-    assert services.gateway_rekey_hello(1)["rekeyed"]
+    assert not services.gateway_rekey_hello(1)["hold"] and services.gateway_rekey(1) == {}
     assert services.gwjoin(1)["state"] == "linked" and not vps.stamped("awglink")
     assert "PresharedKey" in vps.gw("awglink").read_text(encoding="utf-8"), "PSK после кода не встал"
     assert services.gwjoin_active() is False
