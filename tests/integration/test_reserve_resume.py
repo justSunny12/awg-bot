@@ -6,26 +6,28 @@
 `back_req` и вебхук стоит на резерве: бот нем с обеих сторон, кнопки повторить ни у кого
 нет. Резерв — по живому `st` основы `away` после released (через RELEASED_WAIT_S + 60 с)
 или сразу по её слову `resume` — снова поднимает юнит гостя и несёт пользователей;
-`home`/`returning` основы — потерянный `back`, его повторяет сама основа.
+`home`/`returning` основы — потерянный `back`, его повторяет сама основа. Режим Telegram —
+прежний: VPN здесь без бота до возврата (tg_wait) — и после, захват повторяется.
 
 Окружение — `host` из test_reserve_hosting (зона и systemctl — подмены), `merge_world`
 из test_reserve_return (основа со снимком и начатым возвратом).
 
 Цена ошибки: пользователи без бота с обеих сторон до ручного вмешательства; гость,
-поднятый по старому `away` (st до released), — два бота на одном токене.
+поднятый по старому `away` (st до released), — два бота на одном токене; «бот у меня»
+после возобновления, которого нет, — захват Telegram больше не повторяется, бот нем.
 """
 from __future__ import annotations
 
 import pytest
 
-from awgbot.domain.services.reserve import compat, inbound_back
+from awgbot.domain.services.reserve import compat, inbound_back, inbound_tgwait
 from awgbot.infra import rsvzone
 from awgbot.util import timeutil
 
 from tests.integration import _reserve_common as rc
 from tests.integration import _reserve_move as rm
 from tests.integration._reserve_move import notices, sent
-from tests.integration.test_reserve_hosting import _releasing, host
+from tests.integration.test_reserve_hosting import _releasing, _serving, host
 from tests.integration.test_reserve_return import away, merge_world
 
 pytestmark = pytest.mark.integration
@@ -128,6 +130,33 @@ def test_resume_from_the_primary_restarts_the_guest_at_once(host):
     assert host.spawn.runs == [START] and svc.reserve_in() == "serving"
     assert notices(acts) and "не состоялся" in notices(acts)[0].text
     assert svc.reserve_resume_in() == [], "повтор слова при serving — повторный запуск"
+
+
+def test_resume_restores_the_vpn_without_the_bot_when_the_guest_did_not_hold_telegram(host, monkeypatch):
+    """До возврата VPN был здесь без бота (tg_wait): возобновление не выдумывает «бот у меня» —
+    serving без `tg_taken`, причина прежняя, захват повторяется, админу — что бота нет."""
+    svc = host.svc
+    _serving(host, tg_wait="бот основы на резерве не взял право отвечать (вебхук не поставлен)")
+    svc.rsv_update("rsv_in", tg_taken=False)
+    assert svc.reserve_st_body()["in_tg"] == "wait"
+    svc.reserve_back_req_in()
+    host.spawn.runs.clear()
+    svc.reserve_guest_replica_in(b"\x01")
+    acts = svc.reserve_resume_in()
+    inn = svc.rsv_get("rsv_in")
+    assert host.spawn.runs == [START] and svc.reserve_in() == "serving"
+    assert not inn.get("tg_taken"), "после возврата — «бот у меня», которого не было"
+    assert "не взял право отвечать" in inn.get("tg_wait", "") and svc.reserve_st_body()["in_tg"] == "wait"
+    text = notices(acts)[0].text
+    assert text == ("⚠️ Возврат пользователей «Beta» не состоялся: слияние данных у «Beta» не прошло — пользователи "
+                    "«Beta» снова у тебя, VPN работает, а бот «Beta» здесь не отвечает в Telegram — повторяю раз в "
+                    "минуту; возврат повторит админ «Beta»"), text
+    monkeypatch.setattr(inbound_tgwait, "subprocess", host.spawn)
+    monkeypatch.setattr(rsvzone, "guest_unit_active", lambda: True)
+    assert not host.zone.take.exists()
+    host.clock.advance(inbound_tgwait.TG_RETRY_S * 1.5)
+    svc.reserve_in_tick()
+    assert host.zone.take.exists(), "захват Telegram после возобновления не повторяется"
 
 
 @pytest.mark.parametrize("state", ["serving", "idle", "relay"])

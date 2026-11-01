@@ -95,6 +95,14 @@ class SessionMixin:
                 return gw
         return None
 
+    def _lookup(self, local_ip: str, peer_ip: str):
+        """Слот и запись сопряжения по адресам коннекта — чтения базы, в потоке:
+        клиент туннеля стучится в цикле, и каждый коннект держал бы цикл событий."""
+        gw = self._slot_for(local_ip, peer_ip)
+        join = (self.services.gwjoin_for_addr(local_ip, peer_ip)
+                if hasattr(self.services, "gwjoin_for_addr") else {})
+        return gw, join
+
     async def _drop(self, slot_id: int, *, record: bool = False) -> None:
         """Снять сессию слота. record — записать закрытие в БД: снятая отсюда
         сессия из своего finally этого не сделает (её уже нет в словаре)."""
@@ -171,9 +179,7 @@ class SessionMixin:
     async def _serve(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         peer = writer.get_extra_info("peername") or ("", 0)
         local = writer.get_extra_info("sockname") or ("", 0)
-        gw = self._slot_for(str(local[0]), str(peer[0]))
-        join = (self.services.gwjoin_for_addr(str(local[0]), str(peer[0]))
-                if hasattr(self.services, "gwjoin_for_addr") else {})
+        gw, join = await asyncio.to_thread(self._lookup, str(local[0]), str(peer[0]))
         if gw is None and join:
             # новый слот в сопряжении: строки нет — линк и ключ по записи сопряжения
             import types

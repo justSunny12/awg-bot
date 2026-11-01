@@ -362,9 +362,9 @@ async def main() -> None:
             # канал пары серверов (резерв): слушатель у пригласившего, клиент у принявшего;
             # крючок коммита базы — отметка пакета переезда; на старте пакет уходит заново
             from awgbot.runtime import pairlink
-            services.reserve_pkg_hook_install()
-            if services.reserve_paired():
-                services.reserve_pkg_mark()
+            await asyncio.to_thread(services.reserve_pkg_hook_install)
+            if await asyncio.to_thread(services.reserve_paired):
+                await asyncio.to_thread(services.reserve_pkg_mark)
             await pairlink.ensure(services)
             from awgbot.runtime.pairlink import guestctl
             await guestctl.ensure(services)

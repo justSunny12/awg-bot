@@ -146,8 +146,10 @@ class ReserveInboundBackMixin:
     def reserve_resume(self, why: str) -> list[tuple]:
         """Возврат не состоялся: гость, остановленный на `back_req`, — снова (его данные в
         хранилище зоны целы: `wipe` — только в `reserve_back_in`), состояние serving, админу
-        резерва — уведомление. Вне releasing после released — нечего возобновлять; юнит не
-        поднялся — повтор не чаще RESUME_RETRY_S."""
+        резерва — уведомление. Режим Telegram — прежний: до возврата гость Telegram не держал
+        (VPN здесь без бота, `tg_wait`) — и после serving без `tg_taken`, захват повторяется
+        (inbound_tgwait), а не «бот у меня», которого нет. Вне releasing после released —
+        нечего возобновлять; юнит не поднялся — повтор не чаще RESUME_RETRY_S."""
         from awgbot.infra import rsvzone
         from awgbot.domain.notices import reserve as rn
         now = time.monotonic()
@@ -160,6 +162,7 @@ class ReserveInboundBackMixin:
             self.rsv_update("rsv_in", resume_mono=now)
         name = self.reserve_peer_name()
         try:
+            rsvzone.guest_fit()                               # потолок памяти — по базе, с которой гость стартует сейчас
             proc = subprocess.run(["systemctl", "start", rsvzone.GUEST_UNIT], capture_output=True, timeout=60)
             if proc.returncode != 0:
                 raise subprocess.SubprocessError(f"код {proc.returncode}")
@@ -170,11 +173,14 @@ class ReserveInboundBackMixin:
             inn = self._inn()
             if str(inn.get("state") or "") != "releasing":
                 return []
+            had_tg = bool(inn.get("tg_taken"))               # releasing хранит режим serving до возврата
             self.reserve_set_in("serving", kind=str(inn.get("kind") or "button"), gen=int(inn.get("gen") or 0),
-                                tg_taken=True, served=True, taken_at=str(inn.get("taken_at") or timeutil.now_iso()),
-                                step="", released_at="", replica_at="", deadline=None, resume_mono=None)
-        log.warning("резерв: возврат «%s» не состоялся (%s) — бот основы снова у меня", name, why)
-        return [("fw",), ("notify", [Notification(tg_id=int(config.ADMIN_ID), text=rn.return_resumed(name))])]
+                                tg_taken=had_tg, served=True, taken_at=str(inn.get("taken_at") or timeutil.now_iso()),
+                                step="", released_at="", replica_at="", deadline=None, resume_mono=None,
+                                **({} if had_tg else {"tg_retry_mono": now}))
+        log.warning("резерв: возврат «%s» не состоялся (%s) — %s", name, why,
+                    "бот основы снова у меня" if had_tg else "пользователи снова у меня, бот основы Telegram не держит")
+        return [("fw",), ("notify", [Notification(tg_id=int(config.ADMIN_ID), text=rn.return_resumed(name, bot=had_tg))])]
 
     def reserve_back_in(self) -> list[tuple]:
         """`back` основы: пересылка хвоста, учёт, `relay{until}`, снятие, `wiped`, Т-РУ5. Бот основы

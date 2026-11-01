@@ -177,7 +177,7 @@ async def test_the_guest_reconnects_after_the_reserve_bot_restarts(pair):
     await fresh.ensure()
     try:
         assert await _until(lambda: fresh.connected(), 15), "гость не вернулся к перезапущенному боту резерва"
-        assert fresh.online_count == 3
+        assert await _until(lambda: fresh.online_count == 3, 15), f"счёт устройств гостя не пришёл: {fresh.online_count}"   # hello со счётом — следом за подключением
     finally:
         await fresh.stop()
     pair.server = fresh
@@ -222,12 +222,14 @@ async def test_the_webhook_word_of_the_guest_is_kept_for_the_reserve_with_typed_
                                               "error": "Connection timed out"}) is True
     assert await pair.client.send("webhook", {"stalled": False}) is True
     assert await pair.client.send("webhook", {"foreign": True, "url": "https://203.0.113.9/x"}) is True
+    assert await pair.client.send("webhook", {"ours": True}) is True
     words = []
-    assert await _until(lambda: (words.extend(pair.server.take_words()) or True) and len(words) >= 3)
+    assert await _until(lambda: (words.extend(pair.server.take_words()) or True) and len(words) >= 4)
     assert words == [("webhook", {"stalled": True, "since": "2026-10-21T03:12:00+05:00", "error": "Connection timed out",
-                                  "foreign": False}),
-                     ("webhook", {"stalled": False, "since": "", "error": "", "foreign": False}),
-                     ("webhook", {"stalled": False, "since": "", "error": "", "foreign": True})], words
+                                  "foreign": False, "ours": False}),
+                     ("webhook", {"stalled": False, "since": "", "error": "", "foreign": False, "ours": False}),
+                     ("webhook", {"stalled": False, "since": "", "error": "", "foreign": True, "ours": False}),
+                     ("webhook", {"stalled": False, "since": "", "error": "", "foreign": False, "ours": True})], words
 
 
 async def test_the_reserve_acknowledges_tg_taken_and_the_guest_knows_it(pair):

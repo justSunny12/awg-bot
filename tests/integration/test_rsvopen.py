@@ -103,7 +103,8 @@ class Box:
         for name, val in (("RUN_DIR", self.run_dir), ("VAR_DIR", self.var_dir), ("STATE_DIR", self.state_dir),
                           ("OPEN_STATUS", self.state_dir / "open.status"), ("REP_PATH", self.var_dir / "rep.bin"),
                           ("K_FILE", self.run_dir / "k"), ("WEBHOOK_FILE", self.run_dir / "webhook.json"),
-                          ("TG_POOL_FILE", self.run_dir / "tg_pool.json"), ("TG_TAKE_FILE", self.run_dir / "tg_take")):
+                          ("TG_POOL_FILE", self.run_dir / "tg_pool.json"), ("TG_TAKE_FILE", self.run_dir / "tg_take"),
+                          ("HOOK_FOREIGN_FILE", self.run_dir / "hook_foreign")):
             mp.setattr(rsvzone, name, val)
         mp.setattr(rsvzone, "store", self._store)
         mp.setattr(rsvzone, "take", self._take)
@@ -146,17 +147,21 @@ class Box:
         return self.fact
 
     # пакет
-    def write_package(self, *, pkg_gen=5, parts=None, env=None, dns=DNS, k=None, m=None, lists=None):
+    def write_package(self, *, pkg_gen=5, parts=None, env=None, dns=DNS, k=None, m=None, lists=None, db=None,
+                      no_db=False):
+        """Пакет в reserve/guest.pkg; реплика — двоичной частью `db` (по умолчанию — своя;
+        no_db — пакет без этой части)."""
         iface = pkgvpn.build([("awg0", LIVE)], admin=["10.8.1.2"], dns=["10.8.1.1"], upstreams=["198.51.100.53"],
                              tz="Asia/Yekaterinburg")
-        bot_part = {"db": self.replica.hex(), "conf": {"limits": {"limits": {"default_days": 5}},
+        bot_part = {"conf": {"limits": {"limits": {"default_days": 5}},
                                                        "app": {"client_config": {"server_name": "Альфа"}}},
                     "app_guest": {"network": {"server_host": "203.0.113.7", "server_port": 51820}, "awg": {"protocol_id": 2}},
                     "env": env if env is not None else {"BOT_TOKEN": TOKEN, "ADMIN_ID": 77}}
         if lists is not None:
             bot_part["lists"] = lists
+        db = self.replica if db is None else db
         blob = seal.seal(parts or {"vpn": iface, "bot": bot_part}, k=k or self.k, m=m or self.m, pkg_gen=pkg_gen,
-                         m_gen=self.m_gen, dns=dns)
+                         m_gen=self.m_gen, dns=dns, blobs=None if no_db else {seal.DB_PART: db})
         path = config.DATA_DIR / "reserve" / "guest.pkg"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(blob)
@@ -376,6 +381,14 @@ def test_a_stale_webhook_mark_from_an_earlier_opening_is_removed_before_the_new_
     assert not rsvzone.TG_TAKE_FILE.exists(), "отметка прежнего открытия разрешила бы вебхук до факта"
 
 
+def test_a_foreign_webhook_mark_of_an_earlier_episode_is_removed_with_the_new_storage(box):
+    """Отметка «вебхук не здесь» прошлого эпизода в новом держала бы бот основы на резерве немым."""
+    box.run_dir.mkdir(parents=True)
+    rsvzone.HOOK_FOREIGN_FILE.write_text("2026-11-01T10:00:00+05:00")
+    box.open(**box.points(1), set_record=False)
+    assert not rsvzone.HOOK_FOREIGN_FILE.exists()
+
+
 # ── ничего открытого наружу ──────────────────────────────────────────────────
 
 def test_neither_stdout_nor_the_status_file_carries_keys_points_boxes_tokens_or_the_code(box):
@@ -493,7 +506,7 @@ def test_a_package_without_the_bot_part_fails(box):
 def test_a_package_with_a_vpn_part_that_does_not_pass_the_check_fails_before_the_zone(box):
     bad = pkgvpn.build([("awg0", LIVE)], admin=[], dns=[], upstreams=[], tz="")
     bad["ifaces"][0]["obf"] = {"PostUp": "rm -rf /"}
-    box.write_package(parts={"vpn": bad, "bot": {"db": "00", "conf": {}, "env": {"BOT_TOKEN": TOKEN, "ADMIN_ID": 1}}})
+    box.write_package(parts={"vpn": bad, "bot": {"conf": {}, "env": {"BOT_TOKEN": TOKEN, "ADMIN_ID": 1}}})
     assert box.open(**box.points(1)) == 1 and box.calls == []
 
 
@@ -503,6 +516,13 @@ def test_a_package_without_a_token_or_admin_fails_and_the_clone_is_not_started(b
     assert box.open(**box.points(1)) == 1
     assert "токена" in box.out and "take" not in box.kinds()
     assert not rsvzone.TG_TAKE_FILE.exists()
+
+
+def test_a_package_without_the_base_part_fails_before_the_zone(box):
+    """Формат 2: база — двоичная часть `db`; её нет (в том числе пакет, где база ехала бы
+    внутри части бота) — отказ до хранилища, а не гость без базы."""
+    box.write_package(no_db=True)
+    assert box.open(**box.points(1)) == 1 and "нет части db" in box.out and box.calls == [], box.out
 
 
 def test_an_empty_replica_fails(box):
@@ -534,6 +554,37 @@ def test_a_record_that_never_shows_up_is_a_failure_and_the_webhook_is_not_marked
     assert "record_fact" not in box.steps and not rsvzone.TG_TAKE_FILE.exists()
 
 
+def test_a_failure_after_the_record_change_says_the_record_is_moved(box):
+    """Факт не наступил за 30 минут — запись уже сменена: итог несёт record=set, имя и адрес —
+    по ним бот резерва зону не снимает и ждёт факт сам (без них — снимал бы рабочий клон)."""
+    box.fact = False
+    assert box.open(**box.points(1)) == 1
+    st = rsvzone.open_status()
+    assert (st["step"], st.get("record"), st.get("name"), st.get("ip")) == \
+        ("fail", "set", "vpn.example.net", "203.0.113.20"), st
+
+
+def test_a_crash_after_the_record_change_also_says_the_record_is_moved(box, monkeypatch):
+    def wait(name, ip, budget_s=0):
+        raise OSError("связь пропала")
+    monkeypatch.setattr(rsvopen, "wait_fact", wait)
+    assert box.open(**box.points(1)) == 1
+    st = rsvzone.open_status()
+    assert st["step"] == "fail" and "OSError" in st["reason"] and st.get("record") == "set", st
+
+
+def test_a_failure_before_the_record_change_has_no_record_field(box):
+    box.record_error = dnsapi.DnsError("токен не принят")
+    assert box.open(**box.points(1)) == 1
+    assert "record" not in rsvzone.open_status(), "запись не менялась — бот снял бы зону как прежде"
+    box.record_error = None
+    box.fact = False
+    assert box.open(**box.points(1)) == 1                     # смена в прошлом запуске не тянется в следующий
+    box.record_error = dnsapi.DnsError("снова")
+    assert box.open(**box.points(1)) == 1
+    assert "record" not in rsvzone.open_status(), "отметка прошлого запуска дожила до нового"
+
+
 def test_a_crash_inside_the_process_is_a_failure_line_not_a_traceback(box, monkeypatch):
     monkeypatch.setattr(rsvopen, "fill_store", lambda *a, **k: (_ for _ in ()).throw(KeyError("неожиданно")))
     assert box.open(**box.points(1)) == 1
@@ -546,7 +597,7 @@ def _snapshot(box, *, pkg_gen, names, key=None):
     snapdir = box.tmp / "snap"
     snapdir.mkdir(exist_ok=True)
     db = _replica(snapdir, names=names)
-    blob = seal.snapshot_seal(key or box.k, {"pkg_gen": pkg_gen, "at": "x", "db": db.hex()})
+    blob = seal.snapshot_seal(key or box.k, {"pkg_gen": pkg_gen, "at": "x"}, db)
     box.var_dir.mkdir(parents=True, exist_ok=True)
     rsvzone.REP_PATH.write_bytes(blob)
     return db
@@ -707,7 +758,7 @@ def test_a_package_without_lists_opens_as_before(box):
 def test_a_settings_set_with_an_unknown_name_is_not_written_anywhere(box, name):
     """Имя набора приходит из пакета второй стороны: не из pkgbot.CONF_FILES —
     не пишется вовсе (ни в хранилище, ни путём наружу)."""
-    bot = {"db": box.replica.hex(), "env": {"BOT_TOKEN": TOKEN, "ADMIN_ID": 77},
+    bot = {"env": {"BOT_TOKEN": TOKEN, "ADMIN_ID": 77},
            "conf": {"limits": {"limits": {"default_days": 5}}, name: {"x": 1}}}
     iface = pkgvpn.build([("awg0", LIVE)], admin=["10.8.1.2"], dns=["10.8.1.1"], upstreams=["198.51.100.53"], tz="")
     box.write_package(parts={"vpn": iface, "bot": bot})
@@ -720,7 +771,7 @@ def test_a_settings_set_with_an_unknown_name_is_not_written_anywhere(box, name):
 
 
 def test_every_known_settings_set_is_written(box):
-    bot = {"db": box.replica.hex(), "env": {"BOT_TOKEN": TOKEN, "ADMIN_ID": 77},
+    bot = {"env": {"BOT_TOKEN": TOKEN, "ADMIN_ID": 77},
            "conf": {n: {n: {"on": True}} for n in pkgbot.CONF_FILES}}
     iface = pkgvpn.build([("awg0", LIVE)], admin=["10.8.1.2"], dns=["10.8.1.1"], upstreams=["198.51.100.53"], tz="")
     box.write_package(parts={"vpn": iface, "bot": bot})

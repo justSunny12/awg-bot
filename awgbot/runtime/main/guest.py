@@ -10,8 +10,11 @@
 бэкапы, вотчдог конфига и файла интерфейса. Сверка пиров и блокировок — как
 есть, по клону. Вместо поллинга — слушатель вебхука (`runtime/webhook`):
 Telegram отдаёт обновления сюда после `setWebhook`, который ставится по
-факту записи DNS (отметка `tg_take` от процесса открытия или команда бота
-резерва по локальному каналу). Остановка — по команде `stop` того же канала
+факту записи DNS (отметка `tg_take` от процесса открытия или передача бота журналом) и
+только по слову бота резерва `tg{go}` (пользователи у него, основа Telegram не забирала):
+отметка на диске переживает рестарт гостя, а Telegram мог уйти к основе. Отметка «вебхук
+не здесь» (надзор увидел чужой адрес) лежит в хранилище гостя и тоже переживает рестарт:
+при ней обычного слова мало — нужно явное (`tg{go, foreign}`). Остановка — по команде `stop` того же канала
 (возврат) или сигналу: финальный снимок, реплика боту резерва, выход.
 
 С журналом (база открыта процессом с отметкой `capture`): такт журнала раз в
@@ -47,7 +50,9 @@ async def run_guest() -> None:
     db = pkg.Database(config.DB_PATH)
     db.init_schema()
     services = pkg.Services(db)
-    if services.guest_adopt_snapshot():
+    # Тяжёлое на старте — в потоке, как всё тяжёлое в корутинах runtime: слияние
+    # снимка и записи базы зоны не держат цикл событий
+    if await asyncio.to_thread(services.guest_adopt_snapshot):
         # база подменена под открытым соединением — открыть заново
         db.close()
         db = pkg.Database(config.DB_PATH)
@@ -56,11 +61,12 @@ async def run_guest() -> None:
     missing = services.guest_install_refusals()
     if missing:
         log.warning("гость: отказы не поставлены на %s", ", ".join(missing))
-    services.guest_snapshot_hook_install()
-    services.ensure_admin_client()
-    services.gwlink_sessions_reset()
+    await asyncio.to_thread(services.guest_hook_foreign_load)   # «вебхук не здесь» с прошлого запуска — до кворума и вебхука
+    await asyncio.to_thread(services.guest_snapshot_hook_install)
+    await asyncio.to_thread(services.ensure_admin_client)
+    await asyncio.to_thread(services.gwlink_sessions_reset)
     try:
-        services.reserve_quorum_guest_start()            # без права записи, пока бот резерва не прислал состав
+        await asyncio.to_thread(services.reserve_quorum_guest_start)   # без права записи, пока бот резерва не прислал состав
     except Exception as e:                               # noqa: BLE001
         log.warning("гость: кворум на старте: %s", e)
     from awgbot.runtime import tgsession
@@ -116,7 +122,8 @@ async def run_guest() -> None:
                 log.info("гость: пул вебхука не перечитан: %s", e)
         again = _retake_begin(ctl, tg_set)                # основа отдала Telegram (пульт): вебхук снова
         if not tg_set.is_set() and wh is not None and (ctl.take_tg.is_set() or rsvzone.TG_TAKE_FILE.exists()) \
-                and await asyncio.to_thread(services.guest_can_take_tg):   # не при пульте у основы; с журналом — только держателем
+                and await asyncio.to_thread(services.guest_tg_may_take, ctl.tg_go, ctl.tg_foreign_ack):
+            # слово бота резерва (не при пульте у основы); с журналом — только держателем
             if await wh.set_webhook(bot, dp):
                 tg_set.set()
                 watch_due = asyncio.get_running_loop().time() + webhook.watch_delay()
@@ -155,7 +162,8 @@ async def run_guest() -> None:
             except Exception as e:                       # noqa: BLE001
                 log.warning("гость: такт журнала: %s", e)
 
-    jrn_task = asyncio.get_running_loop().create_task(jrn_loop()) if services.guest_jrn_on() else None
+    jrn_task = (asyncio.get_running_loop().create_task(jrn_loop())
+                if await asyncio.to_thread(services.guest_jrn_on) else None)
     scheduler = setup_guest_scheduler(services, bot, db, on_ctl_tick=ctl_tick)
     if wh is not None:
         try:
@@ -175,7 +183,7 @@ async def run_guest() -> None:
                     await wh.stop()                      # правки после снимка в rep.bin не попали бы
                 wh = None
             return
-        journal = services.guest_jrn_on()
+        journal = await asyncio.to_thread(services.guest_jrn_on)
         log.info("гость: команда возврата — %s", "последние записи журнала основе" if journal
                  else "финальный снимок и реплика боту резерва")
         try:
@@ -199,7 +207,7 @@ async def run_guest() -> None:
         log.info("гость: останавливаюсь…")
         if jrn_task is not None:
             jrn_task.cancel()
-        if not ctl.stop_req.is_set() and not services.guest_jrn_on():
+        if not ctl.stop_req.is_set() and not await asyncio.to_thread(services.guest_jrn_on):
             # остановка не по команде (сигнал юнита, перезапуск): последние правки — в rep.bin
             try:
                 await asyncio.to_thread(services.guest_snapshot_tick, True)
@@ -313,8 +321,8 @@ async def _watch(wh, bot, services, ctl) -> None:
     здесь больше не пишу (`guest_webhook_foreign`), боту резерва — слово для его админа
     (повтор на каждом надзоре — канал мог быть не подключён); адрес снова мой — снято."""
     res = await wh.watch(bot)
-    if getattr(wh, "url_ours", None):
-        await asyncio.to_thread(services.guest_webhook_ours)
+    if getattr(wh, "url_ours", None) and await asyncio.to_thread(services.guest_webhook_ours):
+        await ctl.send("webhook", {"ours": True})        # бот резерва снимет свою отметку «не здесь»
     if not res:
         return
     if res.get("foreign"):

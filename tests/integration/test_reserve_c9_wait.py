@@ -2,8 +2,9 @@
 карточки основы «жду события», по сроку C9_WAIT_S от заведения — «(не ждать?)»
 ссылкой на экран, где админ снимает отметку сам (`reserve_c9_drop`): строка в
 журнал и итог уведомлением; повтор и снятая фактом отметка — None, не ошибка;
-пока резерв на связи и несёт бот (или его журнал на диске новее перенесённого)
-— отказ: правки придут сами. С рычагом (await_merge) отметку ведёт возврат —
+пока резерв на связи и несёт бот — отказ: правки придут сами; журнал гостя на
+диске резерва сам по себе не держит — его доставляет резерв, а пока части идут,
+держит прогресс (test_reserve_c9_deliver). С рычагом (await_merge) отметку ведёт возврат —
 ни плашки, ни снятия. Отметка прежней версии без `at_ts` — срок по `at`, без
 обоих — от первого такта дома.
 
@@ -154,14 +155,16 @@ def test_a_second_drop_or_a_mark_settled_meanwhile_is_none(duo):
     assert duo.a.reserve_c9_drop() is None
 
 
-def test_drop_waits_for_the_guest_journal_on_the_reserve_disk(duo):
+def test_the_guest_journal_on_the_reserve_disk_alone_no_longer_refuses_the_drop(duo):
+    """Прежде журнал на диске резерва отказывал «придут сами» — бессрочно, если резерв его
+    не довозил. Теперь доставляет резерв, а держит только прогресс (часть за C9_PROGRESS_S)."""
     _home_with_c9(duo)
     c9 = duo.a.rsv_get("rsv_c9")
     keep = dict(duo.b.reserve_keep_view(), gj_e=c9["e"], gj_last=int(c9["upto"]) + 3)
     rm.st_in(duo.a, caps=JCAPS, jrn={"keep": keep}, **{"in": "idle"})
-    with pytest.raises(ServiceError, match="на диске"):
-        duo.a.reserve_c9_drop()
-    assert duo.a.rsv_get("rsv_c9").get("e")
+    assert duo.a.reserve_c9_wait_view()["drop_why"] == "", "журнал на диске без прогресса держит снятие"
+    assert duo.a.reserve_c9_drop(), "снятие отказало по журналу на диске резерва"
+    assert duo.a.rsv_get("rsv_c9") == {}
 
 
 def test_the_lever_mark_has_no_plaque_and_is_not_dropped(duo):

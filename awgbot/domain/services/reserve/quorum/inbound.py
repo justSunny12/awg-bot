@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import time
 
-from awgbot.util import timeutil
+from awgbot.util import rsvkeys, timeutil
 from awgbot.util.quorum import VIEWS
 
 from ...gateway_link.common import log
@@ -146,9 +146,20 @@ class ReserveQuorumInboundMixin:
             return
         q_given = int(pg.get("q") or 0)
         qk = self.reserve_qkeys()
-        floor = int(qk.get("m_q_gen") or qk.get("q_gen") or 0)
-        if not q_given or not floor or q_given < floor or self.reserve_compromised():
+        if not q_given or self.reserve_compromised():
             return
+        qf = rsvkeys.m_print_of(pg.get("qf"))
+        if qf and qk.get("m_qfs_full"):
+            # отпечаток отданного многочлена и полный список многочленов текущего `M`: решает он, а не
+            # номер (после восстановления из копии номера идут заново)
+            if qf not in (qk.get("m_qfs") or []):
+                log.info("кворум: шлюз %s отдавал точку многочлена %s не этого ключа (отпечаток чужой) — ключ не тронут",
+                         slot, q_given)
+                return
+        else:
+            floor = int(qk.get("m_q_gen") or qk.get("q_gen") or 0)
+            if not floor or q_given < floor:
+                return
         self.reserve_mark_compromised(f"шлюз {slot} отдавал точку ключа кворума (многочлен {q_given}, {pg.get('at') or '?'})")
 
     # ── просьба кандидата по каналу пары ────────────────────────────────────

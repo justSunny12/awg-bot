@@ -209,3 +209,15 @@ def test_a_repeated_number_is_read_once(store):
     assert got[1] == first, "повтор номера подменил первую запись"
     store.append_counts("a", [crec(1), crec(1)])
     assert nums(store.counts("a")) == [1]
+
+
+def test_the_same_numbers_of_another_epoch_do_not_hide_the_asked_epoch(store):
+    """Журнал гостя прошлого эпизода с теми же номерами: чтение по эпохе отдаёт записи
+    этой эпохи, а не первые по номеру (иначе резерв сказал бы основе «журнала нет», держа
+    её правки на диске)."""
+    store.append_events([rec(11, e=3), rec(12, e=3)])
+    store.append_events([rec(11, e=5), rec(12, e=5), rec(13, e=5)])
+    assert [event.head(r).e for r in store.events()] == [3, 3, 5], "условие: без эпохи заслоняют"
+    got = store.events(after=10, epoch=5)
+    assert [(event.head(r).e, event.head(r).n) for r in got] == [(5, 11), (5, 12), (5, 13)], got
+    assert store.events(after=12, epoch=3) == []

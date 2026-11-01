@@ -49,6 +49,7 @@ _PERSON = b"awgbot-rsv-m-v1"
 _PERSON_Q = b"awgbot-rsv-mq-v1"
 _PERSON_C = b"awgbot-rsv-mc-v1"
 _PERSON_F = b"awgbot-rsv-mf-v1"
+_PERSON_QF = b"awgbot-rsv-qf-v1"
 MF_LEN = 8                                           # байт отпечатка `M`
 BOX_LEN = 24 + M_LEN + 16                            # нонс + M + MAC
 
@@ -95,6 +96,25 @@ def same_m(a: dict, b: dict) -> bool:
     if int(a.get("m_gen") or 0) != int(b.get("m_gen") or 0):
         return False
     fa, fb = m_print_of(a.get("mf")), m_print_of(b.get("mf"))
+    return not (fa and fb) or fa == fb
+
+
+def q_print(mq: bytes) -> str:
+    """Отпечаток многочлена ключа кворума — 8 байт SHA-256 от `Mq` (hex, 16 знаков) рядом с
+    `q_gen`: после восстановления основы из копии номера многочленов идут заново, и точка
+    шлюза прежнего многочлена совпала бы с новым по номеру. Считает только основа (`Mq`
+    есть только у неё); шлюзы и второй сервер несут его рядом с номером."""
+    if len(mq) != M_LEN:
+        raise ValueError(f"ключ кворума — {M_LEN} байт")
+    return hashlib.sha256(_PERSON_QF + bytes(mq)).digest()[:MF_LEN].hex()
+
+
+def same_q(a: dict, b: dict) -> bool:
+    """Записи об одном многочлене: `q_gen` совпал, и отпечатки `qf`, если они есть у обеих,
+    тоже; нет отпечатка у одной (шлюз или сервер прежней версии) — по номеру."""
+    if int(a.get("q_gen") or 0) != int(b.get("q_gen") or 0):
+        return False
+    fa, fb = m_print_of(a.get("qf")), m_print_of(b.get("qf"))
     return not (fa and fb) or fa == fb
 
 
@@ -173,6 +193,10 @@ class QuorumGen:
 
     def qbox(self, m: bytes) -> bytes:
         return seal_box(qbox_key(self.mq), m)
+
+    @property
+    def qf(self) -> str:
+        return q_print(self.mq)
 
 
 @dataclass(frozen=True)

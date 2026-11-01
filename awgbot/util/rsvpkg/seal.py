@@ -1,16 +1,33 @@
 """
 seal.py — упаковка пакета переезда: заголовок, `K` под `M`, части под `K`,
-конверт DNS под `M`, отпечаток, добивка до ступени; обе стороны.
+конверт DNS под `M`, отпечаток, добивка до ступени; шифрованный снимок базы
+(`rep.bin`, финальная реплика) под `K`; обе стороны.
 
-Двоичная запись:
+Двоичная запись пакета (формат 2):
 
-    4  метка «AWGK»          1  версия формата (1)
+    4  метка «AWGK»          1  версия формата (2)
     4  поколение пакета      4  поколение M
     2+ SecretBox_M(K): длина и шифротекст (16 + 24 + 32 байта)
     4+ конверт DNS: длина и SecretBox_M(zlib(JSON)); 0 — конверта нет
-    4+ части под K: число, затем на каждую — 1+ имя, 4+ длина, SecretBox_K(zlib(JSON))
+    4  число частей под K, затем на каждую — 1+ имя, 1 вид, 4+ длина и шифротекст:
+         вид J — SecretBox_K(zlib(JSON)): часть VPN, часть бота без базы, журнал;
+         вид B — SecretBox_K(8 размер + zlib(байты)): двоичная часть как есть —
+         реплика базы `db`, без hex и без JSON
     …  добивка нулями до ступени STEP
    32  отпечаток BLAKE2b всего выше (открыт; по нему сверяют поколение и целостность)
+
+Снимок `rep.bin` (формат 2):
+
+    4  метка «AWGS»   1  версия (2)   8  размер базы (открыт: по нему бот резерва
+                                         ставит потолок памяти гостя, ключа у него нет)
+    …  SecretBox_K(4+ zlib(JSON метаданных) + 8 размер + zlib(база))
+
+Размер внутри шифротекста сверяется с открытым. Двоичная часть открывается в
+`Packed`: расшифрована, но сжата, размер известен до распаковки, распаковка —
+потоком в файл (`Packed.write_to`) — процесс открытия на резерве не держит базу
+в памяти ни разу целиком; распаковка больше заявленного размера (или
+MAX_DB) — отказ. Прежнего формата (1: база hex внутри JSON части бота) нет —
+ни сборки, ни чтения: пары создаются только между серверами одного формата.
 
 Ключ SecretBox из `M` — `rsvkeys.box_key`; `K` — 32 случайных байта. Открыть
 заголовок (поколения, отпечаток, размер) может любой; `K` — тот, у кого `M`
@@ -27,6 +44,7 @@ seal.py — упаковка пакета переезда: заголовок, 
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import secrets
 import struct
@@ -40,12 +58,19 @@ from nacl.secret import SecretBox
 from awgbot.util import rsvkeys
 
 MAGIC = b"AWGK"
-FORMAT = 1
+SNAP_MAGIC = b"AWGS"
+FORMAT = 2
 STEP = 64 * 1024
 MAX_SIZE = 16 * 1024 * 1024
+MAX_DB = 4096 * 1024 * 1024      # двоичная часть больше — заведомо мусор (тот же верх, что у хранилища гостя)
 K_LEN = 32
 _DIGEST = 32
 _PERSON = b"awgbot-rsvpkg-v1"
+KIND_JSON = b"J"
+KIND_BYTES = b"B"
+DB_PART = "db"                   # реплика базы — двоичной частью
+_IN_STEP = 64 * 1024             # распаковка: вход ступенями…
+_OUT_STEP = 1024 * 1024          # …и выход не больше мегабайта за шаг — ни полной копии, ни бомбы в памяти
 
 
 class PackageError(ValueError):
@@ -110,9 +135,10 @@ def _box(key: bytes, data: bytes) -> bytes:
     return bytes(SecretBox(key).encrypt(data))
 
 
-def _unbox(key: bytes, data: bytes, what: str) -> bytes:
+def _unbox(key: bytes, data, what: str) -> bytes:
+    """Расшифровать срез (bytes или memoryview пакета: копия — только этого среза)."""
     try:
-        return bytes(SecretBox(key).decrypt(data))
+        return bytes(SecretBox(key).decrypt(bytes(data)))
     except (CryptoError, ValueError) as e:
         raise PackageError(f"{what}: не тот ключ или порча") from e
 
@@ -121,78 +147,138 @@ def _pack_json(obj) -> bytes:
     return zlib.compress(json.dumps(obj, separators=(",", ":"), ensure_ascii=False).encode(), 6)
 
 
-def _unpack_json(raw: bytes, what: str):
+def _unpack_json(raw, what: str):
     try:
         return json.loads(zlib.decompress(raw).decode())
     except (zlib.error, ValueError, UnicodeDecodeError) as e:
         raise PackageError(f"{what}: не разобралось") from e
 
 
+def _pack_bytes(data: bytes) -> bytes:
+    return struct.pack(">Q", len(data)) + zlib.compress(data, 6)
+
+
+class Packed:
+    """Двоичная часть, уже расшифрованная, но сжатая: размер (`size`) известен до
+    распаковки, распаковка — потоком (`write_to`), полной копии в памяти нет;
+    `read` — байты целиком (основа, слияние, тесты)."""
+
+    __slots__ = ("size", "_z", "_what")
+
+    def __init__(self, plain, what: str):
+        mv = memoryview(plain)
+        if len(mv) < 8:
+            raise PackageError(f"{what}: оборвана")
+        (size,) = struct.unpack(">Q", mv[:8])
+        if size > MAX_DB:
+            raise PackageError(f"{what}: больше предела")
+        self.size, self._z, self._what = int(size), mv[8:], what
+
+    def write_to(self, f) -> int:
+        """Распаковать в файл (что угодно с `write`); больше или меньше заявленного
+        размера, порча — PackageError. Возвращает число записанных байт."""
+        d = zlib.decompressobj()
+        n = 0
+
+        def put(out: bytes) -> None:
+            nonlocal n
+            n += len(out)
+            if n > self.size:
+                raise PackageError(f"{self._what}: больше заявленного размера")
+            if out:
+                f.write(out)
+        try:
+            for i in range(0, len(self._z), _IN_STEP):
+                data = self._z[i:i + _IN_STEP]
+                while data:
+                    put(d.decompress(data, _OUT_STEP))
+                    data = d.unconsumed_tail
+            put(d.flush())
+        except zlib.error as e:
+            raise PackageError(f"{self._what}: не разобралось") from e
+        if not d.eof or d.unused_data or n != self.size:
+            raise PackageError(f"{self._what}: оборвана или с хвостом")
+        return n
+
+    def read(self) -> bytes:
+        buf = io.BytesIO()
+        self.write_to(buf)
+        return buf.getvalue()
+
+
 def seal(parts: dict[str, object], *, k: bytes, m: bytes, pkg_gen: int, m_gen: int,
-         dns: dict | None = None) -> bytes:
-    """Собрать пакет. `parts` — имя → объект JSON (часть VPN, часть бота…)."""
+         dns: dict | None = None, blobs: dict[str, bytes] | None = None) -> bytes:
+    """Собрать пакет. `parts` — имя → объект JSON (часть VPN, часть бота…), `blobs` —
+    имя → двоичные данные (реплика базы `db`)."""
     if len(k) != K_LEN:
         raise PackageError(f"ключ пакета — {K_LEN} байт")
+    items = [(n, KIND_JSON, _pack_json(o)) for n, o in parts.items()]
+    items += [(n, KIND_BYTES, _pack_bytes(bytes(b))) for n, b in (blobs or {}).items()]
+    if len({n for n, _k, _p in items}) != len(items):
+        raise PackageError("имя части повторяется")
     mkey = rsvkeys.box_key(m)
-    body = MAGIC + struct.pack(">BII", FORMAT, int(pkg_gen), int(m_gen))
+    out = [MAGIC, struct.pack(">BII", FORMAT, int(pkg_gen), int(m_gen))]
     ek = _box(mkey, k)
-    body += struct.pack(">H", len(ek)) + ek
+    out += [struct.pack(">H", len(ek)), ek]
     env = _box(mkey, _pack_json(dns)) if dns else b""
-    body += struct.pack(">I", len(env)) + env
-    body += struct.pack(">I", len(parts))
-    for name, obj in parts.items():
+    out += [struct.pack(">I", len(env)), env, struct.pack(">I", len(items))]
+    for name, kind, plain in items:
         nm = str(name).encode("ascii")
         if not 1 <= len(nm) <= 255:
             raise PackageError("имя части — 1…255 знаков ASCII")
-        ct = _box(k, _pack_json(obj))
-        body += struct.pack(">B", len(nm)) + nm + struct.pack(">I", len(ct)) + ct
+        ct = _box(k, plain)
+        out += [struct.pack(">B", len(nm)), nm, kind, struct.pack(">I", len(ct)), ct]
+    body = b"".join(out)
+    del out
     total = len(body) + _DIGEST
     pad = (-total) % STEP
-    body += b"\x00" * pad
-    if len(body) + _DIGEST > MAX_SIZE:
+    if total + pad > MAX_SIZE:
         raise PackageError("пакет больше предела 16 МБ")
+    body += b"\x00" * pad
     return body + hashlib.blake2b(body, digest_size=_DIGEST, person=_PERSON).digest()
 
 
-def _check(blob: bytes) -> bytes:
+def _check(blob: bytes) -> memoryview:
+    """Тело пакета (без отпечатка) — срезом памяти пакета, без копии."""
     if len(blob) < 4 + 9 + 2 + 4 + 4 + _DIGEST or len(blob) > MAX_SIZE:
         raise PackageError("пакет не того размера")
-    body, got = blob[:-_DIGEST], blob[-_DIGEST:]
+    mv = memoryview(blob)
+    body, got = mv[:-_DIGEST], bytes(mv[-_DIGEST:])
     if hashlib.blake2b(body, digest_size=_DIGEST, person=_PERSON).digest() != got:
         raise PackageError("отпечаток пакета не сошёлся")
-    if body[:4] != MAGIC or body[4] != FORMAT:
+    if bytes(body[:4]) != MAGIC or body[4] != FORMAT:
         raise PackageError("это не пакет переезда или другой формат")
     return body
 
 
-def _walk(body: bytes):
-    """(pkg_gen, m_gen, ek, env, [(имя, шифротекст)…])."""
-    pkg_gen, m_gen = struct.unpack(">II", body[5:13])
-    p = 13
-    (ln,) = struct.unpack(">H", body[p:p + 2]); p += 2
-    ek = body[p:p + ln]; p += ln
-    (ln,) = struct.unpack(">I", body[p:p + 4]); p += 4
-    env = body[p:p + ln]; p += ln
-    (n,) = struct.unpack(">I", body[p:p + 4]); p += 4
-    parts = []
-    for _ in range(n):
-        nl = body[p]; p += 1
-        name = body[p:p + nl].decode("ascii", errors="replace"); p += nl
+def _walk(body: memoryview):
+    """(pkg_gen, m_gen, ek, env, [(имя, вид, шифротекст)…]) — срезы тела, без копий."""
+    try:
+        pkg_gen, m_gen = struct.unpack(">II", body[5:13])
+        p = 13
+        (ln,) = struct.unpack(">H", body[p:p + 2]); p += 2
+        ek = body[p:p + ln]; p += ln
         (ln,) = struct.unpack(">I", body[p:p + 4]); p += 4
-        parts.append((name, body[p:p + ln])); p += ln
-    if p > len(body):
-        raise PackageError("пакет оборван")
+        env = body[p:p + ln]; p += ln
+        (n,) = struct.unpack(">I", body[p:p + 4]); p += 4
+        parts = []
+        for _ in range(n):
+            nl = body[p]; p += 1
+            name = bytes(body[p:p + nl]).decode("ascii", errors="replace"); p += nl
+            kind = bytes(body[p:p + 1]); p += 1
+            (ln,) = struct.unpack(">I", body[p:p + 4]); p += 4
+            parts.append((name, kind, body[p:p + ln])); p += ln
+    except (struct.error, IndexError) as e:
+        raise PackageError("пакет оборван") from e
+    if p > len(body) or any(kind not in (KIND_JSON, KIND_BYTES) for _n, kind, _c in parts):
+        raise PackageError("пакет оборван или с частью неизвестного вида")
     return pkg_gen, m_gen, ek, env, parts
 
 
 def header(blob: bytes) -> Header:
     """Открытая часть: поколения, размер, отпечаток, есть ли конверт DNS."""
-    body = _check(blob)
-    try:
-        pkg_gen, m_gen, _ek, env, _parts = _walk(body)
-    except (struct.error, IndexError) as e:
-        raise PackageError("пакет оборван") from e
-    return Header(pkg_gen=pkg_gen, m_gen=m_gen, size=len(blob), digest=blob[-_DIGEST:].hex(), has_dns=bool(env))
+    pkg_gen, m_gen, _ek, env, _parts = _walk(_check(blob))
+    return Header(pkg_gen=pkg_gen, m_gen=m_gen, size=len(blob), digest=bytes(blob[-_DIGEST:]).hex(), has_dns=bool(len(env)))
 
 
 def open_k(blob: bytes, m: bytes) -> bytes:
@@ -207,7 +293,7 @@ def open_k(blob: bytes, m: bytes) -> bytes:
 def open_dns(blob: bytes, m: bytes) -> dict | None:
     """Конверт DNS — ключом `M`; None — конверта нет."""
     _pkg, _mg, _ek, env, _parts = _walk(_check(blob))
-    if not env:
+    if not len(env):
         return None
     data = _unpack_json(_unbox(rsvkeys.box_key(m), env, "конверт DNS"), "конверт DNS")
     if not isinstance(data, dict):
@@ -216,22 +302,63 @@ def open_dns(blob: bytes, m: bytes) -> dict | None:
 
 
 def open_parts(blob: bytes, k: bytes) -> dict[str, object]:
-    """Части пакета — ключом `K`."""
+    """Части-JSON пакета — ключом `K` (двоичные — `open_blob`)."""
     _pkg, _mg, _ek, _env, parts = _walk(_check(blob))
     out = {}
-    for name, ct in parts:
-        out[name] = _unpack_json(_unbox(k, ct, f"часть {name}"), f"часть {name}")
+    for name, kind, ct in parts:
+        if kind == KIND_JSON:
+            out[name] = _unpack_json(_unbox(k, ct, f"часть {name}"), f"часть {name}")
     return out
 
 
+def open_blob(blob: bytes, k: bytes, name: str = DB_PART) -> Packed:
+    """Двоичная часть `name` — ключом `K`: расшифрована, распаковка — потоком
+    (`Packed.write_to`). Нет такой части — PackageError."""
+    _pkg, _mg, _ek, _env, parts = _walk(_check(blob))
+    for nm, kind, ct in parts:
+        if nm == name and kind == KIND_BYTES:
+            return Packed(_unbox(k, ct, f"часть {name}"), f"часть {name}")
+    raise PackageError(f"в пакете нет части {name}")
+
+
 def digest(blob: bytes) -> str:
-    return blob[-_DIGEST:].hex() if len(blob) >= _DIGEST else ""
+    return bytes(blob[-_DIGEST:]).hex() if len(blob) >= _DIGEST else ""
 
 
-def snapshot_seal(k: bytes, obj: object) -> bytes:
-    """Шифрованный снимок бота основы на резерве (`rep.bin`) — под тем же `K`."""
-    return _box(k, _pack_json(obj))
+_SNAP_HEAD = 4 + 1 + 8
 
 
-def snapshot_open(k: bytes, blob: bytes):
-    return _unpack_json(_unbox(k, blob, "снимок"), "снимок")
+def snapshot_seal(k: bytes, meta: dict, db: bytes) -> bytes:
+    """Шифрованный снимок базы (`rep.bin`, финальная реплика при передаче бота) — под `K`:
+    метаданные (`pkg_gen`, `at`) JSON-ом, база — двоичной частью; размер базы — открыт."""
+    if not isinstance(meta, dict):
+        raise PackageError("метаданные снимка — объект")
+    mz = _pack_json(meta)
+    plain = struct.pack(">I", len(mz)) + mz + _pack_bytes(bytes(db))
+    return SNAP_MAGIC + struct.pack(">BQ", FORMAT, len(db)) + _box(k, plain)
+
+
+def snapshot_db_size(blob: bytes) -> int:
+    """Открытый размер базы снимка (без ключа); 0 — не снимок этого формата."""
+    if len(blob) < _SNAP_HEAD or bytes(blob[:4]) != SNAP_MAGIC or blob[4] != FORMAT:
+        return 0
+    (n,) = struct.unpack(">Q", bytes(blob[5:_SNAP_HEAD]))
+    return int(n) if n <= MAX_DB else 0
+
+
+def snapshot_open(k: bytes, blob: bytes) -> tuple[dict, Packed]:
+    """(метаданные, база) снимка — ключом `K`; база — `Packed` (распаковка потоком)."""
+    if len(blob) < _SNAP_HEAD or bytes(blob[:4]) != SNAP_MAGIC or blob[4] != FORMAT:
+        raise PackageError("снимок: не снимок или другой формат")
+    plain = _unbox(k, memoryview(blob)[_SNAP_HEAD:], "снимок")
+    try:
+        (ln,) = struct.unpack(">I", plain[:4])
+    except struct.error as e:
+        raise PackageError("снимок оборван") from e
+    meta = _unpack_json(memoryview(plain)[4:4 + ln], "снимок")
+    if not isinstance(meta, dict):
+        raise PackageError("снимок не того вида")
+    db = Packed(memoryview(plain)[4 + ln:], "снимок")
+    if db.size != snapshot_db_size(blob):
+        raise PackageError("снимок: размер базы не сошёлся с заголовком")
+    return meta, db

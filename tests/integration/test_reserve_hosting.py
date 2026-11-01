@@ -41,6 +41,9 @@ rsv = rc.rsv
 mv = rm.mv
 
 
+_REAL_GUEST_FIT = rsvzone.guest_fit
+
+
 class Zone:
     """Состояние зоны для теста: ход процесса открытия, вызовы, файлы хранилища гостя."""
 
@@ -56,6 +59,7 @@ class Zone:
         self.webhook = tmp_path / "run" / "webhook.json"
         self.events: list[str] = []                       # общий порядок: монтирование хранилища и запуск процесса
         self.store_sizes: list[int] = []
+        self.guest_mem: list[str] = []                    # --guest-mem: потолок памяти юнита гостя перед стартом
 
     def store(self, size_mb: int = 0) -> str:
         """Хранилище гостя монтирует бот до запуска юнита открытия (не в z.calls:
@@ -65,6 +69,16 @@ class Zone:
         if "store" in self.fail_on:
             raise rsvzone.ZoneError(self.fail_on["store"])
         return ""
+
+    def run(self, mode: str, *, env=None, **_kw) -> str:
+        """Скрипт зоны: --guest-mem — в guest_mem и общий порядок; прочее — как раньше, мимо."""
+        if mode == "guest-mem":
+            self.events.append("guest-mem")
+            self.guest_mem.append(str((env or {}).get("GUEST_MEMORY_MB") or ""))
+            if "guest-mem" in self.fail_on:
+                raise rsvzone.ZoneError(self.fail_on["guest-mem"])
+            return ""
+        raise AssertionError(f"скрипт зоны --{mode} без подмены")
 
     def _do(self, name, *a):
         self.calls.append((name, *a))
@@ -120,6 +134,8 @@ class Spawn:
         if self.run_error:
             raise self.run_error
         self.runs.append(list(cmd))
+        if list(cmd[:2]) == ["systemctl", "start"]:
+            self.events.append("start")                    # порядок: потолок памяти гостя — до его старта
         return subprocess.CompletedProcess(cmd, 0, b"", b"")
 
 
@@ -140,6 +156,8 @@ def host(mv, tmp_path, monkeypatch):
     monkeypatch.setattr(rsvzone, "wipe", lambda: z._do("wipe"))
     monkeypatch.setattr(rsvzone, "relay", lambda to: z._do("relay", to))
     monkeypatch.setattr(rsvzone, "store", z.store)
+    monkeypatch.setattr(rsvzone, "run", z.run)
+    monkeypatch.setattr(rsvzone, "guest_fit", _REAL_GUEST_FIT)          # настоящий, поверх подставных store/run
     monkeypatch.setattr(nftguard, "tg_pool", lambda: ["149.154.160.0/20", "91.108.4.0/22"])
     monkeypatch.setattr(nftguard, "relay_packets", lambda: None)       # счётчик хвоста — не из таблицы хоста прогона
     spawn = Spawn(z.events)

@@ -35,7 +35,9 @@ env резерва закрыт, каталог данных подменён п
 inbound_tgwait), путь с K основы (кнопка и
 просьба кворума) — `released` DONE_BUTTON_WAIT_S; основа с `released` опоздала и не на связи — `tg_take`
 гостю сам (`tg_take_forced`), ещё TAKEN_WAIT_S, иначе срыв (взял — её `back`
-гостя не снимает, inbound_back). Отказ процесса —
+гостя не снимает, inbound_back). Запись уже сменил процесс открытия — любой срыв
+зону не снимает (одно правило в `_take_fail`, inbound_keep: доделать или
+перезапустить открытие). Иначе отказ процесса —
 один раз под замком: `down{причина}`, юнит открытия стоп, зона снята, шлюзам
 — `state{idle, reason}` (шлюз, отдавший точку ключа кворума, говорит своему
 админу «переезд не состоялся», Т-РА5), отметка `fail_at` (пауза после срыва,
@@ -64,6 +66,7 @@ from awgbot.util import livestep, timeutil
 
 from ..types import Notification, ServiceError
 from ..gateway_link.common import log
+from .inbound_keep import KEEP_RESET
 from .state import _LOCK
 
 OPEN_WAIT_S = 35 * 60            # процесс открытия: факт записи ≤ 30 мин
@@ -175,7 +178,8 @@ class ReserveInboundMixin:
             rsvzone.open_status_write("launching")           # прежний open.status не должен сойти за ход этого открытия
             self.reserve_set_in("taking", kind=str(kind or "button"), gen=int(gen), why=str(kind or "button"), by="k",
                                 open_started=timeutil.now_iso(), deadline=time.monotonic() + OPEN_WAIT_S,
-                                up_sent=False, tg_taken=False, tg_take_forced=False, tg_wait="",
+                                up_sent=False, tg_taken=False, tg_take_forced=False, tg_wait="", **KEEP_RESET,
+                                webhook_foreign=False, peer_tg_taken="", jrn_released=None, pult_back="", pult_told="",   # о прошлом эпизоде, не об этом
                                 sealed=not k_hex, k_passed=False, oid="", eph_sent=0,
                                 ended_auto=str(kind or "button") != "button")   # по просьбе кворума (dead | rf) — автоматический
             self._in_step("open")
@@ -194,6 +198,8 @@ class ReserveInboundMixin:
             return []
         inn = self._inn()
         state = str(inn.get("state") or "idle")
+        if state != "taking":
+            self._open_secret_drop()                          # вход открытия по точкам или коду — только пока приём
         if state == "taking":
             return self._tick_taking(inn)
         if state == "serving":
@@ -206,7 +212,10 @@ class ReserveInboundMixin:
 
     def _tick_taking(self, inn: dict) -> list[tuple]:
         from awgbot.infra import rsvzone
+        if inn.get("relaunch"):
+            return self._tick_relaunch(inn)                   # запись здесь, клона нет — перезапуск по сроку
         st = rsvzone.open_status()
+        inn = self._rec_observe(inn, st)
         step = str(st.get("step") or "")
         actions: list[tuple] = []
         if step in M_STEPS and str(inn.get("by") or "") == "code":
@@ -219,6 +228,7 @@ class ReserveInboundMixin:
                 # итог мог лечь между чтением open.status и кодом завершения (done и выход с кодом 0) —
                 # решает перечитанный итог, а не код
                 st = rsvzone.open_status()
+                inn = self._rec_observe(inn, st)
                 step = str(st.get("step") or "")
                 if step == "fail":
                     return self._take_fail(str(st.get("reason") or "процесс открытия отказал"), pre_m=open_fail_pre_m(st))
@@ -286,7 +296,8 @@ class ReserveInboundMixin:
         """После done у taking есть срок: аварийный путь ждёт `tg_taken` гостя
         (бот основы поднялся и поставил вебхук), путь с K основы — `released` основы.
         Гость не стартовал или не взял Telegram — отказ с причиной, а если запись уже
-        сменил процесс открытия — VPN остаётся, захват повторяется (inbound_tgwait); основа с
+        сменил процесс открытия — VPN остаётся, захват повторяется (`_take_fail` →
+        inbound_keep → inbound_tgwait); основа с
         `released` опоздала и мертва для меня — Telegram берёт гость (клон уже
         несёт пользователей), жива — отказ."""
         from awgbot.infra import rsvzone
@@ -297,17 +308,12 @@ class ReserveInboundMixin:
         waited = livestep.mono_since(done_at, now)
         # ветку ожидания выбирает тот, кто меняет запись: по K основы (кнопка и просьба кворума
         # dead | rf) — основа, Telegram отдаст её released; по точкам и коду — процесс открытия сам
-        by_k = str(inn.get("by") or ("k" if str(inn.get("kind") or "") == "button" else "")) == "k"
-        if not by_k:
+        if not self._in_by_k(inn):
             if waited < TAKEN_WAIT_S:
                 return []
             why = ("бот основы на резерве не поднялся (юнит гостя не активен)" if not rsvzone.guest_unit_active()
                    else "бот основы на резерве не взял право отвечать (вебхук не поставлен)")
-            if str(rsvzone.open_status().get("record") or "") != "skipped":
-                # запись уже сменил процесс открытия — пользователи идут на клон: срыв по Telegram
-                # не снимает рабочий VPN (inbound_tgwait), захват повторяется
-                return self._take_keep_vpn(why)
-            return self._take_fail(why)
+            return self._take_fail(why)                       # запись сменил процесс — зона остаётся (inbound_keep)
         if waited < DONE_BUTTON_WAIT_S:
             return []
         if not inn.get("replica_at") and self.reserve_peer_seen() == "down" and not inn.get("tg_take_forced"):
@@ -327,11 +333,14 @@ class ReserveInboundMixin:
         from awgbot.infra import rsvzone
         return int(rsvzone.read_json(rsvzone.WEBHOOK_FILE).get("port") or 0)
 
-    def _take_fail(self, reason: str, pre_m: bool | None = None) -> list[tuple]:
+    def _take_fail(self, reason: str, pre_m: bool | None = None, *, keep: bool = True,
+                   rec_back: bool = False) -> list[tuple]:
         """Срыв приёма — один раз: обработчик кода и такт видят один и тот же fail. Отметка
         «срыв идёт» — в памяти процесса, не в `rsv_in`: процесс, убитый посреди срыва, оставил бы
         её в базе, и после старта taking стоял бы навсегда (каждый срыв — «уже идёт»); новый
         процесс срыв просто доделывает (юнит стоп, снятие и стирание зоны идемпотентны).
+        Запись уже сменил процесс открытия — зону не снимать (`keep`, inbound_keep): одно правило
+        для всех причин. `rec_back` — основа жива, запись вернёт она (поле `rec` в `down`).
         `pre_m` — признак процесса «отказ до сборки M» (open.status); None — поля нет."""
         with _LOCK:
             inn = self._inn()
@@ -339,11 +348,13 @@ class ReserveInboundMixin:
                 return []
             self.__dict__["_rsv_take_failing"] = True
         try:
-            return self._take_fail_do(reason, pre_m)
+            if keep and self._rec_moved(self._inn()):
+                return self._take_keep(reason)
+            return self._take_fail_do(reason, pre_m, rec_back=rec_back)
         finally:
             self.__dict__.pop("_rsv_take_failing", None)
 
-    def _take_fail_do(self, reason: str, pre_m: bool | None = None) -> list[tuple]:
+    def _take_fail_do(self, reason: str, pre_m: bool | None = None, rec_back: bool = False) -> list[tuple]:
         from awgbot.infra import rsvzone
         from awgbot.domain.notices import reserve as rn
         name = self.reserve_peer_name()
@@ -366,10 +377,12 @@ class ReserveInboundMixin:
                 log.warning("резерв: зона после отказа: %s", e)
         # ended_auto — только после состоявшегося переезда; после срыва — короткий демпфер (fail_at);
         # failing=False — снять отметку, оставленную в базе прежним выпуском
-        self.reserve_set_in("idle", step="", reason=reason, ended_auto=False, fail_at=timeutil.now_iso(), failing=False)
+        self.reserve_set_in("idle", step="", reason=reason, ended_auto=False, fail_at=timeutil.now_iso(), failing=False,
+                            **KEEP_RESET)
+        self._open_secret_drop()
         self._relay_restore()                                 # пересылка хвоста, уступившая открытию, — обратно
         gw_word = self.reserve_gw_state_actions(force=True, reason=reason) if hasattr(self, "reserve_gw_state_actions") else []
-        return [("send", "down", {"reason": reason[:120]}), ("fw",),
+        return [("send", "down", {"reason": reason[:120], **({"rec": True} if rec_back else {})}), ("fw",),
                 ("notify", [Notification(tg_id=int(config.ADMIN_ID), text=rn.hosting_failed(name, reason))])] + extra + gw_word
 
     # ── реплика и право отвечать (переезд кнопкой) ──────────────────────────
@@ -386,6 +399,9 @@ class ReserveInboundMixin:
             subprocess.run(["systemctl", "stop", rsvzone.GUEST_UNIT], capture_output=True, timeout=60)
             rsvzone.write_private(rsvzone.REP_PATH, blob)
             rsvzone.write_private(rsvzone.TG_TAKE_FILE, "1")
+            # гость подхватит реплику на старте, а она несёт базу основы на момент передачи — больше
+            # ушедшей в пакете: хранилище и потолок памяти юнита — по ней, а не по устаревшему размеру
+            rsvzone.guest_fit()
             subprocess.run(["systemctl", "start", rsvzone.GUEST_UNIT], capture_output=True, timeout=60)
         except (OSError, subprocess.SubprocessError) as e:
             log.warning("резерв: реплика не положена гостю: %s", e)
@@ -408,7 +424,9 @@ class ReserveInboundMixin:
             return []
         with _LOCK:
             self.reserve_set_in("serving", kind=str(inn.get("kind") or "button"), gen=int(inn.get("gen") or 0),
-                                tg_taken=True, served=True, taken_at=timeutil.now_iso(), step="", tg_wait="")
+                                tg_taken=True, served=True, taken_at=timeutil.now_iso(), step="", tg_wait="",
+                                **({"keep_k": ""} if str(inn.get("keep_k") or "") == "tg" else {}))
+        self._open_secret_drop()
         name = self.reserve_peer_name()
         log.info("резерв: пользователи и бот «%s» у меня", name)
         return [("send", "taken", self._word_oid(inn)), ("fw",),
@@ -423,6 +441,8 @@ class ReserveInboundMixin:
         from awgbot.domain.notices import reserve as rn
         phase = str(rsvzone.state().get("phase") or "")
         if phase in ("serving", "taking"):
+            if str(inn.get("keep_k") or "") == "record" or inn.get("serve_due"):
+                return self._tick_keep(inn)                   # запись здесь, приём сорвался — доделать (inbound_keep)
             return [] if inn.get("tg_taken") else self._tick_tg_wait(inn)   # VPN здесь без бота — повтор захвата
         name = self.reserve_peer_name()
         log.warning("резерв: зона в состоянии %s, а я считаю serving — пользователей «%s» больше не несу", phase or "idle", name)

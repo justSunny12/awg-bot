@@ -144,13 +144,17 @@ class Store:
             path = last[2]
         self._append(path, records)
 
-    def events(self, after: int = 0) -> list[bytes]:
+    def events(self, after: int = 0, epoch: int | None = None) -> list[bytes]:
         """Записи событий с номером больше after — по порядку номеров, без повторов
-        (повтор дописки после пропажи питания: первая запись номера остаётся)."""
+        (повтор дописки после пропажи питания: первая запись номера остаётся); epoch —
+        только этой эпохи (те же номера другой эпохи её записи не заслоняют)."""
         seen: dict[int, bytes] = {}
         for _e, _first, path in self._segments():
             for r in self._read(path):
-                n = head(r).n
+                h = head(r)
+                n = h.n
+                if epoch is not None and h.e != epoch:
+                    continue
                 if n > after and n not in seen:
                     seen[n] = r
         return [seen[n] for n in sorted(seen)]

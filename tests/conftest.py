@@ -713,9 +713,14 @@ def _reserve_zone_paths_in_tmp(tmp_path_factory, monkeypatch):
     for name, val in (("RUN_DIR", run), ("VAR_DIR", var), ("STATE_DIR", st), ("STATE_PATH", st / "state.json"),
                       ("GUEST_SOCK", st / "guest.sock"), ("OPEN_STATUS", st / "open.status"),
                       ("REP_PATH", var / "rep.bin"), ("K_FILE", run / "k"), ("WEBHOOK_FILE", run / "webhook.json"),
-                      ("TG_POOL_FILE", run / "tg_pool.json"), ("TG_TAKE_FILE", run / "tg_take")):
+                      ("TG_POOL_FILE", run / "tg_pool.json"), ("TG_TAKE_FILE", run / "tg_take"),
+                      ("HOOK_FOREIGN_FILE", run / "hook_foreign")):
         monkeypatch.setattr(_rz, name, val)
     monkeypatch.setattr(_rz.state, "__defaults__", (st / "state.json",))
+    # потолок памяти гостя перед его стартом (`guest_fit`) — перемонтирование хранилища и правка
+    # юнита скриптом зоны: под root на стенде настоящий юнит гостя переписывался бы из чужого
+    # теста; сам механизм проверяют тесты с подставным скриптом (host в test_reserve_hosting)
+    monkeypatch.setattr(_rz, "guest_fit", lambda extra=0: 0)
     # стороны линков шлюзов основы (rsvzone.links_dir) — по DATA_DIR в момент вызова;
     # тест, не подменивший DATA_DIR, писал их в data/ рабочего дерева, и соседний тест
     # файервола видел чужие порты во входе хоста

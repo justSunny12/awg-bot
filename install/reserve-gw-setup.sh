@@ -29,7 +29,8 @@
 #             те же, что TG_NETS обвязки), цепочка rsv_tgout (output, type
 #             route) с меткой TG_MARK сокетам процесса TG_CGROUP к набору и
 #             rsv_tgpost (srcnat) — masquerade в awgrsv по метке; правило
-#             ip rule fwmark TG_MARK lookup 152 ставят --tg on и --reassert
+#             ip rule fwmark TG_MARK lookup 152 ставят --tg on и --reassert —
+#             только вместе с блоком (линк поднят, cgroup юнита агента есть)
 # Маскарад подсетей пользователей (@tunnel_nets4) наружу делает таблица обвязки.
 # Чужая политика DROP в ip filter FORWARD (iptables) — ACCEPT для awgrsv в обе
 # стороны (fwd_allow при --up/--reassert, снимается --down/--remove), как у
@@ -64,7 +65,9 @@
 #                   (socket cgroupv2) к набору tg_nets4; ip rule fwmark 0x53
 #                   lookup 152 — в awgrsv; postrouting — masquerade с меткой
 #                   (адрес сокета выбран до перемаршрутизации). Решает агент
-#                   (tgvia.py); off — всё снято, и при опущенном линке (цепочки
+#                   (tgvia.py); on при опущенном линке — только tg=1 в
+#                   состоянии, блок стоящей таблицы снят (правило и блок
+#                   ставит --up/--reassert, сказано строкой); off — всё снято, и при опущенном линке (цепочки
 #                   блока из стоящей таблицы, правило метки); состояние tg=0|1 в RSV_STATE
 #   --status        key=value: link, open, src, rx, tx, conf, tg
 # Окружение: RSV_IF (awgrsv), RSV_CONF_DIR (/etc/awg-gw), RSV_STATE
@@ -238,7 +241,7 @@ guard_apply() {   # таблица; не принята с блоком tg — �
 routes_up() {
     ip rule list | grep -q "fwmark $RSV_MARK lookup $RSV_TABLE" || ip rule add fwmark "$RSV_MARK" lookup "$RSV_TABLE"
     ip route replace default dev "$RSV_IF" table "$RSV_TABLE"
-    if [ "$(state_get tg)" = "1" ]; then tg_routes_up; else tg_routes_down; fi
+    tg_routes_sync
 }
 routes_down() {
     tg_routes_down
@@ -250,6 +253,12 @@ tg_routes_up() {   # сокеты Bot API с меткой TG_MARK — в awgrsv 
 }
 tg_routes_down() {
     while ip rule list | grep -q "fwmark $TG_MARK lookup $RSV_TABLE"; do ip rule del fwmark "$TG_MARK" lookup "$RSV_TABLE" || break; done
+}
+tg_drawn() {   # блок tg стоит в таблице: линк поднят, tg=1 и cgroup юнита агента есть (guard_write его нарисовал)
+    tg_ready && ip link show "$RSV_IF" >/dev/null 2>&1
+}
+tg_routes_sync() {   # правило метки — только вместе с блоком: без него таблица 152 пуста или метки нет
+    if tg_drawn; then tg_routes_up; else tg_routes_down; fi
 }
 tg_block_down() {   # блок tg из стоящей таблицы — и при опущенном линке (таблицу заново тогда не рисуют):
     # метка TG_MARK без правила маршрута перебила бы метку аплинка, и Bot API ушёл бы мимо его политики
@@ -355,8 +364,13 @@ cmd_tg() {   # --tg on|off: метка сокетов Bot API агента и п
     case "${1:-}" in on) _v=1 ;; off) _v=0 ;; *) die "tg: on|off" ;; esac
     state_write open="$(state_get open)" src="$(state_get src)" admins="$(state_get admins)" tg="$_v"
     if [ -f "$CONF" ] && ip link show "$RSV_IF" >/dev/null 2>&1; then guard_apply; fi
-    if [ "$(state_get tg)" = "1" ]; then tg_routes_up; else tg_block_down; tg_routes_down; fi
-    say "tg: $1"
+    tg_drawn || tg_block_down     # блок без правила (линк опущен мимо --down) — метка перебила бы метку аплинка
+    tg_routes_sync
+    if [ "$(state_get tg)" != "1" ]; then say "tg: off"
+    elif tg_drawn; then say "tg: on"
+    elif ! ip link show "$RSV_IF" >/dev/null 2>&1; then say "tg: on — линк к резерву опущен: блок и правило метки встанут с линком"
+    else say "tg: on — юнита агента нет (cgroup): блок и правило метки встанут следующим --tg on"
+    fi
 }
 
 cmd_down() {

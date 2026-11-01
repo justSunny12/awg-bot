@@ -12,9 +12,12 @@ route.py — часть пакета journal (см. __init__): разбор со
 | `jcnt` | пачка клона (b) → сложить | пачка основы (a) → хранить |
 | `jack`, `jneed`, `jstale`, `jcack` | ответ резерва на мои записи | ответ основы на записи её бота у меня → ему |
 | `jtail`, `jtail_ok` | хвост бота основы на резерве (С9) и ответ на мой хвост (tail) | хвост основы после аварии и ответ её бота у меня → ему |
+| `jc9none` | резерв: журнала моего бота у него после `last` нет — снять отметку С9 (c9) | не мне — пропустить |
 
 Записи бота основы на резерве (гостя) приходят от него по локальному каналу
-и уходят основе как есть — бот резерва видит только заголовки. Набор видов —
+и уходят основе как есть — бот резерва видит только заголовки; гостя нет, а
+основа ждёт его журнал по отметке С9, — его журнал с диска отдаёт бот резерва
+сам (c9deliver), её `jack` и `jneed` тогда — ему. Набор видов —
 pairproto.JRN_KINDS.
 """
 from __future__ import annotations
@@ -41,11 +44,20 @@ class ReserveJournalRouteMixin:
         if kind in ("jev", "jcnt"):
             return self._keep_jev_in(body) if kind == "jev" else self._keep_jcnt_in(body)
         if line and line == keep:
+            if kind == "jc9none":
+                log.info("резерв: «jc9none» по линии, которую храню, — не мне, пропущено")
+                return []
             if kind == "jneed":
                 # основе не хватает её же событий (база потеряла хвост при пропаже питания) или
-                # событий гостя, которого уже нет: что есть на диске — отдаю сам, остальное — гостю
+                # событий гостя, которого уже нет: журнал гостя, который она ждёт по отметке С9, —
+                # с диска (c9deliver); что есть в хранилище — отдаю сам, остальное — гостю
+                c9 = self.reserve_c9_deliver_need(int(body.get("from") or 0))
+                if c9:
+                    return c9
                 acts = self._keep_serve_base(int(body.get("from") or 0))
                 return acts or [("guest", kind, _schema(kind, body))]
+            if kind == "jack" and not self.reserve_hosting():
+                self.reserve_c9_deliver_acked(int(body["i"]))   # гостя нет — подтверждение моей доставки
             return [("guest", kind, _schema(kind, body))]      # ответ основы её боту у меня
         log.info("резерв: «%s» линии %s — не моя и не храню — пропущено", kind, line[:8] or "—")
         return []
@@ -98,6 +110,8 @@ class ReserveJournalRouteMixin:
             return self.reserve_tail_in(body)                 # хвост бота на резерве (С9) — держатель здесь
         elif kind == "jtail_ok":
             return self.reserve_tail_ok_in(body)              # мой хвост перебазирован ботом на резерве
+        elif kind == "jc9none":
+            return self.reserve_c9_none_in(body)              # журнала бота на резерве (С9) у резерва нет
         return []
 
     def _jrn_stale_in(self, e: int) -> None:

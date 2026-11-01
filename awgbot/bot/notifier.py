@@ -94,14 +94,26 @@ _RETRY_AFTER_CAP = 30
 _deferred: set = set()                 # держатели ссылок на отложенные повторы
 
 
-async def _retry(bot, tg_id, text, markup, silent, critical, on_sent):
-    """Повтор после паузы 429 — один: дошло — on_sent; сетевой отказ на
-    критичном — почта; прочее — в журнал."""
+async def _delivered(sent, on_sent, on_message):
+    """Доставлено в Telegram: подтвердить (on_sent) и отдать сообщение тому,
+    кому нужен его id (on_message) — и при отправке сразу, и отложенным
+    повтором, когда вызывающий уже получил None."""
+    await _confirm(on_sent)
+    if on_message is not None:
+        try:
+            await on_message(sent)
+        except Exception as e:                       # noqa: BLE001
+            log.warning("отправленное уведомление не обработано: %s", e)
+    return sent
+
+
+async def _retry(bot, tg_id, text, markup, silent, critical, on_sent, on_message=None):
+    """Повтор после паузы 429 — один: дошло — on_sent и on_message; сетевой
+    отказ на критичном — почта; прочее — в журнал."""
     try:
         sent = await bot.send_message(tg_id, text, reply_markup=markup,
                                       disable_notification=silent)
-        await _confirm(on_sent)
-        return sent
+        return await _delivered(sent, on_sent, on_message)
     except Exception as e2:                          # noqa: BLE001
         log.warning("Не удалось отправить уведомление %s (после retry): %s", tg_id, e2)
         if _network_failure(e2) and await _fallback(critical, tg_id, text):
@@ -109,9 +121,9 @@ async def _retry(bot, tg_id, text, markup, silent, critical, on_sent):
     return None
 
 
-async def _later(delay, bot, tg_id, text, markup, silent, critical, on_sent) -> None:
+async def _later(delay, bot, tg_id, text, markup, silent, critical, on_sent, on_message=None) -> None:
     await asyncio.sleep(delay)
-    await _retry(bot, tg_id, text, markup, silent, critical, on_sent)
+    await _retry(bot, tg_id, text, markup, silent, critical, on_sent, on_message)
 
 
 def _defer(delay, *args) -> None:
@@ -121,14 +133,15 @@ def _defer(delay, *args) -> None:
     task.add_done_callback(_deferred.discard)
 
 
-async def _send(bot, tg_id, text, markup, silent, critical: bool = False, on_sent=None):
+async def _send(bot, tg_id, text, markup, silent, critical: bool = False, on_sent=None, on_message=None):
     """Одна отправка: RetryAfter до _RETRY_AFTER_CAP с → подождать и повторить
     один раз; дольше — критичный алерт админу письмом сразу, прочее (и
     критичное, если письмо не ушло) — отложенный повтор фоном, отправка
     возвращает None. Прочие ошибки — залогировать и продолжить рассылку.
     Сетевой отказ на критичном алерте админу — запасной канал (почта).
     Возвращает отправленное сообщение либо None; on_sent зовём при доставке
-    любым из каналов. Ссылкам на экраны и списки в тексте — метка «-n»
+    любым из каналов, on_message (корутина) — с самим сообщением при доставке
+    в Telegram, в том числе отложенным повтором. Ссылкам на экраны и списки в тексте — метка «-n»
     (bot/links): из уведомления экран открывается новым сообщением внизу, а
     не на месте меню выше."""
     from awgbot.bot import links
@@ -136,19 +149,18 @@ async def _send(bot, tg_id, text, markup, silent, critical: bool = False, on_sen
     try:
         sent = await bot.send_message(tg_id, text, reply_markup=markup,
                                       disable_notification=silent)
-        await _confirm(on_sent)
-        return sent
+        return await _delivered(sent, on_sent, on_message)
     except TelegramRetryAfter as e:
         wait = max(0, int(e.retry_after or 0))
         if wait <= _RETRY_AFTER_CAP:
             log.warning("flood-контроль: жду %s с и повторяю для %s", wait, tg_id)
             await asyncio.sleep(wait)
-            return await _retry(bot, tg_id, text, markup, silent, critical, on_sent)
+            return await _retry(bot, tg_id, text, markup, silent, critical, on_sent, on_message)
         if await _fallback(critical, tg_id, text, f"flood-контроль Telegram на {wait} с"):
             await _confirm(on_sent)
             return None
         log.warning("flood-контроль: пауза %s с — повтор для %s отложен", wait, tg_id)
-        _defer(wait, bot, tg_id, text, markup, silent, critical, on_sent)
+        _defer(wait, bot, tg_id, text, markup, silent, critical, on_sent, on_message)
     except Exception as e:                           # noqa: BLE001
         log.warning("Не удалось отправить уведомление %s: %s", tg_id, e)
         if _network_failure(e) and await _fallback(critical, tg_id, text):
@@ -269,19 +281,22 @@ async def send_notifications(bot, notifications) -> None:
     await _paced(items, one)
 
 
-async def notify_one(bot, tg_id, text, *, reply_markup=None, force_sound=False, silent=False) -> None:
+async def notify_one(bot, tg_id, text, *, reply_markup=None, force_sound=False, silent=False,
+                     on_message=None):
     """Разовое уведомление ТРЕТЬЕМУ ЛИЦУ (не инициатору действия) — с тихими
     часами и кнопкой «Скрыть» (по умолчанию, если reply_markup не передан).
     Для ответа самому инициатору на его же действие это НЕ нужно: там
     используем обычный message.answer (глушить эхо себе бессмысленно).
     Ошибку отправки глотаем, как и в пакетной рассылке. Возвращает отправленное
-    сообщение (None при неудаче) — финишеру self-update нужен его id, чтобы
-    снять кнопку при следующей ступени."""
+    сообщение (None при неудаче и при отложенном повторе 429). Кому нужно само
+    сообщение (финишеру self-update — его id, чтобы снять кнопку при следующей
+    ступени), тот передаёт on_message: корутину зовут с сообщением при доставке
+    — сразу или отложенным повтором, когда возврат уже был None."""
     if not tg_id:
         return None
     silent = silent or _silent_now(force_sound)        # silent — без звука и вне тихих часов
     markup = reply_markup or kb.hide_only()
-    return await _send(bot, tg_id, text, markup, silent)
+    return await _send(bot, tg_id, text, markup, silent, on_message=on_message)
 
 
 __all__ = ["send_notifications", "notify_one"]
@@ -312,28 +327,55 @@ async def broadcast(bot, tg_ids, text, photos=(), texts_by_tg=None) -> tuple[int
     """Массовая рассылка объявления по списку tg_id. Возвращает (доставлено,
     tg_id недоставленных — отчёт называет их поимённо). Ошибки отправки
     (заблокировали бота, удалён аккаунт) считаем в «не удалось» и продолжаем. Пейсинг между сообщениями — как в общей рассылке
-    (флуд-контроль Telegram); RetryAfter внутри _send пережидается один раз.
+    (флуд-контроль Telegram). RetryAfter до _RETRY_AFTER_CAP с пережидается
+    на месте и повторяется один раз; пауза дольше — адресат уходит в конец
+    рассылки (слот окна не держит), там после своей паузы — один повтор, и
+    отчёт считает его по итогу повтора, а не по первому отказу.
     parse_mode берётся дефолтный (бот сконфигурирован с HTML). Тихие часы к
     объявлениям НЕ применяем — это осознанная явная отправка админом."""
-    async def one(tg_id) -> bool:
+    loop = asyncio.get_running_loop()
+    late: dict = {}                              # tg_id → срок повтора в конце рассылки
+
+    def _text(tg_id):
         # texts_by_tg — свой текст адресату (объявление с продлением: шапка с
         # его датами); нет в карте — общий
-        t = texts_by_tg.get(tg_id, text) if texts_by_tg else text
+        return texts_by_tg.get(tg_id, text) if texts_by_tg else text
+
+    async def again(tg_id) -> bool:
         try:
-            await send_announcement(bot, tg_id, t, photos)
+            await send_announcement(bot, tg_id, _text(tg_id), photos)
+            return True
+        except Exception as e2:                      # noqa: BLE001
+            log.warning("broadcast: не доставлено %s (после retry): %s", tg_id, e2)
+            return False
+
+    async def one(tg_id):
+        try:
+            await send_announcement(bot, tg_id, _text(tg_id), photos)
             return True
         except TelegramRetryAfter as e:
-            await asyncio.sleep(e.retry_after)
-            try:
-                await send_announcement(bot, tg_id, t, photos)
-                return True
-            except Exception as e2:                  # noqa: BLE001
-                log.warning("broadcast: не доставлено %s (после retry): %s", tg_id, e2)
-                return False
+            wait = max(0, int(e.retry_after or 0))
+            if wait > _RETRY_AFTER_CAP:
+                log.warning("broadcast: flood-контроль на %s с — %s в конец рассылки", wait, tg_id)
+                late[tg_id] = loop.time() + wait
+                return None
+            await asyncio.sleep(wait)
+            return await again(tg_id)
         except Exception as e:                       # noqa: BLE001
             log.warning("broadcast: не доставлено %s: %s", tg_id, e)
             return False
+
+    async def tail(tg_id) -> bool:
+        left = late[tg_id] - loop.time()
+        if left > 0:
+            await asyncio.sleep(left)
+        return await again(tg_id)
+
     ids = [t for t in tg_ids if t]
     results = await _paced(ids, one)
+    if late:
+        queue = sorted(late, key=late.get)
+        after = dict(zip(queue, await _paced(queue, tail)))
+        results = [after.get(t, r) if r is None else r for t, r in zip(ids, results)]
     ok = sum(1 for r in results if r is True)
     return ok, [t for t, r in zip(ids, results) if r is not True]

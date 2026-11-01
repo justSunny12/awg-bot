@@ -13,13 +13,14 @@ test_reserve_hosting*, test_reserve_dns): пара в рабочем состо�
 """
 from __future__ import annotations
 
+import time
 import types
 
 import pytest
 
 from awgbot.core import config
-from awgbot.domain.services.reserve import compat, dns as dnsmod, inbound, inbound_back, inbound_tgwait, outbound, \
-    outbound_forced, outbound_return, package
+from awgbot.domain.services.reserve import compat, dns as dnsmod, inbound, inbound_back, inbound_keep, inbound_tgwait, \
+    outbound, outbound_forced, outbound_keep, outbound_return, package
 from awgbot.domain.services.reserve.pult import primary as pult_primary
 from awgbot.infra import awg
 from awgbot.util import dnsapi, timeutil
@@ -131,9 +132,9 @@ def mv(services, rsv, tmp_path, monkeypatch):
     # пакет dnsapi может не выставлять это имя (см. tests/unit/test_dnsapi.py) — подмена мира теста его ставит
     monkeypatch.setattr(dnsapi, "read_authoritative_ttl", world.read_authoritative_ttl, raising=False)
     clock = Clock()
-    stub = types.SimpleNamespace(monotonic=clock.monotonic)
-    for mod in (outbound, outbound_return, outbound_forced, inbound, inbound_back, inbound_tgwait, dnsmod, package,
-                pult_primary):                                     # часы одни на все части автомата
+    stub = types.SimpleNamespace(monotonic=clock.monotonic, time=time.time)   # time — настоящее: с ним сверяют at_ts st
+    for mod in (outbound, outbound_return, outbound_forced, outbound_keep, inbound, inbound_back, inbound_keep, inbound_tgwait,
+                dnsmod, package, pult_primary):   # часы одни на все части автомата
         monkeypatch.setattr(mod, "time", stub)
     rc.pair_row(services)
     services.reserve_keys_init()
@@ -211,7 +212,7 @@ def snapshot_blob(svc, edit=None, *, gen: int = 7, k: bytes | None = None) -> by
     with open(path, "rb") as f:
         data = f.read()
     shutil.rmtree(tmp, ignore_errors=True)
-    return seal.snapshot_seal(k or svc.reserve_k(), {"pkg_gen": gen, "at": timeutil.now_iso(), "db": data.hex()})
+    return seal.snapshot_seal(k or svc.reserve_k(), {"pkg_gen": gen, "at": timeutil.now_iso()}, data)
 
 
 def put_base(svc, gen: int = 7) -> str:

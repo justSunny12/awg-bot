@@ -35,7 +35,8 @@ rsv = rc.rsv
 MB = 1024 * 1024
 
 
-@pytest.mark.parametrize("size, want", [(0, 192), (10 * MB, 192), (30 * MB, 218), (100 * MB, 428), (100 * MB + 1, 431)])
+# база не известна — от пакета: 128 + 4 × пакет (формат 2: срез двоичной части и расшифровка — до четырёх копий сжатого)
+@pytest.mark.parametrize("size, want", [(0, 192), (10 * MB, 192), (30 * MB, 248), (100 * MB, 528), (100 * MB + 1, 532)])
 def test_the_open_process_ceiling_grows_with_the_package_but_not_below_the_old_one(size, want):
     assert rsvzone.open_memory_mb(size) == want
 
@@ -86,7 +87,7 @@ def test_the_sandbox_ceiling_is_taken_from_the_package_size(tmp_path, monkeypatc
     with open(tmp_path / "reserve" / "guest.pkg", "wb") as f:
         f.truncate(100 * MB)
     props = openproc.rsvopen_sandbox_props(str(tmp_path))
-    assert "MemoryMax=428M" in props, props
+    assert "MemoryMax=528M" in props, props
 
 
 def test_a_package_over_64_mb_is_a_warning_on_the_reserve_card(services, rsv):
@@ -95,5 +96,5 @@ def test_a_package_over_64_mb_is_a_warning_on_the_reserve_card(services, rsv):
     assert "памяти" not in card_text(services.reserve_card_data()), "64 МБ ровно — ещё без строки"
     services.rsv_put("rsv_pkg_in", {"gen": 7, "fp": "DUMMY-fp", "size": 100 * MB})
     d = services.reserve_card_data()
-    assert d["pkg_mem"] == {"size": "0,1 ГБ", "need": "0,92 ГБ"}, d["pkg_mem"]
-    assert "└ ⚠️ данные для переезда «" in card_text(d) and "понадобится около 0,92 ГБ памяти" in card_text(d), card_text(d)
+    assert d["pkg_mem"] == {"size": "0,1 ГБ", "need": "1,02 ГБ"}, d["pkg_mem"]
+    assert "└ ⚠️ данные для переезда «" in card_text(d) and "понадобится около 1,02 ГБ памяти" in card_text(d), card_text(d)

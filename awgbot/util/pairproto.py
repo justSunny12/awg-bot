@@ -94,6 +94,7 @@ PAIR_KINDS: dict[str, tuple[str, dict]] = {
                             "admin_opened": (_B, None), "gw": (_B, None),
                             "healthy": (_B, None), "can_return": (_B, None), "in_kind": (_S, 16), "mem_free": (_I, None), "online": (_I, None), "in_by": (_S, 8),
                             "in_tg": (_S, 8),   # бот второй стороны у меня: forced (захват без её released) | wait (VPN без бота)
+                            "in_keep": (_D, None),   # {k, why, at}: приём сорвался после смены записи её процессом открытия
                             "zone": (_S, 120), "jrn": (_D, None), "quo": (_D, None), "rfp": (_D, None),
                             "exposed": (_D, None),     # {share|code: m_gen} — ключ основы мне известен без её K
                             "tg_pult": (_S, 32)}),     # Telegram моего бота у меня, пользователи у тебя (пульт): с какого момента
@@ -117,7 +118,7 @@ PAIR_KINDS: dict[str, tuple[str, dict]] = {
     "go":           (BOTH, {"k": (_S, 64), "gen": (_I, None), "kind": (_S, 16), "ttl": (_I, None),
                             "sealed": (_S, 384), "oid": (_S, 16)}),   # конверт: 48 + JSON (K, gen до 10 цифр, oid) ≤ 162 байт
     "up":           (BOTH, {"oid": (_S, 16)}),              # oid (ret1) — к какому открытию слово
-    "down":         (BOTH, {"reason": (_S, MAX_REASON)}),
+    "down":         (BOTH, {"reason": (_S, MAX_REASON), "rec": (_B, None)}),   # rec — запись на мне, верни её себе
     "released":     (BOTH, {"gen": (_I, None), "i": (_I, None), "n": (_I, None), "blob": (_S, MAX_BLOB),
                             "epoch": (_I, None), "last": (_I, None)}),
     "taken":        (BOTH, {"oid": (_S, 16)}),
@@ -137,10 +138,12 @@ PAIR_KINDS: dict[str, tuple[str, dict]] = {
     "qprobe":       (BOTH, {"l": (_S, 1), "g": (_I, None), "conf": (_S, 4096)}),
     "qkeys":        (BOTH, {"l": (_S, 1), "m_gen": (_I, None), "q_gen": (_I, None), "thr": (_I, None), "x": (_I, None),
                             "y": (_S, 64), "qbox": (_S, 256), "c_gen": (_I, None), "cy": (_S, 64), "cbox": (_S, 256),
-                            "mf": (_S, 16)}),
+                            "mf": (_S, 16), "qf": (_S, 16)}),
                     # thr — порог многочлена: имя «t» занято конвертом канала (вид сообщения, gwlink.pack)
-    "qkeys_ok":     (BOTH, {"l": (_S, 1), "m_gen": (_I, None), "q_gen": (_I, None), "c_gen": (_I, None), "mf": (_S, 16)}),
-                    # mf — отпечаток `M` (rsvkeys.m_print) рядом с m_gen: номера после восстановления из копии не уникальны
+    "qkeys_ok":     (BOTH, {"l": (_S, 1), "m_gen": (_I, None), "q_gen": (_I, None), "c_gen": (_I, None), "mf": (_S, 16),
+                            "qf": (_S, 16)}),
+                    # mf — отпечаток `M` (rsvkeys.m_print) рядом с m_gen, qf — многочлена (rsvkeys.q_print) рядом с
+                    # q_gen: номера после восстановления из копии не уникальны
     "qview":        (BOTH, {"l": (_S, 1), "g": (_I, None), "w": (_S, 8), "since": (_S, 32), "e": (_I, None), "i": (_D, None)}),
     "qstate":       (BOTH, {"l": (_S, 1), "e": (_I, None), "holder": (_S, 8), "r": (_S, 8)}),
     "qpause":       (BOTH, {"l": (_S, 1), "until": (_S, 32), "dur": (_I, None)}),   # dur — секунды паузы: часы
@@ -162,11 +165,14 @@ PAIR_KINDS: dict[str, tuple[str, dict]] = {
     "jtail_ok":     (BOTH, {"line": (_S, 16), "e": (_I, None), "F": (_I, None), "moved": (_I, None),
                             "disputed_n": (_I, None), "more": (_I, None), "part": (_I, None), "parts": (_I, None),
                             "blob": (_S, MAX_BLOB)}),
+    # резерв → основа, ждущей правки бота на резерве после «вернуть без резерва» (С9, st.jrn.mine.c9):
+    # журнала гостя эпохи e у меня после last нет (last — последняя его запись этой эпохи на диске, 0 — нет ни одной)
+    "jc9none":      (BOTH, {"line": (_S, 16), "e": (_I, None), "last": (_I, None)}),
 }
 
 # виды журнала: по каналу пары разбирает journal/route (`reserve_jrn_in`), по локальному каналу
 # гостя — те же имена (guestctl)
-JRN_KINDS: tuple[str, ...] = ("jev", "jcnt", "jack", "jneed", "jstale", "jcack", "jtail", "jtail_ok")
+JRN_KINDS: tuple[str, ...] = ("jev", "jcnt", "jack", "jneed", "jstale", "jcack", "jtail", "jtail_ok", "jc9none")
 
 GUEST_KINDS: dict[str, tuple[str, dict]] = {
     "hello":  (GATEWAY, {"slot": (_I, None), "caps": (_L, 16), "nonce": (_S, 32)}),
@@ -178,8 +184,8 @@ GUEST_KINDS: dict[str, tuple[str, dict]] = {
     "qask":   (RESERVE, {"l": (_S, 1), "g": (_I, None)}),
     "qtake":  (RESERVE, {"l": (_S, 1), "e": (_I, None)}),
     "qrel":   (RESERVE, {"l": (_S, 1), "e": (_I, None)}),
-    "qneed":  (RESERVE, {"l": (_S, 1), "q_gen": (_I, None), "since": (_S, 32)}),
-    "qshare": (GATEWAY, {"l": (_S, 1), "q_gen": (_I, None), "x": (_I, None), "y": (_S, 64)}),
+    "qneed":  (RESERVE, {"l": (_S, 1), "q_gen": (_I, None), "since": (_S, 32), "qf": (_S, 16)}),
+    "qshare": (GATEWAY, {"l": (_S, 1), "q_gen": (_I, None), "x": (_I, None), "y": (_S, 64), "qf": (_S, 16)}),
     "qpause": (RESERVE, {"l": (_S, 1), "until": (_S, 32), "dur": (_I, None)}),
     "qstate": (RESERVE, {"l": (_S, 1), "e": (_I, None), "holder": (_S, 8), "r": (_S, 8)}),
 }
@@ -200,14 +206,17 @@ def kinds_for(proto: str) -> dict[str, tuple[str, dict]]:
 
 # поля, которых может не быть (добавлены внутри линии; отсутствие — ложь/пусто)
 OPTIONAL: dict[str, frozenset] = {"st": frozenset({"healthy", "can_return", "in_kind", "mem_free", "online", "in_by", "zone",
-                                                     "jrn", "quo", "rfp", "exposed", "in_tg",
+                                                     "jrn", "quo", "rfp", "exposed", "in_tg", "in_keep",
                                                      "tg_pult"}),
+                                   "down": frozenset({"rec"}),
                                    "ask": frozenset({"kind"}), "up": frozenset({"oid"}), "taken": frozenset({"oid"}),
                                   "state": frozenset({"reason", "e"}), "qview": frozenset({"i"}),
                                   "go": frozenset({"ttl", "k", "sealed", "oid"}), "go_req": frozenset({"ttl"}),
                                   "pkg": frozenset({"jrn", "mf", "db_size"}), "released": frozenset({"epoch", "last"}),
-                                  "qkeys": frozenset({"q_gen", "thr", "y", "qbox", "mf"}),   # многочлен — пока кворум линии решает
-                                  "qkeys_ok": frozenset({"mf"}),
+                                  "qkeys": frozenset({"q_gen", "thr", "y", "qbox", "mf", "qf"}),   # многочлен — пока кворум линии решает
+                                  "qkeys_ok": frozenset({"mf", "qf"}),
+                                  # qf — отпечаток многочлена рядом с q_gen; шлюз прежней версии его не шлёт
+                                  "qneed": frozenset({"qf"}), "qshare": frozenset({"qf"}),
                                   "jstale": frozenset({"F"}), "qpause": frozenset({"dur"}),
                                   # hello обычной сессии несёт только nonce (и seen); поля сопряжения — у hello с pair
                                   "hello": frozenset({"pair", "eph", "name", "version", "caps", "gen", "ports", "seen", "bot", "gw"})}

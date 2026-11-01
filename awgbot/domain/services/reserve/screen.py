@@ -71,6 +71,7 @@ class ReserveScreenMixin:
                 "self_admin": self.reserve_self_peer_admin(),
                 "pkg_mem": self._reserve_pkg_mem_view(),
                 "in_tg_wait": str(self.rsv_get("rsv_in").get("tg_wait") or "") if self.reserve_in_tg() == "wait" else "",
+                "in_keep": self.reserve_in_keep(),
                 "quorum": self._quorum_card_safe(),
                 "pult": self.reserve_pult_view(),               # Telegram моего бота здесь, пользователи у резерва
                 "peer_pult": bool(self.reserve_hosting() and self.reserve_pult_hold_why())}   # …и наоборот

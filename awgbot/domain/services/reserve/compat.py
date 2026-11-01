@@ -76,6 +76,17 @@ def journal_pair(mine: list[str], theirs: list[str]) -> bool:
     return "jrn1" in (mine or []) and "jrn1" in (theirs or [])
 
 
+# минимум выпуска второго сервера для пары: кворум (quo1) и пакет переезда формата 2 (база двоичной
+# частью, util/rsvpkg/seal) — оба с 4.2.0, прежних правил и прежнего формата нет
+PAIR_FLOOR = "4.2.0"
+
+
+def below_pair_floor(version: str) -> bool:
+    """Выпуск второго сервера ниже PAIR_FLOOR (не читается — тоже ниже: пару с ним не создать)."""
+    have = version_key(str(version or "").lstrip("v"))
+    return have is None or have[:3] < version_key(PAIR_FLOOR)[:3]
+
+
 _NEEDED_TO_HOST: tuple[str, ...] = ("zone1", "guest1", "quo1")   # quo1 — переезд решает кворум: без него направления не готовы
 
 

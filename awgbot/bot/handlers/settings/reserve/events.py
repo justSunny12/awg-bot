@@ -57,7 +57,7 @@ async def send_code(bot, services, *, renewed_why: str = "") -> None:
 
 async def on_event(bot, services, event: str, st: dict, extra: dict) -> None:
     role = str((st or {}).get("role") or "inviter")
-    if event in ("connected", "reconnected", "two"):
+    if event in ("connected", "reconnected", "two", "old"):
         await _edit(bot, st, pt.invite_message(st, str(st.get("token") or "")), rkb.invite_message(str(st.get("id") or "")))
         return
     if event == "code":

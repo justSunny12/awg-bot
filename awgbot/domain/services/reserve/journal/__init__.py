@@ -24,8 +24,10 @@ journal — эпоха и следование (журнал данных рез
   основы;
 - `c9` — «вернуть без резерва»: правки бота на резерве после потери связи —
   хвостом при встрече, Т-Ж4/Т-Ж5 после возврата;
-- `c9wait` — отметка С9 без рычага: плашка карточки «жду события», по сроку —
-  экран «не ждать» и снятие отметки админом;
+- `c9wait` — отметка С9 без рычага: плашка карточки «жду события», по сроку без
+  продвижения — экран «не ждать» и снятие отметки админом;
+- `c9deliver` — сторона резерва: журнал данных гостя с диска основе, которая
+  ждёт его по отметке С9, или слово «журнала нет» (`jc9none`);
 - `guestj` — бот основы на резерве с журналом: свой журнал данных на диске,
   записи основе, следование до передачи бота, возврат без реплики.
 
@@ -34,6 +36,7 @@ journal — эпоха и следование (журнал данных рез
 from __future__ import annotations
 
 from .c9 import ReserveC9Mixin
+from .c9deliver import ReserveC9DeliverMixin
 from .c9wait import ReserveC9WaitMixin
 from .epoch import ReserveEpochMixin
 from .follow import ReserveFollowMixin
@@ -48,7 +51,7 @@ from .ship import ReserveShipMixin
 
 class ReserveJournalMixin(ReserveEpochMixin, ReserveFollowMixin, ReserveShipMixin, ReserveKeepMixin,
                           ReserveJournalRouteMixin, ReserveGuestJournalMixin, ReserveHandoverMixin, ReserveTailMixin,
-                          ReserveTailNotesMixin, ReserveC9Mixin, ReserveC9WaitMixin):
+                          ReserveTailNotesMixin, ReserveC9Mixin, ReserveC9WaitMixin, ReserveC9DeliverMixin):
     """Эпоха, следование, доставка и хранение журнала."""
 
 

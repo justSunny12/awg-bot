@@ -127,7 +127,7 @@ def test_the_selftest_refuses_without_root_before_touching_anything(box, tmp_pat
     assert not calls.exists(), "без root скрипт успел позвать ip"
 
 
-@pytest.mark.parametrize("mode", ["--shell", "--store", "--take", "--serve", "--restart-clone", "--relay", "--relay-flush",
+@pytest.mark.parametrize("mode", ["--shell", "--store", "--take", "--serve", "--restart-clone", "--guest-mem", "--relay", "--relay-flush",
                                   "--teardown", "--wipe"])
 def test_modes_that_change_the_host_refuse_without_root_and_touch_nothing(box, tmp_path, mode):
     """Без root ни одна из команд зоны не доходит до ip, mount, systemctl и nft."""
@@ -164,15 +164,17 @@ def _unit_text(tmp_path: Path, **env: str) -> str:
     """Текст юнита гостя: функция write_units из скрипта, пишущая в подставные
     пути (systemctl подменён); env — окружение режима (GUEST_MEMORY_MB)."""
     src = SCRIPT.read_text()
-    start = src.index("write_units() {")
-    end = src.index("\n}\n", start) + 3
+    funcs = []
+    for name in ("guest_mem_mb", "write_units"):               # потолок памяти — своей функцией (и для --guest-mem)
+        start = src.index(f"{name}() {{")
+        funcs.append(src[start:src.index("\n}\n", start) + 3])
     bin_ = tmp_path / "ubin"
     bin_.mkdir()
     fake_cmd(bin_ / "systemctl", "exit 0\n")
     unit, dns = tmp_path / "guest.service", tmp_path / "dns.service"
     prog = (f'ZONE=awg-guest; NS=/run/netns/awg-guest; RUN=/run/awg-bot-guest; VAR=/var/lib/awg-bot-guest; '
             f'STATE_DIR=/run/awg-bot/rsv; INSTALL_DIR=/opt/awg-bot; UNIT="{unit}"; DNS_UNIT="{dns}"\n'
-            f'{src[start:end]}\nwrite_units awg0\n')
+            + "\n".join(funcs) + '\nwrite_units awg0\n')
     r = subprocess.run(["bash", "-c", prog], capture_output=True, text=True, timeout=30,
                        env={"PATH": f"{bin_}:/usr/bin:/bin", **env})
     assert r.returncode == 0, r.stderr

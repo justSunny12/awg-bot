@@ -234,13 +234,24 @@ def sanitize(raw: dict) -> dict:
                       "g": int(quo.get("g") or 0) if str(quo.get("g") or "0").isdigit() else 0,
                       "e": int(quo.get("e") or 0) if str(quo.get("e") or "0").isdigit() else 0,
                       "q": int(quo.get("q") or 0) if str(quo.get("q") or "0").isdigit() else 0}
+        qf = _print16(quo.get("qf"))                       # отпечаток многочлена точки; прежний агент — нет
+        if qf:
+            out["quo"]["qf"] = qf
         pg = quo.get("pg")
         if isinstance(pg, dict) and str(pg.get("q") or "0").isdigit() and int(pg.get("q") or 0):
             # точка отдана кандидату: какого многочлена и когда — сигнал основе о возможно известном ключе
             out["quo"]["pg"] = {"q": int(pg["q"]), "at": _clean_str(pg.get("at", ""))[:40]}
+            if _print16(pg.get("qf")):
+                out["quo"]["pg"]["qf"] = _print16(pg.get("qf"))
     elif "quo" in src and src["quo"] is None:
         out["quo"] = None
     return out
+
+
+def _print16(v) -> str:
+    """Отпечаток (rsvkeys.q_print): 16 знаков hex — он, иначе пусто."""
+    s = str(v or "").lower() if isinstance(v, str) else ""
+    return s if re.fullmatch(r"[0-9a-f]{16}", s) else ""
 
 
 def apply_delta(snap: dict, patch: dict) -> dict:

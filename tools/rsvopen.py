@@ -15,8 +15,9 @@ BOT_TOKEN/ADMIN_ID резерва, AWG_BOT_ENV=/dev/null). Хранилище г
 песочницы хосту и юнитам гостя не видно) и создаёт каталоги записи; шаг
 `store` здесь монтирует его, только если этого ещё нет (ручной запуск), и
 растит под базу (rsvzone.store_mb — до записи и при --take по базе после
-журнала: бот знает размер базы, ушедшей в пакет, а прежняя основа его не
-шлёт — только размер сжатого пакета). Ход
+журнала). База — двоичная часть пакета `db` (или база снимка `rep.bin`): её
+размер известен до распаковки, распаковка идёт потоком прямо в
+`data/bot.db` хранилища — полной копии базы в памяти процесса нет. Ход
 бот читает по /run/awg-bot/rsv/open.status (шаг, время, причина — без
 секретов; до запуска бот пишет туда `launching`, после — `launched`), stderr
 процесса — в /run/awg-bot/rsv/rsvopen.err: кончился без `done`/`fail` —
@@ -50,7 +51,9 @@ reserve open` (root, без этой песочницы).
 (--take: клон, veth, dnsmasq, юнит бота основы) → `record_set` → `record_fact` → `done`; отказ — `fail
 <причина>`, код 1. При готовом `k` вместо `m` → `k` — шаг `k_given`; по конверту — `eph` → `k_sealed`. Ждёт
 факта записи у авторитетного сервера до 30 минут; по факту кладёт отметку
-`tg_take` — бот основы на резерве ставит вебхук. Без записи (`set_record`
+`tg_take` — бот основы на резерве ставит вебхук. Отказ после смены записи (факт
+за 30 минут не наступил, любой сбой дальше) несёт поля `record=set`, `name`, `ip`:
+бот резерва зону тогда не снимает и доделывает не сделанное сам. Без записи (`set_record`
 false, нет `target_ip` или провайдера — переезд кнопкой и по согласию основы:
 запись меняет она) — `done record=skipped` после `clone_up`, отметку тогда
 ставит поле `tg_take: true` во входе (иначе её даёт бот резерва по локальному
@@ -125,9 +128,14 @@ def _step(step: str, **fields) -> None:
     _p(step)
 
 
+# запись уже сменена этим процессом (после `set_record`): любой отказ дальше несёт поля
+# record=set, name, ip — бот резерва по ним зону не снимает и доделывает сам (inbound_keep)
+_RECORD: dict = {}
+
+
 def _fail(reason: str, *, pre_m: bool = False) -> int:
     from awgbot.infra import rsvzone
-    rsvzone.open_status_write("fail", reason=reason, pre_m="1" if pre_m else "")
+    rsvzone.open_status_write("fail", reason=reason, pre_m="1" if pre_m else "", **_RECORD)
     _p(f"fail {reason}")
     return 1
 
@@ -250,8 +258,8 @@ def recover_keys(data: dict, blob: bytes) -> tuple[bytes | None, bytes]:
     raise OpenError("нет ни точек ключа кворума, ни кода с ящиком, ни ключа пакета", pre_m=True)
 
 
-def _db_from_snapshot(k: bytes, pkg_gen: int) -> tuple[bytes | None, str]:
-    """`rep.bin` новее пакета → (его база, время снимка); нет или старее — (None, "")."""
+def _db_from_snapshot(k: bytes, pkg_gen: int):
+    """`rep.bin` новее пакета → (его база — seal.Packed, время снимка); нет или старее — (None, "")."""
     from awgbot.infra import rsvzone
     from awgbot.util.rsvpkg import seal
     try:
@@ -259,15 +267,12 @@ def _db_from_snapshot(k: bytes, pkg_gen: int) -> tuple[bytes | None, str]:
     except OSError:
         return None, ""
     try:
-        snap = seal.snapshot_open(k, blob)
+        snap, db = seal.snapshot_open(k, blob)
     except seal.PackageError:
         return None, ""
-    if not isinstance(snap, dict) or int(snap.get("pkg_gen") or 0) < int(pkg_gen):
+    if int(snap.get("pkg_gen") or 0) < int(pkg_gen):
         return None, ""
-    try:
-        return bytes.fromhex(str(snap.get("db") or "")), str(snap.get("at") or "")
-    except ValueError:
-        return None, ""
+    return db, str(snap.get("at") or "")
 
 
 def _journal(k: bytes, jrn: dict, *, button: bool) -> dict:
@@ -338,7 +343,9 @@ def _make_cert(self_host: str, out_dir) -> tuple[str, str]:
     return key_p, crt_p
 
 
-def fill_store(data: dict, k: bytes, parts: dict, db_bytes: bytes, iface: str, extra: list | None = None) -> None:
+def fill_store(data: dict, k: bytes, parts: dict, db, iface: str, extra: list | None = None) -> None:
+    """Хранилище гостя из частей пакета; `db` — база (seal.Packed: распаковка потоком в
+    `data/bot.db`, или байты — ручной запуск и тесты)."""
     from awgbot.infra import rsvzone
     from awgbot.util.rsvpkg import bot as pkgbot
     bot = parts.get("bot") or {}
@@ -359,7 +366,10 @@ def fill_store(data: dict, k: bytes, parts: dict, db_bytes: bytes, iface: str, e
         rsvzone.write_private(run / "conf" / f"{name}.yaml", _yaml_dump(vals))
     tz = str((parts.get("vpn") or {}).get("tz") or "")
     rsvzone.write_private(run / "conf" / "app.yaml", _guest_app_yaml(conf, bot.get("app_guest") or {}, iface, tz, extra or []))
-    rsvzone.write_private(run / "data" / "bot.db", db_bytes)
+    if isinstance(db, (bytes, bytearray)):
+        rsvzone.write_private(run / "data" / "bot.db", bytes(db))
+    else:
+        rsvzone.write_private_with(run / "data" / "bot.db", db.write_to)
     for kind, lines in (bot.get("lists") or {}).items():          # кэш списков РФ-доступа — гостю
         if isinstance(kind, str) and kind.replace("_", "").isalnum() and isinstance(lines, list):
             rsvzone.write_private(run / "data" / f"routing-{kind}.lst", "\n".join(str(x) for x in lines) + "\n")
@@ -376,10 +386,11 @@ def fill_store(data: dict, k: bytes, parts: dict, db_bytes: bytes, iface: str, e
     rsvzone.write_private(rsvzone.WEBHOOK_FILE, json.dumps(webhook))
     pool = [str(p) for p in (data.get("tg_pool") or _host_pool())]
     rsvzone.write_private(rsvzone.TG_POOL_FILE, json.dumps({"pool": pool}))
-    try:
-        rsvzone.TG_TAKE_FILE.unlink()
-    except OSError:
-        pass
+    for mark in (rsvzone.TG_TAKE_FILE, rsvzone.HOOK_FOREIGN_FILE):   # отметки прошлого эпизода — не этому
+        try:
+            mark.unlink()
+        except OSError:
+            pass
 
 
 def _host_pool() -> list[str]:
@@ -414,6 +425,7 @@ def run(data: dict) -> int:
     from awgbot.core import config
     from awgbot.infra import rsvzone
     from awgbot.util.rsvpkg import seal, vpn as pkgvpn
+    _RECORD.clear()
     pkg_path = os.path.join(str(config.DATA_DIR), "reserve", "guest.pkg")
     try:
         blob = open(pkg_path, "rb").read()
@@ -452,20 +464,23 @@ def run(data: dict) -> int:
     iface = vpn["ifaces"][0]
     extra = [i for i in vpn["ifaces"][1:] if i.get("name") and i.get("addr")]   # окно переезда профилей
     jrn = parts.get("jrn") if isinstance(parts.get("jrn"), dict) else None
-    db_bytes, db_at = _db_from_snapshot(k, head.pkg_gen) if jrn is None else (None, "")
-    from_snapshot = db_bytes is not None
+    db, db_at = _db_from_snapshot(k, head.pkg_gen) if jrn is None else (None, "")
+    from_snapshot = db is not None
     data["_db_at"] = db_at
-    if db_bytes is None:
+    if db is None:
         try:
-            db_bytes = bytes.fromhex(str(parts["bot"].get("db") or ""))
-        except ValueError:
-            return _fail("реплика в пакете не hex")
-    if not db_bytes:
+            db = seal.open_blob(blob, k, seal.DB_PART)
+        except seal.PackageError as e:
+            return _fail(f"реплика: {e}")
+    del blob                                                  # пакет дальше не нужен: база — своим срезом
+    if not db.size:
         return _fail("реплика пуста")
+    db_len = db.size
     try:
-        rsvzone.store(rsvzone.store_mb(len(db_bytes)))       # хранилище — под эту базу, до записи в него
+        rsvzone.store(rsvzone.store_mb(db_len))              # хранилище — под эту базу, до записи в него
         data["_pkg_gen"] = head.pkg_gen
-        fill_store(data, k, parts, db_bytes, iface["name"], extra)
+        fill_store(data, k, parts, db, iface["name"], extra)
+        del db                                                # сжатая база в памяти — до записи, не дольше
         jinfo = _journal(k, jrn, button=sealed_path) if jrn is not None else {}
         _step("store", from_snapshot=int(from_snapshot))
         for x in extra:                                       # конфиги вторых интерфейсов — в хранилище, скрипт поднимет их
@@ -473,7 +488,7 @@ def run(data: dict) -> int:
         try:                                                  # база после журнала — её размер, не снимка
             db_size = (rsvzone.RUN_DIR / "data" / "bot.db").stat().st_size
         except OSError:
-            db_size = len(db_bytes)
+            db_size = db_len
         rsvzone.take(pkgvpn.clone_conf(iface), iface=iface["name"], addr=iface["addr"], dns=list(vpn.get("dns") or []),
                      upstreams=list(vpn.get("upstreams") or []), admin=list(vpn.get("admin") or []),
                      channel_port=int(data.get("channel_port") or 0), extra=[(x["name"], x["addr"]) for x in extra],
@@ -482,8 +497,10 @@ def run(data: dict) -> int:
         _step("clone_up", iface=iface["name"], port=iface["port"], ifaces=",".join([iface["name"]] + [x["name"] for x in extra]), **jinfo)
     except (rsvzone.ZoneError, OpenError, OSError) as e:
         return _fail(f"зона: {e}")
+    except seal.PackageError as e:
+        return _fail(f"реплика: {e}")
     finally:
-        del parts, blob
+        del parts
     target = str(data.get("target_ip") or "")
     if by_m and bool(data.get("set_record", True)) and target and not dns.get("provider"):
         return _fail("DNS-запись сервера настраивается вручную — аварийный переезд невозможен")
@@ -499,6 +516,7 @@ def run(data: dict) -> int:
         return _fail(f"запись DNS: {e}")
     name = str(dns.get("name") or "")
     dns = {}                                                   # токен провайдера дальше не нужен
+    _RECORD.update(record="set", name=name, ip=target)
     _step("record_set", name=name, ip=target)
     if not wait_fact(name, target):
         return _fail("факт записи не подтвердился за 30 минут")

@@ -282,7 +282,7 @@ def _delivery(name: str) -> str:
 
 def _run_autostart(tmp_path, script: str, *, role: str,
                    gw_copy: str | None = None, host_copy: str | None = None,
-                   copies: dict[str, str] | None = None):
+                   copies: dict[str, str] | None = None, mode: int = 0o755):
     """Прогоняет НАСТОЯЩУЮ ensure_host_autostart и отдаёт (вывод, каталог sbin).
 
     Пути /usr/local/sbin и /etc/systemd/system в теле функции абсолютные —
@@ -304,7 +304,7 @@ def _run_autostart(tmp_path, script: str, *, role: str,
         if body is None:
             continue
         p = sbin / name
-        p.write_text(body, encoding="utf-8"); p.chmod(0o755)
+        p.write_text(body, encoding="utf-8"); p.chmod(mode)
         os.utime(p, (_OLD, _OLD))
     conf = tmp_path / "conf"; conf.mkdir()
     (conf / "app.yaml").write_text(
@@ -359,6 +359,20 @@ def test_matching_plumbing_copy_is_left_alone(tmp_path, script):
     copy = sbin / "routing-gw-setup.sh"
     assert int(copy.stat().st_mtime) == _OLD, "файл переписали без нужды"
     assert "routing-gw-setup.sh" not in out, "сообщили об обновлении, которого не было"
+
+
+@pytest.mark.parametrize("mode", [0o644, 0o777, 0o4755])
+def test_a_matching_copy_with_a_broken_mode_gets_0755_without_a_rewrite(tmp_path, script, mode):
+    """Содержимое совпало, а режим сбит: без бита исполнения юнит при загрузке
+    копию не запустит (обвязка не встанет после ребута), 0777 — копию, которую
+    выполняет root, правит кто угодно. Совпавшее содержимое прежде значило
+    «менять нечего» — режим оставался сбитым навсегда."""
+    out, sbin = _run_autostart(tmp_path, script, role="gateway", gw_copy=_DELIVERY_GW, mode=mode)
+    copy = sbin / "routing-gw-setup.sh"
+    assert copy.stat().st_mode & 0o7777 == 0o755, oct(copy.stat().st_mode)
+    assert int(copy.stat().st_mtime) == _OLD and copy.read_text(encoding="utf-8") == _DELIVERY_GW, "файл переписан"
+    assert "права копии" in out and "routing-gw-setup.sh" in out, out
+    assert "обновлена копия /usr/local/sbin/routing-gw-setup.sh" not in out, out
 
 
 def test_roles_do_not_touch_each_others_plumbing(tmp_path, script):

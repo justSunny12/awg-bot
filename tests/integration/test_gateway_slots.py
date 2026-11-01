@@ -259,6 +259,36 @@ def test_a_hand_switch_during_the_probes_is_not_overridden_by_the_tick(two, serv
     assert services.active_gateway().id == 2, "следующие такты увели трафик с выбранного рукой слота"
 
 
+def test_a_hand_switch_during_the_probes_announces_by_the_new_active(two, services, fake_routing):
+    """Рука увела трафик с падающего шлюза, пока такт мерил: этот такт добирает
+    порог недоступности прежнего активного — но тот уже резерв. Объявления и
+    рубильник маркировки — по активному после зондов (по факту смены): алерта
+    «шлюз недоступен» о прежнем нет, маркировка не гаснет из-за его вердикта.
+    Цена ошибки — критичный алерт об аварии, которую админ только что сам обошёл,
+    и люди без РФ-доступа на живом шлюзе до следующего такта."""
+    admin, g1, g2 = two
+    _settle(services)
+    services.probe[1] = "down"
+    for _ in range(services._rt_fail_need() - 1):
+        assert not services.routing_liveness_tick(), "алерт раньше порога"
+    assert fake_routing.marking is True
+    done = {}
+
+    def probe(g, active=False):
+        if g.id == 1 and "hand" not in done:
+            done["hand"] = services.gateway_switch(2, manual=True)
+        return services.probe[g.id]
+    services._probe_slot = probe
+    notes = services.routing_liveness_tick()
+    assert services.active_gateway().id == 2
+    assert notes == [], [n.text for n in notes]
+    assert fake_routing.marking is True, "маркировку погасил вердикт прежнего активного"
+    assert services.db.get_state(services._rt_keys(1)[1]) != "1", "прежний активный помечен объявленным"
+    # такт без руки: роли новые, прежний — резерв, о нём молчат до «молчит всё окно»
+    services._probe_slot = lambda g, active=False: services.probe[g.id]
+    assert not [n for n in services.routing_liveness_tick() if n.critical]
+
+
 def test_ping_cache_is_invalidated_when_the_host_falls(two, services, monkeypatch):
     admin, g1, g2 = two
     monkeypatch.setattr(routing.probes, "ping_peer", lambda iface="", **k: 43)

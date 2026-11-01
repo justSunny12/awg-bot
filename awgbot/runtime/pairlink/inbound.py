@@ -127,7 +127,8 @@ class InboundMixin:
         await self._actions(await asyncio.to_thread(self.services.reserve_up_in, str(body.get("oid") or "")))
 
     async def _in_down(self, sess: _Session, body: dict) -> None:
-        await self._actions(await asyncio.to_thread(self.services.reserve_down_in, str(body["reason"])))
+        await self._actions(await asyncio.to_thread(self.services.reserve_down_in, str(body["reason"]),
+                                                    bool(body.get("rec"))))
 
     async def _in_released(self, sess: _Session, body: dict) -> None:
         """Реплика частями: у основы (возврат) — слияние; у резерва (кнопка) — гостю.

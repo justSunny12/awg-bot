@@ -118,6 +118,7 @@ class ReserveSessionMixin:
                 "mem_free": self.reserve_mem_free_mb(), "online": int(self.__dict__.get("_rsv_guest_online") or 0),
                 "in_by": str(self.rsv_get("rsv_in").get("by") or ""), "zone": str(self._my_side().get("zone") or ""),
                 **({"in_tg": tg} if (tg := self.reserve_in_tg()) else {}),   # бот основы у меня: forced | wait
+                **({"in_keep": kp} if (kp := self.reserve_in_keep()) else {}),   # приём сорвался после смены записи
                 **({"jrn": jrn} if (jrn := self._jrn_st_part()) else {}),
                 **({"quo": quo} if (quo := self._quo_st_part()) else {}),
                 **({"rfp": rfp} if (rfp := self._rfp_st_part()) else {}),
@@ -141,8 +142,9 @@ class ReserveSessionMixin:
             return {}
 
     def _jrn_st_part(self) -> dict:
-        """Журнал в `st`: своя линия (эпоха, держатель, применённое, подтверждённое) и что
-        храню о линии второй стороны (`keep`; с эпохой её бота у меня, если он поднят)."""
+        """Журнал в `st`: своя линия (эпоха, держатель, применённое, подтверждённое; `c9` —
+        какие правки бота на резерве жду, journal/c9) и что храню о линии второй стороны
+        (`keep`; с эпохой её бота у меня, если он поднят)."""
         if not self.reserve_jrn_on():
             return {}
         try:
@@ -153,6 +155,9 @@ class ReserveSessionMixin:
             raise
         out = {"mine": {"line": self.db.jrn_line(), "e": int(meta["epoch"]), "holder": str(meta["holder"]),
                         "applied": int(meta["applied"]), "acked": int(meta["acked"])}}
+        c9 = self.reserve_c9_st_part(meta)
+        if c9:
+            out["mine"]["c9"] = c9                            # жду журнал моего бота у резерва (С9) — он доставит
         keep = self.reserve_keep_view()
         if keep:
             ge = self._keep_guest_int("e")
@@ -201,12 +206,13 @@ class ReserveSessionMixin:
 
     @staticmethod
     def _st_packed(body: dict) -> str:
-        """Отпечаток смены `st`: без памяти и онлайна; у журнала — только линии, эпохи и
-        снимок (номера растут с каждой правкой — st на каждую пачку был бы лишним)."""
+        """Отпечаток смены `st`: без памяти и онлайна; у журнала — только линии, эпохи,
+        снимок и ожидание С9 (номера растут с каждой правкой — st на каждую пачку был бы
+        лишним; `c9.upto` растёт только с перенесённой частью журнала бота на резерве)."""
         import json
         out = {k: v for k, v in body.items() if k not in ("mem_free", "online", "jrn")}   # quo — в отпечатке: смена состава нужна второй стороне
         jrn = body.get("jrn") or {}
-        out["jrn"] = {"mine": {k: (jrn.get("mine") or {}).get(k) for k in ("line", "e", "holder")},
+        out["jrn"] = {"mine": {k: (jrn.get("mine") or {}).get(k) for k in ("line", "e", "holder", "c9")},
                       "keep": {k: (jrn.get("keep") or {}).get(k) for k in ("line", "e", "snap_i", "guest_e")}}
         return json.dumps(out, sort_keys=True)
 
@@ -283,6 +289,7 @@ class ReserveSessionMixin:
             notes.extend(self._reserve_compat_notes(peer))
         # мой ключ мог стать известен второму серверу без моего K (точки, код) — поколение сменить
         notes.extend(self.reserve_exposed_in(body.get("exposed")))
+        notes.extend(self.reserve_keep_st_in(body.get("in_keep")))   # у резерва сбой после смены моей записи
         notes.extend(self.reserve_pult_seen_notes())          # Telegram бота второй стороны у неё, её пользователи здесь
         return notes
 

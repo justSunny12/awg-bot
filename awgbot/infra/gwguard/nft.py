@@ -174,14 +174,15 @@ def lan_table_info() -> Optional[dict]:
 
 def forward_accepts() -> set[str]:
     """Интерфейсы, для которых в чужой ip filter FORWARD стоят наши ACCEPT
-    (раздел 3a скрипта обвязки). Пусто — не прочиталось или ничего нет."""
+    (раздел 3a скрипта обвязки: с меткой `-m comment --comment awg-bot`, у
+    прежних выпусков — без неё). Пусто — не прочиталось или ничего нет."""
     try:
         proc = pkg.subprocess.run(["iptables", "-w", "-S", "FORWARD"], capture_output=True, timeout=10)
     except (OSError, pkg.subprocess.SubprocessError):
         return set()
     out = set()
     for line in proc.stdout.decode(errors="replace").splitlines():
-        m = re.match(r"^-A FORWARD -(i|o) (\S+) -j ACCEPT$", line.strip())
+        m = re.match(r'^-A FORWARD -(i|o) (\S+)(?: -m comment --comment "?awg-bot"?)? -j ACCEPT$', line.strip())
         if m:
             out.add(f"{m.group(1)}:{m.group(2)}")
     return out

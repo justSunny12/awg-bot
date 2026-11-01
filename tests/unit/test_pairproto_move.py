@@ -151,8 +151,10 @@ def test_the_optional_fields_are_only_the_listed_ones_of_st_and_state():
     версии внутри линии); остальное по-прежнему обязательно."""
     assert pp.OPTIONAL == {"st": frozenset({"healthy", "can_return", "in_kind", "mem_free", "online", "in_by", "zone",
                                             "jrn", "quo", "rfp", "exposed",   # exposed — ключ основы известен без её K
-                                            "in_tg",     # in_tg — бот второй стороны у меня: forced | wait
+                                            "in_tg",   # in_tg — бот второй стороны у меня: forced | wait
+                                            "in_keep",   # in_keep — приём сорвался после смены записи
                                             "tg_pult"}),   # tg_pult — Telegram моего бота у меня, пользователи у второй (пульт)
+                           "down": frozenset({"rec"}),   # rec — запись на резерве, основе вернуть её себе
                            "ask": frozenset({"kind"}),
                            # ret1: к какому открытию слово — у стороны прежнего выпуска поля нет
                            "up": frozenset({"oid"}), "taken": frozenset({"oid"}),
@@ -163,7 +165,9 @@ def test_the_optional_fields_are_only_the_listed_ones_of_st_and_state():
                            # прежней стороны их нет
                            "pkg": frozenset({"jrn", "mf", "db_size"}), "released": frozenset({"epoch", "last"}),
                            # часть многочлена в qkeys — пока кворум линии решает (с сопряжения — только ящик кода)
-                           "qkeys": frozenset({"q_gen", "thr", "y", "qbox", "mf"}), "qkeys_ok": frozenset({"mf"}),
+                           # qf — отпечаток многочлена рядом с q_gen (после копии основы номера не уникальны)
+                           "qkeys": frozenset({"q_gen", "thr", "y", "qbox", "mf", "qf"}),
+                           "qkeys_ok": frozenset({"mf", "qf"}), "qneed": frozenset({"qf"}), "qshare": frozenset({"qf"}),
                            # точка расхождения в jstale — у выпуска с хвостом старой эпохи
                            "jstale": frozenset({"F"}),
                            # длительность паузы лидера — у отправителя, знающего расход часов сторон

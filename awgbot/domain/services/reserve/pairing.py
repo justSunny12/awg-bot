@@ -144,8 +144,8 @@ class ReservePairingMixin:
         if mine.get("id") == tok.pair_id:
             raise ServiceError("Это приглашение от этого же сервера")
         from awgbot.core.compat import version_key
-        if version_key(tok.version) and version_key(tok.version)[:3] < (4, 2, 0):
-            raise ServiceError(f"Второй сервер на v{tok.version} — для резерва нужен 4.2.0 или новее у обоих серверов")
+        if version_key(tok.version) and compat.below_pair_floor(tok.version):
+            raise ServiceError(f"Второй сервер на v{tok.version} — для резерва нужен {compat.PAIR_FLOOR} или новее у обоих серверов")
         if not settings.get_bool("app.reserve.ready", False):
             raise ServiceError("Сначала включи «Готов быть резервом»")
         my_gen = self._awg_generation()
@@ -296,14 +296,15 @@ class ReservePairingMixin:
             if not bool(msg.get("gw")) and not self.reserve_has_gateway():
                 # ни у кого нет шлюза — переезд невозможен ни в одну сторону (Т-Р4)
                 return {"ok": False, "why": "nogw"}
-            if "quo1" not in (msg.get("caps") or []):
-                # второй сервер ниже 4.2.0: переезд решает кворум, прежних правил нет — пара не создаётся;
-                # приглашение живо — код можно ввести после обновления; версия — в приглашение для карточки
-                st["old_peer_version"] = str(msg.get("version") or "")[:24]
+            if "quo1" not in (msg.get("caps") or []) or compat.below_pair_floor(str(msg.get("version") or "")):
+                # второй сервер ниже 4.2.0: переезд решает кворум, пакет — формата 2, прежних правил и
+                # формата нет — пара не создаётся; приглашение живо — код можно ввести после обновления;
+                # имя и версия — в живое сообщение приглашения (админ пригласившего видит, почему ждёт)
+                st.update(old_peer_version=str(msg.get("version") or "")[:24], old_peer_name=str(msg.get("name") or "")[:64])
                 self.rsv_put("rsv_invite", st)
-                log.warning("резерв: сопряжение — второй сервер на v%s без кворума, нужен 4.2.0: приглашение ждёт",
-                            msg.get("version") or "?")
-                return {"ok": False, "why": "old"}
+                log.warning("резерв: сопряжение — второй сервер на v%s, нужен %s: приглашение ждёт",
+                            msg.get("version") or "?", compat.PAIR_FLOOR)
+                return {"ok": False, "why": "old", "st": st}
             if st.get("state") == "accepted" and st.get("eph") != hashlib.sha256(a_eph).hexdigest():
                 return {"ok": False, "why": "gone"}
             st["sessions"] = int(st.get("sessions") or 0) + 1
@@ -326,6 +327,8 @@ class ReservePairingMixin:
                 event = "two"
             if st.get("state") != "accepted":
                 st["state"] = "connected"
+            st.pop("old_peer_version", None)                  # обновился и подключился — прежний отказ снят
+            st.pop("old_peer_name", None)
             st.update(peer_name=peer["name"], peer_bot=str(msg.get("bot") or ""), peer_version=peer["version"],
                       peer_ports=peer["ports"], peer_gw=peer["gw"])
             self.rsv_put("rsv_invite", st)

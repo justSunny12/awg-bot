@@ -435,9 +435,9 @@ def test_the_final_replica_is_built_only_after_the_record_fact_and_opens_under_k
     rm.to_step(svc, "release", gen=9)
     built = svc.reserve_release_build()
     assert built["gen"] == 9
-    snap = seal.snapshot_open(svc.reserve_k(), bytes.fromhex(built["blob"]))
-    assert snap["pkg_gen"] == 9 and snap["db"], "реплика пуста"
-    pkgbot.assert_clean(bytes.fromhex(snap["db"]))
+    snap, db = seal.snapshot_open(svc.reserve_k(), bytes.fromhex(built["blob"]))
+    assert snap["pkg_gen"] == 9 and db.size, "реплика пуста"
+    pkgbot.assert_clean(db.read())
     assert svc.rsv_get("rsv_out")["step"] == "released" and svc.reserve_poll() == "away"
     assert svc.reserve_release_build() is None, "второй вызов не собирает вторую реплику"
 

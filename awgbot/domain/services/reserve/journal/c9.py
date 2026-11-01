@@ -3,13 +3,17 @@ c9.py — часть пакета journal (см. __init__): «вернуть б�
 правки бота на резерве хвостом.
 
 Основа взяла эпоху сама (`reserve_c9_arm`; отметка прошлого эпизода другой эпохи
-заменяется): события бота на резерве эпохи, которую она сменила, приходят при
-возврате его же записями (живой гость или его журнал данных с диска резерва) и
-перебазируются здесь при получении
+заменяется): события бота на резерве эпохи, которую она сменила, приходят его
+же записями (живой гость при встрече или возврате; его журнал данных с диска
+резерва — резерв шлёт сам) и перебазируются здесь при получении
 (`reserve_c9_tail_in`, подтверждение — `jack`); записи запечатаны прежним `K` —
-он отложен в отметке `rsv_c9`. Пока ждём эти правки (`rsv_out.await_merge`) —
-обновление отказывает (tail `reserve_refuse_update_if_waiting`, сторож
-терминала — `c9_wait_raw` в tail). Итог — Т-Ж4/Т-Ж5 после возврата
+он отложен в отметке `rsv_c9`. Какие правки жду (эпоха и `upto`), основа
+говорит в `st.jrn.mine.c9`: гостя у резерва нет — его журнал с диска шлёт
+сам резерв (c9deliver), а нет журнала — слово `jc9none`, по которому отметка
+снимается фактом (`reserve_c9_none_in`). Пока ждём эти правки
+(`rsv_out.await_merge`) — обновление отказывает (tail
+`reserve_refuse_update_if_waiting`, сторож терминала — `c9_wait_raw` в tail).
+Итог — Т-Ж4/Т-Ж5 после возврата или снятия отметки фактом
 (`reserve_c9_notes`); перенос, строки и уведомления — общие с хвостом (tail).
 """
 from __future__ import annotations
@@ -48,8 +52,9 @@ class ReserveC9Mixin:
 
     def reserve_c9_start(self, guest_e: int) -> None:
         """Основа взяла эпоху без резерва: события бота на резерве эпохи guest_e после моей
-        точки взятия эпохи — хвост; они придут его же записями (живой гость при возврате или
-        журнал данных гостя с диска резерва) и перебазируются здесь при получении."""
+        точки взятия эпохи — хвост; они придут его же записями (живой гость при встрече или
+        возврате, журнал данных гостя с диска резерва — резерв шлёт сам) и перебазируются
+        здесь при получении."""
         fork = int(self.db.jrn_meta()["fork_i"])
         # записи гостя запечатаны прежним K — он здесь ещё сменится (снятый вебхук, новый пакет): открывать ими;
         # at_ts — момент заведения для срока «не ждать?» карточки (c9wait), at — то же строкой для диагностики
@@ -59,34 +64,83 @@ class ReserveC9Mixin:
         log.warning("резерв: правки бота на «%s» эпохи %s после %s — хвостом при встрече", self.reserve_peer_name(),
                     guest_e, fork)
 
-    def reserve_c9_settle(self) -> None:
+    def reserve_c9_st_part(self, meta: dict) -> dict:
+        """`st.jrn.mine.c9` — какие правки бота на резерве жду: эпоха гостя и что из неё уже
+        перенесено (`upto`). Только пока держатель здесь: правки приходят хвостом С9 только
+        держателю, следующему они легли бы событиями держателя (journal/follow)."""
+        if getattr(self, "guest", False) or meta.get("role") != "holder" or meta.get("holder") != "self":
+            return {}
+        c9 = self.rsv_get("rsv_c9")
+        try:
+            return {"e": int(c9["e"]), "upto": int(c9.get("upto") or 0)} if c9 else {}
+        except (KeyError, TypeError, ValueError):
+            return {}
+
+    def _c9_home_without_lever(self) -> bool:
+        out = self._out()
+        return str(out.get("state") or "home") == "home" and not out.get("await_merge")
+
+    def reserve_c9_settle(self) -> list[Notification]:
         """Дома без рычага (срыв переезда после передачи бота, снятый зависший вебхук): отметку
         С9 роль эпохи заводит на случай живого гостя — его правки придут хвостом при встрече.
         Снимается фактом, что ждать их неоткуда: резерв живым словом, сказанным после моего
-        перехода домой, гостя не несёт, и его журнал на диске не новее перенесённого. По
-        одной лишь смене состояния — нет: гость за мёртвым линком мог жить и писать."""
+        перехода домой, гостя не несёт, и его журнал на диске не новее перенесённого (журнал
+        новее резерв доставит сам — c9deliver, — отметка ждёт его, а не снимается). По
+        одной лишь смене состояния — нет: гость за мёртвым линком мог жить и писать. Итог
+        перенесённого — Т-Ж4/Т-Ж5 (`reserve_c9_notes`)."""
         if getattr(self, "guest", False) or not self.rsv_get("rsv_c9"):
-            return
+            return []
         self.reserve_c9_stamp()                               # отметка прежней версии без момента — отсчёт отсюда
         out = self._out()
-        if str(out.get("state") or "home") != "home" or out.get("await_merge"):
-            return                                            # рычаг: ждёт _tick_await_merge (или _forced_no_merge)
+        if not self._c9_home_without_lever():
+            return []                                         # рычаг: ждёт _tick_await_merge (или _forced_no_merge)
         peer = self.reserve_peer_state()
         if not self._peer_alive(peer) or str(peer.get("inn") or "idle") in HOSTING:
-            return
+            return []
         if peer.get("at_ts") is not None and out.get("at_ts") is not None:
             fresh = float(peer["at_ts"]) > float(out["at_ts"])
         else:
             fresh = str(peer.get("at") or "") > str(out.get("since") or "")
         if not fresh or self.reserve_disk_waiting():
-            return
-        self.rsv_put("rsv_c9", None)
+            return []
         log.info("резерв: «%s» на связи без моего гостя — правок бота на резерве не будет, отметка С9 снята",
                  self.reserve_peer_name())
+        return self.reserve_c9_notes()
+
+    def reserve_c9_none_in(self, body: dict) -> list[tuple]:
+        """`jc9none{e, last}` резерва: журнала моего бота эпохи e у него после last нет. Отметка
+        той же эпохи, всё по last здесь уже перенесено и рычага нет — снять фактом (итог —
+        Т-Ж4/Т-Ж5). С рычагом отметку ведёт возврат; last дальше перенесённого — журнал ещё
+        идёт (резерв видел мой upto раньше подтверждения) — ждать его."""
+        if getattr(self, "guest", False):
+            return []
+        c9 = self.rsv_get("rsv_c9")
+        try:
+            e, last = int(body["e"]), int(body["last"])
+            same = bool(c9) and int(c9.get("e")) == e
+        except (KeyError, TypeError, ValueError):
+            return []
+        name = self.reserve_peer_name()
+        if not same:
+            log.info("резерв: «%s»: журнала бота эпохи %s у него нет — здесь такого ожидания нет, пропущено", name, e)
+            return []
+        if not self._c9_home_without_lever():
+            log.info("резерв: «%s»: журнала бота эпохи %s у него нет — отметку С9 ведёт возврат", name, e)
+            return []
+        upto = int(c9.get("upto") or 0)
+        if last > upto:
+            log.info("резерв: «%s»: журнал бота эпохи %s у него по %s, здесь перенесено по %s — жду его",
+                     name, e, last, upto)
+            return []
+        log.info("резерв: «%s»: журнала бота эпохи %s после %s у него нет — правок больше не будет, отметка С9 снята "
+                 "(перенесено %s)", name, e, upto, int(c9.get("moved") or 0))
+        notes = self.reserve_c9_notes()
+        return [("notify", notes)] if notes else []
 
     def reserve_disk_waiting(self) -> bool:
         """Гостя у резерва нет, но его журнал на диске новее того, что здесь уже есть: в С9 —
-        перенесённого хвостом, в следовании — применённого (возврат заберёт его, не «пусто»)."""
+        перенесённого хвостом (доставляет его резерв сам, c9deliver; отметка не снимается,
+        пока он не дошёл), в следовании — применённого (возврат заберёт его, не «пусто»)."""
         keep = self.reserve_peer_state().get("jrn_keep") or {}
         try:
             gj_e, gj_last = int(keep.get("gj_e") or -1), int(keep.get("gj_last") or 0)
@@ -117,6 +171,7 @@ class ReserveC9Mixin:
         if [ev.i for ev in evs] != list(range(upto + 1, upto + 1 + len(evs))):
             return [("send", "jneed", {"line": line, "from": upto + 1})]
         before = self.db.jrn_last_i()
+        now_ts = timeutil.now().timestamp()
 
         def mark(conn, rpt) -> None:
             row = conn.execute("SELECT value FROM server_state WHERE key = 'rsv_c9'").fetchone()
@@ -126,6 +181,8 @@ class ReserveC9Mixin:
                 cur = {}
             if not cur:
                 return                                        # возврат уже снял ожидание — не воскрешать
+            if evs[-1].i > int(cur.get("upto") or 0):
+                cur["got_ts"] = now_ts                        # журнал идёт — «не ждать?» карточки ждёт (c9wait)
             cur.update(upto=max(int(cur.get("upto") or 0), evs[-1].i), moved=int(cur.get("moved") or 0) + rpt.moved,
                        total=int(cur.get("total") or 0) + len(rpt.disputed),
                        disputed=(list(cur.get("disputed") or []) + rpt.disputed)[:DISPUTED_MAX])

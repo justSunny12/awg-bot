@@ -49,9 +49,10 @@
 # зону, 8787; бот передаёт его и при --shell — routing.link_channel_port
 # резерва), GUEST_MEMORY_MB (потолок памяти юнита гостя, МБ, не меньше 160:
 # MemoryMax, MemoryHigh — на 32 меньше; процесс открытия считает его от размера
-# базы основы), GUEST_STORE_MB (и при --store: размер tmpfs хранилища гостя, МБ, от
+# базы основы, бот резерва при --guest-mem — от базы гостя перед своим стартом
+# гостя), GUEST_STORE_MB (и при --store: размер tmpfs хранилища гостя, МБ, от
 # 32 до 4096 — мусор или меньше 32 даёт 32, больше 4096 — 4096; бот резерва считает
-# его от размера пакета, процесс открытия — от размера базы до записи и после журнала;
+# его от размера базы основы и снимка rep.bin, процесс открытия — от размера базы до записи и после журнала;
 # уже смонтированный tmpfs перемонтируется этим размером, без значения — не трогается),
 # RF_TABLE (таблица РФ-доступа хоста для трафика из awggr-h; 100 —
 # умолчание routing.table, обёртка его не передаёт); --serve — WEBHOOK_PORT; --relay — RELAY_TO (адрес:порт основы).
@@ -164,6 +165,11 @@
 #                 перерисовки файервола хоста с DNAT (иначе поток, пришедший
 #                 между --relay и перерисовкой, завёл бы запись без NAT); без
 #                 утилиты conntrack — строка ВНИМАНИЕ
+#   --guest-mem   потолок памяти юнита гостя заново (GUEST_MEMORY_MB, как при --take):
+#                 MemoryMax и MemoryHigh в его юните, daemon-reload. Бот резерва
+#                 зовёт перед каждым своим стартом гостя — база гостя после
+#                 обслуживания (реплика при передаче бота, снимок rep.bin) больше
+#                 той, по которой юнит писался при --take; без юнита — отказ
 #   --teardown    остановить бота основы и dnsmasq зоны, снять клоны, veth и
 #                 правило iif awggr-h (без
 #                 пересылки) — состояние idle; хранилище, rep.bin и jrn/ остаются
@@ -493,12 +499,18 @@ RuntimeMaxUse=16M
 EOF
 }
 
-write_units() {   # write_units GUEST_IF
-    # потолок памяти гостя (МБ) — от размера базы (её копия в tmpfs и в памяти бота): GUEST_MEMORY_MB
-    # считает процесс открытия; не число или меньше 160 — 160
+guest_mem_mb() {   # потолок памяти гостя (МБ) из GUEST_MEMORY_MB: не число или меньше 160 — 160
     local mem="${GUEST_MEMORY_MB:-160}"
     case "$mem" in ''|*[!0-9]*) mem=160 ;; esac
+    [ "${#mem}" -le 6 ] || mem=160                  # длиннее шести цифр — мусор (и без переполнения в [ ])
     [ "$mem" -ge 160 ] 2>/dev/null || mem=160
+    printf '%s' "$mem"
+}
+
+write_units() {   # write_units GUEST_IF
+    # потолок памяти гостя (МБ) — от размера базы (её копия в tmpfs и в памяти бота): GUEST_MEMORY_MB
+    # считает процесс открытия при --take, бот резерва — при своём старте гостя (--guest-mem)
+    local mem; mem="$(guest_mem_mb)"
     cat > "$DNS_UNIT" <<EOF
 [Unit]
 Description=awg-bot: резолвер гостевой зоны резерва
@@ -550,6 +562,17 @@ LimitCORE=0
 WantedBy=multi-user.target
 EOF
     systemctl daemon-reload
+}
+
+cmd_guest_mem() {   # потолок памяти гостя заново: база выросла за обслуживание
+    need_root
+    [ -f "$UNIT" ] || die "юнита гостя нет — зона не поднята"
+    local mem; mem="$(guest_mem_mb)"
+    # через временный файл, не sed -i: одна запись на любой sed, юнит не остаётся наполовину
+    sed -e "s/^MemoryHigh=.*/MemoryHigh=$(( mem - 32 ))M/" -e "s/^MemoryMax=.*/MemoryMax=${mem}M/" "$UNIT" > "$UNIT.tmp" \
+        && mv -f "$UNIT.tmp" "$UNIT" || { rm -f "$UNIT.tmp"; die "потолок памяти гостя не записан"; }
+    systemctl daemon-reload
+    say "guest-mem: ${mem}M"
 }
 
 write_dnsmasq() {   # write_dnsmasq "адреса" "апстримы"
@@ -829,10 +852,11 @@ case "${1:-}" in
     --take) cmd_take ;;
     --serve) cmd_serve ;;
     --restart-clone) cmd_restart_clone ;;
+    --guest-mem) cmd_guest_mem ;;
     --relay) cmd_relay ;;
     --relay-flush) need_root; conntrack_flush_ports; say "relay-flush: ok" ;;   # после отрисовки DNAT хвоста ботом
     --teardown) cmd_teardown ;;
     --wipe) cmd_wipe ;;
     --status) cmd_status ;;
-    *) say "использование: $0 --plan|--selftest|--shell|--store|--take|--serve|--restart-clone|--relay|--relay-flush|--teardown|--wipe|--status"; exit 2 ;;
+    *) say "использование: $0 --plan|--selftest|--shell|--store|--take|--serve|--restart-clone|--guest-mem|--relay|--relay-flush|--teardown|--wipe|--status"; exit 2 ;;
 esac

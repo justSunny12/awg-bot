@@ -73,7 +73,7 @@ def store(services, tmp_path, monkeypatch):
 
 
 def _put_rep(store, marker: str, at: str, *, k: bytes = K, db: bytes | None = None) -> None:
-    blob = seal.snapshot_seal(k, {"pkg_gen": 3, "at": at, "db": (db if db is not None else _db_bytes(store.tmp, marker)).hex()})
+    blob = seal.snapshot_seal(k, {"pkg_gen": 3, "at": at}, db if db is not None else _db_bytes(store.tmp, marker))
     rsvzone.write_private(rsvzone.REP_PATH, blob)
 
 
@@ -121,20 +121,24 @@ def test_without_a_replica_or_a_key_nothing_happens(store):
     assert _marker(store.run / "data" / "bot.db") == "package"
 
 
-@pytest.mark.parametrize("what", ["other_key", "garbage", "empty_db", "bad_hex"])
+@pytest.mark.parametrize("what", ["other_key", "garbage", "empty_db", "broken_db"])
 def test_a_replica_that_does_not_pass_the_checks_is_not_adopted(store, what):
     if what == "other_key":
         _put_rep(store, "replica", "2026-10-21T11:00:00+00:00", k=bytes([9]) * 32)
     elif what == "garbage":
         rsvzone.write_private(rsvzone.REP_PATH, b"\x00" * 200)
     elif what == "empty_db":
-        blob = seal.snapshot_seal(K, {"pkg_gen": 3, "at": "2026-10-21T11:00:00+00:00", "db": ""})
+        blob = seal.snapshot_seal(K, {"pkg_gen": 3, "at": "2026-10-21T11:00:00+00:00"}, b"")
         rsvzone.write_private(rsvzone.REP_PATH, blob)
     else:
-        blob = seal.snapshot_seal(K, {"pkg_gen": 3, "at": "2026-10-21T11:00:00+00:00", "db": "zz"})
-        rsvzone.write_private(rsvzone.REP_PATH, blob)
+        # база снимка испорчена под верным K (не zlib): распаковка потоком срывается на середине
+        import struct
+        mz = seal._pack_json({"pkg_gen": 3, "at": "2026-10-21T11:00:00+00:00"})
+        plain = struct.pack(">I", len(mz)) + mz + struct.pack(">Q", 100) + b"DUMMY-not-zlib"
+        rsvzone.write_private(rsvzone.REP_PATH, seal.SNAP_MAGIC + struct.pack(">BQ", seal.FORMAT, 100) + seal._box(K, plain))
     assert store.svc.guest_adopt_snapshot() is False
     assert _marker(store.run / "data" / "bot.db") == "package", "негодная реплика затёрла базу"
+    assert not (store.run / "data" / "bot.db.tmp").exists(), "оборванная распаковка оставила временный файл"
 
 
 def test_a_missing_marker_in_the_meta_means_any_replica_is_newer(store):

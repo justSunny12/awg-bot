@@ -16,19 +16,36 @@ tests, tools). Здесь он идёт с каждым прогоном, а н�
 висячая ссылка уже неделями лежит в ветке.
 
 Исключения — только списком ALLOWED, у каждого причина; ненужное исключение —
-тоже красное.
+тоже красное. И явное «# noqa: F401» на строке импорта: импорт ради
+реэкспорта или подмены в тестах — осознанный, причина рядом в комментарии.
+Глушит оно ТОЛЬКО «imported but unused» на своей строке: голый «# noqa» и
+«noqa» с другими кодами не глушат ничего, а неопределённое имя (класс случая
+_RULE) не глушится никаким noqa.
 """
 from __future__ import annotations
 
+import linecache
+import re
 from pathlib import Path
 
-from pyflakes import api, reporter
+from pyflakes import api, messages, reporter
 
 ROOT = Path(__file__).resolve().parents[2]
 DIRS = ("awgbot", "tools", "tests")
 
 # (путь от корня, кусок текста предупреждения) — осознанные исключения
 ALLOWED: set[tuple[str, str]] = set()    # исключений нет: модули видов списков грузятся через importlib
+
+
+_NOQA_F401 = re.compile(r"#\s*noqa:\s*(?:[A-Z]+[0-9]+\s*,\s*)*F401\b")
+
+
+def _noqa_f401(message) -> bool:
+    """«imported but unused» на строке с явным «# noqa: F401» (код F401 в списке
+    кодов noqa) — осознанный импорт. Иное предупреждение или иной noqa — нет."""
+    if not isinstance(message, messages.UnusedImport):
+        return False
+    return bool(_NOQA_F401.search(linecache.getline(str(message.filename), message.lineno)))
 
 
 class _Collect(reporter.Reporter):
@@ -43,6 +60,8 @@ class _Collect(reporter.Reporter):
         return path.relative_to(ROOT).as_posix() if path.is_relative_to(ROOT) else str(path)
 
     def flake(self, message):
+        if _noqa_f401(message):
+            return
         self.found.append((self._rel(message.filename), message.lineno, message.message % message.message_args))
 
     def syntaxError(self, filename, msg, lineno, offset, text):
@@ -81,3 +100,23 @@ def test_the_guard_sees_a_dangling_constant(tmp_path):
     mod.write_text("def kill_switch():\n    return _RULE\n", encoding="utf-8")
     bad, _ = flakes([tmp_path])
     assert bad == [f"{mod.resolve()}:2: undefined name '_RULE'"], bad
+
+
+def test_only_an_explicit_noqa_f401_silences_an_unused_import(tmp_path):
+    """Сторож сторожа: «# noqa: F401» (и в списке кодов) глушит неиспользуемый
+    импорт своей строки; голый «# noqa», «noqa» с другим кодом и F401 на чужой
+    строке — нет; неопределённое имя не глушит и «# noqa: F401»."""
+    mod = tmp_path / "mod.py"
+    mod.write_text(
+        "import os  # noqa: F401 — реэкспорт\n"
+        "import sys  # noqa: E402, F401\n"
+        "import json  # noqa\n"
+        "import re  # noqa: E402\n"
+        "import csv\n"
+        "# noqa: F401\n"
+        "X = _RULE  # noqa: F401\n", encoding="utf-8")
+    linecache.checkcache(str(mod))
+    bad, _ = flakes([tmp_path])
+    m = mod.resolve()
+    assert bad == [f"{m}:3: 'json' imported but unused", f"{m}:4: 're' imported but unused",
+                   f"{m}:5: 'csv' imported but unused", f"{m}:7: undefined name '_RULE'"], bad

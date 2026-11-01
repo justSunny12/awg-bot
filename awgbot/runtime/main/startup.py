@@ -98,11 +98,14 @@ async def report_update_result(bot, services) -> None:
     from awgbot.bot.handlers.common import dismiss_update_reports
     await dismiss_update_reports(bot, services)
     from awgbot.bot.notifier import note_markup
-    sent = await pkg.notify_one(bot, note.tg_id, note.text,
-                            reply_markup=note_markup(note))
-    if sent is not None:
+
+    async def _remember(sent) -> None:
+        # и при отложенном повторе 429: возврат тогда None, а кнопку этого
+        # окна следующая ступень всё равно должна снять
         await asyncio.to_thread(services.remember_update_report,
                                 sent.chat.id, sent.message_id)
+    await pkg.notify_one(bot, note.tg_id, note.text,
+                         reply_markup=note_markup(note), on_message=_remember)
 
 
 async def _sync_bot_identity(bot: Bot, db: Database) -> bool:
