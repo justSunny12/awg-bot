@@ -19,11 +19,6 @@ class MonitorMixin:
     """Гистерезис алертов, тик монитора, сводка, имя ВПС, потребление."""
     # ── гистерезис ───────────────────────────────────────────────────────────
 
-    def _armer(self, key: str, value: str):
-        """Отложенная отметка «алерт показан» — по факту доставки (domain/alerts)."""
-        from awgbot.domain import alerts
-        return alerts.armer(self.db, f"gwst_armed_{key}", value)
-
     def _streak_alert(self, key: str, bad: bool | None, streak: int,
                       on_text: str, off_text: str, loud: bool = True,
                       critical: bool = True) -> list[Notification]:

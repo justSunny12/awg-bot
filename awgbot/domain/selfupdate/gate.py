@@ -34,9 +34,6 @@ class UpdatePeer:
 class SelfUpdateGateMixin:
     """Условие на версию другой роли и пропущенные релизы."""
 
-    def _update_role(self) -> str:
-        return config.ROLE or ""
-
     def _update_gate(self, peers=None):
         """peer(need) для выбора ступени или None — условий нет: все из peers,
         кто держит (fresh), не ниже need."""

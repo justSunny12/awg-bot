@@ -163,17 +163,6 @@ class ReserveZoneLinksMixin:
                 self._remove_zone_link(int(key), rec)
         self.rsv_put("rsv_guest_links", None)
 
-    def reserve_zone_link_ports(self) -> list[int]:
-        """Порты сторон зоны — открыть во входе хоста (сокеты у хоста)."""
-        return [int(r.get("port") or 0) for r in self.reserve_guest_links().values() if int(r.get("port") or 0)]
-
-    def reserve_zone_link_addr(self, slot: int) -> str:
-        rec = self.reserve_guest_links().get(str(int(slot))) or {}
-        try:
-            return str(list(ipaddress.ip_network(rec["cidr"], strict=False).hosts())[0])
-        except (KeyError, ValueError, IndexError):
-            return ""
-
     def reserve_zone_link_rx(self, slot: int) -> int | None:
         """Счётчик rx стороны зоны слота — живость шлюза для резерва."""
         from awgbot.util import netns

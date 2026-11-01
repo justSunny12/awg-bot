@@ -138,8 +138,3 @@ class SelfUpdateCacheMixin:
             for r in updates.skipped(installed, releases):
                 log.warning("обновление: %s пропущен — %s", r.tag, r.skip_reason())
             return target
-
-    def update_cached_release(self, tag: str):
-        """Release из сохранённого списка по тегу или None — для раздела без
-        сети (причина блокировки переездом по поколению из метаданных)."""
-        return next((r for r in self._update_cached_releases() or [] if r.tag == tag), None)

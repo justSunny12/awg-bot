@@ -27,7 +27,7 @@ from .reserve_quorum import (quorum_code_needed_reserve, quorum_code_needed_prim
                              quorum_tie_candidate, quorum_tie_peer, quorum_tie_over)
 from .reserve_tg import (tg_pool_stale, tg_pool_core_lost, tg_pool_ok, _date, webhook_stalled_reserve,
                          webhook_foreign_reserve, webhook_restored_reserve)
-from .reserve_rf import _bytes, rf_transit_on, rf_transit_back, rf_transit_lost, rf_peer_use, rf_peer_done
+from .reserve_rf import rf_transit_on, rf_transit_back, rf_transit_lost, rf_peer_use, rf_peer_done
 
 
 def peer_down(peer: str, since: str = "") -> str:
@@ -84,4 +84,4 @@ __all__ = ["_e", "_n", "_when", "peer_down", "peer_up", "zone_tools_failed", "pa
            "quorum_tie_over",
            "tg_pool_stale", "tg_pool_core_lost", "tg_pool_ok", "_date", "webhook_stalled_reserve",
            "webhook_foreign_reserve", "webhook_restored_reserve",
-           "_bytes", "rf_transit_on", "rf_transit_back", "rf_transit_lost", "rf_peer_use", "rf_peer_done"]
+           "rf_transit_on", "rf_transit_back", "rf_transit_lost", "rf_peer_use", "rf_peer_done"]

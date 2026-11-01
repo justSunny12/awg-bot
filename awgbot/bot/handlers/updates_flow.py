@@ -1,6 +1,6 @@
 """
 handlers/updates_flow.py — кнопки обновлений основного бота вокруг набора:
-«В меню» на итоге, «Не уведомлять», тумблер и расписание. Диалог и ход
+«В меню» на итоге, «Не уведомлять» и тумблер. Диалог и ход
 набора — handlers/fleet.
 """
 
@@ -9,10 +9,8 @@ from __future__ import annotations
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery
 
-from awgbot.bot import ui
 from awgbot.bot import texts
 from awgbot.bot.handlers.common import call, dismiss_update_reports
-from awgbot.core import settings
 
 
 async def menu(cb: CallbackQuery, services, state: FSMContext, *, return_panel) -> None:
@@ -53,17 +51,3 @@ async def toggle_mute(cb: CallbackQuery, services) -> None:
         await call(services.mute_updates)
     await cb.answer(texts.updates_notify_toast(enabled=muted))
 
-
-async def set_schedule(cb: CallbackQuery, services, opt: str) -> bool:
-    """Расписание проверки: day|week|month; «никогда» из сообщений прежних
-    выпусков — «месяц» и уведомления выкл (расписания «никогда» больше нет).
-    False — записать не удалось, ответ колбэку уже дан."""
-    want = opt if opt in ("day", "week", "month") else "month"
-    try:
-        await call(settings.set_value, "updates.poll_schedule", want)
-    except settings.SettingsWriteError as e:
-        await cb.answer(ui.toast(e), show_alert=True)
-        return False
-    if opt == "never":
-        await call(services.mute_updates)
-    return True
