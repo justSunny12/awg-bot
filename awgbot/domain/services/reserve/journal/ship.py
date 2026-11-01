@@ -242,8 +242,15 @@ class ReserveShipMixin:
     def reserve_jrn_tick(self) -> list[tuple]:
         """Такт журнала (1 с): события и пачки счётчиков к резерву."""
         self.reserve_jrn_sync()
-        if not self.reserve_jrn_on() or not self.reserve_online() or self._jrn_quiet():
+        if not self.reserve_jrn_on() or not self.reserve_online():
             return []
+        c9 = self.reserve_c9_deliver_tick()                   # журнал гостя второй стороны — не о моей линии
+        if self._jrn_quiet():
+            return c9
+        return c9 + self._jrn_tick_line()
+
+    def _jrn_tick_line(self) -> list[tuple]:
+        """Такт своей линии: хвост, отставание сверки, события и пачки счётчиков."""
         s = self._jrn_sess()
         acts: list[tuple] = self.reserve_tail_out() + self.reserve_follow_lag_tick()   # и при hold: хвост и отставание сверки не ждут
         if not s.get("ok") or s.get("hold"):

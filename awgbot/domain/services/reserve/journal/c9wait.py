@@ -4,12 +4,16 @@ c9wait.py — часть пакета journal (см. __init__): ожидание
 «🗑 Не ждать».
 
 Без рычага (срыв переезда после передачи бота, снятый зависший вебхук) отметку
-снимает факт (`reserve_c9_settle`): резерв живым словом после моего перехода
-домой гостя не несёт. Резерв, который не вернётся никогда, этого не скажет —
-отметка висела бы бессрочно. Пока она стоит, карточка несёт плашку «жду события»;
-дольше C9_WAIT_S от заведения — со ссылкой на экран «не ждать», где админ
-снимает её сам (правки бота на резерве, если были, сюда уже не придут).
-С рычагом (`rsv_out.await_merge`) отметку ведёт возврат — здесь её не трогают.
+снимает факт: резерв живым словом после моего перехода домой гостя не несёт
+(`reserve_c9_settle`) или говорит, что журнала моего бота у него больше нет
+(`jc9none`, `reserve_c9_none_in`); журнал на его диске он шлёт сам (c9deliver).
+Резерв, который не вернётся никогда, этого не скажет — отметка висела бы
+бессрочно. Пока она стоит, карточка несёт плашку «жду события»; за C9_WAIT_S от
+заведения не пришли ни журнал, ни «журнала нет» — со ссылкой на экран «не
+ждать», где админ снимает её сам (правки бота на резерве, если были, сюда уже
+не придут). Журнал идёт (часть перенесена за последние C9_PROGRESS_S) — ссылки
+нет и снятие отказывает: «приходит — подожди». С рычагом (`rsv_out.await_merge`)
+отметку ведёт возврат — здесь её не трогают.
 """
 from __future__ import annotations
 
@@ -22,7 +26,8 @@ from ...gateway_link.common import log
 from ...types import Notification, ServiceError
 from ..state import HOSTING
 
-C9_WAIT_S = 360                   # отметка С9 без рычага старше — в карточке «не ждать?»
+C9_WAIT_S = 360                   # отметка С9 без рычага старше — в карточке «не ждать?»; и срок быстрых повторов резерва
+C9_PROGRESS_S = 60                # часть журнала бота на резерве перенесена не раньше — журнал идёт, «не ждать» нет
 
 
 class ReserveC9WaitMixin:
@@ -58,30 +63,39 @@ class ReserveC9WaitMixin:
             return {}
         return c9
 
+    def _c9_progressing(self, c9: dict) -> bool:
+        """Журнал бота на резерве идёт: часть перенесена не раньше C9_PROGRESS_S назад."""
+        try:
+            got = float(c9["got_ts"]) if c9.get("got_ts") is not None else None
+        except (TypeError, ValueError):
+            got = None
+        return got is not None and timeutil.now().timestamp() - got < C9_PROGRESS_S
+
     def reserve_c9_drop_why(self) -> str:
-        """Почему «не ждать» нельзя: правки бота на резерве ещё придут — он на связи и несёт
-        моих, или его журнал на диске новее перенесённого. Пусто — можно."""
-        peer = self.reserve_peer_state()
-        if not self._peer_alive(peer):
-            return ""
+        """Почему «не ждать» нельзя: правки бота на резерве ещё придут — резерв на связи и
+        несёт моих (гость шлёт их сам), или его журнал идёт сюда прямо сейчас. Пусто — можно."""
         name = self.reserve_peer_name()
-        if str(peer.get("inn") or "idle") in HOSTING:
+        c9 = self._c9_wait_mark()
+        if c9 and self._c9_progressing(c9):
+            return f"журнал с «{name}» приходит — подожди"
+        peer = self.reserve_peer_state()
+        if self._peer_alive(peer) and str(peer.get("inn") or "idle") in HOSTING:
             return f"«{name}» на связи и несёт твой бот — его правки придут сами"
-        if self.reserve_disk_waiting():
-            return f"у «{name}» на диске правки твоего бота, которых здесь ещё нет, — они придут сами"
         return ""
 
     def reserve_c9_wait_view(self) -> dict:
-        """Плашка карточки и экран «не ждать»: с какого момента жду, истёк ли срок, что
-        известно о резерве. Пусто — отметки без рычага нет."""
+        """Плашка карточки и экран «не ждать»: с какого момента жду, истёк ли срок (за
+        C9_WAIT_S ни журнала, ни «журнала нет», и журнал не идёт), что известно о резерве.
+        Пусто — отметки без рычага нет."""
         c9 = self._c9_wait_mark()
         if not c9:
             return {}
         ts = self._c9_since_ts(c9)
         now = timeutil.now().timestamp()
         peer = self.reserve_peer_state()
+        # срок — от заведения; журнал идёт (часть за C9_PROGRESS_S) — срок не вышел, пока он не встанет
         return {"since": timeutil.to_iso(datetime.fromtimestamp(ts, timezone.utc)) if ts is not None else "",
-                "overdue": ts is not None and now - ts >= C9_WAIT_S,
+                "overdue": ts is not None and now - ts >= C9_WAIT_S and not self._c9_progressing(c9),
                 "online": self._peer_alive(peer), "down_since": self.reserve_down_since(),
                 "moved": int(c9.get("moved") or 0), "drop_why": self.reserve_c9_drop_why()}
 
@@ -103,4 +117,4 @@ class ReserveC9WaitMixin:
         return [Notification(tg_id=int(config.ADMIN_ID), text=rt.c9_dropped(name))]
 
 
-__all__ = ["C9_WAIT_S", "ReserveC9WaitMixin"]
+__all__ = ["C9_PROGRESS_S", "C9_WAIT_S", "ReserveC9WaitMixin"]

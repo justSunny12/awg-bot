@@ -2,7 +2,9 @@
 (срыв переезда после передачи бота, снятый зависший вебхук) — плашка карточки
 основы «жду события» до срока и после него (со ссылкой «не ждать?»), экран
 «не ждать» по ссылке, «🗑 Не ждать» (итог уведомлением, карточка без плашки),
-повторное нажатие, когда отметки уже нет, и отказ, пока резерв несёт бот.
+повторное нажатие, когда отметки уже нет, отказ, пока резерв несёт бот, и
+карточка и отказ, пока журнал бота на резерве приходит (часть перенесена только
+что) — срок вышел, а ссылки нет.
 
 Состояние — ключом `rsv_c9` (как после `reserve_c9_start`) и `rsv_peer_state`;
 часы заморожены (NOW), момент заведения отметки — от NOW."""
@@ -18,12 +20,14 @@ C9_LINK = "rsv-c9"
 DROP = RsvCB(action="c9_drop")
 
 
-def _c9(age_s: int, *, moved: int = 0):
-    """Отметка С9 заведена age_s секунд назад (эпоха гостя 4, перенесено moved)."""
+def _c9(age_s: int, *, moved: int = 0, got_s: int | None = None):
+    """Отметка С9 заведена age_s секунд назад (эпоха гостя 4, перенесено moved; got_s —
+    последняя часть журнала перенесена столько секунд назад)."""
     def step(services, mp):
         at = NOW.timestamp() - age_s
         services.rsv_put("rsv_c9", {"e": 4, "F": 10, "upto": 10 + moved, "moved": moved, "disputed": [], "total": 0,
-                                    "at": _iso(NOW), "at_ts": at, "k": "33" * 32})
+                                    "at": _iso(NOW), "at_ts": at, "k": "33" * 32,
+                                    **({"got_ts": NOW.timestamp() - got_s} if got_s is not None else {})})
     return step
 
 
@@ -49,6 +53,11 @@ RESERVE_C9 = [
          data=_paired(_c9(400), _peer_down), title="«🗑 Не ждать», а отметки уже нет: всплывашка и карточка"),
     Shot("adm.rsv.c9.busy", role="admin", steps=[("start", C9_LINK), ("press", DROP)],
          data=_paired(_c9(400), _hosting), title="«🗑 Не ждать», пока «Beta» несёт бот: отказ всплывашкой"),
+    Shot("adm.rsv.card.c9.arriving", role="admin", press=[RSV], data=_paired(_c9(400, moved=3, got_s=10), _peer_down),
+         title="карточка основы: отметке С9 больше 6 минут, но журнал с «Beta» приходит — без «(не ждать?)»"),
+    Shot("adm.rsv.c9.arriving", role="admin", steps=[("start", C9_LINK), ("press", DROP)],
+         data=_paired(_c9(400, moved=3, got_s=10), _peer_down),
+         title="«🗑 Не ждать», пока журнал с «Beta» приходит: отказ всплывашкой"),
 ]
 
 

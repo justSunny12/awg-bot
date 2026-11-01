@@ -234,8 +234,8 @@ class ReserveOutboundMixin:
         acts = self._tick_home(out) + self.reserve_tail_settle() + self._home_back_resend()   # свой хвост при держателе дома — переносить
         if self.reserve_out() == "home":
             acts += self.reserve_rec_back_settle()            # резерв не принял моих после смены записи — запись на себя
-        self.reserve_c9_settle()                              # отметка С9 без рычага — пока правки бота на резерве возможны
-        return acts
+        notes = self.reserve_c9_settle()                      # отметка С9 без рычага — пока правки бота на резерве возможны
+        return acts + ([("notify", notes)] if notes else [])
 
     def _tick_home(self, out: dict) -> list[tuple]:
         """В состоянии home: после «вернуть без резерва» — ждать его (outbound_return); вебхук
