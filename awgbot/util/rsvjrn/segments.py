@@ -159,6 +159,13 @@ class Store:
                     seen[n] = r
         return [seen[n] for n in sorted(seen)]
 
+    def epoch_starts(self) -> dict[int, int]:
+        """{эпоха: первый номер её событий здесь} — по именам сегментов, без чтения."""
+        out: dict[int, int] = {}
+        for e, first, _path in self._segments():
+            out[e] = min(out.get(e, first), first)
+        return out
+
     def last(self) -> tuple[int, int]:
         """(эпоха, номер) последнего события; пусто — (0, 0)."""
         segs = self._segments()
