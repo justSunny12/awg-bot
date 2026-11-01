@@ -95,6 +95,9 @@ class PollControl:
         if self._conflict:
             return
         self._conflict = why
+        # решение «ждать права» принято здесь: wake() после этой точки (take() из такта,
+        # увидевшего away, — ещё пока поллинг останавливается) не теряется
+        self._wake.clear()
         log.warning("Telegram: вебхук у резерва — поллинг остановлен (%s)", why[:80])
         loop = asyncio.get_running_loop()
         loop.create_task(self._stop_after_conflict())
@@ -103,7 +106,7 @@ class PollControl:
         await self._pult_handed()
         with contextlib.suppress(Exception):
             await asyncio.to_thread(self.services.reserve_set_poll, "away", why="webhook")
-        await self.stop()
+        await self._halt()                                   # без clear: wake() после отметки away — в силе
 
     async def _pult_handed(self) -> None:
         """Вебхук снова у бота на резерве: пульт (domain reserve/pult) снят — по факту Telegram,
@@ -133,8 +136,8 @@ class PollControl:
             log.warning("getWebhookInfo не прошёл (%s) — поллю по прежнему состоянию", e)
             return await asyncio.to_thread(self.services.reserve_poll) == "mine"
         if info.url:
-            # пульт — до отметки away: между отметкой и ожиданием права (run: _wake.clear) лишнего
-            # await нет — take() из такта, увидевший away, не теряет свой wake()
+            # пульт — до отметки away; wake() от take() из такта, увидевшего away, не теряется:
+            # run() снимает wake до проверки, а не перед ожиданием
             await self._pult_handed()
             await asyncio.to_thread(self.services.reserve_set_poll, "away", why="webhook_info", url=str(info.url)[:120])
             log.warning("Telegram: вебхук стоит на %s — право отвечать не у меня", info.url)
@@ -153,11 +156,13 @@ class PollControl:
             with contextlib.suppress(NotImplementedError, RuntimeError):
                 loop.add_signal_handler(sig, lambda: loop.create_task(self.close()))
         while not self._closing:
+            # wake снимается ДО проверки, а не перед ожиданием: wake(), пришедший во время
+            # getWebhookInfo или остановки поллинга, — повод перепроверить сразу, а не через RECHECK_S
+            self._wake.clear()
             allowed = await self._allowed()
             if self._closing:
                 break                                        # close() пришёл во время проверки (сетевой запрос) — поллинг не начинать
             if not allowed:
-                self._wake.clear()
                 with contextlib.suppress(asyncio.TimeoutError):
                     # право отвечать решает Telegram: перепроверять getWebhookInfo, а не ждать слова вечно
                     await asyncio.wait_for(self._wake.wait(), backoff.jitter(RECHECK_S))
@@ -181,7 +186,8 @@ class PollControl:
             self._task = None
             if self._closing or not (self._stopped or self._conflict):
                 return                                       # поллинг кончился сам (сигнал, заглушка теста) — выход, как прежде
-            self._wake.clear()
+            # wake снят в момент решения остановиться (conflict / stop), не здесь: между
+            # отметкой away и этой строкой — остановка поллинга, и wake() take() пропадал бы
             with contextlib.suppress(asyncio.TimeoutError):
                 await asyncio.wait_for(self._wake.wait(), backoff.jitter(RECHECK_S))
 
@@ -189,7 +195,14 @@ class PollControl:
         self._wake.set()
 
     async def stop(self) -> None:
-        """Остановить поллинг (ждёт завершения текущего getUpdates)."""
+        """Остановить поллинг (ждёт завершения текущего getUpdates). Прежние wake()
+        снимаются сейчас: будит только то, что пришло после решения остановиться."""
+        if not self.polling():
+            return
+        self._wake.clear()
+        await self._halt()
+
+    async def _halt(self) -> None:
         if not self.polling():
             return
         self._stopped = True

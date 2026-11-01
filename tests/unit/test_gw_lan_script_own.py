@@ -59,8 +59,10 @@ def test_a_removed_exception_returns_to_the_feed_while_others_stay_out(own_env):
     tool, dns_d, dump, log, env = own_env
     _own(dns_d, ru=["shop.ru", "x.com"])
     _with_src(dns_d, dump, minus={"shop.ru", "x.com"})
-    assert _run(tool, env, "del", "shop.ru").returncode == 0
-    assert (dns_d / FEED).read_text() == _feed_from(_SRC, minus={"x.com"})
+    r = _run(tool, env, "del", "shop.ru")
+    # вывод — в сообщение: сбой рабочего шага (теперь код 1) виден по строке скрипта
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert (dns_d / FEED).read_text() == _feed_from(_SRC, minus={"x.com"}), r.stdout + r.stderr
 
 
 def test_moving_an_exception_to_the_tunnel_returns_it_to_the_feed(own_env):
