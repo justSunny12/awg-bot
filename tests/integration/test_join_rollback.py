@@ -157,7 +157,7 @@ def test_the_join_rekey_says_no_keys_changed(services, vps):
     from awgbot.util import joinsas
     assert services.gwjoin_code(1, st["id"], joinsas.show(side.code))["result"] == "ok"
     out = accept_rest(services, vps, side)
-    assert out["rekeyed"] and out["notes"] == []
+    assert services.gateway_rekey(1) == {} and out["notes"] == []
 
 
 def test_a_manual_rekey_of_a_pairing_slot_is_refused(services, vps):

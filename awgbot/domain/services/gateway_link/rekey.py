@@ -281,9 +281,9 @@ class RekeyMixin:
         ПЕРВЫМ шагом hello, до любого слова сервера: шлюз закрепляет выбор по
         первому слову, и решение сервера к этому моменту обязано быть записано.
         {"notes", "hold": закрыть сессию молча (ВПС ещё не переключился, или
-        hello подписан прежним ключом, или переход занят — шлюз придёт снова),
-        "rekeyed": переход зафиксирован}."""
-        none = {"notes": [], "hold": False, "rekeyed": False}
+        hello подписан прежним ключом, или переход занят — шлюз придёт снова)}.
+        Переход зафиксирован — состояние смены пусто (gateway_rekey)."""
+        none = {"notes": [], "hold": False}
         if self.gateway_rekey(slot_id).get("state") != "switched":
             return none                                   # быстрый путь: замок не нужен
         if not _REKEY_LOCK.acquire(timeout=5):
@@ -313,9 +313,9 @@ class RekeyMixin:
         if st.get("auto") == "join" and hasattr(self, "gwjoin_linked"):
             self.gwjoin_linked(slot_id)                   # сопряжение: карантин снят, .join-prev прочь
             # итог — сообщением подключения («код верный» → «шлюз подключён»), не «ключи сменены» (ui-7)
-            return {"notes": [], "hold": False, "rekeyed": True}
+            return {"notes": [], "hold": False}
         notes = [Notification(config.ADMIN_ID, f"🔑 {self._gw_link(gw)}: ключи линка сменены")]
-        return {"notes": self._rekey_notes(st, notes, done=True), "hold": False, "rekeyed": True}
+        return {"notes": self._rekey_notes(st, notes, done=True), "hold": False}
 
     def gateway_rekey_done_in(self, slot_id: int, body: dict) -> None:
         """link_done — подтверждение шлюза для журнала: фиксирует hello."""
