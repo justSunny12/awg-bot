@@ -362,8 +362,7 @@ def test_the_record_watch_is_silent_while_the_reserve_holds_the_right_to_answer(
     """Т-РУ16 («запись указывает не сюда») при праве отвечать у резерва —
     ложная тревога: переезд был, запись ушла законно."""
     svc = mv.svc
-    from awgbot.domain.services.reserve import dns as dnsmod
-    monkeypatch.setattr(dnsmod.random, "uniform", lambda a, b: 1.0)
+    monkeypatch.setattr(backoff.random, "uniform", lambda a, b: 1.0)
     mv.dns.auth = [PEER_IP]
     svc.reserve_set_poll("away")
     mv.clock.advance(10 ** 5)

@@ -33,6 +33,7 @@ from awgbot.domain.services.reserve import tgpool
 from awgbot.infra import rsvzone
 from awgbot.runtime import guestlink, pollctl, webhook
 from awgbot.runtime.pairlink.inbound import InboundMixin
+from awgbot.util import backoff
 from awgbot.util.rsvpkg import bot as pkgbot
 
 from tests.integration import _reserve_common as rc
@@ -191,7 +192,7 @@ async def test_a_webhook_gone_without_wake_is_noticed_by_the_recheck(lab, paired
     """Вебхук резерва снят, а слова «wake» не было (обрыв канала пары):
     основа сама перепроверяет getWebhookInfo и снова поллит."""
     monkeypatch.setattr(pollctl, "RECHECK_S", 0.3)
-    monkeypatch.setattr(pollctl.random, "uniform", lambda a, b: 1.0)
+    monkeypatch.setattr(backoff.random, "uniform", lambda a, b: 1.0)
     lab.webhook()
     lab.mock.inject(_update("после"))
     lab.run()

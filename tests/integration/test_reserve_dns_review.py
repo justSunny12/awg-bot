@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import pytest
 
-from awgbot.util import dnsapi
+from awgbot.util import backoff, dnsapi
 from awgbot.util.dnsapi import dyndns2
 
 from tests.integration import _reserve_common as rc
@@ -139,9 +139,8 @@ def test_the_dyndns2_url_has_the_path_exactly_once(server):
 
 @pytest.fixture()
 def watch(mv, monkeypatch):
-    import types
     from awgbot.domain.services.reserve import dns as dnsmod
-    monkeypatch.setattr(dnsmod, "random", types.SimpleNamespace(uniform=lambda a, b: 1.0))
+    monkeypatch.setattr(backoff.random, "uniform", lambda a, b: 1.0)
 
     def tick():
         mv.clock.advance(dnsmod.RECORD_WATCH_SECONDS + 1)

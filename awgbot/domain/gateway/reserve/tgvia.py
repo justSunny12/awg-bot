@@ -25,13 +25,12 @@ tgvia.py — часть пакета reserve агента (см. __init__): вы
 """
 from __future__ import annotations
 
-import random
 import socket
 import struct
 import time
 
 from awgbot.core import config
-from awgbot.util import timeutil
+from awgbot.util import backoff, timeutil
 
 from ..base import log
 from .store import STORE_LOCK, _write
@@ -82,7 +81,7 @@ class ReserveTgViaMixin:
         # обход включён: проба аплинка раз в 60 с ± 40 %, два ответа подряд при свежем рукопожатии — выключить;
         # проба — к резолверу подсети пользователей через аплинк, куда бы он ни смотрел (дома или на клон)
         if now >= float(st["probe_at"]):
-            st["probe_at"] = now + PROBE_EVERY_S * random.uniform(0.6, 1.4)
+            st["probe_at"] = now + backoff.jitter(PROBE_EVERY_S)
             ok = (not uplink_stale) and self._tgvia_probe(iface, self.__dict__.setdefault("_tgvia_resolver", {}))
             st["streak"] = st["streak"] + 1 if ok else 0
             if st["streak"] >= OFF_STREAK:
@@ -104,7 +103,7 @@ class ReserveTgViaMixin:
             _write(fresh, self._RSV_STORE)
         cur.update(tg_via=True, tg_since=since)
         st = self.__dict__.setdefault("_tgvia", {})
-        st.update(probe_at=now + PROBE_EVERY_S * random.uniform(0.6, 1.4), streak=0)
+        st.update(probe_at=now + backoff.jitter(PROBE_EVERY_S), streak=0)
         log.warning("обход: аплинк молчит с %s, Telegram — через awgrsv", since)
         return [("tg", "on"), ("notify", [note]), ("push",)]
 
@@ -206,7 +205,7 @@ class ReserveTgViaMixin:
             return []
         if now < float(st["next"]):
             return []
-        st["next"] = now + RERESOLVE_EVERY_S * random.uniform(0.6, 1.4)
+        st["next"] = now + backoff.jitter(RERESOLVE_EVERY_S)
         return [("reresolve", dict(pending))]
 
     def reserve_reresolve_done(self, pending: dict, result: str) -> None:

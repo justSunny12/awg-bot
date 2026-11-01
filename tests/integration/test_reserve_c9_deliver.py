@@ -43,7 +43,7 @@ from awgbot.domain.services.reserve.journal import c9deliver
 from awgbot.domain.services.reserve.journal.c9deliver import C9_RETRY_FIRST_S, C9_RETRY_SLOW_S
 from awgbot.domain.services.reserve.journal.c9wait import C9_PROGRESS_S, C9_WAIT_S
 from awgbot.infra import awg, rsvzone
-from awgbot.util import timeutil
+from awgbot.util import backoff, timeutil
 
 from tests.integration import _reserve_common as rc
 from tests.integration import _reserve_move as rm
@@ -63,7 +63,7 @@ def duo(mv, tmp_path, monkeypatch, fake_awg):
     d.fake = fake_awg
     monkeypatch.setattr(c9deliver, "time", types.SimpleNamespace(monotonic=d.clock.monotonic))
     d.jitter = []
-    monkeypatch.setattr(c9deliver.random, "uniform", lambda lo, hi: d.jitter.append((lo, hi)) or 1.0)
+    monkeypatch.setattr(backoff.random, "uniform", lambda lo, hi: d.jitter.append((lo, hi)) or 1.0)
     yield d
     d.close()
 

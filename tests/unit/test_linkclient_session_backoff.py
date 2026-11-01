@@ -10,7 +10,7 @@ import time
 import pytest
 
 from awgbot.runtime import linkclient
-from awgbot.util import gwlink
+from awgbot.util import backoff, gwlink
 from tests.unit import _linkclient_session_common as _c
 from tests.unit._linkclient_session_common import KEY, PRIV2, SN, _Agent, _Conn, _delays, _reply
 
@@ -244,7 +244,7 @@ async def test_link_recovery_wakes_the_backoff_and_resets_the_step(vps, monkeypa
     """Бэкофф спит до 5 минут; линк вернулся — on_tick будит его, и следующая
     попытка идёт сразу и с малого шага."""
     c = linkclient.LinkClient(_Agent())
-    monkeypatch.setattr(linkclient.random, "uniform", lambda lo, hi: 1.0)
+    monkeypatch.setattr(backoff.random, "uniform", lambda lo, hi: 1.0)
     loop = asyncio.get_running_loop()
     loop.call_later(0.05, c._wake.set)
     t0 = loop.time()

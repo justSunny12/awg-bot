@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 
 from awgbot.core import config
-from awgbot.util import jsonfile, timeutil
+from awgbot.util import backoff, jsonfile, timeutil
 
 from .common import log
 
@@ -66,7 +66,6 @@ class FeedsMixin:
         from awgbot.infra import routing
         if not any(g.lan_mode for g in self.db.gateways()):
             return False
-        import random
         now = int(_time.time())
         every = int(settings.get("app.routing.lists_refresh_hours", 6)) * 3600
         # В state — момент СЛЕДУЮЩЕГО похода, с джиттером ±40 %: «прошло шесть
@@ -80,10 +79,10 @@ class FeedsMixin:
         nxt = self.db.get_state(self._LAN_FEEDS_AT_KEY) or ""
         if not force and nxt.isdigit() and now < int(nxt) and self.gwlink_lan_feeds_digest():
             return False
-        self.db.set_state(self._LAN_FEEDS_AT_KEY, str(now + int(every * random.uniform(0.6, 1.4))))
+        self.db.set_state(self._LAN_FEEDS_AT_KEY, str(now + int(backoff.jitter(every))))
 
         def retry_soon() -> None:
-            self.db.set_state(self._LAN_FEEDS_AT_KEY, str(now + int(1800 * random.uniform(0.6, 1.4))))
+            self.db.set_state(self._LAN_FEEDS_AT_KEY, str(now + int(backoff.jitter(1800))))
         body, err, _code = routing.fetch(self._LAN_DOMAINS_URL, timeout=10)
         if body is None or len(re.findall(r"(?m)^ipset=/", body)) < 10:
             log.warning("канал линка: фид доменов локальной сети не получен (%s)", err or "короткий")

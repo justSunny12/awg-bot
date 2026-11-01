@@ -18,12 +18,11 @@
 from __future__ import annotations
 
 import logging
-import random
 
 from awgbot.core import config
 from awgbot.domain.notices import fleet as notes_
 from awgbot.infra import updates
-from awgbot.util import timeutil
+from awgbot.util import backoff, timeutil
 
 from .order import GW_STEP_MAX_S, FleetOut, _LOCK, _now_iso, _since, _upd_body
 from .state import ACTIVE_RUN, DONE, IN_FLIGHT, ROLLBACK_FAILED, ROLLED_BACK, RELEASE_KEY
@@ -204,7 +203,7 @@ class FleetOutsideMixin:
                 st["final"], st["next_at"] = True, ""
                 text = notes_.gw_catchup_given_up(name, label, st["target"], reason, slot=slot_id, bot_username=user)
             else:
-                delay = RETRY_S[tries - 1] * random.uniform(1 - RETRY_JITTER, 1 + RETRY_JITTER)
+                delay = backoff.jitter(RETRY_S[tries - 1], RETRY_JITTER)
                 st["next_at"] = timeutil.to_iso(timeutil.shift(timeutil.now(), int(delay)))
                 text = notes_.gw_catchup_failed(name, label, st["target"], reason, tries, slot=slot_id,
                                                 bot_username=user)

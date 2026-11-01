@@ -4,11 +4,10 @@ from __future__ import annotations
 import asyncio
 import collections
 import contextlib
-import random
 import time
 
 from awgbot.core import config
-from awgbot.util import gwlink
+from awgbot.util import backoff, gwlink
 from awgbot.runtime import linkclient as pkg          # адрес, порт, крючок и задержки — на пакете: их подменяют тесты
 
 from .common import CAPS, log
@@ -214,7 +213,7 @@ class SessionMixin:
             if self._confirmed:
                 attempt = 0
                 self._confirmed = False
-            delay = pkg._BACKOFF[min(attempt, len(pkg._BACKOFF) - 1)] * random.uniform(0.6, 1.4)
+            delay = backoff.backoff_delay(pkg._BACKOFF, attempt)
             attempt += 1
             # Спим с побудкой: восстановление линка (on_tick) будит сразу и
             # обнуляет шаг — иначе канал поднимался до 7 минут после возврата ВПС.

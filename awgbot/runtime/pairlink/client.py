@@ -6,11 +6,10 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import random
 
-from awgbot.util import gwlink, pairproto
+from awgbot.util import backoff, gwlink, pairproto
 
-from .common import _BACKOFF, _Session, channel_key, close_session, log, send_line
+from .common import _Session, channel_key, close_session, log, send_line
 from .inbound import InboundMixin
 
 NO_ANSWER_ATTEMPTS = 3        # подключений без ответа подряд — сказать принявшему (Т-Р6б)
@@ -71,7 +70,7 @@ class PairClient(InboundMixin):
                 log.info("канал пары: нет связи (%s)", e)
             if self._confirmed:
                 attempt, self._confirmed = 0, False
-            delay = _BACKOFF[min(attempt, len(_BACKOFF) - 1)] * random.uniform(0.6, 1.4)
+            delay = backoff.backoff_delay(backoff.RECONNECT_S, attempt)
             attempt += 1
             if attempt == NO_ANSWER_ATTEMPTS:
                 # принявший ждёт кода, а пригласивший не отвечает — сказать один раз (Т-Р6б)

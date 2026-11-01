@@ -25,7 +25,7 @@ from awgbot.infra import awglock, gwguard
 from awgbot.infra.db import Database
 from awgbot.infra import hostmetrics
 from awgbot.runtime import linkclient
-from awgbot.util import gwlink
+from awgbot.util import backoff, gwlink
 
 PRIV = base64.b64encode(os.urandom(32)).decode()
 SN = b"S" * gwlink.NONCE_BYTES            # нонс сервера открытой сессии
@@ -474,7 +474,7 @@ async def test_backoff_between_attempts_grows_and_is_jittered_every_step(agent, 
         raise OSError("адрес ВПС в линке не определён")
 
     monkeypatch.setattr(linkclient.asyncio, "sleep", fake_sleep)
-    monkeypatch.setattr(linkclient.random, "uniform", lambda lo, hi: hi)   # верхний край
+    monkeypatch.setattr(backoff.random, "uniform", lambda lo, hi: hi)   # верхний край
     c = linkclient.LinkClient(agent.svc)
     monkeypatch.setattr(c, "_connect_once", never_connects)
     with pytest.raises(asyncio.CancelledError):
@@ -483,7 +483,7 @@ async def test_backoff_between_attempts_grows_and_is_jittered_every_step(agent, 
         f"шаги бэкоффа разъехались: {delays}")
 
     delays.clear()
-    monkeypatch.setattr(linkclient.random, "uniform", lambda lo, hi: lo)   # нижний край
+    monkeypatch.setattr(backoff.random, "uniform", lambda lo, hi: lo)   # нижний край
     with pytest.raises(asyncio.CancelledError):
         await c._run()
     assert delays[0] == 3.0 and delays[-1] == 180.0, "джиттер не применяется к шагу"

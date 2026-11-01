@@ -9,9 +9,10 @@ rx линка), агент — со своей (ответы — tx линка);
 """
 from __future__ import annotations
 
-import random
 import time
 from typing import Any, Callable
+
+from awgbot.util import backoff
 
 
 class EvidenceProbe:
@@ -49,7 +50,7 @@ class EvidenceProbe:
         def _probe() -> tuple[Any, str]:
             result = probe()
             self._seen = {"rx": rx, "tx": tx, "result": result,
-                          "next": now + every * random.uniform(0.6, 1.4)}
+                          "next": now + backoff.jitter(every)}
             return result, "probe"
 
         if seen is None or restarted:
@@ -62,7 +63,7 @@ class EvidenceProbe:
             # СИЛЬНЕЕ пробы; иначе первый же тик после конца трафика уходил бы
             # зондом, а конец трафика — обычный вечер, а не отказ
             seen.update(rx=rx, tx=tx, result=on_traffic(seen["result"]),
-                        next=now + every * random.uniform(0.6, 1.4))
+                        next=now + backoff.jitter(every))
             return seen["result"], "traffic"
         if demand or every <= 0 or now >= seen.get("next", 0.0):
             return _probe()

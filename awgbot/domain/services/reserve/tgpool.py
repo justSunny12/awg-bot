@@ -19,12 +19,11 @@ from __future__ import annotations
 
 import ipaddress
 import json
-import random
 import time
 from pathlib import Path
 
 from awgbot.core import config, settings
-from awgbot.util import jsonfile, timeutil
+from awgbot.util import backoff, jsonfile, timeutil
 
 from ..types import Notification
 from ..gateway_link.common import log
@@ -151,7 +150,7 @@ class ReserveTgPoolMixin:
         if nxt is None:
             data = _read()
             # после старта — скоро, если кэша нет; иначе по возрасту кэша
-            self.__dict__["_tg_pool_next"] = nxt = now + (60 if not data.get("announced") else 600) * random.uniform(0.6, 1.4)
+            self.__dict__["_tg_pool_next"] = nxt = now + backoff.jitter(60 if not data.get("announced") else 600)
         return now >= nxt
 
     def reserve_tg_pool_refresh_soon(self, delay_s: float = 5.0, *, why: str = "") -> None:
@@ -163,7 +162,7 @@ class ReserveTgPoolMixin:
             if last and now - last < 1800:
                 return
             self.__dict__["_tg_pool_unknown_at"] = now
-        self.__dict__["_tg_pool_next"] = now + delay_s * random.uniform(0.6, 1.4)
+        self.__dict__["_tg_pool_next"] = now + backoff.jitter(delay_s)
 
     def reserve_tg_pool_tick(self, now: float | None = None) -> list[Notification]:
         """Обновить анонсы AS Telegram, проверить ядро, снять неанонсируемое из
@@ -172,7 +171,7 @@ class ReserveTgPoolMixin:
             return []
         cfg = self._tg_pool_cfg()
         now = time.monotonic() if now is None else now
-        self.__dict__["_tg_pool_next"] = now + cfg["hours"] * 3600 * random.uniform(0.6, 1.4)
+        self.__dict__["_tg_pool_next"] = now + backoff.jitter(cfg["hours"] * 3600)
         data = _read()
         announced: dict = dict(data.get("announced") or {})   # кэш по AS: неответившая AS остаётся с прежним
         errors = []

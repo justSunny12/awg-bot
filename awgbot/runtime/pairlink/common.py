@@ -12,7 +12,6 @@ log = logging.getLogger(__name__)
 DEFAULT_PORT = 8788          # порт канала пары внутри линка (канал шлюзов — 8787)
 HELLO_TIMEOUT = 15
 SEND_TIMEOUT = 30
-_BACKOFF = (5, 10, 20, 40, 80, 160, 300)
 
 
 def channel_port() -> int:

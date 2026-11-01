@@ -12,6 +12,7 @@ from awgbot.domain import routing as domain_routing
 from awgbot.domain.services.types import Notification
 from awgbot.domain.services.base import _e
 from ..common import log, _TXT_RT_SRC_STALE, _TXT_RT_SRC_DOWN, _TXT_RT_SRC_GONE, _TXT_RT_SRC_OK
+from awgbot.util import backoff
 
 
 class RoutingSourcesMixin:
@@ -155,8 +156,7 @@ class RoutingSourcesMixin:
                 nxt = str(int(last) + every)               # прежняя схема: один раз без джиттера
             if nxt.isdigit() and now < int(nxt) and cached > 0:
                 return cached
-        import random
-        self.db.set_state(self._RT_LISTS_NEXT_KEY, str(now + int(every * random.uniform(0.6, 1.4))))
+        self.db.set_state(self._RT_LISTS_NEXT_KEY, str(now + int(backoff.jitter(every))))
         try:
             # СКАЧИВАНИЕ — СНАРУЖИ ЗАМКА. Источники с таймаутом по 10 с (feeds.fetch), а под
             # замком ждёт тик живости: держать его на это время значило бы

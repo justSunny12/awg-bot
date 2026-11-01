@@ -72,7 +72,7 @@ import asyncio
 import contextlib
 import ipaddress
 import logging
-import random          # noqa: F401 — тесты подменяют random.uniform через пакет
+import random          # noqa: F401 — пауза обновления по каналу (upd) — через пакет: её подменяют тесты
 import subprocess
 import time
 

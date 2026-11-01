@@ -24,8 +24,9 @@ C9_WAIT_S; дальше — раз в C9_RETRY_SLOW_S ± 20 %, пока осно
 from __future__ import annotations
 
 import os
-import random
 import time
+
+from awgbot.util import backoff
 
 from ...gateway_link.common import log
 from .c9wait import C9_WAIT_S
@@ -76,7 +77,7 @@ class ReserveC9DeliverMixin:
             base = C9_RETRY_SLOW_S
         else:
             base = min(C9_RETRY_FIRST_S * 2 ** max(0, int(d["n"]) - 1), C9_RETRY_SLOW_S)
-        return base * random.uniform(1 - C9_JITTER, 1 + C9_JITTER)
+        return backoff.jitter(base, C9_JITTER)
 
     def reserve_c9_deliver_tick(self) -> list[tuple]:
         """Такт журнала: основа ждёт журнал гостя, гостя нет — часть журнала с диска или

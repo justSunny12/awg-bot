@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import time
 
+from awgbot.util import backoff
+
 _CACHE: dict[str, tuple[float, bool, float]] = {}
 TTL = 60.0
 
@@ -20,7 +22,6 @@ def points_to(name: str, ip: str, now: float | None = None) -> bool | None:
     прежний ответ, а без него — None («не знаю», пересылка не меняется).
     Срок кэша — минута ± 40 %: запрос к авторитетным серверам — сеть, ровный
     маячок с шлюза ни к чему."""
-    import random
     from awgbot.util import dnsapi
     now = time.monotonic() if now is None else now
     key = f"{name}|{ip}"
@@ -31,7 +32,7 @@ def points_to(name: str, ip: str, now: float | None = None) -> bool | None:
         ok = ip in dnsapi.read_authoritative(name)
     except dnsapi.DnsError:
         return hit[1] if hit else None
-    _CACHE[key] = (now, ok, TTL * random.uniform(0.6, 1.4))
+    _CACHE[key] = (now, ok, backoff.jitter(TTL))
     return ok
 
 
