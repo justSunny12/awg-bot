@@ -31,15 +31,14 @@ FAST=""
 read -r -a VMS <<< "${LAB_VMS:-$(limactl list -q 2>/dev/null | grep '^awg-lab' | tr '\n' ' ')}"
 [ "${#VMS[@]}" -gt 0 ] || { printf 'ВМ стенда нет (LAB_VMS или limactl list: awg-lab*)\n' >&2; exit 2; }
 
-# вес — минуты сценария на уровне: полный / быстрый (быстрый — замер 01.11.2026, полный — прогоны на одной
-# ВМ до деления s06; неизвестный — 5)
+# вес — минуты сценария на уровне: полный / быстрый (замеры на трёх ВМ 02.11.2026; неизвестный — 5)
 weight() {
     local f
     case "$1" in
-        s06_quorum_move) f="18 15" ;; s06b_quorum_move) f="15 14" ;; s07_quorum_tie) f="25 11" ;;
-        s08_rf_transit) f="10 11" ;; s09_tg_split) f="10 5" ;; s11_c9_wait) f="10 4" ;; s10_force_live_guest) f="10 3" ;;
-        s06_return_tail) f="8 4" ;; s12_relay_flush) f="8 3" ;; s05_quorum_probes) f="6 2" ;; s05_journal) f="5 4" ;;
-        s13_big_base) f="5 1" ;; s03_move|s04_open_sandbox) f="2 1" ;; s00_topology|s01_zone|s02_guest) f="1 1" ;; *) f="5 5" ;;
+        s06_quorum_move) f="22 15" ;; s06b_quorum_move) f="14 13" ;; s07_quorum_tie) f="22 11" ;;
+        s08_rf_transit) f="11 11" ;; s09_tg_split) f="6 5" ;; s11_c9_wait) f="5 4" ;; s10_force_live_guest) f="4 3" ;;
+        s06_return_tail) f="5 4" ;; s12_relay_flush) f="4 3" ;; s05_quorum_probes) f="3 2" ;; s05_journal) f="5 4" ;;
+        s13_big_base) f="1 1" ;; s03_move|s04_open_sandbox) f="1 1" ;; s00_topology|s01_zone|s02_guest) f="1 1" ;; *) f="5 5" ;;
     esac
     set -- $f
     [ -n "$FAST" ] && echo "$2" || echo "$1"
