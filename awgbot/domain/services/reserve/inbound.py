@@ -324,22 +324,47 @@ class ReserveInboundMixin:
         return {"oid": oid} if oid and compat.peer_can(self.reserve_peer_state(), "ret1") else {}
 
     def reserve_guest_tg_taken(self) -> list[tuple]:
-        """Гость поставил вебхук: `taken` основе, serving, Т-РУ4."""
+        """Гость поставил вебхук: `taken` основе, serving, Т-РУ4. Режим serve зоны (вход
+        вебхука) включает такт на `done`; слово пришло раньше (такт не дошёл до serve:
+        итог лёг после чтения open.status, такт сорвался) — serve здесь, тем же путём, что
+        у такта: без него Telegram до гостя не достучится, а serving с отметкой `served`
+        повтора уже не дал бы. Отказ serve — срыв такта (запись сменил процесс — зона
+        остаётся, serve повторяет inbound_keep). В serving `served` — как есть: serve, не
+        вставший после смены записи (`serve_due`), повторяет такт."""
         from awgbot.domain.notices import reserve as rn
         inn = self._inn()
         if str(inn.get("state") or "") not in ("taking", "serving") or inn.get("tg_taken"):
             return []
+        pre: list[tuple] = []
+        if str(inn.get("state") or "") == "taking" and not inn.get("served"):
+            pre = self._tg_taken_serve()
+            inn = self._inn()
+            if str(inn.get("state") or "") not in ("taking", "serving") or inn.get("tg_taken"):
+                return pre                                    # срыв снял зону — гостя больше нет
         with _LOCK:
             self.reserve_set_in("serving", kind=str(inn.get("kind") or "button"), gen=int(inn.get("gen") or 0),
-                                tg_taken=True, served=True, taken_at=timeutil.now_iso(), step="", tg_wait="",
-                                **({"keep_k": ""} if str(inn.get("keep_k") or "") == "tg" else {}))
+                                tg_taken=True, served=bool(inn.get("served")), taken_at=timeutil.now_iso(), step="",
+                                tg_wait="", **({"keep_k": ""} if str(inn.get("keep_k") or "") == "tg" else {}))
         self._open_secret_drop()
         name = self.reserve_peer_name()
         log.info("резерв: пользователи и бот «%s» у меня", name)
-        return [("send", "taken", self._word_oid(inn)), ("fw",),
+        return pre + [("send", "taken", self._word_oid(inn)), ("fw",),
                 ("notify", [Notification(tg_id=int(config.ADMIN_ID), text=rn.hosting_started(
                     name, str(inn.get("kind") or "button"), str(inn.get("dead_since") or inn.get("open_started") or ""),
                     str(inn.get("extra") or "")))])]
+
+    def _tg_taken_serve(self) -> list[tuple]:
+        """Режим serve зоны до перехода в serving по `tg_taken` (такт его ещё не включил)."""
+        from awgbot.infra import rsvzone
+        log.info("резерв: вебхук гостя стоит раньше режима serve зоны — включаю serve")
+        try:
+            rsvzone.serve(self._webhook_port())
+        except rsvzone.ZoneError as e:
+            return self._take_fail(f"зона не приняла режим serve: {e}")
+        self.rsv_update("rsv_in", served=True)
+        if hasattr(self, "reserve_tg_pool_refresh_soon"):
+            self.reserve_tg_pool_refresh_soon(5)             # свежие анонсы — до первого вебхука
+        return []
 
     def _tick_serving(self, inn: dict) -> list[tuple]:
         """Зона снята мимо бота (`awg-bot reserve teardown`, перезагрузка хоста): состояние
