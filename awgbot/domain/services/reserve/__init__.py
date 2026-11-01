@@ -18,8 +18,11 @@ reserve — взаимный резерв серверов AWG на сторон
 - `package` — пакет переезда: отметки, сборка, досылка, приём;
 - `guest` — бот основы на резерве: снимки, состояние, отказы хостовых сервисов;
 - `dns` — запись DNS: провайдер, смена, факт, надзор;
-- `outbound` — «мои пользователи»: переезд кнопкой, away, здоровье, зависший
-  вебхук резерва;
+- `outbound` — «мои пользователи»: автомат, такт и шаги переезда кнопкой,
+  передача бота;
+- `outbound_move` — «мои пользователи»: проверка, старт и срыв переезда кнопкой,
+  слова резерва на переезде, живое сообщение хода;
+- `outbound_health` — «мои пользователи»: away — здоровье основы и возврат сам;
 - `outbound_stuck` — «мои пользователи»: зависший вебхук резерва (away и home);
 - `outbound_forced` — «мои пользователи»: срок шага переезда, а бот уже у гостя
   принудительным захватом (`st.in_tg = forced`) — away, а не срыв;
@@ -83,6 +86,8 @@ from .merge_ops import ReserveMergeOpsMixin
 from .notify import ReserveNotifyMixin
 from .openproc import ReserveOpenProcMixin
 from .outbound import ReserveOutboundMixin
+from .outbound_health import ReserveOutHealthMixin
+from .outbound_move import ReserveMoveMixin
 from .outbound_return import ReserveReturnMixin
 from .outbound_stuck import ReserveStuckMixin
 from .outbound_forced import ReserveForcedTakeMixin
@@ -112,7 +117,8 @@ class ReserveMixin(ReserveStateMixin, ReserveKeysMixin, ReserveInviteMixin, Rese
                    ReserveOpeningMixin, ReserveRfZoneMixin, ReserveRfPeerMixin, ReserveTgPoolMixin, ReserveMergeOpsMixin,
                    ReserveCodeWindowMixin, ReserveReturnMixin, ReserveOpenProcMixin, ReserveJournalMixin,
                    ReserveInboundBackMixin, ReserveInboundTgWaitMixin, ReserveInboundKeepMixin, ReserveStuckMixin,
-                   ReserveForcedTakeMixin, ReserveOutKeepMixin, ReserveQuorumMixin, ReservePultMixin):
+                   ReserveForcedTakeMixin, ReserveOutKeepMixin, ReserveQuorumMixin, ReservePultMixin,
+                   ReserveMoveMixin, ReserveOutHealthMixin):
     """Резерв серверов: всё о паре — в одном месте сервисов."""
 
 

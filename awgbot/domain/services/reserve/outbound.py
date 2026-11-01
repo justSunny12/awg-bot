@@ -1,7 +1,9 @@
 """
 outbound.py — часть пакета reserve (см. __init__): «мои пользователи» на стороне
-основы — переезд кнопкой, away и здоровье; шаги возврата — в outbound_return,
-слияние — в merge_ops (автомат и сроки шагов — общие, здесь).
+основы — автомат, такт и шаги переезда кнопкой, передача бота; проверка, старт,
+срыв и слова резерва на переезде — в outbound_move, away и здоровье — в
+outbound_health, шаги возврата — в outbound_return, слияние — в merge_ops
+(автомат и сроки шагов — общие, здесь).
 
 Автомат в `rsv_out` (`state`: home | leaving | away | returning; `step` —
 шаг внутри состояния; сроки шагов — `deadline`). Такт (`reserve_out_tick`,
@@ -56,13 +58,13 @@ from __future__ import annotations
 
 import time
 
-from awgbot.core import config, settings
+from awgbot.core import config
 from awgbot.util import livestep, timeutil
 from awgbot.util.rsvpkg import bot as pkgbot, seal
 
 from ..types import Notification, ServiceError
 from ..gateway_link.common import log
-from .state import HOSTING, _LOCK
+from .state import _LOCK
 
 PKG_WAIT_S = 120          # свежий пакет до `go_req`
 EPH_WAIT_S = 60           # разовый ключ процесса открытия (`open_eph`) после `go_req`
@@ -117,105 +119,7 @@ class ReserveOutboundMixin:
     def reserve_move_gen(self) -> int:
         return int(self._out().get("gen") or 0)
 
-    # ── переезд кнопкой ─────────────────────────────────────────────────────
-    def reserve_move_check(self) -> str:
-        """Пусто — переезд кнопкой возможен; иначе причина (строка карточки)."""
-        if not self.reserve_paired():
-            return "резерва нет"
-        if self.reserve_out() != "home":
-            return "пользователи уже не на этом сервере"
-        if self.reserve_hosting():
-            return f"сейчас здесь пользователи «{self.reserve_peer_name()}» — сначала их возврат"
-        if not self.reserve_online():
-            return f"«{self.reserve_peer_name()}» не на связи"
-        ok, why = self.reserve_directions()["out"]
-        if not ok:
-            return why
-        if not self.reserve_dns_name():
-            return "вместо доменного имени сервера — IP, записи DNS нет: переезд невозможен"
-        if not self.reserve_peer_ip():
-            return f"адрес «{self.reserve_peer_name()}» не определился"
-        if settings.get_bool("app.reserve.ready", False) is False:
-            return "«Готов быть резервом» выключен"
-        if "seal1" not in (self.reserve_peer_state().get("caps") or []):
-            # ключ пакета уходит только конвертом к разовому ключу процесса открытия; открытым — нет
-            return f"«{self.reserve_peer_name()}» не принимает зашифрованный ключ — необходима v4.0.2 или выше"
-        return ""
-
-    def reserve_move_dialog_data(self) -> dict:
-        d = {"name": self.reserve_peer_name(), "record": self.reserve_dns_name(), "target": self.reserve_peer_ip(),
-             "manual": not self.reserve_dns_automatic(), "own": self.reserve_own_ip()}
-        count = self.reserve_quorum_count() if hasattr(self, "reserve_quorum_count") else {}
-        tie = self.reserve_quorum_tie_view() if hasattr(self, "reserve_quorum_tie_view") else {}
-        if count and (count.get("role") == "fenced" or tie):
-            d["quorum"] = {"y": int(count["y"]), "v": int(count["v"])}          # Т-К18: лишён кворума или ничья
-        return d
-
-    def reserve_move_start(self, chat_id: int = 0, message_id: int = 0, kind: str = "button", dead_since: str = "") -> dict:
-        """«🔀 Перевести»: leaving/pkg, свежий пакет вне очереди. По просьбе
-        резерва (случаи 3 и Н3) — тот же путь с видом rf | nogw."""
-        why = self.reserve_move_check()
-        if why:
-            raise ServiceError(why)
-        target_ip = self.reserve_peer_ip()                  # резолв имени — до замка
-        with _LOCK:
-            out = self.reserve_set_out("leaving", kind=str(kind or "button"), dead_since=str(dead_since or ""), started_at=timeutil.now_iso(),
-                                       msg=[int(chat_id), int(message_id)] if chat_id else [],
-                                       target_ip=target_ip, record=self.reserve_dns_name(), go_sent=False,
-                                       pkg_at="", up_at="", record_set_at="", record_fact_at="", released_at="",
-                                       taken_at="", reason="", gen=0, guest_stopped=False, await_merge=False,
-                                       release_error="")
-            self._out_step("pkg", PKG_WAIT_S, pkg_unchanged=False)
-            self.reserve_pkg_mark()                           # журнал: такт соберёт снимок, только если изменилось вне базы
-        log.info("резерв: переезд кнопкой на «%s» начат", self.reserve_peer_name())
-        return out
-
-    def _move_fail(self, reason: str, released: bool = False, steps=()) -> list[tuple]:
-        """Переезд не состоялся: домой, резерву — `back` (снять зону, если он
-        её поднял или ещё поднимает), запись — обратно на себя, если успела
-        смениться, итог админу. Переход home — под замком и только из leaving (на
-        одном из `steps`, если даны): срыв по сроку из такта и `taken` из потока
-        канала в одном окне — переход один; кто опоздал, тот ничего не делает."""
-        from awgbot.domain.notices import reserve as rn
-        name = self.reserve_peer_name()
-        with _LOCK:
-            out = self._out()
-            if not self._out_is("leaving", steps):
-                log.info("резерв: срыв переезда (%s) опоздал — автомат уже %s/%s", reason,
-                         out.get("state") or "home", out.get("step") or "")
-                return []
-            self.reserve_set_out("home", reason=reason, failed_at=timeutil.now_iso(), step="")
-        if out.get("go_sent"):
-            # K ушёл резерву — он его знает: новый K и свежий пакет под ним (после `back` резерв
-            # сносит прежний пакет, досылка — по отметке)
-            self.reserve_new_k()
-            self.reserve_pkg_mark()
-        record_back, own_unknown = "", False
-        if out.get("record_set_at") and self.reserve_dns_automatic():
-            own = self.reserve_own_ip()
-            try:
-                if own:
-                    self.reserve_dns_switch(own)
-                else:
-                    own_unknown = True                        # запись на резерве, а свой адрес не определился
-            except ServiceError as e:
-                record_back = str(e)
-        elif out.get("record_set_at"):
-            record_back = "переезд не состоялся, запись меняется вручную"   # Т-РУ11: вернуть её — дело человека
-        log.warning("резерв: переезд на «%s» не состоялся: %s", name, reason)
-        notes = [Notification(tg_id=int(config.ADMIN_ID), text=rn.move_failed(name, reason, released=released))]
-        if own_unknown or (record_back and not self.reserve_own_ip()):
-            notes.append(self._own_unknown_note())
-        elif record_back:
-            notes.append(Notification(tg_id=int(config.ADMIN_ID), force_sound=True,
-                                      text=rn.record_not_changed(self.reserve_dns_name(), record_back, self.reserve_own_ip())))
-        actions: list[tuple] = [("live",), ("notify", notes)]
-        if released:
-            # передача могла остановить поллинг (`release`, rsv_poll = away): право отвечать снова
-            # решает Telegram — разбудить сразу, а не ждать перепроверки (до 7 мин)
-            actions[:0] = [("send", "back", {}), ("wake_poll",)]
-        return actions
-
+    # ── такт и шаги переезда ────────────────────────────────────────────────
     def reserve_out_tick(self) -> list[tuple]:
         """Такт автомата «мои пользователи»."""
         self.reserve_epoch_check()
@@ -425,36 +329,7 @@ class ReserveOutboundMixin:
         return Notification(tg_id=int(config.ADMIN_ID), force_sound=True,
                             text=rn.record_own_unknown(self.reserve_dns_name(), own_host()))
 
-    # ── события канала (переезд) ────────────────────────────────────────────
-    def reserve_open_eph_in(self, gen: int, eph_hex: str, oid: str) -> list[tuple]:
-        """`open_eph` от резерва: разовый ключ его процесса открытия — `K`
-        конвертом к нему в `go{sealed, oid}`; шаг up. Повтор на шаге up от того же
-        процесса (тот же `oid` и поколение) — `go` снова: резерв повторяет `open_eph`,
-        только пока процесс ждёт конверт, значит прежний `go` потерялся (резерв второй
-        конверт тому же процессу не передаёт — молча). Срок шага up не продлевается."""
-        out = self._out()
-        if out.get("state") != "leaving" or int(out.get("gen") or 0) != int(gen):
-            return []
-        again = out.get("step") == "up" and out.get("go_sent") and str(out.get("oid") or "") == str(oid)
-        if out.get("step") != "eph" and not again:
-            return []
-        try:
-            eph = bytes.fromhex(str(eph_hex))
-        except ValueError:
-            eph = b""                                            # не hex — та же причина, что не та длина
-        try:
-            sealed = seal.seal_k_to(eph, self.reserve_k(), int(gen), str(oid))
-        except seal.PackageError as e:
-            return self._move_fail(f"разовый ключ от «{self.reserve_peer_name()}» не годится: {e}", released=True)
-        if again:
-            log.info("резерв: «%s» снова просит ключ того же открытия — go повторён", self.reserve_peer_name())
-        else:
-            self._out_step("up", UP_WAIT_S, oid=str(oid))
-        self.rsv_update("rsv_out", go_sent=True)                 # K отдан — своя отметка, не слово резерва
-        return [("send", "go", {"gen": int(gen), "kind": str(out.get("kind") or "button"),
-                                "ttl": int(self.rsv_get("rsv_dns").get("ttl") or 0),
-                                "sealed": sealed.hex(), "oid": str(oid)}), ("live",)]
-
+    # ── события канала (переезд; прочие — outbound_move) ────────────────────
     def reserve_up_in(self, oid: str = "") -> list[tuple]:
         out = self._out()
         if out.get("state") != "leaving" or out.get("step") != "up":
@@ -463,26 +338,6 @@ class ReserveOutboundMixin:
             return []
         self._out_step("record", RECORD_WAIT_S, up_at=timeutil.now_iso())
         return [("live",)]
-
-    @staticmethod
-    def _word_foreign(out: dict, word: str, oid: str) -> bool:
-        """`up`/`taken` с id открытия (ret1) не моего — слово прошлого эпизода; без поля — как прежде."""
-        if oid and out.get("oid") and str(oid) != str(out.get("oid")):
-            log.warning("резерв: «%s» открытия %s, а моё — %s: слово прошлого эпизода — пропущено", word, oid, out.get("oid"))
-            return True
-        return False
-
-    def reserve_down_in(self, reason: str, rec: bool = False) -> list[tuple]:
-        """`down` резерва на переезде: срыв; `back` не нужен — резерв зону снял сам
-        (и когда отказал конверту ключа: ждавший его процесс открытия он гасит). Вне
-        переезда с `rec` — запись уже сменил его процесс открытия: вернуть её на себя
-        (outbound_keep)."""
-        out = self._out()
-        if out.get("state") == "leaving":
-            return self._move_fail(f"«{self.reserve_peer_name()}» не поднял профили — {reason}")
-        if rec and str(out.get("state") or "home") in ("home", "away"):
-            return self.reserve_rec_back_mark(reason)
-        return []
 
     def reserve_release_build(self) -> dict | None:
         """После остановки поллинга и опроса вне очереди: финальная реплика под
@@ -518,48 +373,7 @@ class ReserveOutboundMixin:
         self.reserve_set_poll("away", why="released")           # своя отметка; слово Telegram — webhook/webhook_info
         return {"gen": int(out.get("gen") or 0), "blob": blob.hex()}
 
-    def reserve_taken_in(self, oid: str = "") -> list[tuple]:
-        """`taken` от резерва: бот основы на резерве отвечает в Telegram. Только на шагах
-        передачи бота (release/released): запоздалое `taken` прошлого эпизода на шаге pkg/eph/up/record
-        переводило бы в away с `poll=away`, пока запись DNS ещё на мне. Вне leaving — это `taken`
-        основы на её возврате с меня: её боту у меня вебхук больше не ставить (inbound_tgwait)."""
-        from awgbot.domain.notices import reserve as rn
-        with _LOCK:                                           # проверка и переход — одним замком с тактом (срыв по сроку)
-            out = self._out()
-            if out.get("state") != "leaving":
-                self.reserve_peer_tg_taken_in()               # её пользователи у меня, а Telegram она забрала (возврат)
-                return []
-            if str(out.get("step") or "") not in ("release", "released"):
-                log.warning("резерв: «taken» на шаге %s — вне передачи бота, пропущено", out.get("step") or "pkg")
-                return []
-            if self._word_foreign(out, "taken", oid):
-                return []
-            self.reserve_set_out("away", kind=str(out.get("kind") or "button"), step="", taken_at=timeutil.now_iso(),
-                                 last_switch=timeutil.now_iso(), healthy_since="")
-            self.reserve_set_poll("away")
-        log.info("резерв: пользователи и бот — на «%s»", self.reserve_peer_name())
-        return [("live",), ("notify", [Notification(tg_id=int(config.ADMIN_ID), text=rn.moved_to_reserve(
-            self.reserve_peer_name(), str(out.get("kind") or "button"), timeutil.now_iso(),
-            dead_since=str(out.get("dead_since") or ""), reserve_ip=str(out.get("target_ip") or "")))])]
-
-    # ── away: здоровье и возврат ────────────────────────────────────────────
-    def reserve_healthy(self) -> bool:
-        """Свой AWG отвечает, линк пары жив, шлюз (если есть) на связи — сейчас. Под
-        кворумом «свой AWG отвечает» и «шлюз на связи» заменяет счёт Q2: «да» за меня
-        путём пользователей строго больше половины голосующих."""
-        q = self.reserve_quorum_healthy() if hasattr(self, "reserve_quorum_healthy") else None
-        if q is not None:
-            return bool(q and self.reserve_online() and self.reserve_peer_seen() == "ok" and self._tg_reachable())
-        try:
-            awg_ok = str(self.db.get_state("last_server_ok") or "") == "1"
-        except Exception:                                     # noqa: BLE001
-            awg_ok = False
-        pair_ok = self.reserve_online() and self.reserve_peer_seen() == "ok"
-        gw_ok = True
-        if self.reserve_has_gateway() and hasattr(self, "gwlink_session"):
-            gw_ok = any(bool(self.gwlink_session(g.id)) for g in self.db.gateways())
-        return bool(awg_ok and pair_ok and gw_ok and self._tg_reachable())
-
+    # ── здоровье: Telegram с этого сервера (outbound_health) ────────────────
     def _tg_reachable(self) -> bool:
         """Telegram достижим с этого сервера (TCP к api.telegram.org:443, кэш минуту):
         возврат без Telegram оставил бы бота немым обеим сторонам."""
@@ -576,119 +390,3 @@ class ReserveOutboundMixin:
             ok = False
         cache.update(at=now, ok=ok)
         return ok
-
-    def _quorum_adopted_hosting_seen(self) -> None:
-        """Резерв после принятия эпохи несёт (нёс) моих пользователей — отметка в записи принятия:
-        его позднейшее «idle» — уже не «забираю сорвалось», а возврат, который идёт обычным путём
-        (запись DNS на его адресе, вебхук гостя, его правки) — домой по одному слову idle нельзя."""
-        adopted = dict(self.rsv_get("rsv_qlog").get("adopted") or {})
-        if adopted and not adopted.get("hosting_seen"):
-            self.rsv_update("rsv_qlog", adopted={**adopted, "hosting_seen": True})
-
-    def _share_remainder(self, out: dict) -> bool:
-        """В away по принятой эпохе кворума (кандидат сказал голосующим «забираю»), а живая вторая
-        сторона после принятия говорит, что моих не несёт: «забираю» сорвалось (своё «вижу»
-        вернулось, открытие не пошло) — пользователи никуда не уезжали. Только пока резерв после
-        принятия моих не нёс (`hosting_seen`): нёс — его idle означает снятую зону после обслуживания,
-        запись на его адресе, и домой ведёт обычный возврат. Без отметки принятия — не этот случай."""
-        if str(out.get("by") or "") != "share" or not hasattr(self, "_quorum_adopted_idle_fact"):
-            return False
-        adopted = dict(self.rsv_get("rsv_qlog").get("adopted") or {})
-        if not adopted or adopted.get("hosting_seen"):
-            return False
-        peer = self.reserve_peer_state()
-        hosting = str(peer.get("inn") or "idle") in HOSTING
-        if hosting and (peer.get("at_ts") is None or adopted.get("at_ts") is None or float(peer["at_ts"]) > float(adopted["at_ts"])):
-            self._quorum_adopted_hosting_seen()               # несёт моих — отметка, выхода по idle больше нет
-            return False
-        if hasattr(self, "reserve_disk_waiting") and self.reserve_disk_waiting():
-            return False                                      # на диске резерва журнал гостя новее — переезд был
-        return self._quorum_adopted_idle_fact(adopted)
-
-    def _tick_away(self, out: dict) -> list[tuple]:
-        now = time.monotonic()
-        if self._share_remainder(out):
-            # домой с прежними отметками home (как остаток вебхука ниже); эпоху, если её ещё держит вторая
-            # сторона, вернёт правило лидера — факт «моих у неё нет» запоминается в отметке принятия
-            with _LOCK:
-                cur = dict(self.rsv_get("rsv_out"))
-                cur.update(state="home", kind="", step="", by="", await_merge=False, since=str(cur.get("home_since") or ""))
-                cur.pop("at_ts", None)
-                if cur.get("home_at_ts") is not None:
-                    cur["at_ts"] = cur["home_at_ts"]
-                cur.pop("home_since", None)
-                cur.pop("home_at_ts", None)
-                self.rsv_put("rsv_out", cur)
-                adopted = dict(self.rsv_get("rsv_qlog").get("adopted") or {})
-                if adopted:
-                    self.rsv_update("rsv_qlog", adopted={**adopted, "idle_seen": True})
-            self.reserve_set_poll("mine")
-            self.reserve_epoch_sync()
-            log.warning("резерв: «%s» на связи без моих пользователей — «забираю» сорвалось, я дома", self.reserve_peer_name())
-            notes = self.reserve_compromised_settle()         # точки ключа были у него (st.exposed) — поколение сейчас
-            return [("live",), ("wake_poll",)] + ([("notify", notes)] if notes else [])
-        if str(out.get("by") or "") == "webhook" and self._webhook_remainder(out, self.reserve_peer_state()):
-            # в away по одному слову Telegram, а живой резерв после перехода говорит, что моих не несёт:
-            # остаток вебхука — домой, запись здесь; сам вебхук снимет проверка зависшего (outbound_stuck)
-            # отметки home — прежние (home_since/home_at_ts): как будто автомат и не уходил, роль и
-            # проверка зависшего вебхука считают от них
-            with _LOCK:
-                cur = dict(self.rsv_get("rsv_out"))
-                cur.update(state="home", kind="", step="", by="", await_merge=False, since=str(cur.get("home_since") or ""),
-                           webhook_rem_ts=self.rsv_get("rsv_poll").get("at_ts"))   # это слово Telegram — остаток, второй раз не ведёт
-                cur.pop("at_ts", None)
-                if cur.get("home_at_ts") is not None:
-                    cur["at_ts"] = cur["home_at_ts"]
-                cur.pop("home_since", None)
-                cur.pop("home_at_ts", None)
-                self.rsv_put("rsv_out", cur)
-            self.reserve_epoch_sync()
-            log.warning("резерв: «%s» на связи без моего гостя — вебхук у него остаток, я дома", self.reserve_peer_name())
-            notes = self.reserve_compromised_settle()         # открывал без моего K (его st.exposed) — поколение сейчас
-            return [("live",)] + ([("notify", notes)] if notes else [])
-        if self.reserve_poll() == "away" and self._webhook_stuck(out, now):
-            return [("take_home",)]
-        if self.reserve_healthy():
-            since = float(out.get("healthy_mono") or 0)
-            if not since or since > now + 1.0:                # отметки нет или она прежней загрузки — счёт заново
-                self.rsv_update("rsv_out", healthy_mono=now, healthy_since=timeutil.now_iso())
-                return []
-            if now - since < HEALTHY_S:
-                return []
-            if out.get("merge_blocked"):
-                # слияние дважды упало с той же причиной — сам не повторяю, но кнопка «↩️ Вернуть пользователей»
-                # (у основы и у гостя) должна быть: can_return держится, пока основа здорова
-                if not out.get("can_return"):
-                    self.rsv_update("rsv_out", can_return=True)
-                    return [("live",)]
-                return []
-            if str(settings.get("app.reserve.return", "immediate") or "immediate") == "immediate" \
-                    and not self.reserve_return_check():
-                last = str(out.get("last_switch") or "")
-                gap = settings.get_int("app.reserve.min_interval_minutes", 30) * 60
-                if not last or timeutil.elapsed(timeutil.parse_iso(last)) >= gap:
-                    return self.reserve_return_start("auto")
-            elif not out.get("can_return"):
-                self.rsv_update("rsv_out", can_return=True)
-                return [("live",)]
-        elif out.get("healthy_mono") or out.get("can_return"):
-            self.rsv_update("rsv_out", healthy_mono=0, healthy_since="", can_return=False)
-        return []
-
-    def reserve_move_live(self) -> dict:
-        out = self._out()
-        return {"name": self.reserve_peer_name(), "state": str(out.get("state") or "home"), "step": str(out.get("step") or ""),
-                "pkg_at": str(out.get("pkg_at") or ""), "up_at": str(out.get("up_at") or ""),
-                "record": str(out.get("record") or self.reserve_dns_name()), "target": str(out.get("target_ip") or ""),
-                "record_set_at": str(out.get("record_set_at") or ""), "record_fact_at": str(out.get("record_fact_at") or ""),
-                "released_at": str(out.get("released_at") or ""), "taken_at": str(out.get("taken_at") or ""),
-                "reason": str(out.get("reason") or ""), "manual": not self.reserve_dns_automatic(),
-                "msg": list(out.get("msg") or []), "online": self._online_count(), "relay_until": str(out.get("relay_until") or ""),
-                "there": int(self.reserve_peer_state().get("there") or 0),
-                "own": self.reserve_own_ip(), "merge_report": dict(out.get("merge_report") or {})}
-
-    def _online_count(self) -> int:
-        try:
-            return int(self.db.get_state("online_count") or 0)
-        except Exception:                                     # noqa: BLE001
-            return 0
