@@ -9,11 +9,10 @@ quorum_doc.py — часть пакета reserve агента (см. __init__):
 """
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
 
-from awgbot.util import fsatomic, rsvkeys, timeutil
+from awgbot.util import jsonfile, rsvkeys, timeutil
 from awgbot.util.quorum.timing import Timing
 
 from ..base import log
@@ -24,15 +23,11 @@ _KEEP_KEYS = ("views", "pledges", "told", "apply_mono", "share_given_at", "e_kno
 
 
 def _read(path: Path = STORE_PATH) -> dict:
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    return data if isinstance(data, dict) else {}
+    return jsonfile.read_dict(path)
 
 
 def _write(data: dict, path: Path = STORE_PATH) -> None:
-    fsatomic.write_private(path, json.dumps(data, ensure_ascii=False))
+    jsonfile.write(path, data)                                # 0600, атомарно, как прежде
 
 
 def _point_prev(cur: dict, new_point: dict) -> dict:
