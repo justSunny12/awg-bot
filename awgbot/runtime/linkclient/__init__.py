@@ -72,7 +72,7 @@ import asyncio
 import contextlib
 import ipaddress
 import logging
-import random          # noqa: F401 — тесты подменяют random.uniform через пакет
+import random          # noqa: F401 — пауза обновления по каналу (upd) — через пакет: её подменяют тесты
 import subprocess
 import time
 
@@ -105,18 +105,17 @@ def server_port() -> int:
     сервера: у шлюза, подключённого раньше, юнит обвязки ещё прежний, flow-9);
     иначе — из юнита обвязки."""
     from awgbot.infra import gwguard
+    from awgbot.domain.gateway.join import JOIN_FILE
+    from awgbot.util import jsonfile
+    st = jsonfile.read_dict(JOIN_FILE)
     try:
-        import json
-        from awgbot.domain.gateway.join import JOIN_FILE
-        with open(JOIN_FILE, encoding="utf-8") as f:
-            st = json.loads(f.read() or "{}")
         # только живое сопряжение (или доведённое, до join_done_ok): файл
         # закрытого (refused) — не про порт этого сервера (join-4)
         port = int(st.get("channel_port") or 0) if st.get("state") in ("pairing", "accepted", "linked",
                                                                          "done") else 0
         if 0 < port < 65536:
             return port
-    except (OSError, ValueError, TypeError, AttributeError):
+    except (ValueError, TypeError):
         pass
     raw = gwguard.unit_env("LINK_CHANNEL_PORT")
     if raw.isdigit():

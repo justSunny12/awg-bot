@@ -326,12 +326,16 @@ class MigrationExitsMixin:
         пиров. Конфиг НЕ удаляем: он единственный след прежних параметров, и
         стоит копейки, а понадобиться может при разборе."""
         import subprocess
-        for argv in (["awg-quick", "down", name],
-                     ["systemctl", "disable", f"awg-quick@{name}"]):
-            try:
-                subprocess.run(argv, capture_output=True, timeout=30)
-            except (OSError, subprocess.SubprocessError) as e:
-                log.warning("promote: %s не выполнено: %s", " ".join(argv), e)
+        from awgbot.infra import systemd
+        unit = f"awg-quick@{name}"
+        try:
+            subprocess.run(["awg-quick", "down", name], capture_output=True, timeout=30)
+        except (OSError, subprocess.SubprocessError) as e:
+            log.warning("promote: awg-quick down %s не выполнено: %s", name, e)
+        try:
+            systemd.disable(unit, timeout=30)
+        except (OSError, subprocess.SubprocessError) as e:
+            log.warning("promote: systemctl disable %s не выполнено: %s", unit, e)
 
     def pop_promoted_iface(self) -> str:
         """Имя интерфейса, ставшего основным на финале переезда, — один раз.

@@ -27,11 +27,10 @@ from __future__ import annotations
 
 import hashlib
 import os
-import random
 import time
 
 from awgbot.core import config, settings
-from awgbot.util import fsatomic, pairproto, rsvjrn, rsvkeys, timeutil
+from awgbot.util import backoff, fsatomic, pairproto, rsvjrn, rsvkeys, timeutil
 from awgbot.util.rsvpkg import bot as pkgbot, seal, vpn as pkgvpn
 
 from ..gateway_link.common import log
@@ -91,7 +90,7 @@ class ReservePackageMixin:
     @staticmethod
     def _pkg_timer_delay() -> float:
         minutes = max(1, settings.get_int("app.reserve.pkg_minutes", 30))
-        return minutes * 60 * random.uniform(0.6, 1.4)
+        return backoff.jitter(minutes * 60)
 
     # ── сборка ──────────────────────────────────────────────────────────────
 

@@ -9,7 +9,6 @@
 from __future__ import annotations
 
 import asyncio
-import random
 
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
@@ -17,7 +16,7 @@ from aiogram.types import FSInputFile
 
 from awgbot.core import config
 from awgbot.core import settings
-from awgbot.util import timeutil
+from awgbot.util import backoff, timeutil
 from awgbot.runtime import scheduler as pkg          # подменяемое тестами — через пакет
 
 from .common import MANDATORY, log
@@ -204,7 +203,7 @@ def add_server_backup(scheduler, services, bot, *, run_date) -> None:
 
     def _busy_backup():
         # смена ключей линка в работе: ждём её конца, а не снимаем полуготовое
-        delay = REKEY_WAIT_S * random.uniform(0.6, 1.4)
+        delay = backoff.jitter(REKEY_WAIT_S)
         scheduler.add_job(job_backup, "date", run_date=timeutil.shift(timeutil.now(), delay),
                           id="backup_retry", replace_existing=True, max_instances=1, **MANDATORY)
 

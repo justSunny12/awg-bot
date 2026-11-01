@@ -223,8 +223,7 @@ def ensure_persistence() -> list[str]:
     except OSError as e:
         raise pkg.GuardError(f"{pkg.MAIN_CONF}: {e}")
     try:
-        rc = subprocess.run(["systemctl", "enable", "nftables"], capture_output=True,
-                            timeout=_SYSTEMCTL_TIMEOUT).returncode
+        rc = systemd.enable("nftables", timeout=_SYSTEMCTL_TIMEOUT).returncode
     except (OSError, subprocess.SubprocessError) as e:   # нет systemctl (контейнер) или завис
         log.warning("файервол: systemctl enable nftables: %s", e)
         rc = None

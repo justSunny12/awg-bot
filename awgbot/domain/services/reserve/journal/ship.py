@@ -31,11 +31,10 @@ ship.py — часть пакета journal (см. __init__): своя лини�
 """
 from __future__ import annotations
 
-import random
 import time
 
 from awgbot.core import settings
-from awgbot.util import pairproto, timeutil
+from awgbot.util import backoff, pairproto, timeutil
 from awgbot.util.rsvjrn import schema_too_old
 
 from ...gateway_link.common import log
@@ -215,7 +214,7 @@ class ReserveShipMixin:
 
     @staticmethod
     def _jrn_snap_next() -> str:
-        return timeutil.to_iso(timeutil.shift(timeutil.now(), SNAP_DAY_S * random.uniform(0.6, 1.4)))
+        return timeutil.to_iso(timeutil.shift(timeutil.now(), backoff.jitter(SNAP_DAY_S)))
 
     def reserve_jrn_snap_due(self) -> bool:
         """Пора ли плановый снимок: много событий после снимка или сутки, если события были."""
@@ -300,7 +299,7 @@ class ReserveShipMixin:
 
     @staticmethod
     def _jrn_cnt_delay() -> float:
-        return max(1, settings.get_int("app.reserve.pkg_minutes", 30)) * 60 * random.uniform(0.6, 1.4)
+        return backoff.jitter(max(1, settings.get_int("app.reserve.pkg_minutes", 30)) * 60)
 
     def _jrn_counts_rec(self, side: str, batch) -> bytes | None:
         """Пачка счётчиков записью под K (основа — сторона a, бот основы на резерве — b);

@@ -31,7 +31,7 @@ from awgbot.domain.channelstate import ChannelState
 from awgbot.infra import gwguard
 from tests.linkstubs import AgentStub
 from awgbot.runtime import linkclient
-from awgbot.util import gwlink
+from awgbot.util import backoff, gwlink
 
 
 PRIV = base64.b64encode(os.urandom(32)).decode()
@@ -192,7 +192,7 @@ def _delays(monkeypatch, stop_after: int) -> list[float]:
             raise asyncio.CancelledError
 
     monkeypatch.setattr(linkclient.asyncio, "sleep", fake_sleep)
-    monkeypatch.setattr(linkclient.random, "uniform", lambda lo, hi: 1.0)
+    monkeypatch.setattr(backoff.random, "uniform", lambda lo, hi: 1.0)
     return got
 
 

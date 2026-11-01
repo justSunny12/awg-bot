@@ -22,7 +22,7 @@ from typing import Optional
 
 from awgbot.core import config
 from awgbot.domain.services.types import Notification, ServiceError
-from awgbot.util import timeutil
+from awgbot.util import backoff, timeutil
 
 from .common import log
 
@@ -77,7 +77,7 @@ class RekeyI1Mixin:
         """Попытка не встала (или не начата) — неудача в счёт, повтор через сутки."""
         plan["tries"] = int(plan.get("tries") or 0) + 1
         plan["rid"] = ""
-        plan["next_at"] = _later(RETRY_S * random.uniform(1 - RETRY_JITTER, 1 + RETRY_JITTER))
+        plan["next_at"] = _later(backoff.jitter(RETRY_S, RETRY_JITTER))
         self._i1_plan_save(gw.id, plan)
         log.info("I1 линка: слот %s — %s (%s), повтор через сутки", gw.id, why, plan["tries"])
 

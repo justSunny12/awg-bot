@@ -101,3 +101,51 @@ def test_restoring_the_unit_brings_back_the_text_byte_for_byte(unit):
     gwguard.unit_restore(before)
     assert unit.text() == UNIT_TEXT
     assert unit.calls.count(["systemctl", "daemon-reload"]) == 2
+
+
+# ── запись юнита: свой временный файл, одна подмена ──────────────────────────
+
+def _spy_replace(monkeypatch):
+    import os
+    from awgbot.util import fsatomic
+    seen: list[tuple[str, str]] = []
+    real = os.replace
+
+    def spy(src, dst):
+        seen.append((str(src), str(dst)))
+        return real(src, dst)
+    monkeypatch.setattr(fsatomic.os, "replace", spy)
+    return seen
+
+
+def test_the_unit_is_rewritten_through_its_own_temp_file_with_one_replace(unit, monkeypatch):
+    """Юнит переписывали через общий `<юнит>.tmp` и двумя подменами (запись в
+    .tmp и replace поверх): два писателя одного юнита (поток канала и
+    транзакция аплинка) подменяли бы юнит смесью двух записей. Теперь —
+    util/fsatomic: временный файл со своим именем, подмена ровно одна, права
+    0600 с первого байта, рядом ничего не остаётся."""
+    seen = _spy_replace(monkeypatch)
+    gwguard.unit_set_env({"LAN_SUBNETS": "192.168.70.0/24"})
+    assert len(seen) == 1, seen
+    src, dst = seen[0]
+    assert dst == str(unit.path)
+    assert src != str(unit.path.with_suffix(".tmp")), "общий .tmp — подмена чужой недописанной записью"
+    assert src.startswith(str(unit.path.parent / f".{unit.path.name}.")), src
+    assert unit.path.stat().st_mode & 0o777 == 0o600
+    assert sorted(p.name for p in unit.path.parent.iterdir()) == [unit.path.name]
+
+
+def test_a_refused_reload_restores_the_unit_with_one_more_replace(unit, monkeypatch):
+    """daemon-reload отказал — юнит возвращается прежним текстом: ещё одна
+    подмена своим временным файлом, без общего .tmp; текст — байт в байт."""
+    from tests.unit._gw_unit_common import _cp
+    unit.reload = [_cp(1, err=b"Access denied"), _cp(0)]
+    seen = _spy_replace(monkeypatch)
+    with pytest.raises(gwguard.GwGuardError):
+        gwguard.unit_set_env({"LAN_SUBNETS": "192.168.70.0/24"})
+    assert unit.text() == UNIT_TEXT
+    assert [d for _s, d in seen] == [str(unit.path)] * 2 and len({s for s, _d in seen}) == 2, seen
+    assert sorted(p.name for p in unit.path.parent.iterdir()) == [unit.path.name]
+    seen.clear()
+    gwguard.unit_restore(UNIT_TEXT)
+    assert [d for _s, d in seen] == [str(unit.path)] and unit.text() == UNIT_TEXT

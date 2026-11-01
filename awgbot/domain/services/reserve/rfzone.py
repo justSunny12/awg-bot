@@ -17,10 +17,10 @@ veth нет): активный — по такту зондов активног
 from __future__ import annotations
 
 import ipaddress
-import random
 import time
 
 from awgbot.core import config, models
+from awgbot.util import backoff
 
 RF_SPARE_ID = 30                 # 1 << 30 — метка зонда внутри 32 бит; таблица ROUTING_TABLE + 30
 RF_SPARE_IF = "awggr-n"
@@ -75,7 +75,7 @@ class ReserveRfZoneMixin:
             verdict = routing.probe_gateway(targets, port, timeout=self._RT_STANDBY_TIMEOUT, iface=gw.link_if, mark=gw.mark)
             every = float(self._rt_standby_interval() or 0) * 60
         last[key] = verdict
-        nxt[key] = now + every * random.uniform(0.6, 1.4) if every > 0 else 0.0
+        nxt[key] = now + backoff.jitter(every) if every > 0 else 0.0
         return verdict
 
     def _rt_spare_yields(self, akey, ups: dict) -> bool:

@@ -205,7 +205,7 @@ class WebhookServer:
 
 
 def watch_delay() -> float:
-    import random
-    return random.uniform(WATCH_SECONDS * 0.6, WATCH_SECONDS * 1.4)
+    from awgbot.util import backoff
+    return backoff.jitter(WATCH_SECONDS)
 
 

@@ -264,14 +264,10 @@ def tg_pool() -> list[str]:
     """Пул адресов Telegram для порта вебхука: файл бота резерва
     (`reserve/tg_pool.json` в каталоге данных) поверх ядра; негодные
     строки — прочь."""
-    import json
+    from awgbot.util import jsonfile
     pool = list(pkg.DEFAULT_TG_POOL)
-    try:
-        data = json.loads((Path(config.DATA_DIR) / "reserve" / "tg_pool.json").read_text(encoding="utf-8"))
-        for item in data.get("pool") or []:
-            pool.append(str(item))
-    except (OSError, ValueError, AttributeError):
-        pass
+    learned = jsonfile.read_dict(Path(config.DATA_DIR) / "reserve" / "tg_pool.json").get("pool")
+    pool.extend(str(item) for item in (learned if isinstance(learned, list) else ()))
     out: list[str] = []
     for item in pool:
         try:

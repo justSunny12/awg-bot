@@ -16,12 +16,12 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import random
 import logging
 
 from aiogram.client.session.middlewares.base import BaseRequestMiddleware
 from aiogram.exceptions import TelegramConflictError
 from aiogram.methods import GetUpdates
+from awgbot.util import backoff
 
 log = logging.getLogger(__name__)
 
@@ -160,7 +160,7 @@ class PollControl:
                 self._wake.clear()
                 with contextlib.suppress(asyncio.TimeoutError):
                     # право отвечать решает Telegram: перепроверять getWebhookInfo, а не ждать слова вечно
-                    await asyncio.wait_for(self._wake.wait(), RECHECK_S * random.uniform(0.6, 1.4))
+                    await asyncio.wait_for(self._wake.wait(), backoff.jitter(RECHECK_S))
                 continue
             self._conflict = ""
             self._stopped = False
@@ -183,7 +183,7 @@ class PollControl:
                 return                                       # поллинг кончился сам (сигнал, заглушка теста) — выход, как прежде
             self._wake.clear()
             with contextlib.suppress(asyncio.TimeoutError):
-                await asyncio.wait_for(self._wake.wait(), RECHECK_S * random.uniform(0.6, 1.4))
+                await asyncio.wait_for(self._wake.wait(), backoff.jitter(RECHECK_S))
 
     def wake(self) -> None:
         self._wake.set()

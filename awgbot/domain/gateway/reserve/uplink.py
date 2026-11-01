@@ -19,7 +19,6 @@ TTL записи (не меньше 300 с): кэш системного рез�
 """
 from __future__ import annotations
 
-import json
 import logging
 import os
 import re
@@ -30,7 +29,7 @@ from pathlib import Path
 
 from awgbot.core import config
 from awgbot.infra import gwguard
-from awgbot.util import fsatomic, nets
+from awgbot.util import jsonfile, nets
 
 log = logging.getLogger(__name__)
 
@@ -86,11 +85,7 @@ def _pins() -> dict[str, tuple[str, float, float]]:
     global _PIN
     if _PIN is None:
         _PIN = {}
-        try:
-            data = json.loads(PIN_PATH.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            data = {}
-        for iface, v in (data.items() if isinstance(data, dict) else ()):
+        for iface, v in jsonfile.read_dict(PIN_PATH).items():
             try:
                 ip, until, span = str(v["ip"]), float(v["until"]), float(v["span"])
             except (KeyError, TypeError, ValueError):
@@ -102,8 +97,7 @@ def _pins() -> dict[str, tuple[str, float, float]]:
 
 def _pins_save(pins: dict[str, tuple[str, float, float]]) -> None:
     try:
-        fsatomic.write_private(PIN_PATH, json.dumps(
-            {k: {"ip": ip, "until": until, "span": span} for k, (ip, until, span) in pins.items()}))
+        jsonfile.write(PIN_PATH, {k: {"ip": ip, "until": until, "span": span} for k, (ip, until, span) in pins.items()})
     except OSError as e:
         log.warning("аплинк: прикол адреса по записи не записан на диск (%s) — держится до перезапуска агента", e)
 

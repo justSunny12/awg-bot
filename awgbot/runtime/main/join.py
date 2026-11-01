@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import json
 import os
 
 from awgbot.core import config
@@ -27,12 +26,8 @@ def join_pending() -> bool:
     if config.ROLE != "gateway" or config.BOT_TOKEN:
         return False
     from awgbot.domain.gateway.join import JOIN_FILE
-    try:
-        with open(JOIN_FILE, encoding="utf-8") as f:
-            st = json.loads(f.read() or "{}")
-    except (OSError, ValueError):
-        return False
-    return isinstance(st, dict) and st.get("state") in ("pairing", "accepted", "linked", "refused")
+    from awgbot.util import jsonfile
+    return jsonfile.read_dict(JOIN_FILE).get("state") in ("pairing", "accepted", "linked", "refused")
 
 
 async def run_join() -> None:

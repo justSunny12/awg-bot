@@ -16,14 +16,12 @@
 """
 from __future__ import annotations
 
-import types
-
 import pytest
 
 from awgbot.core import config, settings
 from awgbot.domain.services.reserve import dns as dnsmod
 from awgbot.domain.services.types import ServiceError
-from awgbot.util import dnsapi
+from awgbot.util import backoff, dnsapi
 from awgbot.util.dnsapi import common as dnscommon
 from awgbot.util.rsvpkg import seal
 
@@ -245,7 +243,7 @@ def test_the_peer_ip_comes_from_its_st_and_falls_back_to_the_resolver_for_a_name
 
 @pytest.fixture()
 def watch(mv, monkeypatch):
-    monkeypatch.setattr(dnsmod, "random", types.SimpleNamespace(uniform=lambda a, b: 1.0))
+    monkeypatch.setattr(backoff.random, "uniform", lambda a, b: 1.0)
     mv.clock.advance(1000)
     return mv
 

@@ -6,6 +6,7 @@ from __future__ import annotations
 from awgbot.core import settings
 from awgbot.infra import routing
 from awgbot.domain.evidence import EvidenceProbe
+from awgbot.util import backoff
 
 
 class RoutingProbesMixin:
@@ -73,7 +74,6 @@ class RoutingProbesMixin:
         для ТСПУ), а между зондами живость — по свежести хендшейка линка (это
         локальный exec, наружу ничего не уходит). Резерв «в порядке» = последний
         зонд прошёл И хендшейк свежий: такой шлюз примет нагрузку."""
-        import random
         import time as _time
         nxt = self.__dict__.setdefault("_rt_standby_next", {})
         last = self.__dict__.setdefault("_rt_standby_last", {})
@@ -81,7 +81,7 @@ class RoutingProbesMixin:
         now = _time.monotonic()
         if every <= 0 or gw.id not in last or now >= nxt.get(gw.id, 0.0):
             last[gw.id] = self._probe_slot(gw, active=False)
-            nxt[gw.id] = now + every * 60 * random.uniform(0.6, 1.4)
+            nxt[gw.id] = now + backoff.jitter(every * 60)
         # Хендшейк — всегда, и в такт зонда тоже: пройденный зонд без свежего
         # хендшейка означает, что путь ушёл не через линк (обвязка слота не на
         # месте) — такой резерв нагрузку не примет.

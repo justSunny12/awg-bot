@@ -27,7 +27,6 @@ AWG_UPDATE_THEN_JOIN) и `awg-bot join` руками.
 """
 from __future__ import annotations
 
-import json
 import os
 import subprocess
 import sys
@@ -136,7 +135,7 @@ def _follow(expires: int, *, once: bool = False) -> int:
 def cmd_join(text: str) -> int:
     from awgbot.core import config
     from awgbot.domain.gateway.join import JOIN_FILE, STATUS_FILE
-    from awgbot.infra import gwguard
+    from awgbot.infra import gwguard, systemd
     from awgbot.util import jointoken
     from awgbot.util import jsonfile
     from awgbot.util.fsatomic import write_private
@@ -157,10 +156,10 @@ def cmd_join(text: str) -> int:
     os.makedirs(os.path.dirname(JOIN_FILE), exist_ok=True)
     conf_path = os.path.join(os.path.dirname(JOIN_FILE), "join.conf")
     write_private(conf_path, _link_conf(tok))
-    write_private(JOIN_FILE, json.dumps({
+    jsonfile.write(JOIN_FILE, {
         "id": tok.join_id, "slot": tok.slot, "version": tok.version, "expires": tok.expires,
         "host": tok.host, "channel_port": tok.channel_port, "link_port": tok.link_port,
-        "state": "pairing", "name": ""}, ensure_ascii=False))
+        "state": "pairing", "name": ""})
     try:
         os.remove(STATUS_FILE)                            # ход прошлой команды — не о ней
     except OSError:
@@ -182,8 +181,7 @@ def cmd_join(text: str) -> int:
         _err("линк по команде подключения не поднялся: " + (out.splitlines()[-1] if out else "скрипт отказал"))
         return 1
     try:
-        rc = subprocess.run(["systemctl", "restart", "awg-bot"], check=False, capture_output=True,
-                            timeout=120).returncode
+        rc = systemd.restart("awg-bot", timeout=120).returncode
     except (OSError, subprocess.SubprocessError) as e:
         rc, out = 1, str(e)
     if rc != 0:

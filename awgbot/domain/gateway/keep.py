@@ -21,11 +21,10 @@
 from __future__ import annotations
 
 import json
-import random
 
 from awgbot.core import settings
 from awgbot.domain import gwkeep
-from awgbot.util import timeutil
+from awgbot.util import backoff, timeutil
 
 from .base import log
 
@@ -120,7 +119,7 @@ class KeepMixin:
         t = block.get("traffic") or {}
         self.db.set_state(self._KEEP_SYNCED_KEY, "1")
         self.db.set_state(self._KEEP_TRAFFIC_KEY, json.dumps(
-            {"at": timeutil.to_iso(timeutil.now()), "due": int(TRAFFIC_EVERY_S * random.uniform(0.6, 1.4)),
+            {"at": timeutil.to_iso(timeutil.now()), "due": int(backoff.jitter(TRAFFIC_EVERY_S)),
              "sum": int(t.get("rx") or 0) + int(t.get("tx") or 0), "month": str(t.get("month") or "")}))
 
     def keep_acked(self, digest: str) -> None:

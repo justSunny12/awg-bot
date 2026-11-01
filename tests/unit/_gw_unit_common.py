@@ -8,7 +8,7 @@ import types
 from pathlib import Path
 
 from awgbot.core import config
-from awgbot.infra import gwguard
+from awgbot.infra import gwguard, systemd
 from awgbot.util import gwlink
 
 UNIT_TEXT = """[Unit]
@@ -77,6 +77,7 @@ class _Unit:
                                      SubprocessError=subprocess.SubprocessError,
                                      TimeoutExpired=subprocess.TimeoutExpired)
         monkeypatch.setattr(gwguard, "subprocess", fake)
+        monkeypatch.setattr(systemd, "subprocess", fake)    # daemon-reload и restart юнита — через infra/systemd
 
     def _run(self, argv, **kw):
         self.calls.append(list(argv))

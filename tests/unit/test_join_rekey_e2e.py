@@ -117,7 +117,7 @@ def joined(svc, tmp_path, monkeypatch):
     скрипта с переданным окружением, при успехе файл встаёт на место."""
     import base64
     from awgbot.core import config
-    from awgbot.infra import gwguard
+    from awgbot.infra import gwguard, systemd
     from tools import join as tjoin
     gpriv, _ = keypair()
     _, vpub = keypair()
@@ -146,8 +146,10 @@ def joined(svc, tmp_path, monkeypatch):
                 return _P(0, b"link: restarted\n")
             return _P(1, ("ОШИБКА: " + r.stderr).encode())
         return _P(0, b"")
-    monkeypatch.setattr(gwguard, "subprocess", __import__("types").SimpleNamespace(
-        run=run, TimeoutExpired=subprocess.TimeoutExpired, SubprocessError=subprocess.SubprocessError))
+    fake = __import__("types").SimpleNamespace(
+        run=run, TimeoutExpired=subprocess.TimeoutExpired, SubprocessError=subprocess.SubprocessError)
+    monkeypatch.setattr(gwguard, "subprocess", fake)
+    monkeypatch.setattr(systemd, "subprocess", fake)        # systemctl юнита обвязки — через infra/systemd
     svc.runs = runs
     svc.link = link
     return svc

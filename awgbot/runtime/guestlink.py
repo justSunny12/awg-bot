@@ -23,15 +23,13 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-import random
 
-from awgbot.util import gwlink, pairproto
+from awgbot.util import backoff, gwlink, pairproto
 
 log = logging.getLogger(__name__)
 
 HELLO_TIMEOUT = gwlink.FIRST_LINE_S
 SEND_TIMEOUT = 20
-_BACKOFF = (5, 10, 20, 40, 80, 160, 300)
 _STORE_LOCK = asyncio.Lock()       # reserve.json правят такт и обработчик слов — не одновременно
 
 
@@ -84,7 +82,7 @@ class GuestClient:
             await self._close()
             if self._confirmed:
                 attempt, self._confirmed = 0, False
-            delay = _BACKOFF[min(attempt, len(_BACKOFF) - 1)] * random.uniform(0.6, 1.4)
+            delay = backoff.backoff_delay(backoff.RECONNECT_S, attempt)
             attempt += 1
             self._wake.clear()
             with contextlib.suppress(asyncio.TimeoutError):

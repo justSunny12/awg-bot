@@ -115,9 +115,8 @@ class RoutingAccessMixin:
         # dnsmasq: пакет dnsmasq-base даёт только бинарь (его тянут libvirt и
         # соседи), а обвязке нужен ЮНИТ — иначе routing-host-setup.sh честно
         # остановится на полпути.
-        has_unit = subprocess.run(["systemctl", "list-unit-files", "dnsmasq.service"],
-                                  capture_output=True)
-        if has_unit.returncode != 0 or b"dnsmasq.service" not in has_unit.stdout:
+        from awgbot.infra import systemd
+        if not systemd.unit_file_listed("dnsmasq.service", timeout=30):
             run(["apt-get", "install", "-y", "--no-install-recommends", "dnsmasq"],
                 "установка dnsmasq")
         run(["sh", str(base / "routing-host-setup.sh"), "--apply"], "обвязка хоста")

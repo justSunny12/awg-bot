@@ -11,11 +11,10 @@ server), чтение и смена записи через API, факт — у
 from __future__ import annotations
 
 import ipaddress
-import random
 import time
 
 from awgbot.core import config, settings
-from awgbot.util import dnsapi, livestep, timeutil
+from awgbot.util import backoff, dnsapi, livestep, timeutil
 
 from ..types import Notification, ServiceError
 from ..gateway_link.common import log
@@ -242,7 +241,7 @@ class ReserveDnsMixin:
             return []
         w = self.rsv_get("rsv_record_watch")
         now = time.monotonic()
-        if not livestep.mono_due(w.get("mono"), now, RECORD_WATCH_SECONDS * random.uniform(0.6, 1.4)):
+        if not livestep.mono_due(w.get("mono"), now, backoff.jitter(RECORD_WATCH_SECONDS)):
             return []
         self.rsv_update("rsv_record_watch", mono=now)
         if self.reserve_away() or self.reserve_out() != "home" or self.reserve_poll() == "away":

@@ -23,7 +23,6 @@ reserve_apply): таблица истинности «аплинк × awgrsv × 
 from __future__ import annotations
 
 import json
-import types
 
 import pytest
 
@@ -34,6 +33,7 @@ from awgbot.domain.gateway.reserve import tgvia as tgmod
 from awgbot.infra import gwguard
 from awgbot.infra.db import Database
 from awgbot.infra.gwguard import rsv as rsvlink
+from awgbot.util import backoff
 from tests.unit.test_gw_reserve_agent import PRIMARY_IP, RECORD, RESERVE_IP, _checked, gw, host
 
 pytestmark = pytest.mark.unit
@@ -56,7 +56,7 @@ class _Net:
         monkeypatch.setattr(rsvlink, "present", lambda: self.link)
         monkeypatch.setattr(gwguard, "unit_env", lambda k: {"CLIENT_SUBNET": self.subnet}.get(k, ""))
         monkeypatch.setattr(tgmod, "_dns_probe", self._probe)
-        monkeypatch.setattr(tgmod, "random", types.SimpleNamespace(uniform=lambda a, b: 1.0))
+        monkeypatch.setattr(backoff.random, "uniform", lambda a, b: 1.0)
 
     def _probe(self, resolver, iface, timeout=None):
         self.probes.append((resolver, iface))
