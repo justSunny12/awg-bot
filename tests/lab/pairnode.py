@@ -230,7 +230,11 @@ class LabDns:
 LAB_FAST_DIGITS = {"quorum": {"probe_seconds": 5, "no_seconds": 30, "yes_window_seconds": 22, "down_seconds": 10,
                               "up_seconds": 55, "unfence_seconds": 10, "ask_repeat_seconds": 10, "grace_seconds": 40,
                               "pause_seconds": 100, "tie_clear_seconds": 20, "tie_minutes": 1},
-                   "rf_block_minutes": 2, "healthy_seconds": 60}
+                   "rf_block_minutes": 2, "healthy_seconds": 60,
+                   # живость линка пары: подозрение — тишина дольше keepalive + такт 5 с (8 + 5 < 15), проба — два
+                   # ping через 5 с; «не на связи» ≈ 25 с вместо 55 — каждый разрез пары и гибель сервера в s05, s09–s12
+                   "suspect_seconds": 15, "probe_seconds": 10}
+LAB_FAST_PAIR_KEEPALIVE = 8                  # PersistentKeepalive awgpair стенда на быстром уровне (на хостах — 25)
 
 
 def lab_digits_into(rsv: dict) -> None:
@@ -256,18 +260,26 @@ def digits(_a: argparse.Namespace) -> None:
     bad = t.check()
     if bad:
         raise SystemExit(f"цифры стенда не сходятся: {bad}")
+    print(f"QT_PAIR_KEEPALIVE={LAB_FAST_PAIR_KEEPALIVE if os.environ.get('LAB_FAST') == '1' else 25}")
     for k, v in (("PROBE", t.probe_s), ("NO", t.no_s), ("W", t.yes_window_s), ("DOWN", t.down_s), ("UP", t.up_s),
                  ("UNFENCE", t.unfence_s), ("TIE", t.tie_s), ("TIE_CLEAR", t.tie_clear_s), ("RF", t.rf_block_s),
                  ("DOWN_RF", t.down_rf_s), ("GRACE", t.grace_s), ("PAUSE", t.pause_s), ("HEALTHY", healthy)):
         print(f"QT_{k}={int(v)}")
 
 
+# Быстрый уровень, константы модулей всем узлам (до LAB_CONST сценария — он их перекрывает): пакет после
+# события — через 3 с, не 10 (подъём пары ждал две такие паузы подряд: отметка старта и «сначала снимок»)
+LAB_FAST_CONST = "awgbot.domain.services.reserve.package:PKG_BATCH_SECONDS=3"
+
+
 def lab_consts() -> None:
     """Сроки резерва, сжатые для сценария: LAB_CONST=`модуль:ИМЯ=число,ИМЯ=число;модуль2:…` —
-    константа модуля подменяется до старта (модуль читает её при вызове, не при импорте)."""
+    константа модуля подменяется до старта (модуль читает её при вызове, не при импорте); на
+    быстром уровне сначала LAB_FAST_CONST."""
     import importlib
     import logging
-    for part in (os.environ.get("LAB_CONST") or "").split(";"):
+    base = LAB_FAST_CONST if os.environ.get("LAB_FAST") == "1" else ""
+    for part in f"{base};{os.environ.get('LAB_CONST') or ''}".split(";"):
         mod, _, pairs = part.strip().partition(":")
         if not mod or not pairs:
             continue

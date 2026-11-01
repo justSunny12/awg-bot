@@ -66,7 +66,7 @@ fail_home() {   # срыв после released: A дома держатель, �
 }
 
 # ── 1. срыв после передачи бота, резерв выключен ─────────────────────────────────────────────────
-export LAB_CONST="$OUTB:RELEASED_WAIT_S=60;awgbot.domain.services.reserve.journal.handover:RELEASED_WAIT_S=60;$C9W:C9_WAIT_S=90"
+export LAB_CONST="$OUTB:RELEASED_WAIT_S=30,RELEASED_WAKE_S=30;awgbot.domain.services.reserve.journal.handover:RELEASED_WAIT_S=30;$C9W:C9_WAIT_S=45"
 pl_pair_up
 res="$(pl_cmd A load '{"n": 3, "prefix": "До-переезда", "pause": 0.05}' 60)" || pl_fail "правки A: $res"
 pl_wait A 's["jrn"]["acked"] == s["last_i"]' 60 "правки A подтверждены" || exit 1
