@@ -3,17 +3,16 @@
 
 Цена ошибки: шлюз чужой стороны в составе — голосует о чужом сервере (К5) и
 держит точку чужого ключа; состав без одного из серверов — порог считается не
-от того ансамбля; поколение, которое не растёт на смене, — голоса снятого шлюза
-продолжают считаться; окно прежнего поколения, которое не закрывается, — то же;
-состав, вступивший в силу без подтверждения второго сервера, — основа меняет
-ансамбль в одиночку, чтобы набрать большинство.
+от того ансамбля; окно прежнего поколения, которое не закрывается, — голоса
+снятого шлюза продолжают считаться. Смена поколения и подтверждение состава
+вторым сервером — у домена, tests/integration/test_reserve_quorum_members.
 """
 from __future__ import annotations
 
 import pytest
 
 from awgbot.util.quorum import members as mm
-from awgbot.util.quorum.members import Composition, GenWindow, Members
+from awgbot.util.quorum.members import GenWindow, Members
 
 pytestmark = pytest.mark.unit
 
@@ -93,27 +92,12 @@ def test_quorum_needs_at_least_one_gateway():
     assert Members.make("a", 1, ["a", "b", "a1"]).enabled
 
 
-def test_adding_and_removing_a_gateway_bumps_the_generation():
-    m = Members.make("a", 3, ["a", "b", "a1"])
-    m2 = m.with_gateway("a2")
-    assert (m2.g, m2.members) == (4, ("a", "b", "a1", "a2"))
-    m3 = m2.without_gateway("a1")
-    assert (m3.g, m3.members) == (5, ("a", "b", "a2"))
-    assert m.g == 3, "прежний состав неизменен"
-
-
-def test_no_op_changes_keep_the_generation():
-    """Повтор того же объявления `quo1` и попытка снять сервер — поколение не растёт."""
-    m = Members.make("a", 3, ["a", "b", "a1"])
-    assert m.with_gateway("a1") == m
-    assert m.without_gateway("a2") == m
-    assert m.without_gateway("b") == m
-    assert m.without_gateway("a") == m
-
-
-def test_adding_a_gateway_of_the_other_side_is_refused():
+@pytest.mark.parametrize("nodes", [["a", "b", "b1"], ["a", "b", "a1", "a1"]], ids=["чужая сторона", "дважды"])
+def test_a_gateway_of_the_other_side_or_a_repeated_node_is_refused(nodes):
+    """Состав, присланный в `qmem` или поднятый с диска, с шлюзом другой стороны или
+    узлом дважды не собирается: голос чужого шлюза о чужом сервере (К5)."""
     with pytest.raises(ValueError):
-        Members.make("a", 1, ["a", "b"]).with_gateway("b1")
+        Members.make("a", 1, nodes)
 
 
 def test_dict_round_trip():
@@ -154,45 +138,6 @@ def test_two_quick_changes_close_the_older_window():
     w.bump(2, 10.0, 120)
     w.bump(3, 20.0, 120)
     assert w.accepts(2, 30.0) and not w.accepts(1, 30.0)
-
-
-# ── подтверждение вторым сервером ───────────────────────────────────────────
-
-def test_a_new_composition_acts_only_after_the_second_server_acks():
-    m1 = Members.make("a", 1, ["a", "b", "a1"])
-    c = Composition(mine=m1)
-    assert c.pending() and c.active() is None, "первое поколение без подтверждения действует"
-    assert c.ack(1) and not c.pending() and c.active() == m1
-    m2 = m1.with_gateway("a2")
-    c.propose(m2)
-    assert c.pending() and c.active() == m1, "пока подтверждения нет, действует прежнее поколение"
-    assert not c.ack(3) and c.active() == m1, "подтверждено поколение, которого не предлагали"
-    assert c.ack(2) and c.active() == m2 and not c.pending()
-
-
-def test_a_stale_ack_after_a_second_proposal_is_ignored():
-    """Ответ `qmem_ok` на g = 2 пришёл, когда основа уже предложила g = 3, —
-    действует прежнее подтверждённое, а не g = 2 и не g = 3."""
-    m1 = Members.make("a", 1, ["a", "b", "a1"])
-    c = Composition(mine=m1)
-    c.ack(1)
-    m2 = m1.with_gateway("a2")
-    c.propose(m2)
-    m3 = m2.with_gateway("a3")
-    c.propose(m3)
-    assert not c.ack(2)
-    assert c.active() == m1
-
-
-def test_a_composition_restored_with_an_ack_keeps_acting_while_the_next_is_pending():
-    """Состав, поднятый с диска уже подтверждённым (`acked` = g), при следующем
-    предложении остаётся действующим до `qmem_ok` — иначе кворум линии на эти
-    секунды гаснет и смена состава выглядит как выключение."""
-    m1 = Members.make("a", 4, ["a", "b", "a1"])
-    c = Composition(mine=m1, acked=4)
-    assert c.active() == m1
-    c.propose(m1.with_gateway("a2"))
-    assert c.active() == m1, "действующий состав пропал, пока новое поколение ждёт подтверждения"
 
 
 # ── причины выключения ───────────────────────────────────────────────────────

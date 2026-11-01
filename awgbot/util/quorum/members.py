@@ -14,7 +14,7 @@ v = n − 1; порог t = ⌊v/2⌋ + 1 — строгое большинст�
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from awgbot.util import probenet
 
@@ -121,16 +121,6 @@ class Members:
         автоматического взятия, ограждения и многочлена нет (решение Р4)."""
         return bool(self.gateways)
 
-    def with_gateway(self, node: str) -> "Members":
-        if node in self.members:
-            return self
-        return Members(self.l, self.g + 1, self.members + (str(node),))
-
-    def without_gateway(self, node: str) -> "Members":
-        if node not in self.members or is_server(node):
-            return self
-        return Members(self.l, self.g + 1, tuple(m for m in self.members if m != node))
-
 
 @dataclass
 class GenWindow:
@@ -151,39 +141,6 @@ class GenWindow:
         if g == self.g:
             return True
         return g == self.prev_g and self.prev_g > 0 and now < self.until
-
-
-@dataclass
-class Composition:
-    """Состав линии с подтверждением: `acked` — поколение, подтверждённое вторым
-    сервером; действует `active()` — последнее подтверждённое."""
-    mine: Members
-    acked: int = 0
-    history: dict = field(default_factory=dict)      # g → Members (подтверждённые и ждущие)
-
-    def active(self) -> Members | None:
-        m = self.history.get(int(self.acked))
-        if m is None and int(self.acked) == int(self.mine.g):
-            return self.mine
-        return m
-
-    def pending(self) -> bool:
-        return int(self.mine.g) != int(self.acked)
-
-    def propose(self, m: Members) -> None:
-        if int(self.mine.g) == int(self.acked) and int(self.acked) not in self.history:
-            self.history[int(self.acked)] = self.mine          # действующий состав (поднят с диска) — остаётся
-        self.history[int(m.g)] = m
-        self.mine = m
-
-    def ack(self, g: int) -> bool:
-        """Подтверждение второго сервера; поколение должно быть предложенным."""
-        g = int(g)
-        if g != int(self.mine.g):
-            return False
-        self.acked = g
-        self.history[g] = self.mine
-        return True
 
 
 def off_reasons(m: Members | None, *, acked: bool, timing_problem: str = "",

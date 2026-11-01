@@ -57,6 +57,17 @@ def test_the_same_facts_do_not_raise_the_generation(line):
     assert (first.g, again.g) == (1, 1), "такт без смены фактов поднял поколение состава"
 
 
+def test_adding_and_removing_a_gateway_raises_the_generation_each_time(line):
+    """Шлюз пришёл — поколение растёт, шлюз снят — снова растёт и узла в составе
+    нет: голос снятого шлюза под новым поколением не считается."""
+    line.add_gw(1)
+    assert line.propose().to_dict() == {"l": "a", "g": 1, "members": ["a", "b", "a1"]}
+    line.add_gw(2)
+    assert line.propose().to_dict() == {"l": "a", "g": 2, "members": ["a", "b", "a1", "a2"]}
+    line.remove_gw(1)
+    assert line.propose().to_dict() == {"l": "a", "g": 3, "members": ["a", "b", "a2"]}
+
+
 def test_without_a_pair_there_is_no_line_and_the_old_one_is_dropped(line):
     line.add_gw(1)
     line.propose()
@@ -117,6 +128,21 @@ def test_qmem_ok_of_another_generation_or_line_changes_nothing(line, body):
     line.propose()
     line.s.reserve_qmem_ok_in(body)
     assert line.s.reserve_quorum_mine() is None, f"{body}: подтверждение не моего предложения сделало состав действующим"
+    assert line.s.reserve_quorum_pending()
+
+
+def test_a_stale_qmem_ok_after_a_second_proposal_is_ignored(line):
+    """`qmem_ok` на g = 2 пришёл, когда основа уже предложила g = 3: действует
+    прежнее подтверждённое g = 1, а не g = 2 и не g = 3."""
+    line.add_gw(1)
+    line.propose()
+    line.ack_members()
+    line.add_gw(2)
+    line.propose()
+    line.add_gw(3)
+    assert line.propose().g == 3
+    line.s.reserve_qmem_ok_in({"l": "a", "g": 2})
+    assert line.s.reserve_quorum_mine().g == 1, "запоздалое подтверждение сделало действующим не то поколение"
     assert line.s.reserve_quorum_pending()
 
 
