@@ -13,6 +13,7 @@ from awgbot.bot.handlers import routing as routing_h
 from awgbot.bot.callbacks import RoutingCB
 from awgbot.core import config
 from tests.conftest import FakeCallback, FakeMessage, FakeState
+from tests.integration._services_routing_common import _routing_all
 
 pytestmark = pytest.mark.e2e
 
@@ -190,7 +191,7 @@ def test_admin_has_access_without_grant(services, make_active_client):
     assert admin.id not in [c.id for c in services.routing_grantable_clients()]
 
     dc = services.add_device(admin.id, "Телефон")
-    services.set_routing_all(admin.id, True)
+    _routing_all(services, admin.id, True)
     assert services.db.routing_active_addresses(config.ADMIN_ID) == {admin.id: [dc.address]}
 
 
@@ -259,7 +260,7 @@ async def test_add_domains_without_dialog_context_lands_on_main_with_the_report(
     перезапуск бота): адреса всё равно приняты, итог — первой строкой главной,
     а не тупик без кнопок."""
     c = _allowed_client(services, make_active_client, 99)
-    services.set_routing_all(c.id, True)
+    _routing_all(services, c.id, True)
     c = services.db.get_client(c.id)
     msg = FakeMessage(text="bank.com", chat_id=99, user_id=99, bot=fake_bot)
     await routing_h.routing_add_apply(msg, c, services, FakeState())
@@ -300,7 +301,7 @@ async def test_device_toggle_touches_only_that_device(
     c = _allowed_client(services, make_active_client, 120)
     phone = services.add_device(c.id, "Телефон")
     gw = services.add_device(c.id, "Шлюз")
-    services.set_routing_all(c.id, True)
+    _routing_all(services, c.id, True)
 
     await _dev_apply(fake_bot, 120, gw.device_id, c.id, c, services)
 
@@ -330,7 +331,7 @@ async def test_device_toggle_rejects_foreign_device(
     a = _allowed_client(services, make_active_client, 122)
     b = _allowed_client(services, make_active_client, 123)
     victim = services.add_device(b.id, "Чужой")
-    services.set_routing_all(b.id, True)
+    _routing_all(services, b.id, True)
 
     cb, _ = _cb(fake_bot, 122)
     await routing_h.routing_device_toggle(
@@ -464,7 +465,7 @@ async def _foreign_setup(services, make_active_client, monkeypatch, tg=140):
     services.add_device(admin.id, "Мой")
     other = _allowed_client(services, make_active_client, tg)
     services.add_device(other.id, "Чужой")
-    services.set_routing_all(other.id, True)
+    _routing_all(services, other.id, True)
     services.routing_add_domains(other.id, "a.ru\nb.ru")
     return admin, other
 
@@ -504,7 +505,7 @@ async def test_admin_own_list_without_ref_and_client_cannot_reach_foreign(
     """Без ref админ правит свой список (вход с главной). Пользователь с чужим ref в
     кнопке всё равно правит только свой: чужой id для него не существует."""
     admin, other = await _foreign_setup(services, make_active_client, monkeypatch, tg=141)
-    services.set_routing_all(admin.id, True)
+    _routing_all(services, admin.id, True)
     st = FakeState()
     cb, _ = _admin_cb(fake_bot)
     await routing_h.routing_add_start(cb, RoutingCB(action="add", ref=0), None, services, st)

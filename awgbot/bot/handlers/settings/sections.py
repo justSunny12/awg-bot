@@ -16,14 +16,13 @@ from awgbot.bot.callbacks import SetCB
 from awgbot.bot.handlers import settingscore as core
 from awgbot.bot.roles import MAIN
 from awgbot.bot.notifier import send_notifications
-from awgbot.domain.services import ServiceError
 from awgbot.bot.handlers import pick
-from awgbot.bot.handlers.common import call, edit, send_menu, show_main_menu, card_from_main, drop_message
+from awgbot.bot.handlers.common import call, edit, show_main_menu, card_from_main, drop_message
 
 log = logging.getLogger("awgbot.handlers.settings")
 from ._router import router
 from .inputs import _routing_provision
-from .render import _drop_bundle_msgs, _render, _screen, _shared, card_kb
+from .render import _render, _screen, _shared
 
 # ── открытие раздела ─────────────────────────────────────────────────────────
 @router.callback_query(SetCB.filter(F.act == "open"))
@@ -155,42 +154,13 @@ async def routing_action(cb: CallbackQuery, callback_data: SetCB, services, stat
         await _render(cb, "rt", services)
         await cb.answer("РФ-доступ выключен")
         return
-    if callback_data.key == "bundle_menu":
-        # кнопка файлов, выданных до 3.1.0: файл уходит из чата, главная — новым
+    if callback_data.key in ("bundle_menu", "bundle_cancel", "bundle_home"):
+        # кнопки под файлом первого применения прежних выпусков (до 3.1.0 —
+        # bundle_menu, затем «🛰 Карточка шлюза» / «⬅️ В меню»): внутри файла
+        # ключ линка — сообщение уходит из чата, главная — новым
         await drop_message(cb, services)
         await show_main_menu(cb.message, services, "admin")
         await cb.answer()
-        return
-    if callback_data.key in ("bundle_cancel", "bundle_home"):
-        # «В карточку» / «На главную» под файлом первого применения (и
-        # шифрованным файлом перевыпуска в старых сообщениях): файл и сообщение над ним (погасшая карточка, инструкция)
-        # уходят из чата — внутри ключ линка, — человек возвращается в карточку
-        # слота, для которого выпускал, или на главную
-        slot = int(callback_data.val or 0)
-        where = await call(services.gw_bundle_msg_get, slot) if slot else {}
-        # запись — о последнем файле слота; «В меню» на прежнем (Telegram не дал
-        # его удалить при перевыпуске) убирает только его, запись нового цела
-        if where and int(where.get("file") or 0) == cb.message.message_id:
-            await _drop_bundle_msgs(cb.bot, services, slot, where=where)
-        else:
-            try:
-                await cb.bot.delete_message(cb.message.chat.id, cb.message.message_id)
-            except Exception:                              # noqa: BLE001
-                pass
-        try:
-            st = await call(services.gateway_screen_state, slot) if slot else None
-        except ServiceError:
-            st = None
-        if st is None and slot and callback_data.key == "bundle_cancel":
-            # «🛰 Карточка шлюза» под файлом снятого шлюза: сказать, а не молча на главную
-            await cb.answer(texts.GATEWAY_GONE, show_alert=True)
-        else:
-            await cb.answer()
-        if st is None or callback_data.key == "bundle_home":
-            await show_main_menu(cb.message, services, "admin")
-            return
-        await send_menu(cb.message, services, texts.gateway_card_text(st, st["states"]),
-                        card_kb(st, cb.message.chat.id))
         return
     if callback_data.key in ("allow", "allow_all", "allow_apply"):
         await _users_action(cb, callback_data, services, state)

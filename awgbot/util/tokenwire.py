@@ -21,7 +21,6 @@ import re
 import struct
 
 FORMAT = 1
-HOST_MAX = 63
 HOST_RE = re.compile(r"[A-Za-z0-9.-]{1,63}\Z")
 SUM = 4
 OBF_LEN = 3 + 4 + 32          # Jc, Jmin, Jmax; S1–S4; H1–H4

@@ -25,7 +25,6 @@ from awgbot.util import timeutil
 JOIN_TTL = 3600            # команда — чтобы выполнить её сейчас, а не хранить
 MAX_SESSIONS = 10          # сессий по токену
 MAX_ATTEMPTS = 3           # неверных кодов на токен
-JOIN_KEY = "gw_join"
 
 # состояния записи: код ещё не введён; сопряжение идёт (код верный, смена ключей
 # не зафиксирована); запись живая — слот занят (возврат ещё не сделан); до
@@ -57,7 +56,7 @@ def new_device_name(slot: int) -> str:
 
 
 class GwJoinStateMixin:
-    _JOIN_KEY = "gw_join"               # = JOIN_KEY: литералом — его видит сторож реестра слотовых ключей
+    _JOIN_KEY = "gw_join"               # литералом — его видит сторож реестра слотовых ключей
 
     def gwjoin(self, slot_id: int) -> dict:
         raw = self.db.get_state(self._gw_slot_key(self._JOIN_KEY, slot_id)) or ""

@@ -9,7 +9,7 @@ import pytest
 from awgbot.core import config
 from awgbot.core.blocks import DeviceBlock
 
-from tests.integration._services_routing_common import _device, _srcset
+from tests.integration._services_routing_common import _device, _routing_all, _srcset
 
 pytestmark = pytest.mark.integration
 
@@ -22,7 +22,7 @@ def test_both_layers_required(services, db, make_active_client, fake_routing):
     c = make_active_client()
     dc = _device(services, c)
 
-    services.set_routing_all(c.id, True)                  # только пользователь
+    _routing_all(services, c.id, True, [dc.device_id])    # только пользователь
     assert not fake_routing.sets.get(_srcset(c.id))
 
     services.set_routing_allowed(c.id, True)                 # + разрешение админа
@@ -36,7 +36,7 @@ def test_revoking_permission_kills_effect_but_keeps_flags(
     c = make_active_client()
     dc = _device(services, c)
     services.set_routing_allowed(c.id, True)
-    services.set_routing_all(c.id, True)
+    _routing_all(services, c.id, True)
     assert fake_routing.sets[_srcset(c.id)] == [dc.address]
 
     services.set_routing_allowed(c.id, False)
@@ -53,11 +53,11 @@ def test_bulk_toggle_switches_all_devices_at_once(
     c = make_active_client()
     d1, d2 = _device(services, c, "A"), _device(services, c, "B")
     services.set_routing_allowed(c.id, True)
-    services.set_routing_all(c.id, True)
+    _routing_all(services, c.id, True)
     assert sorted(fake_routing.sets[_srcset(c.id)]) == sorted(
         [d1.address, d2.address])
 
-    services.set_routing_all(c.id, False)
+    _routing_all(services, c.id, False)
     assert not fake_routing.sets.get(_srcset(c.id))
 
 
@@ -68,7 +68,7 @@ def test_blocked_device_stays_in_set(services, make_active_client, fake_routing)
     c = make_active_client()
     dc = _device(services, c)
     services.set_routing_allowed(c.id, True)
-    services.set_routing_all(c.id, True)
+    _routing_all(services, c.id, True)
 
     services._device_set_block(dc.device_id, DeviceBlock.USER)
     services.reconcile_routing()
@@ -139,12 +139,11 @@ def test_holder_has_own_domains_and_toggles(services, make_active_client, fake_r
     assert services.routing_allowed_for(guest) is True
     assert services.routing_client_visible(guest) is True
     # гость выключил — владелец не тронут
-    services.toggle_routing_device(lent.device_id)
+    _routing_all(services, guest.id, False)
     assert not fake_routing.sets.get(_srcset(guest.id))
     assert services.routing_profile_on(guest.id) is False
-    assert services.set_routing_all(owner.id, False) == 0 or True
     # владелец «включить все» не трогает переданное — управляет держатель
-    services.set_routing_all(owner.id, True)
+    assert _routing_all(services, owner.id, True) == 0
     assert services.db.get_device(lent.device_id).routing_on == 0
 
 
@@ -160,7 +159,7 @@ def test_client_holder_mixes_own_and_held_under_owner_permissions(
     assert services.routing_allowed_for(holder) is True
     assert [d.id for d in services.routing_devices(holder.id)] == [lent.device_id]
     assert fake_routing.sets[_srcset(holder.id)] == [lent.address]
-    services.set_routing_all(holder.id, True)
+    _routing_all(services, holder.id, True, [own.device_id, lent.device_id])
     assert fake_routing.sets[_srcset(holder.id)] == [lent.address], "своё без разрешения — не в режиме"
     assert services.db.get_device(own.device_id).routing_on == 1, "флаг стоит, ждёт разрешения"
 

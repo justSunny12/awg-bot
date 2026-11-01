@@ -122,10 +122,6 @@ class ReserveQuorumMembersMixin:
         self.__dict__["_qmem_sent"] = (int(m.g), now)
         return m.to_dict()
 
-    def reserve_qmem_reset(self) -> None:
-        """Новая сессия пары — состав второй стороне заново."""
-        self.__dict__["_qmem_sent"] = None
-
     def reserve_qmem_in(self, body: dict) -> list[tuple]:
         """`qmem` от основы второй линии: её состав — ко мне (проверка формы), ответ `qmem_ok`."""
         try:

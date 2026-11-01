@@ -75,7 +75,7 @@ async def do_reconcile(services: Services, bot: Bot) -> None:
 
 
 async def report_update_result(bot, services) -> None:
-    """Финишер self-update: убрать «дождись», отчитаться, ЕДИНСТВЕННАЯ живая
+    """Финишер self-update: отчитаться, ЕДИНСТВЕННАЯ живая
     кнопка «В меню». Финишер, дошедший отложенным повтором 429 уже после нового
     окна обновления («доступна следующая», «В меню»), кнопку с себя снимает:
     последней живой должна быть кнопка актуального окна, а не его.
@@ -86,13 +86,7 @@ async def report_update_result(bot, services) -> None:
     «В меню», сколько было ступеней, и все ведут в одно место. Тексты при этом
     не трогаем: сама история «какая ступень чем закончилась» ценна.
     """
-    wait = await asyncio.to_thread(services.pop_update_wait)
     note = await asyncio.to_thread(services.confirm_applied_update)
-    if wait is not None:                                 # прибрать «дождись» всегда
-        try:
-            await bot.delete_message(chat_id=wait[0], message_id=wait[1])
-        except Exception:                               # noqa: BLE001
-            pass
     if note is None:
         return
     # кнопки у ВСЕХ прошлых окон обновления — долой (история, не один id:

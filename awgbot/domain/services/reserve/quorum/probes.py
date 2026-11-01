@@ -179,10 +179,6 @@ class ReserveQuorumProbesMixin:
     def reserve_qprobe_sent(self, digest: str) -> None:
         self.rsv_update("rsv_view", qprobe_sent=str(digest))
 
-    def reserve_qprobe_reset(self) -> None:
-        """Новая сессия пары — конфиг зонда второй стороне заново."""
-        self.rsv_update("rsv_view", qprobe_sent="")
-
     def reserve_qprobe_in(self, l: str, g: int, conf: str) -> None:
         """`qprobe` от основы второй линии: мой интерфейс зонда к её AWG."""
         if l not in qm.SIDES or l == self.reserve_quorum_side():

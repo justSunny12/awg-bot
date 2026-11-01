@@ -124,9 +124,6 @@ def core_covered(core, announced) -> list[str]:
 
 
 class ReserveTgPoolMixin:
-    def reserve_tg_pool(self) -> dict:
-        return _read()
-
     def _tg_pool_cfg(self) -> dict:
         asns = settings.get("app.reserve.tg_pool_asns", [62041, 62014, 59930, 44907, 211157]) or []
         return {"asns": [int(a) for a in asns if str(a).isdigit() or isinstance(a, int)],

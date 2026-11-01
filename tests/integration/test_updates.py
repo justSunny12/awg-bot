@@ -385,14 +385,6 @@ def test_confirm_applied_update_success(services, monkeypatch):
     assert services.confirm_applied_update() is None       # флаг стёрт — однократно
 
 
-def test_update_wait_roundtrip(services):
-    """set/pop «дождись»-сообщения: одноразово, парсится обратно в (chat, msg)."""
-    assert services.pop_update_wait() is None
-    services.set_update_wait(12345, 678)
-    assert services.pop_update_wait() == (12345, 678)
-    assert services.pop_update_wait() is None              # одноразово
-
-
 def test_confirm_applied_update_failure(services, monkeypatch):
     monkeypatch.setattr(cfg, "INSTALLED_VERSION", "1.1.0")  # версия не сменилась
     services.db.set_state("update_pending", "v1.1.1")

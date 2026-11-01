@@ -63,7 +63,6 @@ class JoinMixin:
             return
         old = self._join_sessions.get(slot)
         self._join_sessions[slot] = sess
-        sess.join_sid = res["sid"]
         if old is not None and old is not sess:
             await self._close_session(old)            # живая — одна: новая вытесняет прежнюю
         try:

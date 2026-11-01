@@ -115,8 +115,8 @@ class FeedsMixin:
 
     async def _maybe_installed(self) -> None:
         """Первый выход на связь после установки — серверу «installed»: там по
-        нему уберут файл первого применения из чата и скажут админу, что шлюз
-        настроен. После снимка: серверу нужен бот шлюза из него."""
+        нему скажут админу, что шлюз настроен. После снимка: серверу нужен бот
+        шлюза из него."""
         if not await asyncio.to_thread(self.services.installed_report_pending):
             return
         if await self._send("installed", {}, pad=gwlink.PAD_DELTA):

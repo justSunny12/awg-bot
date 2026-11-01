@@ -10,11 +10,6 @@ from tests.screens.shots_admin_common_gw import (LAN2, NASPI, PI4, TOKEN, TOKEN2
                                                  _drop_slot2, _gw, _label, _routing, _slots)
 
 
-def _first_run_file1(services, mp):
-    """В чате лежит файл первого применения слота 1 (#40) под инструкцией (#39)."""
-    services.gw_bundle_msg_set(1, config.ADMIN_ID, 40, 39)
-
-
 def _rt_off(services, mp):
     """РФ-доступ развёрнут, но выключен."""
     who = _people(services)
@@ -143,10 +138,10 @@ GATEWAYS = [
          data=_slots(1, lan=True), title="рецепт роутера: OpenWrt"),
     Shot("adm.gw.bundle.card", role="admin",
          press=[SetCB(sec="rt", act="do", key="bundle_cancel", val="1")],
-         data=_gw(1, _first_run_file1), title="«🛰 Карточка шлюза» под файлом первого применения"),
+         data=_gw(1), title="«🛰 Карточка шлюза» под файлом первого применения прежнего выпуска — сообщение прочь, главная"),
     Shot("adm.gw.bundle.home", role="admin",
          press=[SetCB(sec="rt", act="do", key="bundle_home", val="1")],
-         data=_gw(1, _first_run_file1), title="«⬅️ В меню» под файлом первого применения"),
+         data=_gw(1), title="«⬅️ В меню» под файлом первого применения прежнего выпуска — сообщение прочь, главная"),
     Shot("adm.gw.lan_nets", role="admin", press=[GwSlotCB(action="lan_nets", slot=1)], data=_slots(1),
          title="локальные подсети: приглашение"),
     Shot("adm.gw.lan_nets.done", role="admin", press=[GwSlotCB(action="lan_nets", slot=1)], text="192.168.1.0/24",

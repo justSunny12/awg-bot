@@ -90,7 +90,6 @@ class GuestCtlServer:
         self._server: asyncio.AbstractServer | None = None
         self._writer: asyncio.StreamWriter | None = None
         self.online_count: int = 0
-        self.online_at: float = 0.0
         self.replica: bytes | None = None          # последняя реплика от гостя (шифротекст)
         self.back_requested_at: float = 0.0
         self._state_sent: str = ""
@@ -161,7 +160,6 @@ class GuestCtlServer:
         kind = msg["kind"]
         if kind in ("hello", "online"):
             self.online_count = int(msg.get("online", msg.get("n", 0)) or 0)
-            self.online_at = time.time()
             if isinstance(msg.get("jrn"), dict):
                 await asyncio.to_thread(self.services.reserve_guest_jrn_seen, msg["jrn"])
             if kind == "hello":

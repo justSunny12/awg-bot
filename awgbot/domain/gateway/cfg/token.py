@@ -93,9 +93,3 @@ class CfgTokenMixin:
     def cfg_token_note_clear(self) -> None:
         """Сказали — метку прочь (не дошло — останется до следующего старта)."""
         self.db.set_state(_NOTE_KEY, "")
-
-    def cfg_token_note_take(self) -> bool:
-        if self.cfg_token_note_pending():
-            self.cfg_token_note_clear()
-            return True
-        return False

@@ -181,12 +181,12 @@ EVENTS = [
     _shot("gw.event.restarted", call=("restore_panel_after_restart", _restart_panel), restart_wait=True,
           title="обещание «вернётся через несколько секунд» исполнено, панель следом"),
     _shot("gw.event.updated", call=("report_update_result", _update_result), update_pending="v1.2.3",
-          update_wait=True, title="обновление руками применилось: «дождись» убрано, итог со списком изменений"),
+          title="обновление руками применилось: итог со списком изменений"),
     _shot("gw.event.updated.fleet", call=("report_update_result", _update_result), update_pending="v1.2.3",
           upd={"target": "v1.2.3", "state": "applying", "step": "v1.2.3"},
           title="обновление по команде сервера AWG: одна строка без звука"),
     _shot("gw.event.update_failed", call=("report_update_result", _update_result), update_pending="v1.2.4",
-          update_wait=True, title="обновление не применилось"),
+          title="обновление не применилось"),
     _shot("gw.event.rebooted", call=("_announce_reboot", _rebooted), title="шлюз перезагрузился — бот снова на связи"),
 
     # ── общее: «Скрыть» на итоге ────────────────────────────────────────────

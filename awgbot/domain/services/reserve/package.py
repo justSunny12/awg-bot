@@ -430,10 +430,6 @@ class ReservePackageMixin:
         self.reserve_keep_drop()
 
     @staticmethod
-    def pkg_chunks(blob_hex: str) -> list[str]:
-        return pairproto.chunks(blob_hex)
-
-    @staticmethod
     def pkg_too_big(blob: bytes) -> str:
         """Шифротекст не уложится в MAX_CHUNKS частей канала пары — текст причины, иначе ''."""
         try:

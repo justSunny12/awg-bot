@@ -99,10 +99,6 @@ def wipe() -> str:
     return run("wipe")
 
 
-def selftest() -> str:
-    return run("selftest", timeout=60)
-
-
 def ns_path() -> str:
     from awgbot.util import netns
     return netns.path_of(NS)

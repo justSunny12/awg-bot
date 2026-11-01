@@ -50,10 +50,6 @@ def _db_facts() -> tuple[list[str], list[str]]:
         return [], []
 
 
-def _admin_ips() -> list[str]:
-    return _db_facts()[0]
-
-
 def _spec():
     admin, links = _db_facts()
     return nftguard.build_spec(admin, transit_links=links)

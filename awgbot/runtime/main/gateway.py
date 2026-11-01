@@ -113,8 +113,8 @@ async def run_gateway() -> None:
     except Exception as e:                               # noqa: BLE001
         log.warning("gateway preflight warnings: %s", e)
 
-    # Итог self-update — общий финишер обеих ролей: убрать «дождись»,
-    # отчитаться, единственная живая кнопка «В меню».
+    # Итог self-update — общий финишер обеих ролей: отчитаться,
+    # единственная живая кнопка «В меню».
     try:
         await pkg.report_update_result(bot, services)
     except Exception as e:                               # noqa: BLE001

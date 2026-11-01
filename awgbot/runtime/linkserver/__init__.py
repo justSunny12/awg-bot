@@ -133,12 +133,6 @@ async def join_close(services, slot: int, why: str) -> str:
         return await _server.join_close(int(slot), why)
     return await asyncio.to_thread(services.gwjoin_revert, int(slot), why) or ""
 _on_notes = None
-_on_rekeyed = None
-def set_on_rekeyed(fn) -> None:
-    """Ключи линка слота сменены (async fn(slot_id)): прежний файл конфигурации
-    слота в чате админа больше не годится — его убирает main."""
-    global _on_rekeyed
-    _on_rekeyed = fn
 
 
 def set_on_notes(fn) -> None:
@@ -255,5 +249,5 @@ async def shutdown() -> None:
 
 from .upd import set_on_fleet  # noqa: E402
 
-__all__ = ["set_on_fleet", "set_on_notes", "_on_notes", "set_on_rekeyed", "_on_rekeyed", "LinkServer", "HELLO_TIMEOUT", "DEFAULT_PORT", "_Session", "channel_port", "vps_address", "gw_address",
+__all__ = ["set_on_fleet", "set_on_notes", "_on_notes", "LinkServer", "HELLO_TIMEOUT", "DEFAULT_PORT", "_Session", "channel_port", "vps_address", "gw_address",
            "set_on_installed", "ensure", "liveness_tick", "monitor_tick", "current", "shutdown"]

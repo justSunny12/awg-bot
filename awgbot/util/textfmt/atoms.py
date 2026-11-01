@@ -114,7 +114,6 @@ class Toast:
     no_file = "Файл уже не у меня — пришли его заново"
     file_dropped = "Файл отброшен"
     unblocked = "Разблокировано"
-    extended = "Продлено"
     not_paused = "Подписка не на паузе"
     pause_lifted = "Пауза снята"
 

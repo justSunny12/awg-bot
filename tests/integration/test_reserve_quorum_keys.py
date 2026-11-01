@@ -165,6 +165,24 @@ def test_the_code_from_pairing_and_the_quorum_points_both_open_the_package_after
     assert m.hex() == _keys(line.s)["m"], "точки резерва и шлюза не открыли пакет"
 
 
+def test_the_point_of_each_gateway_is_at_its_slot_x_and_matches_the_reserve_side(line):
+    """Точка шлюза слота N в документе — x = N + 1 (rsvkeys.gateway_x), тот же расчёт,
+    что у QuorumGen.gateway_point: точка не на своём x — у открывающего пакет на
+    резерве (tools/rsvopen) большинство точек не сходится, хотя голоса есть."""
+    line.add_gw(1)
+    line.add_gw(2)
+    line.propose()
+    line.ack_members()
+    line.sync_keys()
+    q = line.s.reserve_qkeys()
+    qg = rsvkeys.QuorumGen(int(q["q_gen"]), shamir.Poly(tuple(bytes.fromhex(c) for c in q["poly"])))
+    for slot in (1, 2):
+        pt = line.s.reserve_quorum_gw_point(slot)
+        x, y = qg.gateway_point(slot)
+        assert (pt["x"], pt["y"], pt["q_gen"], pt["qf"]) == (slot + 1, y.hex(), qg.q_gen, qg.qf), (slot, pt)
+        assert x == slot + 1
+
+
 def test_a_gateway_without_quo1_makes_no_polynomial_and_the_keys_stay(line):
     """Шлюз без `quo1` в состав не входит: многочлена нет — порог при одном голосующем
     был бы 1 (единственная точка второго сервера открыла бы `M`); `M` и код прежние,

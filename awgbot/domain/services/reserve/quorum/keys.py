@@ -231,9 +231,9 @@ class ReserveQuorumKeysMixin:
         poly = self._quorum_poly()
         if poly is None or not self.reserve_quorum_keys_on():
             return {}
-        q = self.reserve_qkeys()
-        x, y = poly.point(rsvkeys.gateway_x(int(slot)))
-        return {"x": int(x), "y": y.hex(), "q_gen": int(q.get("q_gen") or 0), "qf": rsvkeys.q_print(poly.secret)}
+        qg = rsvkeys.QuorumGen(int(self.reserve_qkeys().get("q_gen") or 0), poly)
+        x, y = qg.gateway_point(int(slot))
+        return {"x": int(x), "y": y.hex(), "q_gen": qg.q_gen, "qf": qg.qf}
 
     def reserve_qkeys_body(self) -> dict | None:
         """`qkeys` второму серверу: его точки многочлена и прямой кода, оба ящика; None —

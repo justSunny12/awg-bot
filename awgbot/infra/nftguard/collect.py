@@ -172,7 +172,8 @@ def quorum_probe() -> dict:
                 from awgbot.infra import quoprobe
                 port = quoprobe.port()
             except Exception:                              # noqa: BLE001
-                port = 8789
+                from awgbot.util.quorum.timing import DEFAULT_PORT
+                port = DEFAULT_PORT
             return {"probe_if": config.AWG_INTERFACE, "probe_net4": str(iface.network), "probe_resp4": str(iface.ip),
                     "probe_port": int(port)}
     return {}

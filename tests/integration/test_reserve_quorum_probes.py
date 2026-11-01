@@ -295,7 +295,7 @@ def test_qprobe_carries_the_second_servers_probe_and_goes_once(quo):
     assert "Address = 169.254.88.4/32" in body["conf"]
     quo.reserve_qprobe_sent(body["_digest"])
     assert quo.reserve_qprobe_body() is None, "qprobe повторяется без смены"
-    quo.reserve_qprobe_reset()
+    quo.reserve_pair_sent_reset()                          # новая сессия пары — как в reserve_session_opened
     assert quo.reserve_qprobe_body() is not None, "новая сессия пары — qprobe не переслан"
 
 

@@ -52,14 +52,7 @@ def _nav_live(services, mp):
     services.db.set_nav_message_id(config.ADMIN_ID, 1)
 
 
-# ── шаг 5: файл первого применения слота 2 в чате и выход шлюза на связь ────
-
-def _file2(plain: bool):
-    """В чате админа лежит файл слота 2 (#40) под карточкой или инструкцией (#39)."""
-    def step(services, mp):
-        services.gw_bundle_msg_set(2, config.ADMIN_ID, 40, 39)
-    return step
-
+# ── шаг 5: старый файл слота 2 в чате и выход шлюза на связь ─────────────────
 
 async def _installed2(services, bot):
     from awgbot.bot.handlers.settings import bundle_installed
@@ -140,16 +133,16 @@ CHANNEL = [
          steps=[("start", "gw-2"), ("press", GwSlotCB(action="label", slot=2)), ("press", _LABEL_CANCEL),
                 ("press", _CARD2)],
          data=_slots(2), title="карточка с главной после отмены подписи — «Назад» на главную"),
-    # ── файл слота 2: «В меню» и итоги со шлюза ───────────────────────────
+    # ── файл слота 2 прежнего выпуска и итоги со шлюза ────────────────────
     Shot("adm.gw.bundle.card.gone", role="admin",
          steps=[("call", _drop_slot2, "слот снят"),
                 ("press", SetCB(sec="rt", act="do", key="bundle_cancel", val="2"))],
-         data=_gw(2, _file2(True)), title="«🛰 Карточка шлюза» под файлом снятого слота — главная"),
+         data=_gw(2), title="«🛰 Карточка шлюза» под старым файлом снятого слота — сообщение прочь, главная"),
     Shot("adm.ev.gw_installed.label", role="admin", call=("bundle_installed", _installed2),
-         data=_gw(2, _label(2, "дача 2"), _bot(2, "pi2_gw_bot", "Шлюз <Pi2>"), _file2(True)),
+         data=_gw(2, _label(2, "дача 2"), _bot(2, "pi2_gw_bot", "Шлюз <Pi2>")),
          title="шлюз слота 2 настроен — подпись слота и экранированное имя бота"),
     Shot("adm.ev.gw_installed.nobot", role="admin", call=("bundle_installed", _installed2),
-         data=_gw(2, _file2(True), token=False), title="шлюз настроен, бот неизвестен — без строки бота"),
+         data=_gw(2, token=False), title="шлюз настроен, бот неизвестен — без строки бота"),
     Shot("adm.ev.gw_installed.nofile", role="admin", call=("bundle_installed", _installed2),
-         data=_gw(2, _nav_live, token=False), title="шлюз настроен, файла в чате нет — одно уведомление"),
+         data=_gw(2, _nav_live, token=False), title="шлюз настроен, живое меню в чате — одно уведомление"),
 ]

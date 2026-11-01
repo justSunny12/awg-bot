@@ -232,7 +232,6 @@ def check_doc(parsed: dict, *, link_cidr: str, address: str = "", fixed: dict | 
     return out
 
 
-_HOST_RE = re.compile(r"^[A-Za-z0-9.-]{1,253}$")
 _HEX32_RE = re.compile(r"^[0-9a-f]{32}$")
 _HEX16_RE = re.compile(r"^[0-9a-f]{16}$")
 

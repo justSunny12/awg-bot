@@ -93,16 +93,6 @@ def _from_ts(ts: int):
 
 
 class ReservePairingMixin:
-
-    # ── общее: кто я в сопряжении ───────────────────────────────────────────
-
-    def reserve_pairing_role(self) -> str:
-        """`inviter` / `acceptor` / пусто."""
-        st = self.reserve_invite()
-        if not st.get("id") or st.get("state") not in PAIRING:
-            return ""
-        return str(st.get("role") or "inviter")
-
     def _my_hello_fields(self) -> dict:
         """Что о себе говорит сторона в `hello`/`pair_eph`/`st`."""
         return {"name": str(config.SERVER_NAME or ""), "version": str(config.INSTALLED_VERSION).lstrip("v"),

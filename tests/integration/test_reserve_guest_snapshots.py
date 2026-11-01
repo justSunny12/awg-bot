@@ -146,8 +146,8 @@ def test_without_the_key_file_no_snapshot_is_written_and_nothing_crashes(guest):
     assert not rsvzone.REP_PATH.exists()
 
 
-def test_a_failed_write_keeps_the_stale_mark_so_the_next_tick_retries(guest, monkeypatch):
-    guest.guest_snapshot_mark()
+def test_a_failed_write_keeps_the_stale_mark_so_the_next_tick_retries(guest, make_active_client, monkeypatch):
+    _make(guest, make_active_client)                        # запись в базу гостя — снимок к сроку пачки
     guest._clock.t += 31
     boom = {"on": True}
     real = rsvzone.write_private

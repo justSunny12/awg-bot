@@ -66,7 +66,7 @@ class ReserveMergeOpsMixin:
         try:
             removed = [] if no_base else self._pubkeys_removed(base, rep)
             before = self._merge_watch_snapshot(base)
-            rpt = merge_mod.merge(self._db_path(), base, rep, admin_tg=int(config.ADMIN_ID), no_delete=no_base,
+            rpt = merge_mod.merge(self._db_path(), base, rep, no_delete=no_base,
                                   mark=(MERGED_KEY, str(episode)) if episode else None)
             warnings = self._merge_watch_lines(before)
             if no_base:

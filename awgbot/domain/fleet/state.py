@@ -26,7 +26,6 @@ import secrets
 
 RUN_KEY = "fleet_target"
 RELEASE_KEY = "fleet_release"
-SLOT_KEY = "gwupd"   # слотовый ключ — в реестре gateway_link/slotkeys.py
 
 RUNNING, ROLLING_BACK, DONE, ROLLED_BACK, ROLLBACK_FAILED = (
     "running", "rolling_back", "done", "rolled_back", "rollback_failed")
@@ -42,7 +41,7 @@ def new_id() -> str:
 class FleetStateMixin:
     """Чтение и запись хода и состояний шлюзов."""
 
-    _FLEET_SLOT_KEY = "gwupd"           # = SLOT_KEY: литералом — его видит сторож реестра
+    _FLEET_SLOT_KEY = "gwupd"           # слотовый ключ литералом — его видит сторож реестра gateway_link/slotkeys
 
     def fleet_run(self) -> dict:
         data = self.db.get_state_json(RUN_KEY, {})

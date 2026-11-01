@@ -47,10 +47,6 @@ class EditTrafficLimit(StatesGroup):
     value = State()               # новый лимит потребления (ГБ); ref в FSM: пользователь/устройство
 
 
-class BlockPauseDays(StatesGroup):
-    days = State()                # админ вводит длительность приостановки (0=бессрочно)
-
-
 class AdminAddDevice(StatesGroup):
     name = State()                # админ вводит имя устройства для пользователя
     traffic = State()             # лимит потребления устройства
