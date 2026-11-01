@@ -510,6 +510,20 @@ def test_an_unresolvable_name_pins_nothing_and_does_not_fail(services, rsv, monk
     assert not settings.get("app.network.self_host")
 
 
+def test_pinning_without_a_substituted_resolver_does_not_go_to_the_network(services, rsv):
+    """Тест пары без своей подстановки резолвера: собственный адрес у
+    авторитетного сервера записи не ищется в сети — ответ «сеть недоступна»
+    подставного мира conftest сразу (раньше каждый такой тест стоял на
+    таймаутах настоящего DNS-запроса)."""
+    import time
+    from tests import netguard
+    settings.set_value("app.network.self_host", "")
+    t0 = time.monotonic()
+    assert services.reserve_pin_self_host() == ""
+    assert time.monotonic() - t0 < 1, "закрепление адреса ждало сети"
+    assert netguard.take() == [], "закрепление адреса выходило в сеть"
+
+
 def test_the_stuck_probe_is_jittered(stuck, monkeypatch):
     """Проба зависшего вебхука — сетевая задача по расписанию: строго
     периодический запрос к DNS выглядит маячком."""

@@ -109,7 +109,8 @@ def test_smtps_socket_comes_from_connect4_with_sni_by_host(monkeypatch):
         seen.append((host, port, timeout))
         return ("sock", host)
     monkeypatch.setattr(net4, "connect4", fake)
-    s = net4.SMTP_SSL4(context=_Ctx())                    # без хоста — соединения в конструкторе нет
+    # без хоста — соединения в конструкторе нет; имя для EHLO — явно (умолчание — getfqdn, запрос в сеть)
+    s = net4.SMTP_SSL4(context=_Ctx(), local_hostname="client.example.org")
     s._host = "smtp.example.org"
     assert s._get_socket("smtp.example.org", 465, 10.0) == ("tls", ("sock", "smtp.example.org"))
     assert seen == [("smtp.example.org", 465, 10.0)] and wrapped[0][1] == "smtp.example.org"

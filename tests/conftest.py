@@ -32,6 +32,12 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
+# Сеть закрыта — до любого импорта awgbot (модуль, взявший ссылку на
+# socket.getaddrinfo при импорте, иначе держал бы настоящую): tests/netguard.py,
+# проверка по тестам — автоматическая фикстура _no_network ниже.
+from tests import netguard as _netguard             # noqa: E402
+_netguard.install()
+
 # Секреты, которые config.validate() требует всегда (чтобы импорт config и часть
 # тестов не спотыкались о них). Реальные значения тестам не нужны.
 os.environ.setdefault("BOT_TOKEN", "12345:test-token")
@@ -121,6 +127,10 @@ def db(tmp_path):
 def pytest_configure(config):
     config.addinivalue_line("markers", "jrn_raw(reason): тест законно пишет мимо журнала данных резерва "
                                        "(сырое соединение, подмена файла базы) — сторож эквивалентности его не сверяет")
+    config.addinivalue_line("markers", "real_dns: настоящее чтение записей util/dnsapi (тест сам подменяет сокет "
+                                       "и резолвер) — без подставного «сеть недоступна» conftest")
+    config.addinivalue_line("markers", "resolve_pool: настоящий потолок разрешения имён util/nets (пул потоков "
+                                       "на тест) — без прямого вызова conftest")
 
 
 @pytest.hookimpl(hookwrapper=True)
@@ -826,6 +836,36 @@ def _repo_conf_untouched():
     after = _repo_conf_digest()
     changed = sorted(n for n in before.keys() | after.keys() if before.get(n) != after.get(n))
     assert not changed, f"прогон тестов изменил conf/ репозитория: {changed}"
+
+
+@pytest.fixture(autouse=True)
+def _no_network():
+    """Тест не выходит в сеть (tests/netguard.py): попытка разрешить имя или
+    соединиться не с петлёй — немедленная ошибка в коде и провал теста здесь,
+    даже если код ошибку поймал. Попытки до теста (хвост чужого потока) — не его."""
+    _netguard.take()
+    yield
+    tried = _netguard.take()
+    if tried:
+        pytest.fail("тест выходил в сеть — подменяй резолвер или сокет:\n  " + "\n  ".join(dict.fromkeys(tried)),
+                    pytrace=False)
+
+
+@pytest.fixture(autouse=True)
+def _names_resolve_at_once(request, monkeypatch):
+    """Имена в тестах — без сети и без ожидания (tests/netguard.py): чтение
+    записей DNS «сеть недоступна» сразу (кроме метки real_dns), разрешение с
+    потолком — в потоке теста, а не в общем пуле процесса (кроме метки
+    resolve_pool: там настоящий потолок на своём пуле теста)."""
+    if not request.node.get_closest_marker("real_dns"):
+        _netguard.quiet_dns(monkeypatch)
+    if request.node.get_closest_marker("resolve_pool"):
+        pool = _netguard.real_resolve_pool(monkeypatch)
+        yield
+        pool.shutdown(wait=False, cancel_futures=True)
+        return
+    _netguard.resolve_at_once(monkeypatch)
+    yield
 
 
 @pytest.fixture(autouse=True)

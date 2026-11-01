@@ -210,7 +210,9 @@ def test_smtp_connects_through_connect4_with_the_source_address(monkeypatch):
     и исходным адресом сессии; таймаут 0 (неблокирующий сокет) отвергается,
     как у smtplib."""
     seen = _trace_connect4_ok(monkeypatch)
-    s = net4.SMTP4()                              # без хоста — соединения в конструкторе нет
+    # без хоста — соединения в конструкторе нет; имя для EHLO — явно: умолчание smtplib
+    # (socket.getfqdn) — обратный запрос имени машины в сеть
+    s = net4.SMTP4(local_hostname="client.example.org")
     s.source_address = ("10.0.0.2", 0)
     assert s._get_socket("smtp.example.org", 587, 10.0) == ("sock", "smtp.example.org", 587)
     assert seen == [("smtp.example.org", 587, 10.0, ("10.0.0.2", 0))], "SMTP-сокет не от connect4"

@@ -28,7 +28,7 @@ import pytest
 from awgbot.util import dnsapi
 from awgbot.util.dnsapi import cloudflare, common, digitalplat, duckdns, dyndns2, manual
 
-pytestmark = pytest.mark.unit
+pytestmark = [pytest.mark.unit, pytest.mark.real_dns]       # здесь проверяется сам DNS-клиент: сеть подменена сокетом
 
 
 # ── синтетические сообщения DNS ──────────────────────────────────────────────
@@ -237,6 +237,7 @@ def test_the_system_resolver_view_and_its_failure(monkeypatch):
     assert dnsapi.read_system("vpn.example.net") == []
 
 
+@pytest.mark.resolve_pool                          # настоящий потолок — на своём пуле теста
 def test_a_hung_system_resolver_is_cut_at_the_timeout_and_the_default_stays(monkeypatch):
     """getaddrinfo своего таймаута не знает, а socket.setdefaulttimeout на него
     не действует и меняет умолчание всему процессу (параллельный вызов мог
