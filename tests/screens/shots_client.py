@@ -71,7 +71,7 @@ def vasya(devices=(), *, limit=3, period="year", traffic=0, rf=False, rf_on=True
         if rf:
             services.set_routing_allowed(cid, True)
             if not rf_on:
-                services.set_routing_all(cid, False)
+                services.set_routing_devices({d.id: False for d in services.routing_devices(cid)})
             if rf_down:
                 services.db.set_state("routing_link_ok", "0")
             if domains:

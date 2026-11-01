@@ -286,22 +286,6 @@ class RoutingAccessMixin:
                         else routing_revoked_holder_notice(client)))
         return notes
 
-    def set_routing_all(self, client_id: int, on: bool) -> int:
-        """Массовое включение/выключение по всему профилю. Возвращает, сколько
-        устройств изменилось.
-
-        Досева при включении здесь нет. Он существовал для обратной модели, где
-        набор означал «за границу»: без него сервис с закэшированным у пользователя
-        адресом уезжал на шлюз и получал отказ. В нынешней модели набор означает
-        «на шлюз», и промах даёт мягкий эффект — российский сервис просто
-        продолжит ходить как ходил, пока кэш не истечёт. Резолвить ради этого
-        шестьсот доменов по нажатию тумблера значило бы подвесить обработчик.
-        """
-        n = self.db.set_devices_routing(client_id, on)
-        if n:
-            self.reconcile_routing()
-        return n
-
     def set_routing_device(self, device_id: int, on: bool) -> None:
         """Переключатель одного устройства. ПАРНЫЙ: в окне переезда человек
         видит и щёлкает двойника, а его реальный трафик до переимпорта идёт со
@@ -333,16 +317,6 @@ class RoutingAccessMixin:
         if n:
             self.reconcile_routing()
         return n
-
-    def toggle_routing_device(self, device_id: int) -> Optional[bool]:
-        """Инвертировать флаг устройства. Возвращает новое состояние, None —
-        устройства нет (колбэк из старого сообщения в истории чата)."""
-        dev = self.db.get_device(device_id)
-        if dev is None:
-            return None
-        new_state = not bool(dev.routing_on)
-        self.set_routing_device(device_id, new_state)
-        return new_state
 
 
     # ── Личный список доменов ────────────────────────────────────────────────

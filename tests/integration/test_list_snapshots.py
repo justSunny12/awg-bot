@@ -33,6 +33,7 @@ from awgbot.bot.callbacks import FriendCB, GwCB, Menu, RoutingCB
 from awgbot.core import config
 from awgbot.infra.db import listsnap
 from awgbot.util import timeutil
+from tests.integration._services_routing_common import _routing_all
 
 pytestmark = pytest.mark.integration
 
@@ -508,7 +509,7 @@ async def test_a_user_opens_the_snapshot_of_his_own_sites_report(services, make_
     services.bot_username = "test_bot"
     c = make_active_client(tg_id=7101, name="Вася")
     services.set_routing_allowed(c.id, True)
-    services.set_routing_all(c.id, True)
+    _routing_all(services, c.id, True)
     c = services.db.get_client(c.id)
     st = FakeState()
     await st.update_data(rt_client=c.id)
@@ -774,7 +775,7 @@ async def _sites_report(services, make_active_client, fake_bot, monkeypatch, rej
     services.bot_username = "test_bot"
     c = make_active_client(tg_id=7102, name="Петя")
     services.set_routing_allowed(c.id, True)
-    services.set_routing_all(c.id, True)
+    _routing_all(services, c.id, True)
     c = services.db.get_client(c.id)
     monkeypatch.setattr(services, "routing_add_domains",
                         lambda cid, text: SimpleNamespace(added=[], rejected=list(rejected), over_limit=0, limit=100))

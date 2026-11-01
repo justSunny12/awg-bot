@@ -8,7 +8,7 @@ import pytest
 
 from awgbot.core import config
 
-from tests.integration._services_routing_common import _device, _srcset
+from tests.integration._services_routing_common import _device, _routing_all, _srcset
 
 pytestmark = pytest.mark.integration
 
@@ -110,13 +110,13 @@ def test_user_toggle_does_not_restart_the_resolver(
     c = make_active_client()
     services.set_routing_allowed(c.id, True)
     _device(services, c)
-    services.set_routing_all(c.id, False)                 # выключил сам
+    _routing_all(services, c.id, False)                 # выключил сам
     services.reconcile_routing()
 
     writes = fake_routing.conf_writes
-    services.set_routing_all(c.id, True)
-    services.set_routing_all(c.id, False)
-    services.set_routing_all(c.id, True)
+    _routing_all(services, c.id, True)
+    _routing_all(services, c.id, False)
+    _routing_all(services, c.id, True)
     assert fake_routing.conf_writes == writes, "тумблер перезапустил резолвер"
 
 
@@ -132,7 +132,7 @@ def test_allowed_but_switched_off_profile_marks_nothing(
     c = make_active_client()
     services.set_routing_allowed(c.id, True)
     _device(services, c)
-    services.set_routing_all(c.id, False)                 # выключил сам
+    _routing_all(services, c.id, False)                 # выключил сам
     services.reconcile_routing()
 
     assert f"{config.ROUTING_SET_USER_PREFIX}{c.id}" in fake_routing.sets, \
