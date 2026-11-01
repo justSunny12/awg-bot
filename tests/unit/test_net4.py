@@ -230,3 +230,15 @@ def test_urlopen_without_an_explicit_timeout_uses_the_project_limit(monkeypatch)
     with pytest.raises(urllib.error.URLError, match="connect4-stub"):
         net4.urlopen("https://api.example.net/")
     assert seen == [("api.example.net", 443, 10.0)], "без явного timeout до соединения дошло не 10 с"
+
+
+def test_smtp_without_a_name_says_the_local_host_name_and_never_asks_dns(monkeypatch):
+    """Имя EHLO по умолчанию — локальное имя машины: smtplib сам звал socket.getfqdn()
+    (обратный DNS без предела) — проверка и отправка почты висели бы на медленном резолвере."""
+    import socket as _s
+    from awgbot.util import net4
+    monkeypatch.setattr(_s, "getfqdn", lambda *a: (_ for _ in ()).throw(AssertionError("getfqdn вызван")))
+    monkeypatch.setattr(_s, "gethostname", lambda: "srv-a")
+    assert net4.SMTP4().local_hostname == "srv-a"
+    assert net4.SMTP_SSL4().local_hostname == "srv-a"
+    assert net4.SMTP4(local_hostname="mx.example.org").local_hostname == "mx.example.org"

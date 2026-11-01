@@ -88,8 +88,20 @@ class IMAP44(imaplib.IMAP4):
         return connect4(self.host, self.port, timeout)
 
 
+def _ehlo_name(local_hostname):
+    """Имя для EHLO: заданное — как есть; иначе локальное имя машины. smtplib по
+    умолчанию зовёт socket.getfqdn() — обратный запрос в DNS без предела по времени
+    (медленный резолвер держал бы проверку и отправку почты сверх «наружу ≤ 10 с»)."""
+    if local_hostname:
+        return local_hostname
+    return socket.gethostname() or "localhost"
+
+
 class SMTP4(smtplib.SMTP):
     """SMTP (STARTTLS по месту вызова), соединение только по IPv4."""
+
+    def __init__(self, host="", port=0, local_hostname=None, *args, **kw):
+        super().__init__(host, port, _ehlo_name(local_hostname), *args, **kw)
 
     def _get_socket(self, host, port, timeout):
         if timeout is not None and not timeout:
@@ -99,6 +111,9 @@ class SMTP4(smtplib.SMTP):
 
 class SMTP_SSL4(smtplib.SMTP_SSL):
     """SMTP с TLS сразу (порт 465), соединение только по IPv4 (SNI и проверка имени — по хосту)."""
+
+    def __init__(self, host="", port=0, local_hostname=None, *args, **kw):
+        super().__init__(host, port, _ehlo_name(local_hostname), *args, **kw)
 
     def _get_socket(self, host, port, timeout):
         if timeout is not None and not timeout:
