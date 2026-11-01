@@ -352,3 +352,18 @@ def _snapshots(snap: Path) -> list[tuple[set, set]]:
 
 def _no_copies(names: set) -> bool:
     return not any(".prev" in n or n.endswith((".bak", ".tmp", ".new")) for n in names)
+
+
+# ── сбой рабочего шага: подставная утилита ──────────────────────────────────
+
+def _flaky(env: dict, name: str, *, when: str = "*", nth: int = 1, how: str = "exit 1") -> Path:
+    """Подмена `name`, которая на `nth`-м вызове с аргументами под шаблон case
+    `when` делает `how` (по умолчанию — код 1), остальные вызовы отдаёт
+    настоящей утилите из /usr/bin:/bin. Возвращает файл счётчика вызовов."""
+    cnt = _bin(env).parent / f"{name}.calls"
+    _fake(_bin(env), name,
+          f'case "$*" in {when})\n'
+          f'  n=$(cat {cnt} 2>/dev/null || echo 0); n=$((n+1)); echo $n > {cnt}\n'
+          f'  [ "$n" = {nth} ] && {{ {how}; }} ;;\nesac\n'
+          f'PATH=/usr/bin:/bin exec {name} "$@"\n')
+    return cnt
