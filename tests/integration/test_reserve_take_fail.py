@@ -7,8 +7,9 @@ _relay_yield, _relay_restore, _tick_relay; inbound: _take_fail, отказ за�
   с прежними сроком и адресом, такт relay перерисовывает файервол и сбрасывает conntrack;
 - открытие без пересылки до него и после неё пересылку не выдумывает: отметка прошлого
   эпизода не тянется;
-- уступившая пересылка оставляет записи conntrack с DNAT на основу — такт clone_up после
-  перерисовки файервола их сбрасывает (`relay_flush`), один раз;
+- записи conntrack с DNAT на основу (уступившая пересылка, кончившаяся раньше, правило прошлого
+  запуска бота в таблице хоста) живут, пока по ним идут пакеты, — такт clone_up каждого открытия
+  после перерисовки файервола их сбрасывает (`relay_flush`), один раз;
 - отметка «срыв идёт» живёт в памяти процесса: процесс, убитый посреди срыва (и отметка
   прежнего выпуска в базе), не оставляет taking навсегда — новый процесс срыв доделывает;
   второй срыв, пока идёт первый, — пустой.
@@ -115,11 +116,31 @@ def test_a_yielded_tail_relay_has_its_conntrack_entries_flushed_after_the_clone_
     assert ("relay_flush",) not in svc.reserve_in_tick(), "сброс на каждом повторе up"
 
 
-def test_an_opening_without_a_tail_relay_flushes_nothing(host):
+def test_an_opening_without_a_tail_relay_still_flushes_once_after_the_clone_is_up(host):
+    """Без уступившей пересылки сброс тоже есть — один, после перерисовки файервола: запись с DNAT
+    на основу могла остаться от правила, о котором этот процесс не знает (прошлый запуск бота,
+    таблица хоста), и живёт, пока по ней идут пакеты (стенд: пробы шлюзов к клону уходили на A).
+    Прежний тест закреплял «без хвоста — без сброса»."""
     svc = host.svc
     assert svc.reserve_go_req_in(7, "button") == ""
     acts = _clone_up_acts(svc, host)
-    assert ("relay_flush",) not in acts, acts
+    kinds = [a[0] for a in acts]
+    assert kinds.count("relay_flush") == 1, acts
+    assert kinds.index("fw") < kinds.index("relay_flush"), f"сброс до перерисовки без DNAT: {acts}"
+    host.clock.advance(31)
+    assert ("relay_flush",) not in svc.reserve_in_tick(), "сброс на каждом повторе up"
+
+
+def test_a_tail_relay_ended_before_the_opening_is_flushed_on_clone_up(host):
+    """Пересылка кончилась раньше открытия (тишина, срок: такт relay снял правило без сброса) —
+    записи её потоков живут keepalive устройств; новое открытие сбрасывает их на clone_up."""
+    svc = host.svc
+    _relay(svc)
+    svc.reserve_set_in("idle", step="", relay_to="", relay_until="")   # пересылка снята тактом relay
+    assert svc.reserve_go_req_in(7, "button") == ""
+    assert not svc.rsv_get("rsv_in").get("relay_flush_due"), "подготовка: хвост не уступал этому открытию"
+    acts = _clone_up_acts(svc, host)
+    assert ("relay_flush",) in acts, f"записи кончившейся пересылки не сброшены: {acts}"
 
 
 def test_a_tail_relay_restored_after_a_failure_does_not_leave_the_flush_mark(host):
