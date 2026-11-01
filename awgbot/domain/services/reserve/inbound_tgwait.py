@@ -14,6 +14,15 @@ inbound_tgwait.py — часть пакета reserve (см. __init__): «пол
 (`awg-bot reserve teardown` — такт serving видит фазу зоны). Срыв без смены записи
 (`record=skipped`) и путь с K основы — как прежде, `_take_fail`.
 
+Слово гостю «ставить ли вебхук» (`tg{go, foreign}` по локальному каналу, на hello и по
+смене — reserve_guest_tg_view; решение одно — reserve_guest_webhook_hold_why): без него
+гость вебхук не ставит, и отметка `tg_take` на диске сама по себе — больше не право (гость после рестарта иначе отнимал бы Telegram у
+основы, которая его уже забрала). `go` — пользователи у меня (taking | serving), факт
+передачи бота (отметка `tg_take`, `released` журнала, принудительный захват, вебхук уже
+был у гостя) и основа Telegram не забирала: её живой `st` после начала эпизода не говорит
+`home`/`returning`, её `taken` в этом эпизоде не приходил, гость не сказал «вебхук не
+здесь» (`webhook_foreign`, в том числе отметкой с прошлого запуска в hello).
+
 `st.in_tg` основе: `forced` — гость держит Telegram по принудительному захвату
 (основа не отдала бота и пропала), `wait` — VPN здесь, бота нет; основа по `forced`
 на сроке шага переезда уходит в away, а не в срыв (outbound_forced).
@@ -92,3 +101,52 @@ class ReserveInboundTgWaitMixin:
         if not inn.get("tg_taken"):
             return "wait"
         return "forced" if inn.get("tg_take_forced") else ""
+
+    def reserve_guest_tg_view(self) -> dict:
+        """`tg{go, foreign}` гостю (локальный канал: hello гостя — его старт и перезапуск — и по
+        смене на такте переезда): `go` — решение reserve_guest_webhook_hold_why, другого пути
+        у слова нет; `foreign` — я знаю, что вебхук был не у гостя (Telegram у основы): гость с
+        такой отметкой без этого знания не ставит."""
+        inn = self._inn()
+        why = self.reserve_guest_webhook_hold_why(inn)
+        if self.__dict__.get("_rsv_guest_tg_why") != why:
+            self.__dict__["_rsv_guest_tg_why"] = why
+            if why and str(inn.get("state") or "") in ("taking", "serving"):
+                log.info("резерв: боту основы у меня вебхук не ставить — %s", why)
+            elif not why:
+                log.info("резерв: боту основы у меня — ставить вебхук")
+        return {"go": not why, "foreign": bool(inn.get("webhook_foreign"))}
+
+    def reserve_guest_webhook_hold_why(self, inn: dict | None = None) -> str:
+        """Единственное решение бота резерва «можно ли гостю (боту основы у меня) ставить
+        вебхук»: пусто — можно, иначе причина запрета. Через него идёт слово `tg{go}` на
+        каждом пути — старт гостя и его перезапуск (hello), смена на такте, переподключение
+        канала. Можно, когда пользователи основы у меня (taking | serving), бот мне передан
+        (отметка `tg_take` — факт записи или released реплики, `released` журнала,
+        принудительный захват, вебхук уже был у гостя) и основа Telegram не забирала: гость
+        не говорил «вебхук не здесь», её `taken` в этом эпизоде не приходил, её живой `st`
+        после начала эпизода не `home`/`returning`. Новое условие запрета — сюда же."""
+        from awgbot.infra import rsvzone
+        inn = self._inn() if inn is None else inn
+        if str(inn.get("state") or "") not in ("taking", "serving"):
+            return "пользователей основы у меня нет"
+        if not (rsvzone.TG_TAKE_FILE.exists() or inn.get("jrn_released") or inn.get("tg_take_forced")
+                or inn.get("tg_taken")):
+            return "бот основы ещё не передан"
+        if inn.get("webhook_foreign"):
+            return "гость сказал «вебхук не здесь» — Telegram у основы"
+        if inn.get("peer_tg_taken"):
+            return "основа сказала taken — Telegram у неё"
+        peer = self.reserve_peer_state()
+        if str(peer.get("out") or "") in ("home", "returning") and self._peer_alive(peer) \
+                and str(peer.get("at") or "") > str(inn.get("open_started") or ""):   # st до начала эпизода — о прошлом
+            return f"основа на связи и {peer.get('out')} — Telegram у неё"
+        return ""
+
+    def reserve_peer_tg_taken_in(self) -> None:
+        """`taken` основы, пока её пользователи у меня (возврат: она забрала Telegram) — гостю
+        вебхук больше не ставить до конца эпизода."""
+        if str(self._inn().get("state") or "") in ("taking", "serving", "releasing") and not self._inn().get("peer_tg_taken"):
+            self.rsv_update("rsv_in", peer_tg_taken=timeutil.now_iso())
+            log.info("резерв: «%s» забрала Telegram (taken) — её боту у меня вебхук не ставить",
+                     self.reserve_peer_name())

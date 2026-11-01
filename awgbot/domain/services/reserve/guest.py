@@ -202,10 +202,16 @@ class ReserveGuestMixin:
 
     def reserve_guest_webhook_in(self, body: dict) -> list[tuple]:
         """Слово гостя о надзоре вебхука: застой доставки — Т-РУ19 админу резерва
-        (один раз на расхождение), восстановление — 🟢."""
+        (один раз на расхождение), восстановление — 🟢; «не здесь» — отметка `webhook_foreign`
+        (гостю вебхук не ставить, inbound_tgwait), «снова мой» — снята."""
         from awgbot.domain.notices import reserve as rn
         from awgbot.infra import rsvzone
         cur = self.rsv_get("rsv_in")
+        if body.get("ours"):
+            if cur.get("webhook_foreign"):
+                self.rsv_update("rsv_in", webhook_foreign=False)
+                log.info("резерв: вебхук бота «%s» снова у гостя", self.reserve_peer_name())
+            return []
         if body.get("foreign"):
             if cur.get("webhook_foreign"):
                 return []                                     # гость повторяет на каждом надзоре — сказано
@@ -237,6 +243,8 @@ class ReserveGuestMixin:
         from awgbot.util.rsvjrn import schema_too_old
         first = not self.__dict__.get("_guest_hook_foreign")
         self.__dict__["_guest_hook_foreign"] = True
+        if first:
+            self._guest_hook_mark_write()
         try:
             got = self.db.jrn_fence(why="вебхук не здесь — Telegram у основы")
         except Exception as e:                                # noqa: BLE001
@@ -246,15 +254,64 @@ class ReserveGuestMixin:
         if first or got is not None:
             log.warning("гость: вебхук не здесь — решений больше не пишу%s", " (ограждение базы)" if got else "")
 
-    def guest_webhook_ours(self) -> None:
-        """Гость: адрес вебхука снова мой (прошлое «не здесь» не подтвердилось) — решения снова здесь."""
+    def guest_webhook_ours(self) -> bool:
+        """Гость: адрес вебхука снова мой (прошлое «не здесь» не подтвердилось) — решения снова здесь,
+        отметка в хранилище снята. True — отметка была (боту резерва — слово «снова мой»)."""
         if not self.__dict__.pop("_guest_hook_foreign", None):
-            return
+            return False
+        from awgbot.infra import rsvzone
+        try:
+            rsvzone.HOOK_FOREIGN_FILE.unlink(missing_ok=True)
+        except OSError as e:
+            log.warning("гость: отметка «вебхук не здесь» не снята: %s", e)
         try:
             got = self.db.jrn_unfence(why="вебхук снова здесь")
         except Exception:                                     # noqa: BLE001
             got = None
         log.warning("гость: вебхук снова здесь — решения снова пишу%s", "" if got is None else " (ограждение снято)")
+        return True
+
+    def _guest_hook_mark_write(self) -> None:
+        """Отметка «вебхук не здесь» — в хранилище гостя (tmpfs зоны): переживает рестарт юнита,
+        снимается вместе с хранилищем на возврате; в памяти она жила бы до первого рестарта."""
+        from awgbot.infra import rsvzone
+        try:
+            rsvzone.write_private(rsvzone.HOOK_FOREIGN_FILE, timeutil.now_iso())
+        except OSError as e:
+            log.warning("гость: отметка «вебхук не здесь» не записана в хранилище: %s", e)
+
+    def guest_hook_foreign_load(self) -> bool:
+        """На старте гостя: отметка «вебхук не здесь» прошлого запуска — снова в силе (ограждение
+        решений и запрет вебхука без явного слова бота резерва)."""
+        from awgbot.infra import rsvzone
+        if not rsvzone.HOOK_FOREIGN_FILE.exists():
+            return False
+        self.__dict__["_guest_hook_foreign"] = True
+        log.warning("гость: с прошлого запуска вебхук не здесь (Telegram у основы) — решений не пишу, "
+                    "вебхук без явного слова бота резерва не ставлю")
+        return True
+
+    def guest_hook_foreign(self) -> bool:
+        return bool(self.__dict__.get("_guest_hook_foreign"))
+
+    def guest_tg_may_take(self, go: bool, foreign_ack: bool = False) -> bool:
+        """Ставить ли вебхук сейчас. Главное правило — слово бота резерва по локальному каналу
+        (`tg{go}`): пользователи ещё у него, основа Telegram не забирала. Отметка «вебхук не
+        здесь» (Telegram у основы) — подстраховка: при ней обычного слова мало, нужно явное —
+        бот резерва знает об отметке (`tg{go, foreign}`) и всё же отдаёт Telegram сюда.
+        С журналом — ещё и только держателем (guest_can_take_tg)."""
+        why = ""
+        if not go:
+            why = "жду слова бота резерва"
+        elif self.guest_hook_foreign() and not foreign_ack:
+            why = "вебхук был не здесь — без явного слова бота резерва не ставлю"
+        if why:
+            if self.__dict__.get("_guest_tg_wait_why") != why:
+                self.__dict__["_guest_tg_wait_why"] = why
+                log.info("гость: вебхук пока не ставлю — %s", why)
+            return False
+        self.__dict__.pop("_guest_tg_wait_why", None)
+        return self.guest_can_take_tg()
 
     GUEST_BLOCKS_RESEND_S = 120
 
