@@ -5,6 +5,7 @@ import ipaddress
 import re
 
 from awgbot.util import wgconf
+from awgbot.util.nets import is_ipv4
 from awgbot.util.wgconf import norm
 
 from .doc import CfgError, ENV_KEYS, ENV_REQUIRED
@@ -15,13 +16,6 @@ _HOST_RE = re.compile(r"^[A-Za-z0-9.-]{1,253}$")
 _TOKEN_RE = re.compile(r"^\d{5,}:[A-Za-z0-9_-]{20,}$")
 _NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 _PRIVATE = tuple(ipaddress.ip_network(n) for n in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"))
-
-
-def _ipv4(tok: str) -> bool:
-    try:
-        return ipaddress.ip_address(tok).version == 4
-    except ValueError:
-        return False
 
 
 def _net4(tok: str, *, strict: bool = True):
@@ -69,13 +63,13 @@ def check_env(env: dict) -> dict:
             if net is None or not _private(net) or not 16 <= net.prefixlen <= 28:
                 raise CfgError("CLIENT_SUBNET: нужна частная IPv4-подсеть с префиксом /16–/28")
         elif key == "ADMIN_IPS":
-            if len(toks) > _MAX_ADMIN_IPS or not all(_ipv4(t) for t in toks):
+            if len(toks) > _MAX_ADMIN_IPS or not all(is_ipv4(t) for t in toks):
                 raise CfgError("ADMIN_IPS: только IPv4-адреса, не больше 64")
         elif key == "LAN_MODE":
             if val not in ("0", "1"):
                 raise CfgError("LAN_MODE: только 0 или 1")
         elif key == "RESOLVER":
-            if val and not _ipv4(val):
+            if val and not is_ipv4(val):
                 raise CfgError("RESOLVER: не IPv4-адрес")
         elif key == "LAN_SUBNETS":
             if not all(_net4(t, strict=False) for t in toks):

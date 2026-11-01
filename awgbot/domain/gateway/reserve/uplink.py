@@ -19,12 +19,10 @@ TTL записи (не меньше 300 с): кэш системного рез�
 """
 from __future__ import annotations
 
-import ipaddress
 import json
 import logging
 import os
 import re
-import socket
 import subprocess
 import threading
 import time
@@ -32,7 +30,7 @@ from pathlib import Path
 
 from awgbot.core import config
 from awgbot.infra import gwguard
-from awgbot.util import fsatomic
+from awgbot.util import fsatomic, nets
 
 log = logging.getLogger(__name__)
 
@@ -60,24 +58,12 @@ def conf_endpoint(iface: str) -> tuple[str, int]:
 
 
 def is_ip(host: str) -> bool:
-    try:
-        ipaddress.ip_address(host)
-        return True
-    except ValueError:
-        return False
+    return nets.is_ip(host)
 
 
 def resolve(host: str, timeout: float = RESOLVE_TIMEOUT) -> str:
-    """Первый IPv4 имени; пусто — не разрешилось за потолок."""
-    old = socket.getdefaulttimeout()
-    socket.setdefaulttimeout(timeout)
-    try:
-        infos = socket.getaddrinfo(host, None, socket.AF_INET, socket.SOCK_DGRAM)
-    except (socket.gaierror, OSError):
-        return ""
-    finally:
-        socket.setdefaulttimeout(old)
-    return infos[0][4][0] if infos else ""
+    """Первый IPv4 имени; пусто — не разрешилось за потолок (util/nets)."""
+    return nets.resolve4(host, timeout)
 
 
 def set_endpoint(iface: str, pub: str, endpoint: str) -> bool:

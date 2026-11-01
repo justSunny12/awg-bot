@@ -7,7 +7,7 @@ from typing import Optional
 from awgbot.core import config
 from awgbot.domain.services.gwchannel.common import _cut
 from awgbot.domain.services.types import Notification
-from awgbot.util import listlink
+from awgbot.util import listlink, nets
 
 
 class DriftMixin:
@@ -123,7 +123,7 @@ class DriftMixin:
         snap = self.gwlink_snapshot(g.id)
         got = snap.get("bundle") if isinstance(snap.get("bundle"), dict) else {}
         want = set(self.gwlink_issued_env(g)["ADMIN_IPS"].split())
-        have = {t for t in str(got.get(gwlink.snap_field("ADMIN_IPS"), "")).split()[:64] if gwlink._ipv4(t.split("/")[0])}
+        have = {t for t in str(got.get(gwlink.snap_field("ADMIN_IPS"), "")).split()[:64] if nets.is_ipv4(t.split("/")[0])}
 
         def ip_key(a: str) -> tuple:
             import ipaddress
