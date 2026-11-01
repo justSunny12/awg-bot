@@ -95,7 +95,7 @@ def test_the_same_token_is_same_and_asks_nobody(svc, env, tg):
     assert res == {"state": "same", "error": ""}, res
     assert tg.calls == [], "тот же токен проверяли в Telegram"
     assert env.read_text(encoding="utf-8") == ENV_TEXT, "env тронут тем же токеном"
-    assert svc.cfg_token_note_take() is False, "заметка «на новом токене» без смены"
+    assert svc.cfg_token_note_pending() is False, "заметка «на новом токене» без смены"
 
 
 @pytest.mark.parametrize("state, want", [("accepted", "applied"), ("linked", "applied"), ("done", "same"),
@@ -135,7 +135,7 @@ def test_telegram_silent_means_retry_and_env_untouched(svc, env, tg):
     assert res["state"] == "retry" and res["error"], res
     assert tg.calls == [NEW]
     assert env.read_text(encoding="utf-8") == ENV_TEXT, "env переписан без ответа Telegram"
-    assert svc.cfg_token_note_take() is False
+    assert svc.cfg_token_note_pending() is False
 
 
 def test_a_token_telegram_does_not_know_is_refused(svc, env, tg):
@@ -172,10 +172,12 @@ def test_the_same_bot_rewrites_only_bot_token_in_a_private_env(svc, env, tg):
 
 
 def test_the_note_is_said_once_after_the_restart(svc, env, tg):
-    """Заметка «бот на новом токене» — одна: второй старт агента молчит."""
+    """Заметка «бот на новом токене» — одна: старт агента снимает её по факту
+    доставки (cfg_token_note_clear), второй старт молчит."""
     svc.cfg_token_apply({"value": NEW})
-    assert svc.cfg_token_note_take() is True
-    assert svc.cfg_token_note_take() is False, "заметка о смене токена повторилась бы на каждом старте"
+    assert svc.cfg_token_note_pending() is True
+    svc.cfg_token_note_clear()
+    assert svc.cfg_token_note_pending() is False, "заметка о смене токена повторилась бы на каждом старте"
 
 
 def test_the_note_stays_pending_until_cleared(svc, env, tg):
@@ -213,7 +215,7 @@ def test_an_unwritable_env_fails_without_the_note(svc, env, tg, tmp_path, monkey
     monkeypatch.setenv("AWG_BOT_ENV", str(blocker / "env"))
     res = svc.cfg_token_apply({"value": NEW})
     assert res["state"] == "failed" and res["error"].startswith("файл настроек агента не переписан"), res
-    assert svc.cfg_token_note_take() is False
+    assert svc.cfg_token_note_pending() is False
 
 
 def test_a_repeated_document_leaves_one_token_line(svc, env, tg):
