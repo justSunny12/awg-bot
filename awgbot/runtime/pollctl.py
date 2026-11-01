@@ -100,9 +100,9 @@ class PollControl:
         loop.create_task(self._stop_after_conflict())
 
     async def _stop_after_conflict(self) -> None:
+        await self._pult_handed()
         with contextlib.suppress(Exception):
             await asyncio.to_thread(self.services.reserve_set_poll, "away", why="webhook")
-        await self._pult_handed()
         await self.stop()
 
     async def _pult_handed(self) -> None:
@@ -133,9 +133,11 @@ class PollControl:
             log.warning("getWebhookInfo не прошёл (%s) — поллю по прежнему состоянию", e)
             return await asyncio.to_thread(self.services.reserve_poll) == "mine"
         if info.url:
+            # пульт — до отметки away: между отметкой и ожиданием права (run: _wake.clear) лишнего
+            # await нет — take() из такта, увидевший away, не теряет свой wake()
+            await self._pult_handed()
             await asyncio.to_thread(self.services.reserve_set_poll, "away", why="webhook_info", url=str(info.url)[:120])
             log.warning("Telegram: вебхук стоит на %s — право отвечать не у меня", info.url)
-            await self._pult_handed()
             return False
         await asyncio.to_thread(self.services.reserve_set_poll, "mine")
         return True
