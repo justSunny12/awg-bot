@@ -267,7 +267,7 @@ def test_the_tick_sends_qmem_only_with_a_live_pair_session(line):
     line.s.rsv_update("rsv_peer_state", session=False)
     assert not _sent(line.s.quorum_tick(), "qmem"), "qmem ушёл без сессии пары"
     line.s.rsv_update("rsv_peer_state", session=True)
-    line.s.reserve_qmem_reset()
+    line.s.reserve_pair_sent_reset()                       # новая сессия пары — как в reserve_session_opened
     got = _sent(line.s.quorum_tick(), "qmem")
     assert got == [{"l": "a", "g": 1, "members": ["a", "b", "a1"]}], got
     assert not _sent(line.s.quorum_tick(), "qmem"), "второй такт подряд повторил qmem"
