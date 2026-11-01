@@ -27,7 +27,7 @@ import threading
 from awgbot.core import config, settings
 from awgbot.domain.services.selfhost import own_host
 from awgbot.domain.services.types import ServiceError, ServiceErrorHtml
-from awgbot.util import pairtoken, timeutil
+from awgbot.util import kvfile, pairtoken, timeutil
 
 from ..gateway_link.common import log
 from .state import _LOCK
@@ -78,12 +78,7 @@ class ReserveInviteMixin:
             why = next((ln.strip() for ln in reversed(out.splitlines()) if ln.strip().startswith("ОШИБКА")), "")
             raise ServiceError(f"скрипт линка пары ({mode}) не отработал: "
                                + (why or proc.stderr.decode(errors="replace").strip())[-200:])
-        kv = {}
-        for ln in out.splitlines():
-            if "=" in ln and not ln.startswith("#") and " " not in ln.split("=", 1)[0]:
-                k, v = ln.split("=", 1)
-                kv[k.strip()] = v.strip()
-        return kv
+        return kvfile.parse(out)
 
     def _pair_env(self) -> dict:
         inv = self.rsv_get("rsv_invite")

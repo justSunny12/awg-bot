@@ -48,17 +48,12 @@ class KitError(RuntimeError):
 
 def _lock(root: Path) -> dict:
     """install/awg.lock поставки: KEY=VALUE."""
-    out = {}
+    from awgbot.util import kvfile
     try:
         text = (root / "install" / "awg.lock").read_text(encoding="utf-8")
     except OSError as e:
         raise KitError(f"нет install/awg.lock в установке: {e}")
-    for line in text.splitlines():
-        line = line.strip()
-        if line and not line.startswith("#") and "=" in line:
-            k, v = line.split("=", 1)
-            out[k.strip()] = v.strip()
-    return out
+    return kvfile.parse(text)
 
 
 def awg_sources(root: Path, cache: Path = SRC_CACHE) -> list[tuple[str, bytes]]:

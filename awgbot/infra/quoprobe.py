@@ -15,6 +15,7 @@ import tempfile
 from pathlib import Path
 
 from awgbot.core import config
+from awgbot.util import kvfile
 
 NS = os.environ.get("QUO_NS", "awg-quo")
 SCRIPT_TIMEOUT = 120
@@ -63,19 +64,10 @@ def run(mode: str, *args: str, env: dict | None = None, timeout: int = SCRIPT_TI
     return out
 
 
-def _kv(text: str) -> dict:
-    out: dict = {}
-    for line in text.splitlines():
-        k, sep, v = line.partition("=")
-        if sep:
-            out[k.strip()] = v.strip()
-    return out
-
-
 def status() -> dict:
     """{ns: present|absent, ifaces: [...], hs: {имя: секунд | None}}; скрипт не ответил — пусто."""
     try:
-        kv = _kv(run("status", timeout=30))
+        kv = kvfile.parse(run("status", timeout=30))
     except QuoError:
         return {}
     ifaces = [i for i in str(kv.get("ifaces") or "").split() if i]

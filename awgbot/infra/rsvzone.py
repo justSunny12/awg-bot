@@ -33,6 +33,7 @@ import subprocess
 from pathlib import Path
 
 from awgbot.core import config
+from awgbot.util import kvfile
 
 log = logging.getLogger(__name__)
 
@@ -262,26 +263,17 @@ def run(mode: str, *, env: dict | None = None, stdin: str | None = None, timeout
     return out
 
 
-def _kv(text: str) -> dict:
-    out: dict = {}
-    for line in text.splitlines():
-        k, sep, v = line.partition("=")
-        if sep:
-            out[k.strip()] = v.strip()
-    return out
-
-
 def plan() -> dict:
     """`--plan`: store, cake, netns, awg, webhook_port, zone — без root."""
     try:
-        return _kv(run("plan", timeout=30))
+        return kvfile.parse(run("plan", timeout=30))
     except ZoneError as e:
         return {"error": str(e)}
 
 
 def status() -> dict:
     try:
-        return _kv(run("status", timeout=30))
+        return kvfile.parse(run("status", timeout=30))
     except ZoneError as e:
         return {"error": str(e)}
 

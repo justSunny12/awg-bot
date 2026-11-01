@@ -15,6 +15,7 @@ import subprocess
 from pathlib import Path
 
 from awgbot.core import config
+from awgbot.util import kvfile
 
 RSV_IF = "awgrsv"
 CONF_PATH = Path("/etc/awg-gw") / f"{RSV_IF}.conf"
@@ -42,20 +43,11 @@ def run(mode: str, *args: str, env: dict | None = None, timeout: int = SCRIPT_TI
     return out
 
 
-def _kv(text: str) -> dict:
-    out: dict = {}
-    for line in text.splitlines():
-        k, sep, v = line.partition("=")
-        if sep:
-            out[k.strip()] = v.strip()
-    return out
-
-
 def status() -> dict:
     """{link: up|down, open: 0|1, src, rx, tx, conf: present|absent}; скрипт
     не отвечает — всё пусто."""
     try:
-        return _kv(run("status", timeout=30))
+        return kvfile.parse(run("status", timeout=30))
     except RsvError:
         return {}
 
