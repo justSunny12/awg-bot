@@ -301,8 +301,43 @@ pl_wait() {  # pl_wait <узел> <выражение> <срок> [что ждё
     return 1
 }
 
+# Окно аварийного кода у резерва при живой основе — ложная авария: после возврата его быть не должно.
+# pl_codewin_watch <резерв> <основа> — раз в секунду строка в $PL/codewin.log: окно кода резерва, его
+# взгляд на основу (зонд awgq<линия>h), рукопожатие и Endpoint зонда у резерва и пира-зонда у основы;
+# pl_codewin_check <что> — наблюдение прочь; окно открывалось — провал с выдержкой из лога и журналов.
+PL_CW_PID=""
+pl_codewin_watch() {
+    local r="$1" p="$2"
+    : > "$PL/codewin.log"
+    (
+        while :; do
+            local l q ep hs pa
+            l="$(printf '%s' "$p" | tr 'AB' 'ab')"; q="awgq${l}h"
+            ep="$(ip netns exec "awg-quo-$r" awg show "$q" endpoints 2>/dev/null | awk '{print $2}')/$(ip netns exec "awg-quo-$r" awg show "$q" transfer 2>/dev/null | awk '{print $2 ":" $3}')"
+            hs="$(ip netns exec "awg-quo-$r" awg show "$q" latest-handshakes 2>/dev/null | awk '{print $2}')"
+            pa="$(ip netns exec "${PL_NS[$p]}" awg show awg0 dump 2>/dev/null | awk -v t="$(date +%s)" \
+                'NR > 1 && $4 ~ /^169\.254\./ {printf "%s@%s hs-%s rx=%s; ", $4, $3, ($5 > 0 ? t - $5 : "-"), $6}')"
+            printf '%s cw=%s w=%s in=%s out=%s ep=%s hs=%s %s\n' "$(date +%T)" \
+                "$(pl_q "$r" "(s.get('code_window') or {}).get('open')")" \
+                "$(pl_q "$r" "s['quo']['views'].get('$q', {}).get('w')")" \
+                "$(pl_q "$r" "s['in'].get('state')")" "$(pl_q "$p" "s['out'].get('state')")" "$ep" \
+                "$( [ -n "$hs" ] && [ "$hs" -gt 0 ] && echo $(( $(date +%s) - hs )) || echo -)" "$pa"
+            sleep 1
+        done
+    ) >>"$PL/codewin.log" 2>&1 &
+    PL_CW_PID=$!
+}
+
+pl_codewin_check() {
+    [ -n "$PL_CW_PID" ] && { kill "$PL_CW_PID" 2>/dev/null; wait "$PL_CW_PID" 2>/dev/null; }
+    PL_CW_PID=""
+    grep -q ' cw=true ' "$PL/codewin.log" || return 0
+    pl_fail "$1: у резерва открывалось окно аварийного кода при живой основе: $(grep -m1 -B3 -A3 ' cw=true ' "$PL/codewin.log" | tr '\n' '|') · журнал B: $(grep -E 'кворум: (сервер|клон) линии|приём аварийного кода|зонд' "$PL/B/node.log" | tail -n 8 | tr '\n' '|')"
+}
+
 pl_cleanup_quiet() {
     local n
+    [ -n "$PL_CW_PID" ] && kill "$PL_CW_PID" 2>/dev/null; PL_CW_PID=""
     pl_guest_stop
     pkill -9 -f "[g]uest_main" 2>/dev/null
     for n in A B; do pl_stop "$n"; done

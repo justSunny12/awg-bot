@@ -18,7 +18,8 @@
 #      у «Спорного» осталось 7 (значение держателя), хвост у A снят, у A — то же, что у гостя;
 #   6. возврат кнопкой: бот основы на резерве отдаёт эпоху, A забирает Telegram; сразу за итогом
 #      возврата A шлёт админу основы Т-Ж4 — одно сообщение со строкой про «Спорного»
-#      (устройств не больше 5 — на «Beta» осталось 7); гость Т-Ж4 не шлёт.
+#      (устройств не больше 5 — на «Beta» осталось 7); гость Т-Ж4 не шлёт; окна аварийного кода у B
+#      при живой A после возврата нет (100 с наблюдения — дольше «не вижу» с запасом).
 set -u
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 . "$HERE/pairlab.sh"
@@ -114,11 +115,13 @@ t_heal_alive=$(date +%s)
 pl_wait A 's.get("alive")' 60 "B снова на связи для кнопки возврата (новая сессия, свежий st)" || exit 1
 t_heal_alive=$(( $(date +%s) - t_heal_alive ))
 res="$(pl_cmd A return '{}')" || pl_fail "возврат не начат: $res"
+pl_codewin_watch B A
 pl_wait A 's["out"].get("step") in ("record", "record_back") or s["out"].get("state") == "home"' 240 \
     "возврат дошёл до записи" || exit 1
 "$PY" -c 'import json,sys; p=sys.argv[1]; d=json.load(open(p)); d[sys.argv[2]]="203.0.113.5"; json.dump(d, open(p, "w"))' \
     "$PL/shared/dns.json" "$RECORD"                       # запись обратно меняет человек
 pl_wait A 's["out"].get("state") == "home" and s["jrn"]["role"] == "holder"' 300 "пользователи и эпоха — снова у A" || exit 1
+t_home=$(date +%s)
 out="$(cd "$PL_ROOT" && "$PY" - "$PL/botapi.jsonl" "${TOKEN_A%%:*}" "$ADMIN_A" <<'PYEOF'
 import json, sys, time
 path, bot_a, admin = sys.argv[1], int(sys.argv[2]), str(sys.argv[3])
@@ -143,4 +146,7 @@ if "Хвост-" in text:
 print("ok")
 PYEOF
 )" || pl_fail "$out"
+# живая A после возврата: окна аварийного кода у B нет (100 с — дольше «не вижу» с запасом)
+while [ $(( $(date +%s) - t_home )) -lt 100 ]; do sleep 1; done
+pl_codewin_check "после возврата кнопкой, A жива"
 echo "ok (B на связи для кнопки через ${t_heal_alive} с после away)"
