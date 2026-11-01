@@ -14,7 +14,9 @@ from concurrent import futures
 
 # Разрешение имён с потолком ожидания: у getaddrinfo своего таймаута нет, а
 # socket.setdefaulttimeout его не ограничивает и меняет умолчание всему
-# процессу. Просроченный вызов бросаем на произвол: поток отвиснет сам.
+# процессу. Просроченный вызов бросаем на произвол: поток отвиснет сам, а
+# ждавший в очереди снимается — к резолверу уже не пойдёт и свежих за собой
+# не задержит.
 RESOLVE_TIMEOUT = 3.0
 _resolve_pool = futures.ThreadPoolExecutor(max_workers=2, thread_name_prefix="awg-resolve")
 
@@ -23,7 +25,11 @@ def getaddrinfo_timed(host: str, *, timeout: float = RESOLVE_TIMEOUT, family: in
                       proto: int = socket.IPPROTO_TCP):
     """socket.getaddrinfo(host) не дольше timeout; futures.TimeoutError — не успел."""
     fut = _resolve_pool.submit(socket.getaddrinfo, host, None, family=family, proto=proto)
-    return fut.result(timeout=timeout)
+    try:
+        return fut.result(timeout=timeout)
+    except futures.TimeoutError:
+        fut.cancel()                                  # ещё в очереди — снят; уже идёт — отвиснет сам
+        raise
 
 
 def resolve4(host: str, timeout: float = RESOLVE_TIMEOUT) -> str:
