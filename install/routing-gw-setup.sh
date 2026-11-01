@@ -701,6 +701,7 @@ cat > "$LAN_DOMAIN.new" <<'DOMEOF'
 # наполняется только отсюда); ушедший из «в туннель» вынимается из lan_vpn4 по
 # адресам dig, ошибки глушатся (адрес мог слиться в интервал или принадлежать
 # домену фида). Копии для отката обоих файлов и фида — $DUMP/rollback/<имя>.prev.
+# Сбой рабочего шага правки — код 1: до записи списки не тронуты, после — откат.
 # Правило домена — DOMAIN_RE (зона буквами или punycode «xn--»);
 # то же правило применит сервер AWG к общему списку (этап 2 синхронизации).
 # AWG_HTML=1 (ставит агент: вывод уходит в чат) — домены в строках итога в
@@ -764,13 +765,23 @@ fi
 # одна блокировка со скриптом фидов: он читает ru-user.conf и тоже перезапускает dnsmasq
 exec 9>"$DUMP/lists.lock"
 if command -v flock >/dev/null 2>&1 && ! flock -w 120 9; then echo "обновление списков ещё идёт" >&2; exit 75; fi
-TMPD="$(mktemp -d)"; trap 'rm -rf "$TMPD"' EXIT
+# Сбой рабочего шага (временный каталог, чтение и сборка списков, запись файлов и
+# фида — нет места, только чтение, процесс не запустился) — код 1 и строка об этом,
+# а не «без изменений» или «убран» при нетронутых файлах; без TMPD рабочие файлы
+# легли бы в корень. До записи — списки не тронуты, после — откат
+untouched() { echo "рабочий шаг правки не прошёл — списки не тронуты" >&2; exit 1; }
+TMPD="$(mktemp -d)" || untouched
+trap 'rm -rf "$TMPD"' EXIT
 deny="$(sed -n 's/^Endpoint *= *\([^:]*\):.*/\1/p' "$UPLINK_CONF" 2>/dev/null | head -n1 | tr 'A-Z' 'a-z')"
-in_list() { grep -qxF "$1" "$TMPD/want_$2"; }             # $1 домен, $2 vpn|ru
-list_of "$VPN" > "$TMPD/before_vpn"; list_of "$RU" > "$TMPD/before_ru"
-cp "$TMPD/before_vpn" "$TMPD/want_vpn"; cp "$TMPD/before_ru" "$TMPD/want_ru"
-drop_from() { grep -vxF "$1" "$TMPD/want_$2" > "$TMPD/x" || true; mv "$TMPD/x" "$TMPD/want_$2"; }
-add_to() { printf '%s\n' "$1" >> "$TMPD/want_$2"; }
+in_list() {                    # $1 домен, $2 vpn|ru; сбой чтения — не «в списках нет»
+    grep -qxF "$1" "$TMPD/want_$2"; set -- $?; [ "$1" -le 1 ] || untouched; return "$1"
+}
+{ [ -r "$VPN" ] && [ -r "$RU" ] && list_of "$VPN" > "$TMPD/before_vpn" && list_of "$RU" > "$TMPD/before_ru" \
+  && cp "$TMPD/before_vpn" "$TMPD/want_vpn" && cp "$TMPD/before_ru" "$TMPD/want_ru"; } \
+  || untouched
+# grep без строк (убран последний) — код 1, ошибка — 2
+drop_from() { grep -vxF "$1" "$TMPD/want_$2" > "$TMPD/x"; [ $? -le 1 ] && mv "$TMPD/x" "$TMPD/want_$2" || untouched; }
+add_to() { printf '%s\n' "$1" >> "$TMPD/want_$2" || untouched; }
 added=""                       # «домен:набор» — наполнить после рестарта
 # «добавлен»/«убран» — только после удачного рестарта: при откате человек видел
 # бы «добавлен» рядом с «откатываю»
@@ -811,38 +822,45 @@ else
         say "$(tag "$d"): добавлен"
     done
 fi
-sort -u -o "$TMPD/want_vpn" "$TMPD/want_vpn"; sort -u -o "$TMPD/want_ru" "$TMPD/want_ru"
+sort -u -o "$TMPD/want_vpn" "$TMPD/want_vpn" && sort -u -o "$TMPD/want_ru" "$TMPD/want_ru" || untouched
 if cmp -s "$TMPD/want_vpn" "$TMPD/before_vpn" && cmp -s "$TMPD/want_ru" "$TMPD/before_ru"; then
     [ "$cmd" = "sync" ] && echo "свои списки без изменений"
     exit 0
 fi
 # ── файлы: по домену на строку, по алфавиту (sync и кнопка пишут одинаково)
-sed 's|.*|nftset=/&/inet#awg_lan#lan_vpn4|' "$TMPD/want_vpn" > "$TMPD/vpn.conf"
-sed 's|.*|nftset=/&/inet#awg_lan#lan_ru4|' "$TMPD/want_ru" > "$TMPD/ru.conf"
+sed 's|.*|nftset=/&/inet#awg_lan#lan_vpn4|' "$TMPD/want_vpn" > "$TMPD/vpn.conf" \
+  && sed 's|.*|nftset=/&/inet#awg_lan#lan_ru4|' "$TMPD/want_ru" > "$TMPD/ru.conf" || untouched
 changed="$VPN $RU"
 # копии для отката — вне conf-dir: оттуда dnsmasq читает всё, кроме .dpkg-*
-mkdir -p "$RB"
+mkdir -p "$RB" || untouched
 prev() { printf '%s/%s.prev' "$RB" "$(basename "$1")"; }
-for f in "$VPN" "$RU"; do cp -p "$f" "$(prev "$f")" 2>/dev/null || : > "$(prev "$f")"; done
-install -m 644 "$TMPD/vpn.conf" "$VPN"; install -m 644 "$TMPD/ru.conf" "$RU"
+for f in "$VPN" "$RU"; do cp -p "$f" "$(prev "$f")" 2>/dev/null || : > "$(prev "$f")" || untouched; done
+restore() { for f in $changed; do mv -f "$(prev "$f")" "$f"; done; }
+rollback() { restore; systemctl restart dnsmasq || true; }
+# dnsmasq с новыми списками ещё не перезапускался — откат без рестарта
+unwritten() { echo "запись списков не прошла — откатываю" >&2; restore; exit 1; }
+install -m 644 "$TMPD/vpn.conf" "$VPN" && install -m 644 "$TMPD/ru.conf" "$RU" || unwritten
 # ── фид доменов: исключения «напрямую» вычитаются заново по исходнику (тот же
 # awk, что в awg-lan-lists.sh); исходника нет — фид выправит ближайшая сборка
 if [ -s "$SRC" ] && ! cmp -s "$TMPD/want_ru" "$TMPD/before_ru"; then
     # пустой список «напрямую» — первому файлу awk нужна хоть одна строка, иначе
     # NR==FNR сработает уже на исходнике и вычтет из фида всё
-    { echo "# ru"; cat "$RU"; } > "$TMPD/ru_awk"
+    { echo "# ru" && cat "$RU"; } > "$TMPD/ru_awk" || unwritten
+    # awk и фильтр — порознь: в конвейере код awk теряется, и сбой сборки выглядел
+    # бы пустым фидом, который просто не ставится
     awk -F/ '
         NR==FNR { if ($0 ~ /^nftset=/) for (i=2; i<NF; i++) skip[$i]=1; next }
         $0 !~ /^nftset=/ { print; next }
         { out=$1; n=0; for (i=2; i<NF; i++) if (!($i in skip)) { out=out "/" $i; n++ }
-          if (n) print out "/" $(NF) }' "$TMPD/ru_awk" "$SRC" \
-        | grep -E '^(#.*|nftset=/[^/[:space:]]+(/[^/[:space:]]+)*/inet#awg_lan#lan_vpn4)$' > "$TMPD/feed.conf" || true
+          if (n) print out "/" $(NF) }' "$TMPD/ru_awk" "$SRC" > "$TMPD/feed.raw" || unwritten
+    grep -E '^(#.*|nftset=/[^/[:space:]]+(/[^/[:space:]]+)*/inet#awg_lan#lan_vpn4)$' "$TMPD/feed.raw" > "$TMPD/feed.conf"
+    [ $? -le 1 ] || unwritten
     if [ -s "$TMPD/feed.conf" ] && ! cmp -s "$TMPD/feed.conf" "$FEED"; then
-        cp -p "$FEED" "$(prev "$FEED")" 2>/dev/null || : > "$(prev "$FEED")"
-        install -m 644 "$TMPD/feed.conf" "$FEED"; changed="$changed $FEED"
+        { cp -p "$FEED" "$(prev "$FEED")" 2>/dev/null || : > "$(prev "$FEED")"; } || unwritten
+        changed="$changed $FEED"
+        install -m 644 "$TMPD/feed.conf" "$FEED" || unwritten
     fi
 fi
-rollback() { for f in $changed; do mv -f "$(prev "$f")" "$f"; done; systemctl restart dnsmasq || true; }
 # conf-dir Debian подключает ключом из init-скрипта — голый --test файлы не видит
 if command -v dnsmasq >/dev/null 2>&1 && ! dnsmasq --test "--conf-dir=$D,.dpkg-dist,.dpkg-old,.dpkg-new" >/dev/null 2>&1; then
     echo "dnsmasq --test отверг списки — откатываю" >&2; rollback; exit 1
