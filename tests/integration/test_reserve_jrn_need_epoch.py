@@ -2,14 +2,17 @@
 резерв досылает записи подряд с её номера из хранилища её событий, иначе из
 журнала гостя на диске, и только эпохи, которая держит просимый номер:
 старшей из начавшихся не позже него (начала — первые номера эпох в обоих
-хранилищах и эпоха поднятого гостя с номера после его точки).
+хранилищах и эпоха поднятого гостя с номера после его точки). `jneed` гостя
+о событиях основы (_keep_serve_guest) — по тому же правилу эпохи, из
+хранилища её событий.
 
 Хранилище держит сегменты нескольких эпох: после смены эпохи (передача бота,
 точка расхождения) прежняя эпоха с теми же номерами остаётся на диске до
 снимка. Цена ошибки: основа, просившая правки бота на резерве (эпоха гостя),
 получает свои же прежние записи под теми же номерами — их следующая эпоха
 заменила с точки расхождения; правки людей на резерве подменены старыми, а
-номер считается досланным.
+номер считается досланным; гость в следовании, получивший прежнюю запись
+вместо новой, расходится с основой молча — его база несёт заменённое.
 """
 from __future__ import annotations
 
@@ -101,3 +104,34 @@ def test_numbers_before_the_guest_fork_stay_with_her_epoch(world, monkeypatch):
     assert (jev["e"], jev["from"], jev["n"]) == (2, 5, 3)
     jev = _jev(world.svc, 8)
     assert (jev["e"], jev["from"], jev["n"]) == (3, 8, 2), "после точки — записи гостя"
+
+
+def _guest_jev(svc, frm: int) -> dict:
+    acts = svc.reserve_guest_jrn_word("jneed", {"line": LINE, "from": frm})
+    jev = [a[2] for a in acts if a[:2] == ("guest", "jev")]
+    assert jev, f"jneed гостя не обслужен из хранилища: {acts}"
+    return jev[0]
+
+
+def test_the_guest_gets_her_events_from_the_keep_store(world):
+    world.keep.append_events([_rec(i, 2) for i in range(1, 8)])
+    jev = _guest_jev(world.svc, 5)
+    assert (jev["e"], jev["from"], jev["n"]) == (2, 5, 3)
+
+
+def test_the_guest_does_not_get_the_same_numbers_of_an_older_epoch(world):
+    """Основа сменила эпоху с точки 4: в хранилище e2 по 7 и e3 с 5 — гостю, просившему
+    с 5, уходит запись e3, а не заменённая e2 (сегмент e2 читается первым)."""
+    world.keep.append_events([_rec(i, 2) for i in range(1, 8)])
+    world.keep.append_events([_rec(i, 3) for i in range(5, 9)])
+    world.svc.rsv_update("rsv_jrn_in", e=3)
+    jev = _guest_jev(world.svc, 5)
+    assert (jev["e"], jev["from"], jev["n"]) == (3, 5, 4), "гостю ушло событие прежней эпохи под тем же номером"
+    jev = _guest_jev(world.svc, 2)
+    assert (jev["e"], jev["from"], jev["n"]) == (2, 2, 6), "номера до точки — эпохи, которая их держит"
+
+
+def test_the_guest_gets_nothing_when_no_epoch_holds_the_number(world):
+    """Хранилище начинается с 5 — с 2 досылать нечего, а не запись другой эпохи."""
+    world.keep.append_events([_rec(i, 3) for i in range(5, 9)])
+    assert world.svc.reserve_guest_jrn_word("jneed", {"line": LINE, "from": 2}) == []

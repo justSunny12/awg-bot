@@ -189,10 +189,14 @@ class ReserveJournalRouteMixin:
         EV_BYTES. С `frm` в хранилище не начинается — ничего: основа подтверждённые события у
         себя не держит, досылать их некому — гость в следовании остаётся на своей точке, а
         основа скажет о недошедших решениях после возврата (jrn_mine_lost); дыру — в журнал,
-        один раз на номер."""
+        один раз на номер. Только записи эпохи, которая держит номер `frm` (`_keep_need_epoch`,
+        как у `jneed` основы): тот же номер прежней эпохи, заменённый новой с точки
+        расхождения, гостю чужой — его база разошлась бы с основой молча."""
         from awgbot.util.rsvjrn import event
         line = self.reserve_keep_line()
-        recs = self._store_run(self.reserve_keep_store(), line, frm)
+        keep = self.reserve_keep_store()
+        want = self._keep_need_epoch(frm, keep.epoch_starts())
+        recs = self._store_run(keep, line, frm, want) if want is not None else []
         if not recs:
             if self.__dict__.get("_keep_hole_told") != frm:
                 self.__dict__["_keep_hole_told"] = frm
