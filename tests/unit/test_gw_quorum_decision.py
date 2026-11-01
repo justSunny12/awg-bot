@@ -31,6 +31,7 @@ from awgbot.domain.gateway.reserve import quorum as quomod
 from awgbot.infra import quoprobe
 from awgbot.infra.db import Database
 from awgbot.util import timeutil
+from awgbot.util.quorum import timing as qt
 from awgbot.util.quorum.probe import Info, Probe, Reply
 
 pytestmark = pytest.mark.unit
@@ -178,14 +179,31 @@ def test_qtake_moves_the_epoch_on_and_lifts_the_pledge(ag):
     assert all(p.e == E + 1 for p in ag.probes(acts)), "пробы прежнему лидеру идут со старой эпохой — он не узнает"
 
 
-def test_the_pledge_survives_an_agent_restart(ag, clock):
+@pytest.mark.parametrize("jit", [None, 0.0, 1.0], ids=["random", "short", "long"])
+def test_the_pledge_survives_an_agent_restart(ag, monkeypatch, jit):
+    """После перезапуска голосующий снова видит основу (два ответа подряд) — и
+    пробы после этого идут `held`, а не «вижу». Ждём факта — первой пробы при
+    взгляде «вижу», — а не фиксированные 60 с: интервал пробы со случайным
+    джиттером (P ± 40 %), и при длинных интервалах три пробы (пропавшая на
+    старте, два ответа, следующая) не укладывались в 60 с — последней в окне
+    была проба «до взгляда» (`new`), тест падал без дефекта. Края джиттера —
+    отдельными случаями."""
+    if jit is not None:
+        real = qt.jitter
+        monkeypatch.setattr(qt, "jitter", lambda base, frac=0.4, rnd=None: real(base, frac, rnd=lambda: jit))
     ag.see()
     ag.uns()
     ag.svc = ag.new()
     ag.tick()
     assert ag.v.pledge is not None and ag.v.pledge["e"] == E, "обязательство «нет» потеряно перезапуском агента"
-    acts = ag.run(60, answer=True)
-    assert ag.v.view == "see" and ag.probes(acts)[-1].w == "held", "после перезапуска пробы основе снова «вижу»"
+    acts: list[tuple] = []
+    after: list[Probe] = []
+    limit = 4 * 1.4 * ag.v.timing.probe_s                  # пропавшая на старте, два ответа и следующая — с запасом
+    while not (ag.v.view == "see" and after):
+        assert ag.clock.t < ag.v.started + limit, f"после перезапуска за {limit:.0f} с нет пробы при «вижу»: {acts}"
+        acts += ag.run(1, answer=True)
+        after = [p for p in ag.probes(acts) if p.w != "new"]
+    assert all(p.w == "held" for p in after), f"после перезапуска пробы основе снова «вижу»: {[p.w for p in after]}"
 
 
 def test_an_old_pledge_on_disk_is_dropped_at_restart(ag):
