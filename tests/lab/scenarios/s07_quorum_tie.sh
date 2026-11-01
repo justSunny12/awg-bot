@@ -7,9 +7,10 @@
 #      видят — «да» 2 ≥ 2, «нет» 2 не > 2: A держится, B не забирает; дольше T_tie — по одному Т-К5
 #      (бот A своему админу, поимённо) и Т-К5б (бот B своему админу; админ A бот B не открывал — строка
 #      об этом), справка — со слов видящего шлюза; у B — окно кода (свой взгляд «не вижу»); после
-#      починки и минуты без ничьей — по одному Т-К6 от каждого, повторов нет;
+#      починки и T_tie_clear без ничьей — по одному Т-К6 от каждого, повторов нет (пределы — от цифр
+#      уровня, QT_* из pairlab.sh);
 #   q2. возврат «сразу» (reserve.return: immediate, min_interval_minutes: 0): переезд кнопкой; в отъезде
-#      голосующие видят A дома — Q2 «да» 3 из 3 не позже 120 с после отъезда, и дольше HEALTHY_S — A
+#      голосующие видят A дома — Q2 «да» 3 из 3 не позже 120 с после отъезда, и дольше healthy_seconds — A
 #      сама зовёт пользователей обратно. Ответчик дома открыт и на шагах передачи (leaving record/release/
 #      released): шлюзам уже «away», их пробы домой получают ответ — без этого «не вижу» и обязательство
 #      «нет» держали Q2 на 1 из 3 до срока обязательства;
@@ -44,11 +45,11 @@ if has tie; then
     t_alarm=$(since "$T0")
     na="$(tg_count "$TOKEN_A" "$ADMIN_A" "🚨 Ничья о сервере" "$ts0")"; nb="$(tg_count "$TOKEN_B" "$ADMIN_B" "🚨 Ничья о сервере" "$ts0")"
     [ "$na" = 1 ] && [ "$nb" = 1 ] || pl_fail "тревога ничьей: от A $na, от B $nb (через $t_alarm с) — ожидалось по одной"
-    [ $((t_alarm - t_tie0)) -ge 170 ] || pl_fail "тревога ничьей через $((t_alarm - t_tie0)) с после начала — раньше T_tie (180 с)"
+    [ $((t_alarm - t_tie0)) -ge $((QT_TIE - 10)) ] || pl_fail "тревога ничьей через $((t_alarm - t_tie0)) с после начала — раньше T_tie ($QT_TIE с)"
     [ "$(tg_count "$TOKEN_B" "$ADMIN_B" "ещё не открывал" "$ts0")" = 1 ] || pl_fail "Т-К5б без строки «админ бот не открывал»"
     [ "$(tg_count "$TOKEN_B" "$ADMIN_B" "со слов шлюз" "$ts0")" -ge 1 ] || pl_fail "в Т-К5б нет справки со слов видящего шлюза"
     [ "$(pl_q B '(s.get("code_window") or {}).get("open")')" = "true" ] || pl_fail "у B при ничьей и своём «не вижу» окно кода закрыто"
-    sleep 60
+    sleep $((QT_TIE_CLEAR + 10))
     na="$(tg_count "$TOKEN_A" "$ADMIN_A" "🚨 Ничья о сервере" "$ts0")"; nb="$(tg_count "$TOKEN_B" "$ADMIN_B" "🚨 Ничья о сервере" "$ts0")"
     [ "$na" = 1 ] && [ "$nb" = 1 ] || pl_fail "тревога ничьей повторилась: от A $na, от B $nb"
     bash "$PL_HERE/net.sh" heal >/dev/null
@@ -58,10 +59,10 @@ if has tie; then
         sleep 1
     done
     t_over=$(since "$T0")
-    sleep 30
+    sleep $((QT_TIE_CLEAR / 2))
     oa="$(tg_count "$TOKEN_A" "$ADMIN_A" "больше нет" "$ts0")"; ob="$(tg_count "$TOKEN_B" "$ADMIN_B" "больше нет" "$ts0")"
     [ "$oa" = 1 ] && [ "$ob" = 1 ] || pl_fail "отбой ничьей: от A $oa, от B $ob (за $t_over с после починки) — ожидалось по одному"
-    [ "$t_over" -ge 55 ] || pl_fail "отбой ничьей через $t_over с — раньше минуты без ничьей"
+    [ "$t_over" -ge $((QT_TIE_CLEAR - 5)) ] || pl_fail "отбой ничьей через $t_over с — раньше T_tie_clear ($QT_TIE_CLEAR с) без ничьей"
     note "tie: тревога через $((t_alarm - t_tie0)) с ничьей, отбой через $t_over с после починки"
     pl_cleanup_quiet
 fi
@@ -80,7 +81,7 @@ if has back; then
     fault "ip daddr 198.51.100.7 udp dport 45871 drop comment \"клон недоступен\""
     wait_t A 's["out"].get("quorum_return")' 260 "A забрала пользователей сама (аварийный возврат по Q1)" || exit 1
     t_back=$WT
-    [ "$t_back" -ge 100 ] || pl_fail "аварийный возврат через $t_back с — раньше T_up"
+    [ "$t_back" -ge "$QT_UP" ] || pl_fail "аварийный возврат через $t_back с — раньше T_up ($QT_UP с)"
     note "back: аварийный возврат через $t_back с"
     pl_cleanup_quiet
 fi
@@ -93,7 +94,7 @@ if has q2; then
     wait_t A 's["quo"]["count"].get("role") == "follow" and s["quo"]["count"].get("y") == 3' 120 "A в отъезде: Q2 — «да» 3 из 3" || exit 1
     wait_t A 's["out"].get("state") in ("returning", "home")' 600 "A зовёт пользователей обратно сама (возврат «сразу»)" || exit 1
     t_ret=$(( $(date +%s) - away_ts ))
-    [ "$t_ret" -ge 295 ] || pl_fail "возврат «сразу» через $t_ret с после отъезда — раньше HEALTHY_S (300 с)"
+    [ "$t_ret" -ge $((QT_HEALTHY - 5)) ] || pl_fail "возврат «сразу» через $t_ret с после отъезда — раньше reserve.healthy_seconds ($QT_HEALTHY с)"
     dns_set 203.0.113.5
     pl_wait A 's["out"].get("state") == "home" and s["jrn"]["role"] == "holder" and s["jrn"]["holder"] == "self"' 300 \
         "пользователи и эпоха — снова у A" || exit 1

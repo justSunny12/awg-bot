@@ -3,7 +3,13 @@
 # run.sh — прогон стенда: самопроверка зоны, подъём топологии, сценарии, затем
 # существующий набор тестов в той же ВМ (GNU sed и coreutils — как на хостах).
 #
-#   sudo -E tests/lab/run.sh [--no-suite] [--only <сценарий>]
+#   sudo -E tests/lab/run.sh [--fast] [--no-suite | --no-scenarios] [--only "<сценарий> …"]
+#
+# --fast — быстрый уровень (LAB_FAST=1): цифры кворума и «здоров» сжаты настройками узлов
+# (tests/lab/pairnode.LAB_FAST_DIGITS), пределы проверок сценариев — от них; без флага — умолчания
+# продукта (полный уровень, перед предрелизной сборкой). --only — сценарий или список через пробел
+# или запятую. --no-scenarios — только набор тестов (его и держит блокировка полных прогонов);
+# сценарии на нескольких ВМ сразу — tests/lab/par.sh с Mac.
 #
 # Сценарии — tests/lab/scenarios/*.sh, по одному на случай аварии или перехода;
 # каждый сам поднимает, что ему нужно, через lab.sh/net.sh и печатает
@@ -12,37 +18,42 @@
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
-SUITE=1; ONLY=""
+SUITE=1; SCEN=1; ONLY=""
 while [ $# -gt 0 ]; do
     case "$1" in
+        --fast) export LAB_FAST=1 ;;
         --no-suite) SUITE=0 ;;
-        --only) ONLY="$2"; shift ;;
-        *) printf 'использование: %s [--no-suite] [--only <сценарий>]\n' "$0"; exit 2 ;;
+        --no-scenarios) SCEN=0 ;;
+        --only) ONLY=" ${2//,/ } "; shift ;;
+        *) printf 'использование: %s [--fast] [--no-suite | --no-scenarios] [--only "<сценарий> …"]\n' "$0"; exit 2 ;;
     esac
     shift
 done
 [ "$(id -u)" -eq 0 ] || { printf 'нужен root (sudo -E)\n' >&2; exit 1; }
 
 fail=0; passed=0
-printf '=== самопроверка зоны\n'
-if bash "$ROOT/install/reserve-zone-setup.sh" --selftest; then passed=$((passed + 1)); else printf 'FAIL selftest\n'; fail=$((fail + 1)); fi
+if [ "$SCEN" -eq 1 ]; then
+    printf '=== уровень: %s\n' "$([ "${LAB_FAST:-}" = 1 ] && echo 'быстрый (LAB_FAST=1)' || echo 'полный (умолчания продукта)')"
+    printf '=== самопроверка зоны\n'
+    if bash "$ROOT/install/reserve-zone-setup.sh" --selftest; then passed=$((passed + 1)); else printf 'FAIL selftest\n'; fail=$((fail + 1)); fi
 
-printf '=== топология\n'
-bash "$HERE/lab.sh" up >/dev/null && bash "$HERE/lab.sh" status
+    printf '=== топология\n'
+    bash "$HERE/lab.sh" up >/dev/null && bash "$HERE/lab.sh" status
 
-printf '=== сценарии\n'
-for s in "$HERE"/scenarios/*.sh; do
-    [ -f "$s" ] || continue
-    name="$(basename "$s" .sh)"
-    [ -z "$ONLY" ] || [ "$name" = "$ONLY" ] || continue
+    printf '=== сценарии\n'
+    for s in "$HERE"/scenarios/*.sh; do
+        [ -f "$s" ] || continue
+        name="$(basename "$s" .sh)"
+        [ -z "$ONLY" ] || case "$ONLY" in *" $name "*) ;; *) continue ;; esac
+        bash "$HERE/net.sh" heal >/dev/null 2>&1
+        # итог пройденного — последняя строка вывода сценария (замеры времени, «ok (…)»), без строк bash о снятых
+        # фоновых процессах (trap снимает узлы kill -9)
+        if out="$(bash "$s" 2>&1)"; then printf 'PASS %s: %s\n' "$name" "$(printf '%s\n' "$out" | grep -v ' Killed  ' | tail -n1)"; passed=$((passed + 1))
+        else printf 'FAIL %s\n%s\n' "$name" "$out"; fail=$((fail + 1)); fi
+    done
     bash "$HERE/net.sh" heal >/dev/null 2>&1
-    # итог пройденного — последняя строка вывода сценария (замеры времени, «ok (…)»), без строк bash о снятых
-    # фоновых процессах (trap снимает узлы kill -9)
-    if out="$(bash "$s" 2>&1)"; then printf 'PASS %s: %s\n' "$name" "$(printf '%s\n' "$out" | grep -v ' Killed  ' | tail -n1)"; passed=$((passed + 1))
-    else printf 'FAIL %s\n%s\n' "$name" "$out"; fail=$((fail + 1)); fi
-done
-bash "$HERE/net.sh" heal >/dev/null 2>&1
-bash "$HERE/lab.sh" down >/dev/null
+    bash "$HERE/lab.sh" down >/dev/null
+fi
 
 if [ "$SUITE" -eq 1 ]; then
     printf '=== набор тестов\n'

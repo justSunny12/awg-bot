@@ -27,7 +27,7 @@
 #   6. поиск аплинка агентом шлюза (gwguard.uplink_interface — тот же, что в 4.1.x) на G1 при поднятом
 #      awg-quo находит аплинк: awgqah с тем же Endpoint, что у линка, ему не виден; контроль — тот же
 #      интерфейс у хоста ломает поиск;
-#   7. наблюдение по выключению каждого узла: зонд узла --down — y падает на 1 через окно W (40 с), не
+#   7. наблюдение по выключению каждого узла: зонд узла --down — y падает на 1 через окно W (QT_W), не
 #      раньше, другие узлы в счёте; узел вернулся (--up) — снова в счёте; --wipe снимает пространство и
 #      каталог конфигов.
 #
@@ -37,6 +37,7 @@ set -u
 HERE="$(cd "$(dirname "$0")/.." && pwd)"; ROOT="$(cd "$HERE/../.." && pwd)"
 USER_="${SUDO_USER:-$(id -un)}"; HOME_="$(getent passwd "$USER_" | cut -d: -f6)"
 PY="${LAB_PY:-$HOME_/venv/bin/python}"
+eval "$(cd "$ROOT" && "$PY" -m tests.lab.pairnode digits)" || exit 1   # QT_* — цифры уровня (LAB_FAST), как у ответчика
 SCRIPT="$ROOT/install/quorum-probe-setup.sh"
 Q=/var/lib/awglab-quo
 A_PUB_IP=203.0.113.5; A_PORT=45871; RESP=169.254.88.1
@@ -264,8 +265,8 @@ times=""
 for n in G2 G1 B; do
     t0=$(date +%s)
     qsh "$n" --down awgqah >/dev/null || fail "--down зонда $n"
-    sleep 30
-    [ "$(rq 's["y"]')" = 3 ] || fail "узел $n выпал из счёта раньше окна W (30 с после --down): $(cat "$Q/resp.json")"
+    sleep $((QT_W - 10))
+    [ "$(rq 's["y"]')" = 3 ] || fail "узел $n выпал из счёта раньше окна W ($((QT_W - 10)) с после --down): $(cat "$Q/resp.json")"
     wait_rq 's["y"] == 2' 25 >/dev/null || fail "узел $n не выпал из счёта за W + 15 с: $(cat "$Q/resp.json")"
     dt=$(( $(date +%s) - t0 ))
     [ "$(rq '"'"${NODE[$n]}"'" not in s["yes"]')" = "true" ] || fail "выпал не тот узел: $(rq 's["yes"]')"

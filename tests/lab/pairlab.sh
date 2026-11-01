@@ -20,7 +20,8 @@
 #   pl_pair_up                    pl_init, оба узла с поллингом, журнал включён, снимки приняты
 #   pl_open_wait <срок>           ход процесса открытия у B до done или fail (open.status)
 #   pl_guest_start / pl_guest_stop   бот основы на резерве (guest_main) в зоне, команды — $PL/G
-#   pl_conf <узел> <ключ.через.точку> <значение JSON>   правка app.yaml узла (до pl_start)
+#   pl_conf <узел> <ключ.через.точку> <значение JSON>   правка conf узла (до pl_start): первый сегмент —
+#                                 имя файла conf/<имя>.yaml, если он есть (reserve.return), иначе app.yaml (routing.enabled)
 #   pl_gw_start <слот> / pl_gw_stop <слот>   шлюз основы с кворумом (gwnode) в lab-G1, lab-G2, lab-GR (слот 3);
 #                                 основе и резерву слоты — LAB_GW_SLOTS (до pl_start)
 #   pl_gq <слот> <выражение>      значение из status.json шлюза (выражение python над s)
@@ -33,6 +34,10 @@ PL_HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; PL_ROOT="$(cd "$PL_HERE
 PL_USER="${SUDO_USER:-$(id -un)}"; PL_HOME="$(getent passwd "$PL_USER" | cut -d: -f6)"
 PL_VENV="${LAB_VENV:-$PL_HOME/venv}"
 PY="${LAB_PY:-$PL_VENV/bin/python}"
+# QT_PROBE, QT_NO, QT_W, QT_DOWN, QT_UP, QT_UNFENCE, QT_TIE, QT_TIE_CLEAR, QT_RF, QT_DOWN_RF, QT_GRACE,
+# QT_PAUSE, QT_HEALTHY — цифры кворума и «здоров» уровня стенда (LAB_FAST=1 — быстрый, pairnode.LAB_FAST_DIGITS):
+# пределы проверок сценариев — от них, узлы получают те же в reserve.yaml
+eval "$(cd "$PL_ROOT" && "$PY" -m tests.lab.pairnode digits)" || exit 1
 PL="${LAB_PAIR_DIR:-/var/lib/awglab-pair}"   # не /tmp и не /var/tmp: у песочницы процесса открытия PrivateTmp
 PL_Z="$PL_ROOT/install/reserve-zone-setup.sh"
 TOKEN_A="880100:LAB-DUMMY-alpha"; TOKEN_B="880200:LAB-DUMMY-beta"
@@ -220,13 +225,17 @@ pl_guest_stop() {
     kill "$PL_GUEST_PID" 2>/dev/null; sleep 1; kill -9 "$PL_GUEST_PID" 2>/dev/null; PL_GUEST_PID=""
 }
 
-pl_conf() {  # pl_conf <узел> <ключ.через.точку> <значение JSON> — правка conf/app.yaml узла
-    "$PY" -c 'import json,sys,yaml
-p=sys.argv[1]; d=yaml.safe_load(open(p, encoding="utf-8"))
-cur=d; keys=sys.argv[2].split(".")
+pl_conf() {  # pl_conf <узел> <ключ.через.точку> <значение JSON> — правка conf узла (файл — по первому сегменту)
+    "$PY" -c 'import json,os,sys,yaml
+keys=sys.argv[2].split(".")
+p=os.path.join(sys.argv[1], keys[0] + ".yaml")
+if len(keys) > 1 and os.path.exists(p): keys=keys[1:]
+else: p=os.path.join(sys.argv[1], "app.yaml")
+d=yaml.safe_load(open(p, encoding="utf-8"))
+cur=d
 for k in keys[:-1]: cur=cur.setdefault(k, {})
 cur[keys[-1]]=json.loads(sys.argv[3])
-open(p, "w", encoding="utf-8").write(yaml.safe_dump(d, allow_unicode=True))' "$PL/$1/conf/app.yaml" "$2" "$3"
+open(p, "w", encoding="utf-8").write(yaml.safe_dump(d, allow_unicode=True))' "$PL/$1/conf" "$2" "$3"
 }
 
 # Шлюз основы с кворумом: tests/lab/gwnode.py в пространстве lab-G<слот> (вход — nsenter --net:
@@ -359,7 +368,12 @@ pl_cleanup_quiet() {
     bash "$PL_HERE/net.sh" heal >/dev/null 2>&1
 }
 
-pl_cleanup() {
+pl_cleanup() {   # trap EXIT: сценарий не прошёл — каталог пары (журналы узлов, status.json, шина) в /var/tmp/lab-fail-<сценарий>
+    local rc=$?
     pl_cleanup_quiet
+    if [ "$rc" -ne 0 ] && [ -d "$PL" ]; then
+        local keep="/var/tmp/lab-fail-$(basename "$0" .sh)"
+        rm -rf "$keep"; cp -a "$PL" "$keep" 2>/dev/null && printf 'каталог пары сохранён: %s\n' "$keep"
+    fi
     [ -n "${PL_KEEP:-}" ] || rm -rf "$PL"
 }
