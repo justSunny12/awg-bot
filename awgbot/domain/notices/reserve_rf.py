@@ -9,8 +9,8 @@ from .reserve_fmt import _e, _n, _when
 # ── РФ-доступ через второй сервер (Т-РТ6…Т-РТ11, на вычитку) ────────────────
 
 def _bytes(n: int) -> str:
-    from awgbot.util.textfmt.base import human_bytes
-    return human_bytes(int(n or 0))
+    from awgbot.util.textfmt.base import volume
+    return volume(int(n or 0))
 
 
 def rf_transit_on(reserve: str, since: str, until: str) -> str:

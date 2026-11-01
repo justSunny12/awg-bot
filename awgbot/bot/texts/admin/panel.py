@@ -6,7 +6,7 @@ import datetime
 
 from awgbot.util import timeutil
 from awgbot.bot import ui
-from ..fmt import _e, disk_lines, human_bytes, ram_pair, rf_line, profile_link, plural_ru
+from ..fmt import _e, disk_lines, volume, ram_pair, rf_line, profile_link, plural_ru
 from ..fmt import deep_link as _deep_link
 from ..routing import routing_status_line, routing_admin_status_line
 from ..updates import release_url
@@ -102,7 +102,7 @@ def admin_panel(st: dict, routing_ok: bool = None, migration=None,
     # маркировка не работает
     if st.get("traffic_rx") is not None:
         rx, tx = int(st["traffic_rx"]), int(st["traffic_tx"])
-        lines.append(_counter(TRAFFIC_PAYLOAD, f"📊 Трафик за {month_label()}", human_bytes(rx + tx), rx + tx))
+        lines.append(_counter(TRAFFIC_PAYLOAD, f"📊 Трафик за {month_label()}", volume(rx + tx), rx + tx))
         if rf and rf.get("show"):
             lines.append(rf_traffic_line(rf, bot_username))
     tail = []

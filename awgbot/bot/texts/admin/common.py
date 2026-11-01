@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from awgbot.util import timeutil
-from ..fmt import human_bytes, updown_brief
+from ..fmt import volume, updown_brief
 
 
 RF_PAYLOAD = "traffic_local"     # /start traffic_local[-<id>] — прежние ссылки на экраны РФ
@@ -27,7 +27,7 @@ def month_label() -> str:
 def _total(rx: int, tx: int) -> str:
     """«123.4 ГБ (↑12.1 ↓111.3)»; ноль — без стрелок."""
     total = int(rx) + int(tx)
-    return f"{human_bytes(total)} {updown_brief(rx, tx)}" if total else human_bytes(0)
+    return f"{volume(total)} {updown_brief(rx, tx)}" if total else volume(0)
 
 
 # Списки с эмодзи в начале строк: подряд строки сливаются, а межстрочный

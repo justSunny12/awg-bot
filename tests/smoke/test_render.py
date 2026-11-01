@@ -23,16 +23,16 @@ def test_volumes_are_gigabytes_rounded_to_hundredths():
     «8,0 МБ (лимит 50,00 ГБ)» и не «1,50»."""
     G, M = 1024 ** 3, 1024 ** 2
     assert texts.gb(0) == "0" and texts.gb(50 * G) == "50" and texts.gb(G // 2) == "0,5"
-    assert texts.gb(G + G // 2) == "1,5" and texts.human_bytes(G + G // 2) == "1,5 ГБ"
+    assert texts.gb(G + G // 2) == "1,5" and texts.volume(G + G // 2) == "1,5 ГБ"
     from awgbot.bot.texts.fmt import volume
     assert volume(G // 2) == "0,5 ГБ" and volume(50 * G) == "50 ГБ" and volume(0) == "0 ГБ"
     assert texts.gb(int(8.99 * G)) == "8,99"
     assert texts.gb(int(8.995 * G) + 1) == "9", "округление арифметическое, не банковское"
     assert texts.gb(int(8.994 * G)) == "8,99"
-    assert texts.human_bytes(0) == "0 ГБ"
-    assert texts.human_bytes(1) == "0,01 ГБ" and texts.human_bytes(2048) == "0,01 ГБ"
-    assert texts.human_bytes(8 * M) == "0,01 ГБ" and texts.human_bytes(16 * M) == "0,02 ГБ"
-    assert texts.human_bytes(G - 1) == "1 ГБ" and texts.human_bytes(G) == "1 ГБ"
+    assert texts.volume(0) == "0 ГБ"
+    assert texts.volume(1) == "0,01 ГБ" and texts.volume(2048) == "0,01 ГБ"
+    assert texts.volume(8 * M) == "0,01 ГБ" and texts.volume(16 * M) == "0,02 ГБ"
+    assert texts.volume(G - 1) == "1 ГБ" and texts.volume(G) == "1 ГБ"
     assert texts.used_of_limit(int(8.99 * G), 50 * G) == "8,99 из 50 ГБ"
     assert texts.used_of_limit(512 * M, 50 * G) == "0,5 из 50 ГБ"
     assert texts.used_of_limit(int(8.99 * G), 50 * G, "лимит устройства") == "8,99 из 50 ГБ (лимит устройства)"
@@ -40,7 +40,7 @@ def test_volumes_are_gigabytes_rounded_to_hundredths():
 
 
 def test_gb_str_and_slots_and_limit_notice():
-    assert "ГБ" in texts.gb_str(5 * 1024 ** 3)
+    assert "ГБ" in texts.volume(5 * 1024 ** 3)
     assert texts.limit_changed_notice(0, 10 * 1024 ** 3)
 
 

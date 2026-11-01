@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from awgbot.util import timeutil
 from awgbot.bot import ui
-from ..fmt import _e, gb_str, profile_link, _n_devices
+from ..fmt import _e, volume, profile_link, _n_devices
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -56,7 +56,7 @@ def invite_screen(link: str, client, *, new: bool = True) -> str:
     «📤 Отправить» / «📋 Скопировать»), черта, чьё оно — имя без ссылки (в
     карточку ведёт кнопка), лимиты и срок. new — только что созданный профиль."""
     d = _n_devices(client.device_limit) if client.device_limit else "∞ устройств"
-    t = f"{gb_str(client.traffic_limit)} в месяц" if client.traffic_limit else "∞ ГБ в месяц"
+    t = f"{volume(client.traffic_limit)} в месяц" if client.traffic_limit else "∞ ГБ в месяц"
     end = client.effective_period_end
     till = f"до {timeutil.fmt_date_ui(timeutil.parse_iso(end))}" if end else "бессрочно"
     name = _e(client.name)

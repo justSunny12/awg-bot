@@ -6,7 +6,7 @@ from awgbot.core import settings
 from awgbot.util import timeutil
 from awgbot.bot import ui
 from awgbot.core.enums import SubStatus
-from ..fmt import details, access_status_line, gb_str, _n_devices
+from ..fmt import details, access_status_line, volume, _n_devices
 from ..routing import ROUTING_NAME
 from .common import _pause_visibility, _pause_until, ADMIN_PAUSE_STATUS
 # строка о днях паузы — уведомление домена о продлении, текст общий
@@ -49,7 +49,7 @@ def pause_balance_line(client) -> str:
 
 
 def _limits_line(client, routing_visible: bool) -> str:
-    parts = [f"{gb_str(client.traffic_limit) if client.traffic_limit else '∞ ГБ'} в месяц",
+    parts = [f"{volume(client.traffic_limit) if client.traffic_limit else '∞ ГБ'} в месяц",
              _n_devices(client.device_limit) if client.device_limit else "∞ устройств"]
     if routing_visible:
         parts.append(f"🇷🇺 {ROUTING_NAME}")

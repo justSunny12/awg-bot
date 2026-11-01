@@ -6,7 +6,7 @@ from awgbot.util import timeutil
 from awgbot.bot import ui
 from awgbot.core.enums import FriendStatus
 from ..fmt import (
-    device_state, _e, used_of_limit, gb, gb_str, volume, holder_link, owner_link, owner_name)
+    device_state, _e, used_of_limit, gb, volume, holder_link, owner_link, owner_name)
 from .common import TELEGRAM_RISK
 
 
@@ -167,7 +167,7 @@ def device_created(name: str, profile_limit_bytes: int) -> str:
     """«✅ Устройство «iPhone» создано · трафик в пределах 100 ГБ профиля»."""
     head = f"✅ Устройство «{_e(name)}» создано"
     if profile_limit_bytes:
-        return f"{head} · трафик в пределах {gb_str(profile_limit_bytes)} профиля"
+        return f"{head} · трафик в пределах {volume(profile_limit_bytes)} профиля"
     return head
 
 
@@ -180,10 +180,10 @@ def device_limit_prompt(name: str, profile_limit_bytes: int, current_bytes: int 
     head = f"{ui.head('📊 Лимит трафика')} устройства «{_e(name)}»"
     as_profile = current_bytes == 0 and bool(profile_limit_bytes)
     if current_bytes is not None:
-        now = gb_str(current_bytes) if current_bytes else ("как у профиля" if as_profile else "∞")
+        now = volume(current_bytes) if current_bytes else ("как у профиля" if as_profile else "∞")
         head += f" · сейчас {now}"
     if profile_limit_bytes:
-        return f"{head} · не больше {gb_str(profile_limit_bytes)}{'' if as_profile else ' профиля'}"
+        return f"{head} · не больше {volume(profile_limit_bytes)}{'' if as_profile else ' профиля'}"
     return head
 
 
@@ -195,7 +195,7 @@ def device_limit_other_prompt(profile_limit_bytes: int, name: str = "",
     if name:
         head += f" устройства «{_e(name)}»"
     if current_bytes is not None:
-        head += f" · сейчас {gb_str(current_bytes) if current_bytes else '∞'}"
+        head += f" · сейчас {volume(current_bytes) if current_bytes else '∞'}"
     if profile_limit_bytes:
         return (f"{head} · не больше {gb(profile_limit_bytes)} ГБ (лимит профиля)\n\n"
                 "Пришли число ГБ; 0 — как у профиля")
@@ -203,7 +203,7 @@ def device_limit_other_prompt(profile_limit_bytes: int, name: str = "",
 
 
 def device_limit_over(profile_limit_bytes: int) -> str:
-    return f"⚠️ Не больше {gb_str(profile_limit_bytes)} — лимита профиля"
+    return f"⚠️ Не больше {volume(profile_limit_bytes)} — лимита профиля"
 
 
 NUMBER_BAD = "⚠️ Нужно целое число ГБ"
@@ -215,8 +215,8 @@ def limit_note(old_bytes: int, new_bytes: int, profile_limit_bytes: int = 0) -> 
     снят у профиля с лимитом — «✅ Лимит трафика: 50 ГБ → ∞ (не более 100 ГБ —
     лимит профиля)»."""
     def _f(b):
-        return gb_str(b) if b else "∞"
-    tail = (f" (не более {gb_str(profile_limit_bytes)} — лимит профиля)"
+        return volume(b) if b else "∞"
+    tail = (f" (не более {volume(profile_limit_bytes)} — лимит профиля)"
             if not new_bytes and profile_limit_bytes else "")
     return f"✅ Лимит трафика: {_f(old_bytes)} → {_f(new_bytes)}{tail}"
 

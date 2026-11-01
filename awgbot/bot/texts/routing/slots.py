@@ -8,7 +8,7 @@ from awgbot.bot import ui
 from awgbot.util import timeutil
 from awgbot.domain.gwchecks import WRITE_ERROR
 
-from ..fmt import _e, human_bytes, _updown, plain_ip, details, num
+from ..fmt import _e, volume, _updown, plain_ip, details, num
 
 
 # ── адреса в туннеле: пары «настоящая → в туннеле» ──────────────────────────
@@ -123,7 +123,7 @@ def gateway_device_card(dev, state=None) -> str:
     rx, tx = int(dev.traffic_rx_month), int(dev.traffic_tx_month)
     head = (ui.head(f"🛰 {_e(dev.name)}", status=f"({plain_ip(dev.address)}) {status}") + "\n"
             # стрелки — со стороны шлюза: его исходящее — это tx сервера
-            f"Трафик: {human_bytes(rx + tx)} {_updown(tx, rx)}")
+            f"Трафик: {volume(rx + tx)} {_updown(tx, rx)}")
     if state is not None:
         head += "\n\n" + ext_ip_line(state.get("ext_ip")) + "\n" + ping_line(state.get("ping_ms"))
     if state is not None and state.get("active"):

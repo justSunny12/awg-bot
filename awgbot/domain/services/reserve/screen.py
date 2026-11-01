@@ -85,7 +85,7 @@ class ReserveScreenMixin:
         база оценена размером пакета (сжата, закрыта K). «Около» в обоих случаях: это потолки, а
         база после журнала больше той, что ушла в пакете."""
         from awgbot.infra import rsvzone
-        from awgbot.util.textfmt import human_bytes
+        from awgbot.util.textfmt import volume
         pkg_in = self.rsv_get("rsv_pkg_in")
         pkg = int(pkg_in.get("size") or 0)
         db = rsvzone.db_size_of(pkg_in.get("db_size"))
@@ -93,7 +93,7 @@ class ReserveScreenMixin:
         if size <= rsvzone.PKG_MEM_WARN_BYTES:
             return {}
         need = (rsvzone.open_memory_mb(pkg, db) + rsvzone.guest_memory_mb(size)) * 1024 * 1024
-        return {"size": human_bytes(size), "need": human_bytes(need)}
+        return {"size": volume(size), "need": volume(need)}
 
     def _quorum_card_safe(self) -> dict:
         try:
@@ -107,13 +107,13 @@ class ReserveScreenMixin:
         tr = self.rsv_get("rsv_traffic")
         if not tr:
             return {}
-        from awgbot.util.textfmt import human_bytes, month_name
+        from awgbot.util.textfmt import volume, month_name
         now = timeutil.now()
         month = now.strftime("%Y-%m")
         out, inn = tr.get("out") or {}, tr.get("in") or {}
         view = {"month_label": month_name(now)}
         if out.get("month") == month and (out.get("rx") or out.get("tx")):
-            view["out"] = f"↑ {human_bytes(int(out.get('tx') or 0))} · ↓ {human_bytes(int(out.get('rx') or 0))}"
+            view["out"] = f"↑ {volume(int(out.get('tx') or 0))} · ↓ {volume(int(out.get('rx') or 0))}"
         if inn.get("month") == month and (inn.get("rx") or inn.get("tx")):
-            view["in"] = f"↑ {human_bytes(int(inn.get('tx') or 0))} · ↓ {human_bytes(int(inn.get('rx') or 0))}"
+            view["in"] = f"↑ {volume(int(inn.get('tx') or 0))} · ↓ {volume(int(inn.get('rx') or 0))}"
         return view

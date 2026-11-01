@@ -5,7 +5,7 @@ from __future__ import annotations
 from awgbot.util import timeutil
 from awgbot.bot import ui
 from ..fmt import (
-    _e, human_bytes, device_state, plain_ip, rf_value, tree, sub_line, profile_link,
+    _e, volume, device_state, plain_ip, rf_value, tree, sub_line, profile_link,
     admin_device_link, _n_devices, _BYTES_PER_GB, plural_ru)
 from ..fmt import deep_link as _deep_link
 from ..routing import ROUTING_NAME
@@ -88,7 +88,7 @@ def _rf_sub(rf) -> list[str]:
     """Вложенная строка РФ под записью — только при ненулевой РФ-части."""
     if not rf or int(rf[0]) + int(rf[1]) <= 0:
         return []
-    return [f"🇷🇺 {ROUTING_NAME}: {human_bytes(int(rf[0]) + int(rf[1]))}"]
+    return [f"🇷🇺 {ROUTING_NAME}: {volume(int(rf[0]) + int(rf[1]))}"]
 
 
 def _tree_page(head_lines: list[str], branches: list, page: int, empty: str):
@@ -115,7 +115,7 @@ def traffic_profiles_page(rows, bot_username: str = "", total: tuple[int, int] =
         # «Вне профилей» — часть РФ-итога (удалённые устройства и первые минуты
         # новых), поэтому под шапкой, а не записью среди профилей
         if int(outside or 0) >= _BYTES_PER_GB // 100:
-            head.append(sub_line(_OUTSIDE.format(v=human_bytes(outside))))
+            head.append(sub_line(_OUTSIDE.format(v=volume(outside))))
     branches = []
     for c, rx, tx, rf in [(c, rx, tx, rf) for c, rx, tx, rf in rows if int(rx) + int(tx) > 0]:
         branches.append((f"👤 {_deep_link(bot_username, f'{TRAFFIC_PAYLOAD}-{c.id}', c.name)}: "

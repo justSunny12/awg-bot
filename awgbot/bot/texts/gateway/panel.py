@@ -5,7 +5,7 @@ from awgbot.util.textfmt import more_count
 
 from awgbot.bot import ui
 from awgbot.domain import gwchecks
-from ..fmt import _e, disk_lines, frac2, human_bytes, ram_pair, updown_brief, num
+from ..fmt import _e, disk_lines, frac2, volume, ram_pair, updown_brief, num
 from awgbot.bot.texts import gateway as pkg       # имена пакета — через него: их подменяют тесты
 
 
@@ -135,7 +135,7 @@ def gateway_panel(st, upd: dict | None = None, chan: dict | None = None, pending
     parts.append(f"🩺 Здоровье {pkg._gw_health_summary(st.checks, st.smart)}")
     traffic = st.month_rx + st.month_tx
     if traffic:                                           # трафик месяца — своей строкой
-        parts.append(f"📊 {human_bytes(traffic)} {updown_brief(st.month_rx, st.month_tx)}")
+        parts.append(f"📊 {volume(traffic)} {updown_brief(st.month_rx, st.month_tx)}")
     parts.append("")
     parts.append(pkg.refreshed_line(st, bot_username))
     return "\n".join(_squeeze(parts))

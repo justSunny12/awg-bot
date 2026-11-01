@@ -12,7 +12,7 @@ import re
 
 from aiogram.types import InlineKeyboardMarkup
 
-from awgbot.infra.db.listsnap import kb_has_action, kb_has_hide
+from awgbot.infra.db.listsnap import kb_has_action
 
 _LINK = re.compile(r'<a href="https://t\.me/[A-Za-z0-9_]+\?start=list-snap-(?P<key>[a-z0-9]{10})(?:-n)?">'
                    r'(?P<label>.*?)</a>', re.S)
@@ -79,10 +79,6 @@ def without_hide(kb: str | None) -> str:
     if not kept:
         return ""
     return json.dumps({"inline_keyboard": kept}, ensure_ascii=False)
-
-
-def has_hide(kb: str | None) -> bool:
-    return kb_has_hide(kb)
 
 
 def has_action(kb: str | None) -> bool:
