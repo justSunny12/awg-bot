@@ -124,11 +124,9 @@ def read(plain: bytes) -> dict | None:
 
 def env_admin_id(raw_env: bytes | str | None) -> str:
     """ADMIN_ID из env копии; нет — пусто."""
+    from awgbot.util import kvfile
     text = raw_env.decode("utf-8", "replace") if isinstance(raw_env, bytes) else str(raw_env or "")
-    for line in text.splitlines():
-        if line.startswith("ADMIN_ID="):
-            return line.split("=", 1)[1].strip().strip('"').strip("'")
-    return ""
+    return kvfile.line_value(text, "ADMIN_ID").strip('"').strip("'")
 
 
 def check(meta: dict | None, *, admin_id_copy: str = "", chat: bool = True) -> str:

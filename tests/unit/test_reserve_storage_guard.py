@@ -35,14 +35,19 @@ GUEST_SIDE = (
 # единственные места, где гостевая сторона создаёт файлы: приватная запись хранилища, статус открытия (без секретов)
 # и временная копия базы для снимка (в хранилище в памяти, удаляется сразу)
 WRITE_ALLOWED = {
-    ("awgbot/infra/rsvzone.py", "write_private_with"),          # write_private — через неё; потоком — база из снимка
+    ("awgbot/infra/rsvzone.py", "write_private"),               # util/fsatomic: 0600 с первого байта, fsync
+    ("awgbot/infra/rsvzone.py", "write_private_with"),          # то же потоком — база из снимка
     ("awgbot/infra/rsvzone.py", "open_status_write"),
     ("awgbot/domain/services/reserve/guest.py", "ReserveGuestMixin._guest_db_bytes"),
 }
 # методы, создающие файл, где бы ни стоял вызов; и os.* / shutil.*, меняющие файловую систему
 WRITE_ATTRS = {"write_text", "write_bytes", "mkstemp", "mkdtemp", "NamedTemporaryFile", "TemporaryFile"}
 WRITE_BY_MODULE = {"os": {"open", "fdopen", "replace", "rename", "symlink", "link", "mkfifo"},
-                   "shutil": {"copy", "copy2", "copyfile", "copyfileobj", "copytree", "move"}}
+                   "shutil": {"copy", "copy2", "copyfile", "copyfileobj", "copytree", "move"},
+                   # общие помощники атомарной записи: права задаёт вызывающий — мимо rsvzone.write_private
+                   # гостевая сторона могла бы положить файл шире 0600
+                   "fsatomic": {"write_atomic", "write_stream", "write_private", "write_private_bytes"},
+                   "jsonfile": {"write"}}
 
 
 def _py_files(*roots: str):

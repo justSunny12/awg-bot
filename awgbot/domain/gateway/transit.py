@@ -7,7 +7,7 @@ import json
 import os
 import time
 from awgbot.core import config
-from awgbot.util import timeutil
+from awgbot.util import fsatomic, timeutil
 from awgbot.domain.services import Notification
 from awgbot.domain import gwownlists
 from awgbot.domain.gateway import base
@@ -342,10 +342,7 @@ class TransitMixin:
             return {"ok": True, "error": ""}
         os.makedirs(gwguard.LAN_FEED_DIR, mode=0o700, exist_ok=True)
         for name, text in (("domains.lst", domains), ("nets.lst", nets)):
-            path = os.path.join(gwguard.LAN_FEED_DIR, name)
-            with open(path + ".tmp", "w", encoding="utf-8") as f:
-                f.write(text)
-            os.replace(path + ".tmp", path)
+            fsatomic.write_atomic(os.path.join(gwguard.LAN_FEED_DIR, name), text)
         ok, tail = gwguard.run_lan_lists(from_dir=gwguard.LAN_FEED_DIR)
         if not ok:
             return {"ok": False, "error": tail or "скрипт списков отказал"}

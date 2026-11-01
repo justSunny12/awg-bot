@@ -6,6 +6,7 @@ import os
 import re
 from typing import Optional
 from awgbot.domain.services.types import ServiceError
+from awgbot.util import kvfile
 from .common import log
 
 
@@ -29,15 +30,7 @@ class AgentBotMixin:
 
     def gw_bot_token(self, slot_id: Optional[int] = None) -> str:
         """Токен бота шлюза слота из env. Пусто — ещё не спрашивали."""
-        key = self._gw_token_env(slot_id)
-        try:
-            with open(self._env_path(), encoding="utf-8") as f:
-                for line in f:
-                    if line.startswith(key + "="):
-                        return line.split("=", 1)[1].strip()
-        except OSError:
-            pass
-        return ""
+        return kvfile.get_line(self._env_path(), self._gw_token_env(slot_id))
 
 
     # ── кто такой бот шлюза: username и имя из getMe по токену слота ───────
@@ -82,19 +75,9 @@ class AgentBotMixin:
 
     def forget_gw_bot_token(self, slot_id: Optional[int] = None) -> None:
         """Убрать токен бота слота из env (снятие слота) и память getMe."""
-        path = self._env_path()
-        key = self._gw_token_env(slot_id)
         try:
-            with open(path, encoding="utf-8") as f:
-                lines = [ln for ln in f.read().splitlines() if not ln.startswith(key + "=")]
-        except FileNotFoundError:
-            return
-        except OSError as e:
-            log.warning("gateway_remove: токен слота %s не убран из env: %s", slot_id, e)
-            return
-        try:
-            from awgbot.util.fsatomic import write_private
-            write_private(path, "\n".join(lines) + "\n")
+            if not kvfile.set_line(self._env_path(), self._gw_token_env(slot_id), None):
+                return                                    # env нет — убирать нечего
         except OSError as e:
             log.warning("gateway_remove: токен слота %s не убран из env: %s", slot_id, e)
         try:
@@ -112,19 +95,9 @@ class AgentBotMixin:
         if not re.fullmatch(r"\d{5,}:[A-Za-z0-9_-]{20,}", token):
             raise ServiceError("это не похоже на токен бота — жду строку вида 123456789:AA…")
         path = self._env_path()
-        key = self._gw_token_env(slot_id)
         try:
-            lines = []
-            try:
-                with open(path, encoding="utf-8") as f:
-                    lines = [ln for ln in f.read().splitlines()
-                             if not ln.startswith(key + "=")]
-            except FileNotFoundError:
-                pass
-            lines.append(f"{key}={token}")
             # атомарно: усечение с последующей записью при ENOSPC оставляло
             # пустой env — и основной бот не стартовал
-            from awgbot.util.fsatomic import write_private
-            write_private(path, "\n".join(lines) + "\n")
+            kvfile.set_line(path, self._gw_token_env(slot_id), token)
         except OSError as e:
             raise ServiceError(f"не записать {path}: {e}")

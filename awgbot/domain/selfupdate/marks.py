@@ -71,13 +71,12 @@ def guard_armed(data_dir: Optional[str] = None) -> bool:
 
 def pop_rolled_mark(data_dir: Optional[str] = None) -> dict:
     """Метка отката сторожем — прочитать и убрать; нет или не читается — пусто."""
-    import json
+    from awgbot.util import jsonfile
     path = data_path(ROLLED_MARK_FILE, data_dir)
     try:
-        with open(path, encoding="utf-8") as f:
-            mark = json.loads(f.read() or "{}")
+        mark = jsonfile.load(path)
     except (OSError, ValueError):
-        return {}
+        return {}                          # битую метку не трогаем — как и прежде
     try:
         os.remove(path)
     except OSError:
@@ -174,12 +173,10 @@ def mark_alive(reason: str, data_dir: Optional[str] = None) -> bool:
     from awgbot.util import timeutil
     if not guard_armed(data_dir):
         return False
+    from awgbot.util import fsatomic
     path = data_path(UPDATE_OK_FILE, data_dir)
-    tmp = f"{path}.tmp"
     try:
-        with open(tmp, "w", encoding="utf-8") as f:
-            f.write(f"{config.INSTALLED_VERSION} {timeutil.now_iso()}\n")
-        os.replace(tmp, path)
+        fsatomic.write_atomic(path, f"{config.INSTALLED_VERSION} {timeutil.now_iso()}\n")
     except OSError as e:
         log.warning("отметка жизни для сторожа обновления не записана: %s", e)
         with _alive_lock:

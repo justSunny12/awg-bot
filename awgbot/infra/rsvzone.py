@@ -26,13 +26,14 @@ conntrack) идут в журнал бота предупреждением зд
 """
 from __future__ import annotations
 
-import json
 import logging
 import os
 import subprocess
 from pathlib import Path
 
 from awgbot.core import config
+from awgbot.infra import scriptrun, systemd
+from awgbot.util import fsatomic, jsonfile, kvfile
 
 log = logging.getLogger(__name__)
 
@@ -243,17 +244,9 @@ def _zone_env() -> dict:
 def run(mode: str, *, env: dict | None = None, stdin: str | None = None, timeout: int = 240) -> str:
     """Один режим скрипта (`--shell`, `--take`, …). Ненулевой код — ZoneError
     с хвостом вывода; `--status` и `--plan` возвращают текст как есть."""
-    args = ["bash", str(_script()), f"--{mode.lstrip('-')}"]
-    full_env = {**os.environ, **_zone_env(), **{k: str(v) for k, v in (env or {}).items()}}
-    try:
-        proc = subprocess.run(args, capture_output=True, timeout=timeout, env=full_env,
-                              input=(stdin.encode() if stdin is not None else None))
-    except (OSError, subprocess.SubprocessError) as e:
-        raise ZoneError(f"скрипт зоны не запустился: {e}") from e
-    out = (proc.stdout + proc.stderr).decode(errors="replace").strip()
-    if proc.returncode != 0:
-        tail = "\n".join(out.splitlines()[-4:]) if out else f"код {proc.returncode}"
-        raise ZoneError(tail)
+    out = scriptrun.run_script(["bash", str(_script()), f"--{mode.lstrip('-')}"], error=ZoneError,
+                               what="скрипт зоны", timeout=timeout, env={**_zone_env(), **(env or {})},
+                               stdin=stdin, tail=4)
     for line in out.splitlines():                        # код 0: предупреждения скрипта — в журнал, прочее — отладкой
         if line.startswith("ВНИМАНИЕ"):
             log.warning("резерв: зона --%s: %s", mode.lstrip("-"), line)
@@ -262,26 +255,17 @@ def run(mode: str, *, env: dict | None = None, stdin: str | None = None, timeout
     return out
 
 
-def _kv(text: str) -> dict:
-    out: dict = {}
-    for line in text.splitlines():
-        k, sep, v = line.partition("=")
-        if sep:
-            out[k.strip()] = v.strip()
-    return out
-
-
 def plan() -> dict:
     """`--plan`: store, cake, netns, awg, webhook_port, zone — без root."""
     try:
-        return _kv(run("plan", timeout=30))
+        return kvfile.parse(run("plan", timeout=30))
     except ZoneError as e:
         return {"error": str(e)}
 
 
 def status() -> dict:
     try:
-        return _kv(run("status", timeout=30))
+        return kvfile.parse(run("status", timeout=30))
     except ZoneError as e:
         return {"error": str(e)}
 
@@ -289,11 +273,7 @@ def status() -> dict:
 def state(path: Path | None = None) -> dict:
     """Состояние зоны из state.json; нет файла — пусто (phase=idle). Путь берётся в
     момент вызова (не при импорте) — подмена STATE_PATH в тестах доходит сюда."""
-    try:
-        data = json.loads((path or STATE_PATH).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    return data if isinstance(data, dict) else {}
+    return jsonfile.read_dict(path or STATE_PATH)
 
 
 def phase() -> str:
@@ -379,65 +359,33 @@ def wipe() -> str:
 
 
 def guest_unit_active() -> bool:
-    try:
-        proc = subprocess.run(["systemctl", "is-active", GUEST_UNIT], capture_output=True, timeout=15)
-    except (OSError, subprocess.SubprocessError):
-        return False
-    return proc.returncode == 0
+    """Юнит бота основы на резерве жив; systemctl не ответил — нет."""
+    return systemd.is_active(GUEST_UNIT, timeout=15) is True
 
 
 def read_json(path: Path) -> dict:
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    return data if isinstance(data, dict) else {}
+    return jsonfile.read_dict(path)
 
 
 def write_private(path: Path, data: bytes | str, mode: int = 0o600) -> None:
-    """Файл хранилища гостя: 0600 с первого байта (создание под umask, затем
-    chmod — окно, в котором файл читаем шире)."""
-    raw = data.encode() if isinstance(data, str) else data
-    write_private_with(path, lambda f: f.write(raw), mode)
+    """Файл хранилища гостя: 0600 с первого байта, атомарно, с fsync (util/fsatomic)."""
+    fsatomic.write_atomic(path, data, mode)
 
 
 def write_private_with(path: Path, fill, mode: int = 0o600):
     """То же, что write_private, но содержимое пишет `fill(f)` — потоком (база из пакета
     или снимка распаковывается прямо в файл, без копии в памяти). Возвращает то, что
-    вернул `fill`; сбой — временный файл прочь, прежний на месте."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
-    try:
-        with os.fdopen(fd, "wb") as f:
-            got = fill(f)
-            f.flush()
-            os.fsync(f.fileno())                              # rep.bin и пакет переживают крах хоста
-    except BaseException:
-        os.unlink(str(tmp))
-        raise
-    os.chmod(str(tmp), mode)
-    os.replace(str(tmp), str(path))
-    try:
-        dfd = os.open(str(path.parent), os.O_RDONLY)
-        try:
-            os.fsync(dfd)
-        finally:
-            os.close(dfd)
-    except OSError:
-        pass
-    return got
+    вернул `fill`; сбой — временный файл прочь, прежний на месте; rep.bin и пакет
+    переживают крах хоста (fsync файла и каталога)."""
+    return fsatomic.write_stream(path, fill, mode)
 
 
 def open_status_write(step: str, **fields) -> None:
     """Ход процесса открытия для бота резерва: шаг, время, причина отказа."""
     from awgbot.util import timeutil
     try:
-        STATE_DIR.mkdir(parents=True, exist_ok=True)
         data = {"step": step, "at": timeutil.now_iso(), **{k: str(v) for k, v in fields.items()}}
-        tmp = OPEN_STATUS.with_name(OPEN_STATUS.name + ".tmp")
-        tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
-        os.replace(str(tmp), str(OPEN_STATUS))
+        jsonfile.write(OPEN_STATUS, data, None)           # секретов нет — права прежнего файла (нового — 0644)
     except OSError:
         pass
 

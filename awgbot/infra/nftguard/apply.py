@@ -8,6 +8,7 @@ import tempfile
 from pathlib import Path
 from typing import Optional
 from awgbot.infra import nftjson, systemd
+from awgbot.util import fsatomic
 from awgbot.infra import nftguard as pkg       # имена пакета — через него: их подменяют тесты
 from awgbot.infra.nftguard.common import log
 
@@ -34,17 +35,9 @@ def read_file() -> str:
 def write_file(text: str) -> None:
     d = Path(pkg.RULES_DIR)
     d.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=str(d), prefix=".awg-bot-guard.", suffix=".tmp")
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(text)
-        os.chmod(tmp, 0o644)
-        os.replace(tmp, pkg.RULES_FILE)
+        fsatomic.write_atomic(pkg.RULES_FILE, text, 0o644)
     except OSError as e:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
         raise pkg.GuardError(f"не записать {pkg.RULES_FILE}: {e}")
 
 
@@ -266,9 +259,9 @@ def arm_rollback(seconds: int, command: list[str], env: dict) -> None:
 def disarm_rollback() -> bool:
     was = pkg.rollback_armed()
     for unit in (f"{pkg.ROLLBACK_UNIT}.timer", f"{pkg.ROLLBACK_UNIT}.service"):
-        for verb in ("stop", "reset-failed"):
+        for verb, call in (("stop", systemd.stop), ("reset-failed", systemd.reset_failed)):
             try:
-                subprocess.run(["systemctl", verb, unit], capture_output=True, timeout=_SYSTEMCTL_TIMEOUT)
+                call(unit, timeout=_SYSTEMCTL_TIMEOUT)
             except (OSError, subprocess.SubprocessError) as e:
                 log.warning("файервол: systemctl %s %s: %s", verb, unit, e)
     return was

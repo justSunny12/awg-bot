@@ -8,7 +8,7 @@ import subprocess
 from typing import Optional
 
 from awgbot.core import config
-from awgbot.util import net4
+from awgbot.util import fsatomic, net4
 
 from . import base, sets
 from .base import log, RoutingError
@@ -114,11 +114,8 @@ def write_dnsmasq_conf(text: str, path: str = None) -> bool:
     except OSError as e:
         raise RoutingError(f"Не прочитать {path}: {e}")
 
-    tmp = path + ".tmp"
     try:
-        with open(tmp, "w", encoding="utf-8") as f:
-            f.write(text)
-        os.replace(tmp, path)                     # атомарно: без полуфайла
+        fsatomic.write_atomic(path, text)         # атомарно: без полуфайла; права прежнего файла
     except OSError as e:
         raise RoutingError(f"Не записать {path}: {e}")
 
@@ -149,8 +146,6 @@ def _restore_text(path: str, old) -> None:
         if old is None:
             os.unlink(path)
         else:
-            with open(path + ".tmp", "w", encoding="utf-8") as f:
-                f.write(old)
-            os.replace(path + ".tmp", path)
+            fsatomic.write_atomic(path, old)
     except OSError as e:
         log.warning("routing: прежний конфиг списков не возвращён: %s", e)

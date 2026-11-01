@@ -9,7 +9,7 @@ import time
 
 from awgbot.core import config, settings
 from awgbot.domain import gwcfg
-from awgbot.util import wgconf
+from awgbot.util import jsonfile, wgconf
 
 from .. import base
 from ..base import log
@@ -70,12 +70,7 @@ class CfgRekeyMixin:
         return f"{gwguard.GW_ETC}/{name}"
 
     def rekey_state(self) -> dict:
-        try:
-            with open(self._rk_path("link.txn"), encoding="utf-8") as f:
-                data = json.load(f)
-            return data if isinstance(data, dict) else {}
-        except (OSError, ValueError):
-            return {}
+        return jsonfile.read_dict(self._rk_path("link.txn"))
 
     def _rk_drop_files(self) -> None:
         for name in ("rekey.next", "rekey.prev"):

@@ -20,24 +20,13 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from awgbot.util import fsatomic
+
 from .event import HEAD, RecordError, head
 
 HEAD_SIZE = HEAD.size
 
 SEG_MAX = 1024 * 1024
-
-
-def _fsync_dir(path: Path) -> None:
-    try:
-        fd = os.open(str(path), os.O_RDONLY)
-    except OSError:
-        return
-    try:
-        os.fsync(fd)
-    except OSError:
-        pass
-    finally:
-        os.close(fd)
 
 
 def _scan(data: bytes) -> tuple[list[bytes], int, bool]:
@@ -55,17 +44,6 @@ def _scan(data: bytes) -> tuple[list[bytes], int, bool]:
         out.append(data[p:p + h.size])
         p += h.size
     return out, p, False
-
-
-def _write_atomic(path: Path, data: bytes) -> None:
-    tmp = path.with_name(path.name + ".tmp")
-    fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "wb") as f:
-        f.write(data)
-        f.flush()
-        os.fsync(f.fileno())
-    os.replace(tmp, path)
-    _fsync_dir(path.parent)
 
 
 class Store:
@@ -125,7 +103,7 @@ class Store:
             f.flush()
             os.fsync(f.fileno())
         if new:
-            _fsync_dir(self.path)
+            fsatomic.fsync_dir(self.path)
         return path
 
     # ── события ────────────────────────────────────────────────────────────
@@ -190,13 +168,13 @@ class Store:
                     pass
             elif len(keep) != len(recs):
                 newp = path.with_name(f"ev-{head(keep[0]).e}-{head(keep[0]).n}.seg")
-                _write_atomic(newp, b"".join(keep))
+                fsatomic.write_atomic(newp, b"".join(keep), 0o600)
                 if newp != path:
                     try:
                         path.unlink()
                     except OSError:
                         pass
-        _fsync_dir(self.path)
+        fsatomic.fsync_dir(self.path)
         return dropped
 
     def events_size(self) -> int:
@@ -245,14 +223,14 @@ class Store:
         if not files or len(keep) == sum(len(self._read(f)) for f in files):
             return
         if keep:
-            _write_atomic(self._cnt(side), b"".join(keep))
+            fsatomic.write_atomic(self._cnt(side), b"".join(keep), 0o600)
         for f in files:
             if f != self._cnt(side) or not keep:
                 try:
                     f.unlink()
                 except OSError:
                     pass
-        _fsync_dir(self.path)
+        fsatomic.fsync_dir(self.path)
 
     # ── целиком ────────────────────────────────────────────────────────────
     def wipe(self) -> None:
@@ -269,4 +247,4 @@ class Store:
                     os.unlink(self.path / n)
                 except OSError:
                     pass
-        _fsync_dir(self.path)
+        fsatomic.fsync_dir(self.path)

@@ -10,11 +10,12 @@ infra/gwguard/rsv). Конфиги зондов лежат в каталоге �
 from __future__ import annotations
 
 import os
-import subprocess
 import tempfile
 from pathlib import Path
 
 from awgbot.core import config
+from awgbot.infra import scriptrun
+from awgbot.util import kvfile
 
 NS = os.environ.get("QUO_NS", "awg-quo")
 SCRIPT_TIMEOUT = 120
@@ -48,34 +49,19 @@ def port() -> int:
 
 
 def _env(extra: dict | None = None) -> dict:
-    return {**os.environ, "QUO_NS": NS, "QUO_CONF_DIR": str(conf_dir()), "QUO_PORT": str(port()), **(extra or {})}
+    """Добавка к окружению процесса для скрипта зондов."""
+    return {"QUO_NS": NS, "QUO_CONF_DIR": str(conf_dir()), "QUO_PORT": str(port()), **(extra or {})}
 
 
 def run(mode: str, *args: str, env: dict | None = None, timeout: int = SCRIPT_TIMEOUT) -> str:
-    argv = ["sh", str(_script()), f"--{mode.lstrip('-')}", *args]
-    try:
-        proc = subprocess.run(argv, capture_output=True, timeout=timeout, env=_env(env))
-    except (OSError, subprocess.SubprocessError) as e:
-        raise QuoError(f"скрипт зондов не запустился: {e}") from e
-    out = (proc.stdout + proc.stderr).decode(errors="replace").strip()
-    if proc.returncode != 0:
-        raise QuoError("\n".join(out.splitlines()[-3:]) or f"код {proc.returncode}")
-    return out
-
-
-def _kv(text: str) -> dict:
-    out: dict = {}
-    for line in text.splitlines():
-        k, sep, v = line.partition("=")
-        if sep:
-            out[k.strip()] = v.strip()
-    return out
+    return scriptrun.run_script(["sh", str(_script()), f"--{mode.lstrip('-')}", *args], error=QuoError,
+                                what="скрипт зондов", timeout=timeout, env=_env(env))
 
 
 def status() -> dict:
     """{ns: present|absent, ifaces: [...], hs: {имя: секунд | None}}; скрипт не ответил — пусто."""
     try:
-        kv = _kv(run("status", timeout=30))
+        kv = kvfile.parse(run("status", timeout=30))
     except QuoError:
         return {}
     ifaces = [i for i in str(kv.get("ifaces") or "").split() if i]

@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 
 from awgbot.core import config
-from awgbot.util import fsatomic
+from awgbot.util import fsatomic, kvfile
 from awgbot.infra import gwguard as pkg       # имена пакета — через него: их подменяют тесты, и подмена должна видеться везде
 
 
@@ -166,12 +166,7 @@ def unit_state() -> dict:
                               capture_output=True, timeout=10)
     except (OSError, pkg.subprocess.SubprocessError):
         return {}
-    out = {}
-    for line in proc.stdout.decode(errors="replace").splitlines():
-        if "=" in line:
-            k, v = line.split("=", 1)
-            out[k.strip()] = v.strip()
-    return out
+    return kvfile.parse(proc.stdout.decode(errors="replace"))
 
 
 def unit_path() -> Path:

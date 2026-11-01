@@ -9,6 +9,7 @@ import shutil
 from typing import Optional
 
 from awgbot.infra import systemd
+from awgbot.util import kvfile
 from awgbot.infra import gwguard as pkg       # имена пакета — через него: их подменяют тесты, и подмена должна видеться везде
 
 from .common import LAN_SCRIPT_TIMEOUT
@@ -16,15 +17,7 @@ from .common import LAN_SCRIPT_TIMEOUT
 
 def lists_status() -> dict:
     """Что записал скрипт списков: updated_at, domains, nets, rc."""
-    out = {}
-    try:
-        for line in pkg.Path(pkg.LAN_STATUS_FILE).read_text(encoding="utf-8").splitlines():
-            if "=" in line:
-                k, v = line.split("=", 1)
-                out[k.strip()] = v.strip()
-    except OSError:
-        pass
-    return out
+    return kvfile.read(pkg.Path(pkg.LAN_STATUS_FILE))
 
 
 def lan_own_lists() -> tuple[int, int]:

@@ -15,11 +15,11 @@ import logging
 import os
 import socket
 import struct
-import subprocess
 from pathlib import Path
 from typing import Optional
 
 from awgbot.core import config
+from awgbot.infra import scriptrun
 
 log = logging.getLogger(__name__)
 
@@ -71,16 +71,9 @@ def _script() -> Path:
 def run(mode: str, addr: str = "") -> str:
     """install|add|remove|status — через скрипт. ResolverError при ненулевом коде
     (кроме status: там код — состояние, не ошибка)."""
-    args = ["bash", str(_script()), mode] + ([addr] if addr else [])
-    try:
-        proc = subprocess.run(args, capture_output=True, timeout=240,
-                              env={**os.environ, "RESOLVER_CONF": str(CONF_PATH)})
-    except (OSError, subprocess.SubprocessError) as e:
-        raise ResolverError(f"скрипт резолвера не запустился: {e}")
-    out = (proc.stdout + proc.stderr).decode(errors="replace").strip()
-    if proc.returncode != 0 and mode != "status":
-        raise ResolverError("\n".join(out.splitlines()[-4:]) or f"код {proc.returncode}")
-    return out
+    return scriptrun.run_script(["bash", str(_script()), mode] + ([addr] if addr else []), error=ResolverError,
+                                what="скрипт резолвера", timeout=240, env={"RESOLVER_CONF": str(CONF_PATH)},
+                                tail=4, check=mode != "status")
 
 
 def ensure_dropin() -> str:

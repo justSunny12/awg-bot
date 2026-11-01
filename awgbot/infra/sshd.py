@@ -22,10 +22,11 @@ import logging
 import os
 import re
 import subprocess
-import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from awgbot.util import fsatomic
 
 log = logging.getLogger("awgbot.sshd")
 
@@ -275,23 +276,8 @@ def rewrite_port(text: str, port: int, primary: bool) -> str:
 
 
 def _write_atomic(path: str, text: str) -> None:
-    d = os.path.dirname(path)
-    os.makedirs(d, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(prefix=".awg-bot.", dir=d)
-    try:
-        with os.fdopen(fd, "w") as f:
-            f.write(text)
-        try:
-            os.chmod(tmp, os.stat(path).st_mode & 0o777)
-        except FileNotFoundError:
-            os.chmod(tmp, 0o644)
-        os.replace(tmp, path)
-    except BaseException:
-        try:
-            os.unlink(tmp)
-        except FileNotFoundError:
-            pass
-        raise
+    """Конфиг демона или drop-in сокета: атомарно, права прежнего файла (нового — 0644)."""
+    fsatomic.write_atomic(path, text)
 
 
 def _config_files() -> list[str]:
