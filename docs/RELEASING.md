@@ -249,7 +249,7 @@ GitHub `vX.Y.Z.P — …`.
   вынесенные из основного задания данных пользователей `runtime/scheduler/jobs.py`,
   `bot/handlers/guest.py`, тексты `bot/texts/reserve/guest.py`), слияние при
   возврате (`domain/backup/merge/policy.py`, `reserve.py`), процесс открытия
-  `tools/rsvopen.py`, сторож обновления и восстановления `tools/rsvbusy.py` (его зовёт общий
+  `tools/rsvopen.py` с частями без ключей `infra/rsvproc/`, сторож обновления и восстановления `tools/rsvbusy.py` (его зовёт общий
   `install/lib/update.sh` на обеих ролях, но у агента пары нет — он всегда «свободен»), обёртка зоны `infra/rsvzone.py` и файервол резерва в
   `infra/nftguard/`. Туда же — запись DNS, переезд кнопкой и возврат:
   автоматы `domain/services/reserve/{dns,outbound,outbound_return,merge_ops,inbound,openproc,notify,traffic,away}.py`,

@@ -1,8 +1,8 @@
 """
 services — бизнес-логика: склейка db + awg + configgen.
 
-Пакет из миксинов по областям (модули blocks, clients, devices, subscription,
-reconcile, firewall, status; пакеты gateway_link, gwchannel, routing, traffic);
+Пакет из миксинов по областям (модули blocks, clients, devices, reconcile,
+firewall, status; пакеты gateway_link, gwchannel, routing, subscription, traffic);
 общая основа — base.py, типы и исключения — types.py. Снаружи импортируют по-прежнему из awgbot.domain.services.
 
 Слой синхронный (db и awg блокирующие). Async-слой (хендлеры, планировщик)

@@ -90,6 +90,10 @@ TTL записи — в `pkg.json` хранилища (гость держит �
 
 Ничего открытого наружу не возвращает: ни ключей, ни частей; память с `M` и
 `K` затирается по выходу насколько это возможно в Python.
+
+Части без `M`, `K`, конверта и токена провайдера — ход и отказ, вход stdin,
+app.yaml гостя, сертификат вебхука, пул Telegram — в infra/rsvproc; здесь —
+снятие ключей, разбор частей пакета, запись секретов в хранилище и запись DNS.
 """
 from __future__ import annotations
 
@@ -97,80 +101,20 @@ import json
 import os
 import random
 import secrets
-import select
-import subprocess
 import sys
 import time
 
-from awgbot.infra.nftguard.common import DEFAULT_TG_POOL   # тот же список, что у файервола хоста  # noqa: E402
+from awgbot.infra.rsvproc.status import OpenError, _RECORD, _fail, _fail_err, _step
+from awgbot.infra.rsvproc.intake import _read_input, _read_line_within
+from awgbot.infra.rsvproc.guestconf import DEFAULT_TG_POOL, _guest_app_yaml, _host_pool, _make_cert, _yaml_dump
 
 TARGET_WAIT_S = 30 * 60
 FACT_POLL_S = (15, 40)
 K_WAIT_S = 120                  # конверт с K от основы после публикации разового ключа
 
-
-def _p(text: str) -> None:
-    print(text, flush=True)
-
-
-class OpenError(RuntimeError):
-    """`pre_m` — отказ до сборки ключа основы `M` (кода не было, не подошёл, точек мало,
-    пакета нет): ключ основы мне не стал известен. Признак — полем итога (open.status
-    `pre_m`), бот резерва по нему решает об отметке `st.exposed`, не по тексту причины."""
-    def __init__(self, reason: str, *, pre_m: bool = False):
-        super().__init__(reason)
-        self.pre_m = pre_m
-
-
-def _step(step: str, **fields) -> None:
-    from awgbot.infra import rsvzone
-    rsvzone.open_status_write(step, **fields)
-    _p(step)
-
-
-# запись уже сменена этим процессом (после `set_record`): любой отказ дальше несёт поля
-# record=set, name, ip — бот резерва по ним зону не снимает и доделывает сам (inbound_keep)
-_RECORD: dict = {}
-
-
-def _fail(reason: str, *, pre_m: bool = False) -> int:
-    from awgbot.infra import rsvzone
-    rsvzone.open_status_write("fail", reason=reason, pre_m="1" if pre_m else "", **_RECORD)
-    _p(f"fail {reason}")
-    return 1
-
-
-def _fail_err(e: OpenError) -> int:
-    return _fail(str(e), pre_m=bool(getattr(e, "pre_m", False)))
-
-
-def _read_input() -> dict:
-    """Первая строка stdin — вход. Не разобралась как строка (JSON в несколько
-    строк при ручном запуске) — дочитать до конца и разобрать целиком."""
-    raw = sys.stdin.readline()
-    try:
-        data = json.loads(raw or "{}")
-    except ValueError:
-        raw += sys.stdin.read()
-        try:
-            data = json.loads(raw or "{}")
-        except ValueError as e:
-            raise OpenError(f"вход не JSON: {e}") from e
-    if not isinstance(data, dict):
-        raise OpenError("вход не объект")
-    return data
-
-
-def _read_line_within(budget_s: float) -> str:
-    """Строка из stdin не позже срока; пусто — EOF (бот закрыл трубу) или срок."""
-    deadline = time.monotonic() + budget_s
-    while True:
-        left = deadline - time.monotonic()
-        if left <= 0:
-            return ""
-        ready, _w, _x = select.select([sys.stdin], [], [], min(left, 5.0))
-        if ready:
-            return sys.stdin.readline()
+# имена процесса для вызывающих и подмен — и вынесенные в infra/rsvproc (берут их по-прежнему отсюда)
+__all__ = ["main", "run", "OpenError", "recover_keys", "await_sealed_k", "fill_store", "set_record", "wait_fact",
+           "DEFAULT_TG_POOL", "TARGET_WAIT_S", "FACT_POLL_S", "K_WAIT_S"]
 
 
 def await_sealed_k(pkg_gen: int, budget_s: float = K_WAIT_S) -> bytes:
@@ -291,57 +235,6 @@ def _journal(k: bytes, jrn: dict, *, button: bool) -> dict:
     return {"jgap": int(res.gap_n or 0), "jlost": int(res.lost)}   # дальше по шагам — боту резерва (разрыв — не молча)
 
 
-def _yaml_dump(obj) -> str:
-    import yaml
-    return yaml.safe_dump(obj, allow_unicode=True, sort_keys=False, default_flow_style=False)
-
-
-def _guest_app_yaml(bot_conf: dict, app_guest: dict, iface: str, tz: str, extra: list | None = None) -> str:
-    """app.yaml гостя: разделы основы из белого списка + ключи для гостя + свои
-    неизменяемые; второй интерфейс основы (окно переезда профилей) — как
-    интерфейс переезда гостя, чтобы бот вёл устройства на обоих."""
-    from awgbot.infra import rsvzone
-    app = dict(bot_conf.get("app") or {})
-    for sec, vals in (app_guest or {}).items():
-        if isinstance(vals, dict):
-            app.setdefault(sec, {})
-            if isinstance(app[sec], dict):
-                app[sec].update(vals)
-    app["guest"] = True
-    app["role"] = "client"
-    app.setdefault("awg", {})
-    app["awg"].update({"interface": iface, "conf_dir": str(rsvzone.RUN_DIR / "awg")})
-    for x in (extra or [])[:1]:
-        prefix = ".".join(str(x.get("addr") or "").split("/")[0].split(".")[:3])
-        if x.get("name") and prefix:
-            app["awg"].update({"migration_interface": str(x["name"]), "migration_subnet_prefix": prefix})
-    app.setdefault("routing", {})
-    if isinstance(app["routing"], dict):
-        app["routing"].update({"dnsmasq_conf": str(rsvzone.RUN_DIR / "dnsmasq-rf.conf"),
-                               "dnsmasq_service": "awg-bot-guest-dns.service"})
-    if tz:
-        app["timezone"] = tz
-    return _yaml_dump(app)
-
-
-def _make_cert(self_host: str, out_dir) -> tuple[str, str]:
-    """Самоподписанный сертификат вебхука на адрес резерва (IP или имя в SAN)."""
-    import ipaddress
-    key_p, crt_p = os.path.join(out_dir, "webhook.key"), os.path.join(out_dir, "webhook.crt")
-    host = self_host or "awg-bot"
-    try:
-        ipaddress.ip_address(host)
-        san = f"IP:{host}"
-    except ValueError:
-        san = f"DNS:{host}"
-    proc = subprocess.run(["openssl", "req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1",
-                           "-nodes", "-keyout", key_p, "-out", crt_p, "-days", "3650", "-subj", f"/CN={host}",
-                           "-addext", f"subjectAltName={san}"], capture_output=True, timeout=60)
-    if proc.returncode != 0:
-        raise OpenError("сертификат вебхука не создался: " + proc.stderr.decode(errors="replace").strip()[-200:])
-    os.chmod(key_p, 0o600)
-    return key_p, crt_p
-
 
 def fill_store(data: dict, k: bytes, parts: dict, db, iface: str, extra: list | None = None) -> None:
     """Хранилище гостя из частей пакета; `db` — база (seal.Packed: распаковка потоком в
@@ -392,14 +285,6 @@ def fill_store(data: dict, k: bytes, parts: dict, db, iface: str, extra: list | 
         except OSError:
             pass
 
-
-def _host_pool() -> list[str]:
-    """Пул адресов Telegram файервола хоста резерва — тот же, что в DNAT."""
-    try:
-        from awgbot.infra import nftguard
-        return list(nftguard.tg_pool())
-    except Exception:                                          # noqa: BLE001
-        return list(DEFAULT_TG_POOL)
 
 
 def set_record(dns: dict, target_ip: str) -> None:
