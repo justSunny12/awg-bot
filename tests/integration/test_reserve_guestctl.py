@@ -177,7 +177,7 @@ async def test_the_guest_reconnects_after_the_reserve_bot_restarts(pair):
     await fresh.ensure()
     try:
         assert await _until(lambda: fresh.connected(), 15), "гость не вернулся к перезапущенному боту резерва"
-        assert fresh.online_count == 3
+        assert await _until(lambda: fresh.online_count == 3, 15), f"счёт устройств гостя не пришёл: {fresh.online_count}"   # hello со счётом — следом за подключением
     finally:
         await fresh.stop()
     pair.server = fresh
