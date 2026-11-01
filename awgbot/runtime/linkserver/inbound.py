@@ -6,7 +6,7 @@ import asyncio
 import contextlib
 
 from awgbot.domain import gwownlists, gwservices, gwsnapshot
-from awgbot.util import gwlink
+from awgbot.util import gwlink, pairproto
 from awgbot.runtime import linkserver as pkg          # порт, адреса и крючки — на пакете: их подменяют тесты
 
 from .common import _Session, log
@@ -221,4 +221,5 @@ class InboundMixin:
                 except Exception as e:                    # noqa: BLE001
                     log.warning("канал линка: уведомление о настройке слота %s не показано: %s", gw.id, e)
             return
-        log.info("канал линка: слот %s прислал неизвестное %s — игнорирую", gw.id, repr(str(kind)[:32]))
+        if pairproto.first_unknown(sess.unknown, str(kind)[:32]):    # строка — раз на вид за сессию
+            log.info("канал линка: слот %s прислал неизвестное %s — игнорирую", gw.id, repr(str(kind)[:32]))
