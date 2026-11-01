@@ -534,6 +534,37 @@ def test_a_record_that_never_shows_up_is_a_failure_and_the_webhook_is_not_marked
     assert "record_fact" not in box.steps and not rsvzone.TG_TAKE_FILE.exists()
 
 
+def test_a_failure_after_the_record_change_says_the_record_is_moved(box):
+    """Факт не наступил за 30 минут — запись уже сменена: итог несёт record=set, имя и адрес —
+    по ним бот резерва зону не снимает и ждёт факт сам (без них — снимал бы рабочий клон)."""
+    box.fact = False
+    assert box.open(**box.points(1)) == 1
+    st = rsvzone.open_status()
+    assert (st["step"], st.get("record"), st.get("name"), st.get("ip")) == \
+        ("fail", "set", "vpn.example.net", "203.0.113.20"), st
+
+
+def test_a_crash_after_the_record_change_also_says_the_record_is_moved(box, monkeypatch):
+    def wait(name, ip, budget_s=0):
+        raise OSError("связь пропала")
+    monkeypatch.setattr(rsvopen, "wait_fact", wait)
+    assert box.open(**box.points(1)) == 1
+    st = rsvzone.open_status()
+    assert st["step"] == "fail" and "OSError" in st["reason"] and st.get("record") == "set", st
+
+
+def test_a_failure_before_the_record_change_has_no_record_field(box):
+    box.record_error = dnsapi.DnsError("токен не принят")
+    assert box.open(**box.points(1)) == 1
+    assert "record" not in rsvzone.open_status(), "запись не менялась — бот снял бы зону как прежде"
+    box.record_error = None
+    box.fact = False
+    assert box.open(**box.points(1)) == 1                     # смена в прошлом запуске не тянется в следующий
+    box.record_error = dnsapi.DnsError("снова")
+    assert box.open(**box.points(1)) == 1
+    assert "record" not in rsvzone.open_status(), "отметка прошлого запуска дожила до нового"
+
+
 def test_a_crash_inside_the_process_is_a_failure_line_not_a_traceback(box, monkeypatch):
     monkeypatch.setattr(rsvopen, "fill_store", lambda *a, **k: (_ for _ in ()).throw(KeyError("неожиданно")))
     assert box.open(**box.points(1)) == 1

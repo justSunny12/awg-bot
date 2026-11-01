@@ -23,6 +23,8 @@ reserve — взаимный резерв серверов AWG на сторон
 - `outbound_stuck` — «мои пользователи»: зависший вебхук резерва (away и home);
 - `outbound_forced` — «мои пользователи»: срок шага переезда, а бот уже у гостя
   принудительным захватом (`st.in_tg = forced`) — away, а не срыв;
+- `outbound_keep` — «мои пользователи»: приём у резерва сорвался после смены записи
+  его процессом открытия — уведомление по `st.in_keep`, запись на себя по `down{rec}`;
 - `outbound_return` — «мои пользователи»: возврат с резерва (в том числе без
   реплики и рычагом «вернуть без резерва»);
 - `merge_ops` — слияние реплики при возврате: базы, пиры, блокировки, отчёт;
@@ -30,6 +32,8 @@ reserve — взаимный резерв серверов AWG на сторон
 - `inbound_back` — их возврат основе (`back`), пересылка хвоста, relay;
 - `inbound_tgwait` — VPN основы у меня, а её бот здесь Telegram не взял: зона
   остаётся, захват повторяется (`st.in_tg`);
+- `inbound_keep` — запись DNS уже сменил процесс открытия, а приём сорвался: зона
+  не снимается, не доделанное доделывается, клона нет — перезапуск открытия;
 - `openproc` — запуск процесса открытия временным юнитом (`OPEN_UNIT`,
   свойства песочницы `rsvopen_sandbox_props`), код завершения и его stderr;
 - `notify` — уведомления пользователям о переезде и возврате;
@@ -67,6 +71,7 @@ from .guest import ReserveGuestMixin
 from .gwside import ReserveGwSideMixin
 from .inbound import ReserveInboundMixin
 from .inbound_back import ReserveInboundBackMixin
+from .inbound_keep import ReserveInboundKeepMixin
 from .inbound_tgwait import ReserveInboundTgWaitMixin
 from .journal import ReserveJournalMixin
 from .invite import ReserveInviteMixin
@@ -79,6 +84,7 @@ from .outbound import ReserveOutboundMixin
 from .outbound_return import ReserveReturnMixin
 from .outbound_stuck import ReserveStuckMixin
 from .outbound_forced import ReserveForcedTakeMixin
+from .outbound_keep import ReserveOutKeepMixin
 from .package import ReservePackageMixin
 from .pairing import ReservePairingMixin
 from .peeradmin import ReservePeerAdminMixin
@@ -102,8 +108,8 @@ class ReserveMixin(ReserveStateMixin, ReserveKeysMixin, ReserveInviteMixin, Rese
                    ReserveTrafficMixin, ReserveAwayMixin, ReserveGwSideMixin, ReserveZoneLinksMixin, ReserveGwGuestMixin,
                    ReserveOpeningMixin, ReserveRfZoneMixin, ReserveRfPeerMixin, ReserveTgPoolMixin, ReserveMergeOpsMixin,
                    ReserveCodeWindowMixin, ReserveReturnMixin, ReserveOpenProcMixin, ReserveJournalMixin,
-                   ReserveInboundBackMixin, ReserveInboundTgWaitMixin, ReserveStuckMixin, ReserveForcedTakeMixin,
-                   ReserveQuorumMixin):
+                   ReserveInboundBackMixin, ReserveInboundTgWaitMixin, ReserveInboundKeepMixin, ReserveStuckMixin,
+                   ReserveForcedTakeMixin, ReserveOutKeepMixin, ReserveQuorumMixin):
     """Резерв серверов: всё о паре — в одном месте сервисов."""
 
 
