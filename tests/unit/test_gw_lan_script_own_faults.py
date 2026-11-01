@@ -112,8 +112,9 @@ def test_a_failed_case_fold_is_not_taken_for_a_bad_name(own_env):
     assert _state(dns_d) == before
 
 
-# первый head -n1 скрипта — имя аплинка из статуса обвязки, второй — хост сервера AWG
-@pytest.mark.parametrize("tool_name,when,nth", [("sed", "*Endpoint*", 1), ("head", "-n1*", 2),
+# head хоста сервера AWG читает рабочий файл endpoint (имя аплинка из статуса
+# обвязки при заданном AWG_UPLINK_CONF не читается вовсе)
+@pytest.mark.parametrize("tool_name,when,nth", [("sed", "*Endpoint*", 1), ("head", "*/endpoint", 1),
                                              ("tr", '"A-Z a-z"', 1)])
 def test_a_failed_server_host_lookup_does_not_let_the_vps_host_in(own_env, tool_name, when, nth):
     """Хост сервера AWG из Endpoint аплинка не вычислился (упал sed, head или

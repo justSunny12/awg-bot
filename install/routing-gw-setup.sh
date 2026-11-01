@@ -739,7 +739,9 @@ cat > "$LAN_DOMAIN.new" <<'DOMEOF'
 #                    DNS и отказ nft — не сбой
 # Домен накрывает поддомены. Схема и www. отбрасываются. Хост сервера AWG
 # (Endpoint аплинка) добавить нельзя: увести туннель в туннель — запереть себя;
-# не вычислился (сбой шага) — правка не идёт, код 1.
+# не вычислился (сбой шага — и у имени аплинка из статуса обвязки) — правка
+# не идёт, код 1. Пути для проверок — AWG_GW_STATUS (статус обвязки) и
+# AWG_UPLINK_DIR (каталог конфигов AWG), по умолчанию прежние.
 # Одна блокировка со скриптом фидов (lists.lock): два писателя одних файлов и
 # два рестарта dnsmasq разом не бывает; занято дольше 120 с — код 75. list —
 # без блокировки. Исключения «напрямую» вычитаются из фида доменов заново по
@@ -764,9 +766,18 @@ DUMP="${AWG_LAN_DUMP:-/var/lib/awg-gw}"; SRC="$DUMP/vpn-feed.src"; RB="$DUMP/rol
 TABLE="inet awg_lan"
 DOMAIN_RE='([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+([a-z]{2,63}|xn--[a-z0-9-]{1,59})'
 # Аплинк — тот, что нашёл скрипт обвязки (UPLINK_IF в статусе): на машине с
-# аплинком не awg0 иначе хост ВПС не был бы под запретом
-_up="$(sed -n 's/^UPLINK_IF=//p' /etc/awg-gw/gateway.status 2>/dev/null | head -n1 | tr -cd 'A-Za-z0-9_.-')"
-UPLINK_CONF="${AWG_UPLINK_CONF:-/etc/amnezia/amneziawg/${_up:-awg0}.conf}"
+# аплинком не awg0 иначе хост ВПС не был бы под запретом. Шаги — порознь: в
+# конвейере упавший sed, head или tr молча давал awg0, и при аплинке с другим
+# именем запрет выходил пустым. Файла статуса нет — awg0, как прежде; есть, но
+# шаг не прошёл — правка не идёт (код 1 ниже, до записи; list и fill хост
+# сервера не нужен)
+GW_STATUS="${AWG_GW_STATUS:-/etc/awg-gw/gateway.status}"
+_up=""; _up_bad=0
+if [ -z "${AWG_UPLINK_CONF:-}" ] && [ -e "$GW_STATUS" ]; then
+    _up="$(sed -n 's/^UPLINK_IF=//p' "$GW_STATUS")" && _up="$(printf '%s\n' "$_up" | head -n1)" \
+        && _up="$(printf '%s' "$_up" | tr -cd 'A-Za-z0-9_.-')" || { _up=""; _up_bad=1; }
+fi
+UPLINK_CONF="${AWG_UPLINK_CONF:-${AWG_UPLINK_DIR:-/etc/amnezia/amneziawg}/${_up:-awg0}.conf}"
 cmd="${1:-}"; [ $# -gt 0 ] && shift
 [ "$(id -u)" = "0" ] || { echo "нужен root"; exit 1; }
 mkdir -p "$DUMP"
@@ -853,6 +864,7 @@ trap 'rm -rf "$TMPD"' EXIT
 # пустой запрет, и хост ВПС можно было направить «в туннель» — запереть себя.
 # Конфига аплинка нет — запрета нет, как прежде; есть, но шаг не прошёл — сбой
 deny=""
+[ "$_up_bad" = 0 ] || untouched
 if [ -e "$UPLINK_CONF" ]; then
     sed -n 's/^Endpoint *= *\([^:]*\):.*/\1/p' "$UPLINK_CONF" > "$TMPD/endpoint" \
         && deny="$(head -n1 "$TMPD/endpoint")" && deny="$(printf '%s' "$deny" | tr 'A-Z' 'a-z')" || untouched
