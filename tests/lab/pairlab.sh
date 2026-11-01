@@ -38,6 +38,9 @@ PY="${LAB_PY:-$PL_VENV/bin/python}"
 # QT_PAUSE, QT_HEALTHY — цифры кворума и «здоров» уровня стенда (LAB_FAST=1 — быстрый, pairnode.LAB_FAST_DIGITS):
 # пределы проверок сценариев — от них, узлы получают те же в reserve.yaml
 eval "$(cd "$PL_ROOT" && "$PY" -m tests.lab.pairnode digits)" || exit 1
+# keepalive линка пары стенда: живость пары (reserve.suspect_seconds) обязана его перекрывать — быстрый уровень
+# сжимает оба (QT_PAIR_KEEPALIVE из pairnode digits), полный — как на хостах (25)
+PL_KEEPALIVE="$QT_PAIR_KEEPALIVE"
 PL="${LAB_PAIR_DIR:-/var/lib/awglab-pair}"   # не /tmp и не /var/tmp: у песочницы процесса открытия PrivateTmp
 PL_Z="$PL_ROOT/install/reserve-zone-setup.sh"
 TOKEN_A="880100:LAB-DUMMY-alpha"; TOKEN_B="880200:LAB-DUMMY-beta"
@@ -97,7 +100,7 @@ $OBF
 PublicKey = $ub
 PresharedKey = $psk
 AllowedIPs = 10.99.98.1/32
-PersistentKeepalive = 25
+PersistentKeepalive = $PL_KEEPALIVE
 EOF
     cat > "$PL/B/awg/awgpair.conf" <<EOF
 # Линк пары серверов AWG (резерв). Сгенерировано reserve-pair-setup.sh.
@@ -112,7 +115,7 @@ PublicKey = $ua
 PresharedKey = $psk
 AllowedIPs = 10.99.98.2/32
 Endpoint = 203.0.113.5:47101
-PersistentKeepalive = 25
+PersistentKeepalive = $PL_KEEPALIVE
 EOF
     local n port sub priv
     for n in A B; do
@@ -297,11 +300,22 @@ except Exception:
 print(json.dumps(v, ensure_ascii=False) if not isinstance(v, str) else v)' "$PL/$1/status.json" "$2"
 }
 
+# Разметка времени: каждое дождавшееся ожидание (pl_wait, wait_t) — строка «с начала · с прошлой отметки ·
+# что ждали» в /var/tmp/lab-steps-<сценарий>.txt (остаётся после сценария): куда уходит время сценария.
+PL_SCEN="${LAB_SCEN:-$(basename "$0" .sh)}"   # имя сценария (обёртка над чужим файлом задаёт своё — s06b_quorum_move)
+PL_STEPS="/var/tmp/lab-steps-$PL_SCEN.txt"; PL_T_START=$(date +%s); PL_T_MARK=$PL_T_START
+: > "$PL_STEPS" 2>/dev/null
+pl_mark() {
+    local now; now=$(date +%s)
+    printf '%5d %5d  %s\n' $((now - PL_T_START)) $((now - PL_T_MARK)) "$1" >> "$PL_STEPS" 2>/dev/null
+    PL_T_MARK=$now
+}
+
 pl_wait() {  # pl_wait <узел> <выражение> <срок> [что ждём]
     local n="$1" expr="$2" budget="$3" what="${4:-$2}"
     local i
     for i in $(seq 1 "$budget"); do
-        [ "$(pl_q "$n" "bool($expr)")" = "true" ] && return 0
+        [ "$(pl_q "$n" "bool($expr)")" = "true" ] && { pl_mark "$n: $what"; return 0; }
         sleep 1
     done
     printf 'не дождался за %s с на %s: %s\n' "$budget" "$n" "$what"
@@ -372,7 +386,7 @@ pl_cleanup() {   # trap EXIT: сценарий не прошёл — катал�
     local rc=$?
     pl_cleanup_quiet
     if [ "$rc" -ne 0 ] && [ -d "$PL" ]; then
-        local keep="/var/tmp/lab-fail-$(basename "$0" .sh)"
+        local keep="/var/tmp/lab-fail-$PL_SCEN"
         rm -rf "$keep"; cp -a "$PL" "$keep" 2>/dev/null && printf 'каталог пары сохранён: %s\n' "$keep"
     fi
     [ -n "${PL_KEEP:-}" ] || rm -rf "$PL"

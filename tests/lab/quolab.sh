@@ -35,7 +35,7 @@ since() { echo $(( $(date +%s) - $1 )); }
 wait_t() {
     local i
     for i in $(seq 1 "$3"); do
-        if [ "$(pl_q "$1" "bool($2)")" = "true" ]; then WT=$(since "$T0"); return 0; fi
+        if [ "$(pl_q "$1" "bool($2)")" = "true" ]; then WT=$(since "$T0"); pl_mark "$1: ${4:-$2}"; return 0; fi
         sleep 1
     done
     pl_wait "$1" "$2" 1 "$4"; return 1

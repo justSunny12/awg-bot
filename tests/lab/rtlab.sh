@@ -178,7 +178,7 @@ rt_q() { pl_q "$1" "(lambda r: $2)(s.get('rt') or {})"; }
 rt_wait() {
     local i
     for i in $(seq 1 "$3"); do
-        if [ "$(rt_q "$1" "bool($2)")" = "true" ]; then WT=$(since "$T0"); return 0; fi
+        if [ "$(rt_q "$1" "bool($2)")" = "true" ]; then WT=$(since "$T0"); pl_mark "$1: $4"; return 0; fi
         sleep 1
     done
     printf 'не дождался за %s с на %s: %s\n' "$3" "$1" "$4"

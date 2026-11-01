@@ -52,7 +52,8 @@ hook_url() {     # адрес вебхука бота основы у макет
 zone_phase() { ip netns exec lab-B bash "$PL_Z" --status 2>/dev/null | sed -n 's/^phase=//p' | head -n1; }
 
 # ── 1. аварийное открытие по коду, запись меняет процесс открытия ────────────────────────────────
-export LAB_OPEN_RECORD=1 LAB_CONST="$INB:TAKEN_WAIT_S=60"
+RETRY=20                                       # повтор захвата гостем (inbound_tgwait.TG_RETRY_S, на хостах 60 ± 40 %)
+export LAB_OPEN_RECORD=1 LAB_CONST="$INB:TAKEN_WAIT_S=30;awgbot.domain.services.reserve.inbound_tgwait:TG_RETRY_S=$RETRY"
 pl_pair_up
 pl_cmd A code "{\"out\": \"$PL/shared/code\"}" >/dev/null || pl_fail "аварийный код A не получен"
 nsenter --net=/run/netns/lab-B bash "$PL_Z" --shell >/dev/null || pl_fail "оболочка зоны в lab-B не поднялась"
@@ -95,7 +96,7 @@ t_rm=$(date +%s)
 for _ in $(seq 1 100); do [ -e /run/awg-bot-guest/tg_take ] && break; sleep 1; done
 [ -e /run/awg-bot-guest/tg_take ] || pl_fail "отметка tg_take не вернулась за 100 с — повтора захвата нет"
 t_retry=$(( $(date +%s) - t_rm ))
-[ "$t_retry" -le 90 ] || pl_fail "повтор захвата через $t_retry с — дольше минуты + 40 %"
+[ "$t_retry" -le $((RETRY * 14 / 10 + 10)) ] || pl_fail "повтор захвата через $t_retry с — дольше $RETRY с + 40 % и такта"
 # отметку такт пишет до запуска юнита гостя (systemctl start — до 60 с): строка журнала — после неё
 for _ in $(seq 1 60); do grep -qE "бот основы на резерве (запущен снова|не запустился)" "$PL/B/node.log" && break; sleep 1; done
 grep -qE "бот основы на резерве (запущен снова|не запустился)" "$PL/B/node.log" \
@@ -115,7 +116,9 @@ note "1–4: без бота через ${t_wait} с после старта г�
 pl_cleanup_quiet
 
 # ── 5. переезд кнопкой, A гибнет между up и released ─────────────────────────────────────────────
-export LAB_OPEN_RECORD="" LAB_CONST="$INB:TAKEN_WAIT_S=120,DONE_BUTTON_WAIT_S=150;$OUTB:RECORD_WAIT_S=360"
+# порядок сроков — как на хостах: гость берёт Telegram принудительно (DONE_BUTTON_WAIT_S у B) раньше, чем у A
+# истекает шаг записи (RECORD_WAIT_S) — A оживает внутри шага и уходит в away по его сроку
+export LAB_OPEN_RECORD="" LAB_CONST="$INB:TAKEN_WAIT_S=60,DONE_BUTTON_WAIT_S=90;$OUTB:RECORD_WAIT_S=120"
 pl_pair_up
 nsenter --net=/run/netns/lab-B bash "$PL_Z" --shell >/dev/null || pl_fail "оболочка зоны в lab-B не поднялась (кнопка)"
 : > "$PL/shared/auth.hold"                     # факт записи не подтвердится — A стоит на шаге record

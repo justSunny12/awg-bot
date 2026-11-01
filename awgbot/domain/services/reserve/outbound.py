@@ -72,6 +72,7 @@ UP_WAIT_S = 300           # резерв поднял клон
 RECORD_WAIT_S = 1800      # факт записи
 RECORD_NOIP_TELL_S = 2 * 60       # шаг записи без адреса дольше — Т-РУ11 «свой адрес не определился»
 RELEASED_WAIT_S = 300     # `taken` после `released`; возврат: `released` после `back_req`
+RELEASED_WAKE_S = 120     # `taken` не пришёл: поллинг разбужен — столько ждать слова Telegram (до трёх раз)
 FORCE_OFFLINE_S = 10 * 60        # «вернуть без резерва» — не раньше, чем он не на связи столько
 STUCK_IDLE_S = 10 * 60           # столько подряд запись на мне, а резерв пользователей не несёт — вебхук зависший
 STUCK_PAIR_S = 30 * 60           # пары нет на связи столько, запись на мне — вебхук резерва зависший
@@ -262,7 +263,7 @@ class ReserveOutboundMixin:
                 return self._move_fail("резерв не взял право отвечать — вебхук не поставлен", released=True, steps=("released",))
             woken = int(out.get("poll_woken") or 0)
             if woken < 3:                                       # слова Telegram ещё нет — разбудить и подождать
-                if not self._out_step_cas("leaving", ("released",), "released", 120, poll_woken=woken + 1,
+                if not self._out_step_cas("leaving", ("released",), "released", RELEASED_WAKE_S, poll_woken=woken + 1,
                                           released_at=str(out.get("released_at") or "")):
                     return []                                   # `taken` успел: шаг переезда в запись away не дописывать
                 return [("wake_poll",)]

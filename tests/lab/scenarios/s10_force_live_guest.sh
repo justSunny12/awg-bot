@@ -44,7 +44,8 @@ force() {        # force <json> — рычаг путём кнопки «Да» 
 }
 
 # ── 1. переезд кнопкой ───────────────────────────────────────────────────────────────────────────
-export LAB_CONST="awgbot.domain.services.reserve.outbound_return:FORCE_OFFLINE_S=60;awgbot.runtime.webhook:WATCH_SECONDS=30"
+WATCH=15                                     # надзор вебхука гостем (runtime/webhook.WATCH_SECONDS, на хостах 600)
+export LAB_CONST="awgbot.domain.services.reserve.outbound_return:FORCE_OFFLINE_S=30;awgbot.runtime.webhook:WATCH_SECONDS=$WATCH"
 pl_pair_up
 nsenter --net=/run/netns/lab-B bash "$PL_Z" --shell >/dev/null || pl_fail "оболочка зоны в lab-B не поднялась"
 q_move_button
@@ -98,7 +99,7 @@ for _ in $(seq 1 60); do [ "$(tg_count "$TOKEN_B" "$ADMIN_B" "указывает
 n="$(tg_count "$TOKEN_B" "$ADMIN_B" "указывает не на этот сервер" "$t_lever")"
 [ "$n" = 1 ] || pl_fail "админу B уведомлений о чужом вебхуке: $n, ожидалось одно"
 [ "$(loud "указывает не на этот сервер" "$t_lever")" = 1 ] || pl_fail "уведомление о чужом вебхуке без звука"
-sleep 45                                                     # следующий надзор гостя — повтор слова, не уведомления
+sleep $((WATCH + 15))                                        # следующий надзор гостя — повтор слова, не уведомления
 n="$(tg_count "$TOKEN_B" "$ADMIN_B" "указывает не на этот сервер" "$t_lever")"
 [ "$n" = 1 ] || pl_fail "уведомление о чужом вебхуке повторилось: $n"
 note "4: гость огражден через ${t_fence} с после рычага, уведомление админу B одно"
