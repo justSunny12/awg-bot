@@ -174,6 +174,32 @@ async def test_fw_and_restart_actions_call_the_host_layer(mv, act, monkeypatch):
     assert calls == ["fw", "restart"]
 
 
+async def test_relay_flush_calls_the_zone_script_and_leaves_the_fact_in_the_journal(mv, act, monkeypatch, caplog):
+    """Сброс записей conntrack хвоста — после перерисовки файервола и с отметкой в журнале
+    уровня INFO: вывод скрипта зоны идёт отладкой, и без строки ни админ, ни сценарий стенда
+    не отличат «сброс был» от «сброса не было». Отказ скрипта — своя строка, без «сброшены»,
+    и действия за ним выполняются."""
+    from awgbot.infra import rsvzone
+    calls = []
+    monkeypatch.setattr(act.svc, "reconcile_ssh_access", lambda *a, **k: calls.append("fw"), raising=False)
+    monkeypatch.setattr(rsvzone, "relay_flush", lambda: calls.append("flush") or "relay-flush: ok")
+    with caplog.at_level("INFO", logger="awgbot.runtime.rsvactions"):
+        await rsvactions.run([("fw",), ("relay_flush",)])
+    assert calls == ["fw", "flush"], calls
+    done = [r.getMessage() for r in caplog.records if "conntrack" in r.getMessage()]
+    assert done == ["резерв: записи conntrack по портам клонов сброшены"], done
+    caplog.clear()
+
+    def refuse():
+        raise rsvzone.ZoneError("нужен root")
+    monkeypatch.setattr(rsvzone, "relay_flush", refuse)
+    with caplog.at_level("INFO", logger="awgbot.runtime.rsvactions"):
+        await rsvactions.run([("relay_flush",), ("fw",)])
+    msgs = [r.getMessage() for r in caplog.records if "conntrack" in r.getMessage()]
+    assert msgs == ["резерв: записи conntrack хвоста не сброшены: нужен root"], msgs
+    assert calls[-1] == "fw", "отказ сброса остановил действия за ним"
+
+
 async def test_the_guest_action_sends_through_the_local_channel_and_survives_its_absence(mv, act, monkeypatch):
     got = []
 

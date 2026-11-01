@@ -110,6 +110,9 @@ async def _one(act: tuple) -> None:
             await asyncio.to_thread(rsvzone.relay_flush)
         except rsvzone.ZoneError as e:
             log.info("резерв: записи conntrack хвоста не сброшены: %s", e)
+        else:
+            # вывод скрипта (`relay-flush: ok`) идёт отладкой — факт сброса виден в журнале этой строкой
+            log.info("резерв: записи conntrack по портам клонов сброшены")
     elif kind == "live":
         from awgbot.bot.handlers.settings.reserve import move as move_ui
         if bot is not None and svc is not None:
