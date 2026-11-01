@@ -259,9 +259,9 @@ def arm_rollback(seconds: int, command: list[str], env: dict) -> None:
 def disarm_rollback() -> bool:
     was = pkg.rollback_armed()
     for unit in (f"{pkg.ROLLBACK_UNIT}.timer", f"{pkg.ROLLBACK_UNIT}.service"):
-        for verb in ("stop", "reset-failed"):
+        for verb, call in (("stop", systemd.stop), ("reset-failed", systemd.reset_failed)):
             try:
-                subprocess.run(["systemctl", verb, unit], capture_output=True, timeout=_SYSTEMCTL_TIMEOUT)
+                call(unit, timeout=_SYSTEMCTL_TIMEOUT)
             except (OSError, subprocess.SubprocessError) as e:
                 log.warning("файервол: systemctl %s %s: %s", verb, unit, e)
     return was

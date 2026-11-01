@@ -32,7 +32,7 @@ import subprocess
 from pathlib import Path
 
 from awgbot.core import config
-from awgbot.infra import scriptrun
+from awgbot.infra import scriptrun, systemd
 from awgbot.util import fsatomic, jsonfile, kvfile
 
 log = logging.getLogger(__name__)
@@ -359,11 +359,8 @@ def wipe() -> str:
 
 
 def guest_unit_active() -> bool:
-    try:
-        proc = subprocess.run(["systemctl", "is-active", GUEST_UNIT], capture_output=True, timeout=15)
-    except (OSError, subprocess.SubprocessError):
-        return False
-    return proc.returncode == 0
+    """Юнит бота основы на резерве жив; systemctl не ответил — нет."""
+    return systemd.is_active(GUEST_UNIT, timeout=15) is True
 
 
 def read_json(path: Path) -> dict:
