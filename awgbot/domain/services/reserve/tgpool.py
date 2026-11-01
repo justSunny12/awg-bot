@@ -19,13 +19,12 @@ from __future__ import annotations
 
 import ipaddress
 import json
-import os
 import random
 import time
 from pathlib import Path
 
 from awgbot.core import config, settings
-from awgbot.util import timeutil
+from awgbot.util import jsonfile, timeutil
 
 from ..types import Notification
 from ..gateway_link.common import log
@@ -39,20 +38,13 @@ def pool_path() -> Path:
 
 
 def _read() -> dict:
-    try:
-        data = json.loads(pool_path().read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    return data if isinstance(data, dict) else {}
+    return jsonfile.read_dict(pool_path())
 
 
 def _write(data: dict) -> None:
     path = pool_path()
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False, sort_keys=True), encoding="utf-8")
-    os.chmod(tmp, 0o600)
-    tmp.replace(path)
+    jsonfile.write(path, data, sort_keys=True)
 
 
 def parse_ripestat(doc: dict) -> list[str]:

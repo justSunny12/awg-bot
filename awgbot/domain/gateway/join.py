@@ -19,12 +19,11 @@
 from __future__ import annotations
 
 import base64
-import json
 import os
 import socket
 import time
 
-from awgbot.util import joinsas
+from awgbot.util import joinsas, jsonfile
 
 from .base import log
 
@@ -50,25 +49,18 @@ class GatewayJoinMixin:
     # ── файл сопряжения и файл хода ──────────────────────────────────────────
 
     def join_state(self) -> dict:
-        try:
-            with open(self._join_file, encoding="utf-8") as f:
-                data = json.loads(f.read() or "{}")
-        except (OSError, ValueError):
-            return {}
-        return data if isinstance(data, dict) else {}
+        return jsonfile.read_dict(self._join_file)
 
     def _join_save(self, data: dict) -> None:
-        from awgbot.util.fsatomic import write_private
-        write_private(self._join_file, json.dumps(data, ensure_ascii=False))
+        jsonfile.write(self._join_file, data)
 
     def join_status(self, **fields) -> None:
         """Ход для терминала (`awg-bot join`, `--status`) — целиком, атомарно."""
-        from awgbot.util.fsatomic import write_private
         st = self.join_state()
         data = {"state": fields.pop("state", ""), "slot": st.get("slot"), "name": st.get("name", ""),
                 "until": st.get("expires", ""), "at": int(time.time()), **fields}
         try:
-            write_private(self._join_status_file, json.dumps(data, ensure_ascii=False))   # в нём код — 0600
+            jsonfile.write(self._join_status_file, data)                                 # в нём код — 0600
         except OSError as e:
             log.warning("gateway: ход сопряжения не записан: %s", e)
 
@@ -159,12 +151,7 @@ class GatewayJoinMixin:
             left = max(0, int(msg.get("left") or 0))
         except (TypeError, ValueError):
             left = 0
-        cur = {}
-        try:
-            with open(self._join_status_file, encoding="utf-8") as f:
-                cur = json.loads(f.read() or "{}")
-        except (OSError, ValueError):
-            pass
+        cur = jsonfile.read_dict(self._join_status_file)
         self.join_status(state="wrong", left=left, code=cur.get("code", ""))
 
     def join_refused_in(self, msg: dict) -> None:

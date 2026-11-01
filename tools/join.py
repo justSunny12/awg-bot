@@ -72,12 +72,8 @@ def _link_conf(tok) -> str:
 
 def _status() -> dict:
     from awgbot.domain.gateway.join import STATUS_FILE
-    try:
-        with open(STATUS_FILE, encoding="utf-8") as f:
-            data = json.loads(f.read() or "{}")
-    except (OSError, ValueError):
-        return {}
-    return data if isinstance(data, dict) else {}
+    from awgbot.util import jsonfile
+    return jsonfile.read_dict(STATUS_FILE)
 
 
 def _frame(code: str, until: str) -> None:
@@ -142,6 +138,7 @@ def cmd_join(text: str) -> int:
     from awgbot.domain.gateway.join import JOIN_FILE, STATUS_FILE
     from awgbot.infra import gwguard
     from awgbot.util import jointoken
+    from awgbot.util import jsonfile
     from awgbot.util.fsatomic import write_private
     try:
         tok = jointoken.decode(jointoken.find(text) or text)
@@ -151,12 +148,7 @@ def cmd_join(text: str) -> int:
     if int(time.time()) > tok.expires:
         _err(_GONE)
         return 1
-    st = {}
-    try:
-        with open(JOIN_FILE, encoding="utf-8") as f:
-            st = json.loads(f.read() or "{}")
-    except (OSError, ValueError):
-        st = {}
+    st = jsonfile.read_dict(JOIN_FILE)
     if st.get("id") == tok.join_id and (st.get("state") in ("accepted", "linked", "done")
                                         or (st.get("state") == "pairing" and _status().get("state"))):
         # повтор той же команды (терминал закрыли): идёт — только ход и код,
@@ -205,11 +197,8 @@ def cmd_join(text: str) -> int:
 
 def cmd_status() -> int:
     from awgbot.domain.gateway.join import JOIN_FILE
-    try:
-        with open(JOIN_FILE, encoding="utf-8") as f:
-            st = json.loads(f.read() or "{}")
-    except (OSError, ValueError):
-        st = {}
+    from awgbot.util import jsonfile
+    st = jsonfile.read_dict(JOIN_FILE)
     if not st and not _status():
         _p("[awg-bot] подключения командой нет — запусти команду из бота сервера AWG")
         return 1

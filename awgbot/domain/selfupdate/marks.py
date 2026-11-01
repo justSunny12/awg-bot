@@ -71,13 +71,12 @@ def guard_armed(data_dir: Optional[str] = None) -> bool:
 
 def pop_rolled_mark(data_dir: Optional[str] = None) -> dict:
     """Метка отката сторожем — прочитать и убрать; нет или не читается — пусто."""
-    import json
+    from awgbot.util import jsonfile
     path = data_path(ROLLED_MARK_FILE, data_dir)
     try:
-        with open(path, encoding="utf-8") as f:
-            mark = json.loads(f.read() or "{}")
+        mark = jsonfile.load(path)
     except (OSError, ValueError):
-        return {}
+        return {}                          # битую метку не трогаем — как и прежде
     try:
         os.remove(path)
     except OSError:

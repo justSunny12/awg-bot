@@ -90,8 +90,11 @@ def test_the_open_status_roundtrips_without_secrets_and_survives_an_unwritable_d
     st = rsvzone.open_status()
     assert st["step"] == "clone_up" and st["iface"] == "awg0" and st["port"] == "45877" and st["at"]
     assert os.listdir(zone / "state") == ["open.status"]
+    # каталог статуса не создать (на его месте файл): запись пишет в OPEN_STATUS — его и ломаем
     monkeypatch.setattr(rsvzone, "STATE_DIR", zone / "state" / "open.status" / "nope")
+    monkeypatch.setattr(rsvzone, "OPEN_STATUS", zone / "state" / "open.status" / "nope" / "open.status")
     rsvzone.open_status_write("fail", reason="x")        # не падает
+    assert rsvzone.read_json(zone / "state" / "open.status")["step"] == "clone_up", "прежний статус задет"
 
 
 # ── запуск режимов ───────────────────────────────────────────────────────────

@@ -9,13 +9,13 @@
 """
 from __future__ import annotations
 
-import json
 import os
 import re
 import time
 from pathlib import Path
 
 from awgbot.core import config
+from awgbot.util import jsonfile
 
 from . import base
 
@@ -30,21 +30,13 @@ def rfpeer_path() -> Path:
 
 def read() -> dict:
     """{"offer": bool, "slot": bool, "at": iso}; нет файла — всё ложь."""
-    try:
-        data = json.loads(rfpeer_path().read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    return data if isinstance(data, dict) else {}
+    return jsonfile.read_dict(rfpeer_path())
 
 
 def write(offer: bool, slot: bool, at: str = "") -> None:
     p = rfpeer_path()
     os.makedirs(str(p.parent), mode=0o700, exist_ok=True)
-    tmp = str(p) + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump({"offer": bool(offer), "slot": bool(slot), "at": at}, f, ensure_ascii=False)
-    os.chmod(tmp, 0o600)
-    os.replace(tmp, str(p))
+    jsonfile.write(p, {"offer": bool(offer), "slot": bool(slot), "at": at})
 
 
 def remove() -> None:

@@ -26,14 +26,13 @@ conntrack) идут в журнал бота предупреждением зд
 """
 from __future__ import annotations
 
-import json
 import logging
 import os
 import subprocess
 from pathlib import Path
 
 from awgbot.core import config
-from awgbot.util import fsatomic, kvfile
+from awgbot.util import fsatomic, jsonfile, kvfile
 
 log = logging.getLogger(__name__)
 
@@ -281,11 +280,7 @@ def status() -> dict:
 def state(path: Path | None = None) -> dict:
     """Состояние зоны из state.json; нет файла — пусто (phase=idle). Путь берётся в
     момент вызова (не при импорте) — подмена STATE_PATH в тестах доходит сюда."""
-    try:
-        data = json.loads((path or STATE_PATH).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    return data if isinstance(data, dict) else {}
+    return jsonfile.read_dict(path or STATE_PATH)
 
 
 def phase() -> str:
@@ -379,11 +374,7 @@ def guest_unit_active() -> bool:
 
 
 def read_json(path: Path) -> dict:
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    return data if isinstance(data, dict) else {}
+    return jsonfile.read_dict(path)
 
 
 def write_private(path: Path, data: bytes | str, mode: int = 0o600) -> None:
@@ -403,11 +394,8 @@ def open_status_write(step: str, **fields) -> None:
     """Ход процесса открытия для бота резерва: шаг, время, причина отказа."""
     from awgbot.util import timeutil
     try:
-        STATE_DIR.mkdir(parents=True, exist_ok=True)
         data = {"step": step, "at": timeutil.now_iso(), **{k: str(v) for k, v in fields.items()}}
-        tmp = OPEN_STATUS.with_name(OPEN_STATUS.name + ".tmp")
-        tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
-        os.replace(str(tmp), str(OPEN_STATUS))
+        jsonfile.write(OPEN_STATUS, data, None)           # секретов нет — права прежнего файла (нового — 0644)
     except OSError:
         pass
 

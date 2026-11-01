@@ -37,13 +37,12 @@ away` в документе) или по `state{serving}` от резерва в
 """
 from __future__ import annotations
 
-import json
 import os
 import threading
 from pathlib import Path
 
 from awgbot.infra.gwguard import rsv as rsvlink
-from awgbot.util import fsatomic, livestep, timeutil
+from awgbot.util import jsonfile, livestep, timeutil
 
 from ..base import log
 
@@ -55,15 +54,11 @@ STORE_LOCK = threading.RLock()
 
 
 def _read(path: Path = STORE_PATH) -> dict:
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    return data if isinstance(data, dict) else {}
+    return jsonfile.read_dict(path)
 
 
 def _write(data: dict, path: Path = STORE_PATH) -> None:
-    fsatomic.write_private(path, json.dumps(data, ensure_ascii=False))
+    jsonfile.write(path, data)
 
 
 # своё о ходе дел в reserve.json — переживает каждый новый документ

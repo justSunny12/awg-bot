@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 
 from awgbot.core import config
-from awgbot.util import timeutil
+from awgbot.util import jsonfile, timeutil
 
 from .common import log
 
@@ -31,11 +31,8 @@ class FeedsMixin:
 
     def gwlink_lan_feeds(self) -> dict:
         """{'hash', 'domains', 'nets', 'fetched_at'} или пусто — фидов ещё нет."""
-        try:
-            data = json.loads(self._lan_feeds_path().read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            return {}
-        return data if isinstance(data, dict) and data.get("hash") else {}
+        data = jsonfile.read_dict(self._lan_feeds_path())
+        return data if data.get("hash") else {}
 
     def gwlink_lan_feeds_digest(self) -> str:
         """Отпечаток текущих фидов без разбора всего файла на каждом такте:
