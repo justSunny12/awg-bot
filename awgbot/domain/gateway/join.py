@@ -209,15 +209,8 @@ class GatewayJoinMixin:
         return True
 
     def _join_env_set(self, key: str, value: str) -> None:
-        from awgbot.util.fsatomic import write_private
-        path = self._cfg_env_path()
-        try:
-            with open(path, encoding="utf-8") as f:
-                lines = [ln for ln in f.read().splitlines() if not ln.startswith(f"{key}=")]
-        except FileNotFoundError:
-            lines = []
-        lines.append(f"{key}={value}")
-        write_private(path, "\n".join(lines) + "\n")
+        from awgbot.util import kvfile
+        kvfile.set_line(self._cfg_env_path(), key, value)
 
     def join_linked(self) -> None:
         """Линк на постоянных ключах (смена ключей после кода закреплена):

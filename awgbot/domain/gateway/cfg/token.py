@@ -83,15 +83,8 @@ class CfgTokenMixin:
 
     def _cfg_token_write(self, token: str) -> None:
         """BOT_TOKEN в env агента — атомарно, прочие строки как были."""
-        from awgbot.util.fsatomic import write_private
-        path = self._cfg_env_path()
-        try:
-            with open(path, encoding="utf-8") as f:
-                lines = [ln for ln in f.read().splitlines() if not ln.startswith("BOT_TOKEN=")]
-        except FileNotFoundError:
-            lines = []
-        lines.append(f"BOT_TOKEN={token}")
-        write_private(path, "\n".join(lines) + "\n")
+        from awgbot.util import kvfile
+        kvfile.set_line(self._cfg_env_path(), "BOT_TOKEN", token)
 
     def cfg_token_note_pending(self) -> bool:
         """После перезапуска: бот поднялся на токене с сервера — надо сказать."""
