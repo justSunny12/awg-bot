@@ -2,8 +2,11 @@
 виды, кто их шлёт, обязательные поля, типы и потолки; нарезка шифротекста на
 части; ключи подписи обоих каналов.
 
-На том конце канала — только наш же код, поэтому любое расхождение со
-словарём рвёт сессию (`ProtocolError`), а не «принимается как получится».
+На том конце канала — только наш же код, поэтому расхождение тела известного
+вида со словарём рвёт сессию (`ProtocolError`), а не «принимается как
+получится»; незнакомый вид — отдельная ошибка (`UnknownKind`): слово выпуска
+новее сессия пропускает, иначе каждое новое слово рвало бы её у прежней
+стороны на каждом переподключении.
 
 Цена ошибки: вид, принятый не с той стороны, — резерв, который сам себе
 присылает `go` от имени основы; `True` вместо числа поколения (в Python
@@ -41,9 +44,25 @@ def test_a_valid_message_passes_and_comes_back_without_envelope_fields():
     assert out == _hello(), "служебные поля конверта и лишние поля должны отсечься"
 
 
-def test_an_unknown_kind_breaks_the_session():
-    with pytest.raises(ProtocolError, match="неизвестный вид"):
+def test_an_unknown_kind_is_its_own_error_so_the_session_can_skip_it():
+    """Незнакомый вид — `UnknownKind`, а не общий `ProtocolError`: сессия его
+    пропускает (слово выпуска новее), а разрыв остаётся за неверным телом
+    известного вида."""
+    with pytest.raises(pp.UnknownKind, match="неизвестный вид"):
         pp.check(pp.PAIR_PROTO, "rm_rf", {}, pp.INVITER)
+    with pytest.raises(pp.UnknownKind):
+        pp.check(pp.GUEST_PROTO, "q_from_the_future", {}, pp.GATEWAY)
+    with pytest.raises(ProtocolError) as e:
+        pp.check(pp.PAIR_PROTO, "ping", {}, pp.INVITER)
+    assert not isinstance(e.value, pp.UnknownKind), "нет поля у известного вида — не «незнакомый вид»"
+
+
+def test_an_unknown_kind_is_logged_once_per_kind_and_capped():
+    seen: set = set()
+    assert pp.first_unknown(seen, "a") and not pp.first_unknown(seen, "a")
+    for i in range(pp.UNKNOWN_LOG_MAX * 2):
+        pp.first_unknown(seen, f"k{i}")
+    assert len(seen) == pp.UNKNOWN_LOG_MAX, "поток разных незнакомых видов не раздувает журнал и память сессии"
 
 
 @pytest.mark.parametrize("proto, kind, body, sender", [
@@ -66,9 +85,9 @@ def test_kinds_for_both_sides_are_accepted_from_either_side():
 
 @pytest.mark.parametrize("kind", ["link_next", "link_ack", "link_go"])
 def test_the_removed_link_kinds_are_unknown_now(kind):
-    """Виды смены ключей линка пары сняты: их появление — чужой или сломанный
-    собеседник, сессия рвётся."""
-    with pytest.raises(ProtocolError, match="неизвестный вид"):
+    """Виды смены ключей линка пары сняты: от прежнего выпуска они — незнакомое
+    слово, пропуск с журналом (сессия цела), а не разрыв."""
+    with pytest.raises(pp.UnknownKind, match="неизвестный вид"):
         pp.check(pp.PAIR_PROTO, kind, {}, pp.INVITER)
 
 

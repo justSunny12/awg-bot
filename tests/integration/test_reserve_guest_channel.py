@@ -138,3 +138,37 @@ async def test_a_second_session_of_the_same_slot_replaces_the_first(loop_pair):
         assert srv.online_slots() == [1]
     finally:
         await other.stop()
+
+
+async def test_an_unknown_word_of_the_gateway_is_skipped_and_the_session_lives(loop_pair, caplog):
+    """Слово выпуска новее (незнакомый вид) — пропуск со строкой в журнал раз
+    на вид за сессию: разрыв выводил бы шлюз нового выпуска из набора
+    голосующих на каждом подъёме сессии к резерву прежнего."""
+    res, srv, gw, cl = loop_pair
+    caplog.set_level("INFO", logger=guestsrv.log.name)
+    assert await cl.send("qfuture", {"x": 1})
+    assert await cl.send("qfuture", {"x": 2})
+    assert await cl.send("qview", {"l": "b", "g": 1, "w": "uns", "since": "2026-10-21T03:11:00+03:00", "e": 7})
+    assert await _until(lambda: any(k == "qview" for _, k, _ in res.words)), f"слово после незнакомого не дошло: {res.words}"
+    assert srv.online_slots() == [1] and not res.closed, "незнакомое слово шлюза порвало гостевой канал"
+    assert not any(k == "qfuture" for _, k, _ in res.words), "незнакомое слово дошло до сервисов"
+    assert sum("qfuture" in r.getMessage() for r in caplog.records) == 1, "незнакомый вид — в журнал раз за сессию"
+
+
+async def test_an_unknown_word_of_the_reserve_is_skipped_and_the_session_lives(loop_pair):
+    """То же в обратную сторону: резерв нового выпуска шлёт слово, которого
+    шлюз не знает, — клиент шлюза пропускает его и остаётся на связи."""
+    res, srv, gw, cl = loop_pair
+    assert await _until(lambda: len(gw.got) >= 2)
+    assert await srv.send(1, "rfuture", {"x": 1})
+    assert await srv.send(1, "ping", {"n": "0123456789abcdef"})
+    assert await _until(lambda: (1, "pong", {"n": "0123456789abcdef"}) in res.words), f"сессия не пережила слово: {res.words}"
+    assert cl.online and len(res.opened) == 1 and not res.closed, "незнакомое слово резерва порвало гостевой канал"
+    assert not any(k == "rfuture" for k, _ in gw.got)
+
+
+async def test_a_known_word_with_a_broken_body_still_breaks_the_session(loop_pair):
+    """Граница правила: известный вид с неверным телом — поломка или чужой, разрыв как прежде."""
+    res, srv, gw, cl = loop_pair
+    assert await cl.send("qview", {"l": "b"})                 # нет обязательных полей
+    assert await _until(lambda: res.closed == [1]), "известное слово с неверным телом не порвало сессию"

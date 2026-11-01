@@ -33,6 +33,7 @@ class _GuestSession:
         self.sn = gwlink.new_nonce()
         self.cn = b""
         self.hello = False
+        self.unknown: set[str] = set()   # незнакомые виды, уже записанные в журнал этой сессии
 
 
 class GuestChannelServer:
@@ -117,8 +118,14 @@ class GuestChannelServer:
                     break
                 msg = gwlink.unpack(key, line, last_seq=last_seq, nonce=sess.sn)
                 last_seq = int(msg.get("seq") or 0)
-                kind = str(msg.get("t") or "")
-                body = pairproto.check(pairproto.GUEST_PROTO, kind, msg, pairproto.GATEWAY)
+                kind = str(msg.get("t") or "")[:32]
+                try:
+                    body = pairproto.check(pairproto.GUEST_PROTO, kind, msg, pairproto.GATEWAY)
+                except pairproto.UnknownKind:
+                    # слово выпуска новее (или снятое): пропуск — разрыв рвал бы сессию на каждом подъёме
+                    if pairproto.first_unknown(sess.unknown, kind):
+                        log.info("гостевой канал: %s прислал незнакомое «%s» — пропускаю", addr, kind)
+                    continue
                 if kind == "ping":                        # проба шлюза по подозрению — ответ здесь же
                     await self.send(slot, "pong", {"n": str(body.get("n") or "")})
                 actions = await asyncio.to_thread(self.services.reserve_guest_in, slot, kind, body)

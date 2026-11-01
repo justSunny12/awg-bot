@@ -1,6 +1,8 @@
 """Разбор слов обычной сессии канала пары (runtime/pairlink/inbound.py
-`_handle_safe`): тело, не прошедшее проверку словаря, рвёт сессию; упавший
-обработчик — лог и следующее слово; пятый сбой одного вида за минуту — разрыв.
+`_handle_safe`): тело известного вида, не прошедшее проверку словаря, рвёт
+сессию; незнакомый вид — пропуск со строкой в журнал раз на вид за сессию;
+упавший обработчик — лог и следующее слово; пятый сбой одного вида за минуту —
+разрыв.
 
 Цена ошибки: «ядовитое» слово (сбой обработчика на конкретном теле) рвало
 сессию, вторая сторона слала его снова на следующей — вечный круг
@@ -62,3 +64,28 @@ async def test_faults_older_than_a_minute_do_not_count(monkeypatch):
         assert await side._handle_safe(sess, {"t": "taken"}) is True
     now[0] += 61
     assert await side._handle_safe(sess, {"t": "taken"}) is True
+
+
+async def test_an_unknown_kind_is_skipped_once_logged_and_the_session_lives(caplog):
+    """Незнакомый вид (слово выпуска новее или снятое) — пропуск, сессия цела,
+    строка в журнал раз на вид за сессию: разрыв рвал бы сессию у прежней
+    стороны на каждом переподключении — новое слово навсегда глушило бы пару."""
+    caplog.set_level("INFO", logger=plc.log.name)
+
+    class _Real(InboundMixin):
+        pass
+
+    side, sess = _Real(), _sess()
+    assert [await side._handle_safe(sess, {"t": "link_next"}) for _ in range(3)] == [True] * 3
+    assert await side._handle_safe(sess, {"t": "future_word", "x": 1}) is True
+    lines = [r.getMessage() for r in caplog.records if "незнакомо" in r.getMessage()]
+    assert len(lines) == 2 and "link_next" in lines[0] and "future_word" in lines[1], lines
+    assert await side._handle_safe(_sess(), {"t": "link_next"}) is True
+    assert sum("link_next" in r.getMessage() for r in caplog.records) == 2, "отметка — на сессию"
+
+
+async def test_a_known_kind_with_a_broken_body_still_breaks_the_session():
+    class _Real(InboundMixin):
+        pass
+
+    assert await _Real()._handle_safe(_sess(), {"t": "ping"}) is False, "ping без n обязан рвать сессию"

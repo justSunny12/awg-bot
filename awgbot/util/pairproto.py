@@ -10,10 +10,14 @@ pairproto.py — сообщения канала пары и гостевого 
 шлюзов (`MAX_CHUNKS`), а часть — 64 КБ шифротекста (в hex и base64 конверта
 она укладывается в предел строки `MAX_LINE`).
 
-Разбор тела — `check(kind, body, side)`: неизвестный вид, вид не с той
-стороны, нет обязательного поля, поле не того типа или длиннее потолка —
-`ProtocolError`. Сессия рвётся, как у канала шлюзов: единственный источник на
-том конце — наш же код, и мусор означает поломку или чужого.
+Разбор тела — `check(kind, body, side)`: вид не с той стороны, нет
+обязательного поля, поле не того типа или длиннее потолка — `ProtocolError`.
+Сессия рвётся, как у канала шлюзов: единственный источник на том конце — наш
+же код, и мусор означает поломку или чужого. Незнакомый вид — `UnknownKind`
+(подвид `ProtocolError`): это слово выпуска новее (или снятое прежним), сессия
+цела — строка в журнал раз на вид за сессию (`first_unknown`) и пропуск;
+иначе любое новое слово рвало бы сессию у прежней стороны на каждом
+переподключении.
 """
 from __future__ import annotations
 
@@ -222,12 +226,29 @@ OPTIONAL: dict[str, frozenset] = {"st": frozenset({"healthy", "can_return", "in_
                                   "hello": frozenset({"pair", "eph", "name", "version", "caps", "gen", "ports", "seen", "bot", "gw"})}
 
 
+class UnknownKind(ProtocolError):
+    """Вид, которого этот выпуск не знает: пропуск с журналом, сессия цела."""
+
+
+UNKNOWN_LOG_MAX = 32                     # незнакомых видов в журнал за сессию — не больше
+
+
+def first_unknown(seen: set, kind: str) -> bool:
+    """Незнакомый вид `kind` в этой сессии впервые (и предел видов не выбран) —
+    писать в журнал; `seen` — множество сессии, отметка ставится здесь."""
+    if kind in seen or len(seen) >= UNKNOWN_LOG_MAX:
+        return False
+    seen.add(kind)
+    return True
+
+
 def check(proto: str, kind: str, body: dict, sender: str) -> dict:
     """Проверить тело сообщения вида `kind` от стороны `sender`; вернуть тело
-    без служебных полей конверта. Неверно — ProtocolError."""
+    без служебных полей конверта. Незнакомый вид — UnknownKind, неверное тело
+    известного — ProtocolError."""
     spec = kinds_for(proto).get(kind)
     if spec is None:
-        raise ProtocolError(f"неизвестный вид сообщения {kind!r}")
+        raise UnknownKind(f"неизвестный вид сообщения {kind[:32]!r}")
     who, fields = spec
     allowed = _SIDES[proto].get(sender)
     if allowed is None or who not in allowed:

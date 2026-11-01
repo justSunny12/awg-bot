@@ -49,6 +49,7 @@ class _Session:
         self.st_sent: dict | None = None
         self.parts: dict = {}            # сборка пакета частями: {gen: [часть…]}
         self.faults: dict[str, list[float]] = {}   # сбои обработчиков по видам: отметки monotonic
+        self.unknown: set[str] = set()   # незнакомые виды, уже записанные в журнал этой сессии
 
 
 async def send_line(sess: _Session, kind: str, body: dict | None = None, *, pad: int = gwlink.PAD_DELTA) -> bool:
