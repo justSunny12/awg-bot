@@ -46,7 +46,6 @@ class _Session:
         self.sn = gwlink.new_nonce()     # наш нонс: им подписывает нам другая сторона
         self.cn = b""                    # нонс другой стороны: им подписываем мы
         self.sn_sent = False
-        self.st_sent: dict | None = None
         self.parts: dict = {}            # сборка пакета частями: {gen: [часть…]}
         self.faults: dict[str, list[float]] = {}   # сбои обработчиков по видам: отметки monotonic
         self.unknown: set[str] = set()   # незнакомые виды, уже записанные в журнал этой сессии

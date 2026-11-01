@@ -36,7 +36,6 @@ class Vote:
     alive: bool = True         # канал голосующего жив
     said_no: bool = False      # сказал «нет» под этой эпохой — держит обязательство до qrel/qtake
     info: Info = field(default_factory=Info)
-    info_at: float = 0.0
 
 
 @dataclass
@@ -47,7 +46,6 @@ class Candidate:
     timing: Timing = field(default_factory=Timing)
     voters: tuple[str, ...] = ()                   # все голосующие, кроме меня, — шлюзы линии
     own: str = "new"
-    own_since: float = 0.0
     votes: dict = field(default_factory=dict)      # узел → Vote
     no_since: float | None = None                  # большинство «нет» держится с
     rf_since: float | None = None                  # случай 3: шлюзы не видят, я вижу — с
@@ -73,8 +71,7 @@ class Candidate:
                 del self.votes[n]
 
     def set_own(self, w: str, now: float) -> None:
-        if w != self.own:
-            self.own, self.own_since = w, now
+        self.own = w
 
     def view_in(self, node: str, w: str, now: float, *, since: str = "", e: int = 0,
                 info: Info | None = None) -> None:
@@ -85,7 +82,7 @@ class Candidate:
         if w == "uns":
             vt.said_no = True
         if info is not None:
-            vt.info, vt.info_at = info, now
+            vt.info = info
         self.votes[node] = vt
 
     def channel(self, node: str, alive: bool) -> None:

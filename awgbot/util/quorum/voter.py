@@ -53,7 +53,6 @@ class Voter:
     fact: int = 0                 # эпоха по фактам (ответы ответчика, слова сервера) — без поднятой собой
     started: float = 0.0
     last_reply: float = 0.0       # последний ответ (monotonic), 0 — ещё не было
-    last_probe: float = 0.0
     blind_at: float = 0.0         # последняя проба, не ушедшая из сокета (monotonic), 0 — не было
     next_probe: float = 0.0
     pending: dict = field(default_factory=dict)   # s → когда отправлена
@@ -79,7 +78,6 @@ class Voter:
         """Проба отправлена: номер; следующая — через interval (с джиттером вызывающего)."""
         self.seq = (self.seq + 1) % (2 ** 31)
         self.pending[self.seq] = now
-        self.last_probe = now
         self.next_probe = now + float(interval)
         return self.seq
 

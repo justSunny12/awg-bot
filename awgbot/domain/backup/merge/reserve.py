@@ -86,7 +86,7 @@ def _counter(base, cur, rep) -> tuple[int, int | None]:
     return c + (r - b), None
 
 
-def merge(cur_db: str, base_db: str, rep_db: str, *, admin_tg: int = 0, no_delete: bool = False,
+def merge(cur_db: str, base_db: str, rep_db: str, *, no_delete: bool = False,
           mark: tuple[str, str] | None = None) -> Report:
     """Слить реплику в живую базу основы на месте. Бот основы — остановлен.
     `no_delete` — база не настоящий снимок (его нет: основа восстановлена из

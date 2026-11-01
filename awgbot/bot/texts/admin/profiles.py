@@ -125,7 +125,7 @@ def admin_client_card(d: dict, bot_username: str = "") -> str:
     if rf is not None:                            # включённой функции показываем: так
         lines.append(rf_line(*rf, arrows=False))  # видно, что маркировка не работает
     if d.get("progress") is not None:
-        done, live, total_d = d["progress"]
+        done, live, _ = d["progress"]
         if live:                                  # временное — отдельным блоком
             lines.append("")
             lines.append(f"🚚 Переезд: {done} из {live} недавно активных устройств")
