@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from tests.unit import _gw_lan_common as _c
 from tests.unit._gw_lan_common import (
-    FEED, RU_USER, VPN_USER, _SRC, _bin, _fake, _feed_from, _log, _own, _run, _with_src,
+    FEED, RU_USER, VPN_USER, _SRC, _bin, _fake, _feed_from, _flaky, _log, _own, _run, _with_src,
 )
 
 script, domain_env, own_env = _c.script, _c.domain_env, _c.own_env
@@ -71,6 +71,19 @@ def test_a_failed_list_lookup_is_not_taken_for_a_missing_domain(own_env):
     assert r.returncode == 1 and UNTOUCHED in r.stderr, r.stdout + r.stderr
     assert "в списках нет" not in r.stdout, r.stdout
     assert _state(dns_d) == before
+
+
+def test_a_failed_domain_check_is_not_taken_for_a_bad_name(own_env):
+    """grep проверки домена упал (код 2) — это не «не похоже на домен»:
+    прежде домен пропускался с этой строкой и кодом 0, хотя он верный."""
+    tool, dns_d, dump, log, env = own_env
+    before = _two_exceptions(own_env)
+    _flaky(env, "grep", when="-Eq*", how="exit 2")
+    r = _run(tool, env, "add", "alpha.com")
+    assert r.returncode == 1 and UNTOUCHED in r.stderr, r.stdout + r.stderr
+    assert "не похоже на домен" not in r.stdout, r.stdout
+    assert _state(dns_d) == before
+    assert "systemctl" not in _log(log)
 
 
 def test_a_failed_feed_rebuild_rolls_the_lists_back(own_env):
