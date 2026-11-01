@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 
 from awgbot.util import jointoken
-from tests.conftest import fake_cmd
+from tests.conftest import fake_cmd, tmp_env
 
 ROOT = Path(__file__).resolve().parents[2]
 INSTALLER = ROOT / "install" / "awg-bot-install.sh"
@@ -172,7 +172,7 @@ def _existing(tmp_path, have: str, want: str, answer: str, role: str = "gateway"
         f'JOIN_ID="0123456789abcdef"; JOIN_STATE_FILE="{jf}"; ASSUME_YES={int(yes)}\n'
         + (f'exec 3<"{ans}"\n' if tty else "") + frag + "echo CONTINUE_INSTALL\n")
     r = subprocess.run(["bash", "-c", prog], capture_output=True, text=True, timeout=30,
-                       env={"PATH": path, "TMPDIR": str(tmp_path)})
+                       env=tmp_env(tmp_path, path=path))     # архив для update — в каталоге теста
     return r, (log.read_text(encoding="utf-8").splitlines() if log.exists() else [])
 
 

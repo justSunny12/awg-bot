@@ -26,6 +26,7 @@ from pathlib import Path
 import pytest
 
 from tests.botscript import flat
+from tests.conftest import tmp_env
 
 from tests.unit.test_restore_safety import NEW, OLD, Host, _tgz, prelude
 from tests.unit.test_cli_script import _extract_func
@@ -143,7 +144,7 @@ class Release:
         args = ["--yes", *(["--release", str(self.asset)] if release else []), str(pending)]
         return subprocess.run(["bash", "-c", prog, "x", *args],
                               capture_output=True, text=True, timeout=60,
-                              env={"PATH": f"{self.bin}:/usr/bin:/bin", "TMPDIR": str(h.tmp)})
+                              env=tmp_env(h.tmp, self.bin))
 
     def code(self) -> str:
         return (self.opt / "awgbot" / "__version__.py").read_text(encoding="utf-8")

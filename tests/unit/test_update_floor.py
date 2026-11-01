@@ -20,6 +20,7 @@ import tarfile
 import pytest
 
 from tests.botscript import flat
+from tests.conftest import tmp_env
 
 from tests.unit.test_cli_script import _extract_func
 
@@ -63,7 +64,7 @@ def _run(tmp_path, version: str, *, installed: str = "", update_from: str = "") 
         f'cmd_update "{tgz}"',
     ])
     r = subprocess.run(["bash", "-c", prog], capture_output=True, text=True, timeout=30,
-                       env={"PATH": "/usr/bin:/bin", "TMPDIR": str(tmp_path)})
+                       env=tmp_env(tmp_path))
     calls = log.read_text(encoding="utf-8").splitlines() if log.exists() else []
     return r, calls
 

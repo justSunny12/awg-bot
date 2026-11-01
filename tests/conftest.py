@@ -133,6 +133,53 @@ def pytest_configure(config):
                                        "на тест) — без прямого вызова conftest")
 
 
+def _script_tmp_root() -> pathlib.Path | None:
+    """Куда кладёт временное mktemp без шаблона у скрипта без своего TMPDIR:
+    на macOS — личный временный каталог пользователя (getconf, мимо TMPDIR),
+    иначе — TMPDIR или /tmp."""
+    import subprocess
+    import sys
+    if sys.platform == "darwin":
+        try:
+            out = subprocess.run(["getconf", "DARWIN_USER_TEMP_DIR"], capture_output=True, text=True,
+                                 timeout=5).stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            return None
+        return pathlib.Path(out) if out else None
+    return pathlib.Path(os.environ.get("TMPDIR") or "/tmp")
+
+
+def _script_tmp_names(root: pathlib.Path | None) -> set[str]:
+    try:
+        return {p.name for p in root.glob("tmp.*")} if root else set()
+    except OSError:
+        return set()
+
+
+def pytest_sessionstart(session):
+    """Сторож мусора: что лежало в каталоге временного скриптов до прогона."""
+    if hasattr(session.config, "workerinput"):          # воркер xdist — сторож у контроллера
+        return
+    root = _script_tmp_root()
+    session.config._awg_tmp_root = root
+    session.config._awg_tmp_before = _script_tmp_names(root)
+
+
+def pytest_terminal_summary(terminalreporter, config):
+    """Новые tmp.* в каталоге временного скриптов за прогон — строкой в итоге
+    (не провалом: их мог оставить и параллельный прогон другого дерева).
+    Скрипт под тестом без своего TMPDIR и mktemp из tests.conftest (tmp_env)
+    кладёт временное туда, и всё, что он не убрал, копится между прогонами."""
+    root = getattr(config, "_awg_tmp_root", None)
+    if root is None:
+        return
+    new = sorted(_script_tmp_names(root) - config._awg_tmp_before)
+    if new:
+        terminalreporter.write_line(
+            f"сторож временного: за прогон в {root} появилось {len(new)} tmp.* "
+            f"({', '.join(new[:5])}{'…' if len(new) > 5 else ''}) — скрипту под тестом нужен tmp_env")
+
+
 @pytest.hookimpl(hookwrapper=True)
 def pytest_runtest_makereport(item, call):
     outcome = yield
@@ -920,6 +967,32 @@ def fake_cmd(path, body: str) -> Path:
     if not path.is_symlink():
         path.symlink_to(_fake_runner())
     return bodyf
+
+
+# mktemp без шаблона на macOS берёт личный временный каталог пользователя
+# (confstr), мимо TMPDIR; GNU mktemp слушает TMPDIR, а без него — /tmp. Скрипт
+# поставки, чьё временное после exec убирать уже некому, или оборванный тестом
+# оставлял там tmp.* на каждый прогон — сотни за неделю. Подмена даёт шаблон из
+# TMPDIR, когда его нет; с шаблоном — настоящий mktemp как есть.
+_MKTEMP_IN_TMPDIR = (
+    'for _a in "$@"; do case "$_a" in -*) ;; *) PATH=/usr/bin:/bin exec mktemp "$@" ;; esac; done\n'
+    'PATH=/usr/bin:/bin exec mktemp "$@" "${TMPDIR:-/tmp}/tmp.XXXXXXXXXX"\n')
+
+
+def fake_mktemp(bin_dir) -> Path:
+    """`mktemp` в `bin_dir`, который и на macOS кладёт временное в TMPDIR:
+    тест ставит в окружение скрипта TMPDIR в свой каталог и `bin_dir` в PATH."""
+    return fake_cmd(Path(bin_dir) / "mktemp", _MKTEMP_IN_TMPDIR)
+
+
+def tmp_env(tmp_path, bin_dir=None, path: str = "/usr/bin:/bin") -> dict:
+    """Окружение подпроцесса, чьё временное остаётся в каталоге теста:
+    TMPDIR=<tmp_path>/tmpdir и mktemp, который его слушает, первым в PATH."""
+    bin_dir = Path(bin_dir) if bin_dir else Path(tmp_path) / "tmpbin"
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    fake_mktemp(bin_dir)
+    tmpdir = Path(tmp_path) / "tmpdir"; tmpdir.mkdir(exist_ok=True)
+    return {"PATH": f"{bin_dir}:{path}", "TMPDIR": str(tmpdir)}
 
 
 @pytest.fixture(autouse=True)
