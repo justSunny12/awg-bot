@@ -41,7 +41,7 @@ weight() {
         s06_quorum_move) f="22 15" ;; s06b_quorum_move) f="14 13" ;; s07_quorum_tie) f="22 11" ;;
         s08_rf_transit) f="11 11" ;; s09_tg_split) f="6 5" ;; s11_c9_wait) f="5 4" ;; s10_force_live_guest) f="4 3" ;;
         s06_return_tail) f="5 4" ;; s12_relay_flush) f="4 3" ;; s05_quorum_probes) f="3 2" ;; s05_journal) f="5 4" ;;
-        s13_big_base) f="1 1" ;; s03_move|s04_open_sandbox) f="1 1" ;; s00_topology|s01_zone|s02_guest) f="1 1" ;; *) f="5 5" ;;
+        s13_big_base) f="1 1" ;; s14_record_unknown) f="3 3" ;; s03_move|s04_open_sandbox) f="1 1" ;; s00_topology|s01_zone|s02_guest) f="1 1" ;; *) f="5 5" ;;
     esac
     set -- $f
     [ -n "$FAST" ] && echo "$2" || echo "$1"
