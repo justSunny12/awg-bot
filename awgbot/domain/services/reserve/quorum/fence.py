@@ -237,6 +237,13 @@ class ReserveQuorumFenceMixin:
                 continue
         return actions
 
+    def reserve_quorum_pause_cancel_sync(self) -> None:
+        """Плановая остановка не состоялась (ступень обновления не запустилась): `qpause{dur: 0}`
+        — пауза снята. Голосующие любой сборки понимают это как паузу до «сейчас» (`dur` 0,
+        `until` — сейчас): их «не вижу» снова идёт обычным счётом no_s от последнего ответа.
+        Паузы не было — слово лишнее, но безвредное."""
+        self.reserve_quorum_pause_sync(0)
+
     def reserve_quorum_pause_sync(self, seconds: int | None = None) -> None:
         """То же из синхронного кода (шаг обновления сервера): действия — на цикл событий."""
         actions = self.reserve_quorum_pause_actions(seconds)

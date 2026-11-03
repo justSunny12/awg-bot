@@ -87,6 +87,8 @@ class ReserveQuorumScreenMixin:
                            "y": int(view.get("y") or 0), "yv": int(view.get("v") or 0), "r": str(view.get("r") or ""),
                            "gw_views": [{"node": n, "name": self._quorum_node_name(n, other), "w": str(gv.get("w") or ""),
                                          "since": str(gv.get("since") or "")} for n, gv in sorted(gw_views.items())]}
+            if hasattr(self, "reserve_quorum_own_blind_since") and peer.get("active"):
+                out["peer"]["blind_since"] = self.reserve_quorum_own_blind_since()   # свой зонд слеп дольше предела
             if hasattr(self, "reserve_quorum_candidate_view"):
                 out["peer"]["cand"] = self.reserve_quorum_candidate_view()
                 out["peer"]["tie_since"] = str(self.reserve_quorum_tie_view("cand").get("since") or "")

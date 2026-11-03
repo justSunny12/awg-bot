@@ -9,8 +9,8 @@
 #
 # Возврат пользователей — кнопкой (reserve.return: button), иначе возврат «сразу» вмешался бы в замеры.
 #
-# Проверяет (каждый пункт — на своей свежей паре; выбрать пункты — LAB_S06="a3 a2 b v g e z d",
-# латиницей: а3, а2, б, в, г, е и ж, з, д; без LAB_S06 — а3, а2, б, в, з, остальные — s06b_quorum_move):
+# Проверяет (каждый пункт — на своей свежей паре; выбрать пункты — LAB_S06="a3 a2 b v g i e z d",
+# латиницей: а3, а2, б, в, г, и, е и ж, з, д; без LAB_S06 — а3, а2, б, в, з, остальные — s06b_quorum_move):
 #   включение: кворум линии A включается (состав a, b, a1[, a2], ключи подтверждены B и шлюзами),
 #      A — лидер, все голосующие видят A;
 #   а3, а2. A выключена (процесс остановлен, сеть убита) — B забирает по точкам шлюзов: от гибели до
@@ -25,6 +25,10 @@
 #   г. пробы B до A не доходят, шлюзы видят: 5/3·(T_no + T_up) (4 мин при умолчаниях) ничего не
 #      происходит — A лидер, B не открывает,
 #      окна кода нет;
+#   и. пробы шлюза 1 до A не доходят дольше T_no, B и шлюз 2 видят: шлюз 1 говорит B «не вижу» и берёт
+#      обязательство «нет» (пробы A — «держу»), у B одно «нет» из трёх — ни отсчёта, ни решения; пробы
+#      снова доходят — шлюз 1 «вижу», B снимает обязательство словом qrel (одно на обязательство), и
+#      «да» шлюза 1 у A снова в счёте (3 из 3) раньше pledge_minutes (обязательство не истекло само);
 #   е. перезапуск бота A с qpause на предел паузы (слово второму серверу и шлюзам) и простоем
 #      T_no + T_up + 5 с (150 с при умолчаниях; больше открытия, меньше паузы) — переезда нет;
 #      без qpause и простоем — переезд;
@@ -48,7 +52,7 @@ HERE="$(cd "$(dirname "$0")/.." && pwd)"
 . "$HERE/pairlab.sh"
 . "$HERE/quolab.sh"
 trap pl_cleanup EXIT
-# по умолчанию — а3, а2, б, в, з; г, е и д — тот же файл под именем s06b_quorum_move (обёртка): пункты
+# по умолчанию — а3, а2, б, в, з; г, и, е и д — тот же файл под именем s06b_quorum_move (обёртка): пункты
 # независимы (каждый — на свежей паре), половины (~14 мин на быстром уровне) идут на разных ВМ параллельно
 PARTS="${LAB_S06:-a3 a2 b v z}"
 has() { case " $PARTS " in *" $1 "*) return 0 ;; esac; return 1; }
@@ -146,6 +150,41 @@ if has g; then
     done
     [ "$(pl_q B 's["quo"]["cand"].get("no")')" -le 1 ] || pl_fail "у B «нет» больше одного: $(pl_q B 's["quo"]["cand"]')"
     note "г: B «не вижу» через ${t_uns} с, $(( (QT_NO + QT_UP) * 5 / 3 )) с без переезда"
+    pl_cleanup_quiet
+fi
+
+# ── и. одиночное «не вижу» шлюза, B видит — обязательство «нет» снято сразу ───────────────────────
+if has i; then
+    q_up 1,2
+    rel0="$(pl_gq 1 's["got"].get("in:guest:qrel", 0)')"   # ложное «не вижу» при включении могло уже получить свой qrel
+    T0=$(date +%s)
+    fault "ip saddr 10.1.1.2 ip daddr 203.0.113.5 udp dport 45871 drop comment \"G1 не видит A\""
+    gw_wait 1 's["voters"]["awgqah"]["view"] == "uns" and s["voters"]["awgqah"]["pledge"]' $((QT_NO + 4 * QT_PROBE + 30)) \
+        "и: шлюз 1 «не вижу» A с обязательством «нет»" || exit 1
+    t_uns=$WT
+    t_pledge=$(date +%s)
+    [ "$(pl_q B 's["quo"]["cand"].get("own")')" = "see" ] || pl_fail "и: B сам не видит A — пункт о другом: $(pl_q B 's["quo"]["cand"]')"
+    [ "$(pl_q B 's["quo"]["cand"].get("no")')" -le 1 ] || pl_fail "и: у B «нет» больше одного: $(pl_q B 's["quo"]["cand"]')"
+    [ "$(pl_gq 1 's["got"].get("in:guest:qrel", 0)')" = "$rel0" ] || pl_fail "и: qrel шлюзу 1, пока он «не вижу»: $(pl_gq 1 's["got"]')"
+    fault_off "G1 не видит A"
+    T0=$(date +%s)
+    # предел — раньше, чем обязательство истекло бы само (pledge_minutes от его записи, с запасом 30 с)
+    left=$(( QT_PLEDGE - 30 - $(since "$t_pledge") ))
+    gw_wait 1 's["voters"]["awgqah"]["view"] == "see" and not s["voters"]["awgqah"]["pledge"]' "$left" \
+        "и: шлюз 1 снова «вижу», обязательство снято" || exit 1
+    t_rel=$WT
+    [ "$(pl_gq 1 's["got"].get("in:guest:qrel", 0)')" = $((rel0 + 1)) ] || pl_fail "и: обязательство снято не словом qrel резерва: $(pl_gq 1 's["got"]')"
+    wait_t A 's["quo"]["count"]["voters"].get("a1", {}).get("w") == "see" and s["quo"]["count"].get("y") == 3' \
+        $(( QT_PLEDGE - 30 - $(since "$t_pledge") )) "и: «да» шлюза 1 у A снова в счёте (3 из 3)" || exit 1
+    t_yes=$WT
+    [ "$(pl_q A 's["quo"]["count"].get("role")')" = "lead" ] || pl_fail "и: A не лидер: $(pl_q A 's["quo"]["count"]')"
+    for _ in $(seq 1 $((3 * QT_PROBE))); do
+        [ "$(pl_gq 1 's["voters"]["awgqah"]["pledge"]')" = "null" ] || pl_fail "и: шлюз 1 снова держит обязательство: $(pl_gq 1 's["voters"]')"
+        sleep 1
+    done
+    [ "$(pl_gq 1 's["got"].get("in:guest:qrel", 0)')" = $((rel0 + 1)) ] || pl_fail "и: qrel на одно обязательство — не один: $(pl_gq 1 's["got"]')"
+    [ "$(pl_q B 's["in"].get("state", "idle")')" = "idle" ] || pl_fail "и: B открыл при одном «нет»: $(pl_q B 's["in"]')"
+    note "и: шлюз 1 «не вижу» через ${t_uns} с, обязательство снято через ${t_rel} с после возврата проб, «да» у A через ${t_yes} с (pledge_minutes — ${QT_PLEDGE} с)"
     pl_cleanup_quiet
 fi
 
@@ -248,10 +287,10 @@ if has d; then
     fault "ip saddr { 10.1.1.2, 10.1.2.2 } ip daddr 203.0.113.5 udp dport 45871 drop comment \"случай 3\""
     wait_t A 's["quo"]["fenced"] is True' 1000 "случай 3: A лишена кворума" || exit 1
     t_fence=$WT
-    [ "$t_fence" -ge $((QT_DOWN_RF - QT_W)) ] || pl_fail "случай 3: A лишена кворума через $t_fence с — раньше T_down_rf ($QT_DOWN_RF с)"
+    [ "$t_fence" -ge $((QT_DOWN_RF - QT_W)) ] || pl_fail "случай 3: A лишена кворума через $t_fence с — раньше T_down_rf − W ($QT_DOWN_RF − $QT_W = $((QT_DOWN_RF - QT_W)) с)"
     wait_t A 's["out"].get("state") == "leaving"' 400 "случай 3: B забрал по просьбе" || exit 1
     t_ask=$WT
-    [ "$t_ask" -ge $((QT_RF - 20)) ] || pl_fail "случай 3: переезд через $t_ask с — раньше T_up_rf ($QT_RF с)"
+    [ "$t_ask" -ge $((QT_RF - 20)) ] || pl_fail "случай 3: переезд через $t_ask с — раньше T_up_rf − 20 ($QT_RF − 20 = $((QT_RF - 20)) с)"
     [ "$t_fence" -lt "$t_ask" ] || pl_fail "случай 3: лишение кворума ($t_fence с) не раньше переезда ($t_ask с)"
     note "д: лишена кворума через ${t_fence} с, просьба через ${t_ask} с"
     pl_cleanup_quiet

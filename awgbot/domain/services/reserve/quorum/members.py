@@ -270,11 +270,12 @@ class ReserveQuorumMembersMixin:
                 "port": int(quoprobe.port()),                 # порт моего ответчика — зонду второй стороны
                 "tm": self.reserve_quorum_timing_digits()}    # цифры лидера — кандидат сверяет со своими
 
-    def reserve_quorum_timing_digits(self) -> dict:
+    def reserve_quorum_timing_digits(self, tm: Timing | None = None) -> dict:
         """Цифры времени, которыми связаны лидер и кандидат: проба, T_no, окно «да», T_down, T_up, T_up_rf и
         предел плановой паузы (лидер просит паузу, голосующий второй стороны держит её не дольше своего
-        предела — разойдись они, второй сервер начал бы переезд посреди планового обновления)."""
-        tm = self.reserve_quorum_timing()
+        предела — разойдись они, второй сервер начал бы переезд посреди планового обновления). `tm` —
+        чьи цифры (умолчание — свои из настроек)."""
+        tm = self.reserve_quorum_timing() if tm is None else tm
         return {"p": int(tm.probe_s), "no": int(tm.no_s), "w": int(tm.yes_window_s), "down": int(tm.down_s),
                 "up": int(tm.up_s), "rf": int(tm.rf_block_s), "pause": int(tm.pause_s)}
 

@@ -23,6 +23,8 @@ quorum — кворум взаимного резерва серверов на 
 - `tie`      — ничья: тревога обоим админам и отбой (Т-К5…Т-К6);
 - `returns`  — возвраты по кворуму: «сразу» по Q2, аварийный по Q1 о клоне,
                корреляция голосующих (Т-К15);
+- `pledges`  — снятие обязательства «нет» у снова видящего голосующего, когда
+               кандидат (о второй линии или о своём клоне) ничего не решает;
 - `screen`   — данные карточки «🛟 Резерв» и экрана роли;
 - `tick`     — такт кворума и план сокетов для runtime/quorum.
 
@@ -37,6 +39,7 @@ from .inbound import ReserveQuorumInboundMixin
 from .keys import ReserveQuorumKeysMixin
 from .leader import ReserveQuorumLeaderMixin
 from .members import ReserveQuorumMembersMixin
+from .pledges import ReserveQuorumPledgesMixin
 from .probes import ReserveQuorumProbesMixin
 from .returns import ReserveQuorumReturnsMixin
 from .screen import ReserveQuorumScreenMixin
@@ -48,7 +51,7 @@ from .voter import ReserveQuorumVoterMixin
 class ReserveQuorumMixin(ReserveQuorumMembersMixin, ReserveQuorumKeysMixin, ReserveQuorumProbesMixin, ReserveQuorumLeaderMixin,
                          ReserveQuorumVoterMixin, ReserveQuorumInboundMixin, ReserveQuorumScreenMixin,
                          ReserveQuorumCandidateMixin, ReserveQuorumFenceMixin, ReserveQuorumTieMixin,
-                         ReserveQuorumReturnsMixin, ReserveQuorumTickMixin):
+                         ReserveQuorumReturnsMixin, ReserveQuorumPledgesMixin, ReserveQuorumTickMixin):
     """Кворум резерва — одним миксином в ReserveMixin."""
 
 

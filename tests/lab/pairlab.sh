@@ -28,14 +28,17 @@
 #   (РФ-доступ узлов для s08_rf_transit — rtlab.sh: LAB_RT и LAB_RF_SET идут узлам окружением;
 #    LAB_CONST — сжатые сроки резерва узлам и боту основы на резерве, LAB_OPEN_RECORD=1 — запись при
 #    аварийном открытии меняет процесс открытия миром DNS стенда; оба — до pl_start, см. pairnode)
-#   pl_cleanup                    всё снять (trap EXIT сценария)
+#   pl_rsv <узел> <ключ> [выражение над v]   ключ резерва из базы узла (server_state, только чтение)
+#   pl_quo_trace <узел>           отметки кворума и окна кода узла одной строкой: rsv_view.code, rsv_qlog.tie_cand,
+#                                 rsv_in из базы, кандидат и t из status.json, выборка node.log (ничья, окно кода, линк)
+#   pl_cleanup                    всё снять (trap EXIT сценария); провал — каталог пары и quo-<узел>.txt в lab-fail
 set -u
 PL_HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; PL_ROOT="$(cd "$PL_HERE/../.." && pwd)"
 PL_USER="${SUDO_USER:-$(id -un)}"; PL_HOME="$(getent passwd "$PL_USER" | cut -d: -f6)"
 PL_VENV="${LAB_VENV:-$PL_HOME/venv}"
 PY="${LAB_PY:-$PL_VENV/bin/python}"
 # QT_PROBE, QT_NO, QT_W, QT_DOWN, QT_UP, QT_UNFENCE, QT_TIE, QT_TIE_CLEAR, QT_RF, QT_DOWN_RF, QT_GRACE,
-# QT_PAUSE, QT_HEALTHY — цифры кворума и «здоров» уровня стенда (LAB_FAST=1 — быстрый, pairnode.LAB_FAST_DIGITS):
+# QT_PAUSE, QT_PLEDGE, QT_HEALTHY — цифры кворума и «здоров» уровня стенда (LAB_FAST=1 — быстрый, pairnode.LAB_FAST_DIGITS):
 # пределы проверок сценариев — от них, узлы получают те же в reserve.yaml
 eval "$(cd "$PL_ROOT" && "$PY" -m tests.lab.pairnode digits)" || exit 1
 # keepalive линка пары стенда: живость пары (reserve.suspect_seconds) обязана его перекрывать — быстрый уровень
@@ -305,6 +308,8 @@ print(json.dumps(v, ensure_ascii=False) if not isinstance(v, str) else v)' "$PL/
 PL_SCEN="${LAB_SCEN:-$(basename "$0" .sh)}"   # имя сценария (обёртка над чужим файлом задаёт своё — s06b_quorum_move)
 PL_STEPS="/var/tmp/lab-steps-$PL_SCEN.txt"; PL_T_START=$(date +%s); PL_T_MARK=$PL_T_START
 : > "$PL_STEPS" 2>/dev/null
+# каталог прежнего провала этого сценария — прочь: пережив успешные прогоны, он сходил бы за свежую ловушку
+rm -rf "/var/tmp/lab-fail-$PL_SCEN" 2>/dev/null
 pl_mark() {
     local now; now=$(date +%s)
     printf '%5d %5d  %s\n' $((now - PL_T_START)) $((now - PL_T_MARK)) "$1" >> "$PL_STEPS" 2>/dev/null
@@ -358,6 +363,34 @@ pl_codewin_check() {
     pl_fail "$1: у резерва открывалось окно аварийного кода при живой основе: $(grep -m1 -B3 -A3 ' cw=true ' "$PL/codewin.log" | tr '\n' '|') · журнал B: $(grep -E 'кворум: (сервер|клон) линии|приём аварийного кода|зонд' "$PL/B/node.log" | tail -n 8 | tr '\n' '|')"
 }
 
+pl_rsv() {   # pl_rsv <узел> <ключ резерва> [выражение над v] — из базы узла, только чтение (узел может быть снят)
+    "$PY" -c 'import json,sqlite3,sys
+try:
+    c = sqlite3.connect("file:" + sys.argv[1] + "?mode=ro", uri=True)
+    row = c.execute("SELECT value FROM server_state WHERE key = ?", (sys.argv[2],)).fetchone()
+    v = json.loads(row[0]) if row and str(row[0]).startswith("{") else {}
+except Exception as e:
+    v = {"нет базы": f"{type(e).__name__}: {e}"}
+if len(sys.argv) > 3:
+    try:
+        v = eval(sys.argv[3], {"v": v})
+    except Exception:
+        v = None
+print(json.dumps(v, ensure_ascii=False))' "$PL/$1/data/bot.db" "$2" ${3:+"$3"}
+}
+
+# Строки журнала узла о ничьей, окне аварийного кода и живости линка шлюзов: по ним видно, открывалось ли окно
+# и кто его закрыл.
+PL_QUO_LOG='кворум: ничья о|ничьей о .* больше нет|приём аварийного кода (открыт|закрыт)|не отвечает по линку|прежний взгляд забыт|кворум: (сервер|клон) линии'
+
+pl_quo_trace() {   # pl_quo_trace <узел> — отметки кворума и окна кода одной строкой (сообщение провала)
+    local n="$1"
+    printf 'окно кода %s: %s · tie_cand: %s · rsv_in: %s · кандидат: %s · status t: %s · журнал %s: %s' "$n" \
+        "$(pl_rsv "$n" rsv_view 'v.get("code")')" "$(pl_rsv "$n" rsv_qlog 'v.get("tie_cand")')" "$(pl_rsv "$n" rsv_in)" \
+        "$(pl_q "$n" 's["quo"]["cand"]')" "$(pl_q "$n" 's.get("t")')" "$n" \
+        "$(grep -E "$PL_QUO_LOG" "$PL/$n/node.log" 2>/dev/null | tail -n 12 | tr '\n' '|')"
+}
+
 pl_cleanup_quiet() {
     local n
     [ -n "$PL_CW_PID" ] && kill "$PL_CW_PID" 2>/dev/null; PL_CW_PID=""
@@ -386,8 +419,21 @@ pl_cleanup() {   # trap EXIT: сценарий не прошёл — катал�
     local rc=$?
     pl_cleanup_quiet
     if [ "$rc" -ne 0 ] && [ -d "$PL" ]; then
-        local keep="/var/tmp/lab-fail-$PL_SCEN"
+        local keep="/var/tmp/lab-fail-$PL_SCEN" n
         rm -rf "$keep"; cp -a "$PL" "$keep" 2>/dev/null && printf 'каталог пары сохранён: %s\n' "$keep"
+        # отметки кворума и окна кода обоих узлов — готовой выжимкой рядом с базами (узлы уже сняты, базы целы)
+        for n in A B; do
+            [ -f "$PL/$n/data/bot.db" ] && [ -d "$keep" ] || continue
+            {
+                printf 'rsv_view.code: %s\n' "$(pl_rsv "$n" rsv_view 'v.get("code")')"
+                printf 'rsv_qlog.tie_cand: %s\n' "$(pl_rsv "$n" rsv_qlog 'v.get("tie_cand")')"
+                printf 'rsv_in: %s\n' "$(pl_rsv "$n" rsv_in)"
+                printf 'status.json: t %s, кандидат %s, in %s\n' "$(pl_q "$n" 's.get("t")')" "$(pl_q "$n" 's["quo"]["cand"]')" \
+                    "$(pl_q "$n" 's["in"]')"
+                printf -- '--- node.log (ничья, окно кода, линк шлюзов):\n'
+                grep -E "$PL_QUO_LOG" "$PL/$n/node.log" 2>/dev/null | tail -n 60
+            } > "$keep/quo-$n.txt" 2>/dev/null
+        done
     fi
     [ -n "${PL_KEEP:-}" ] || rm -rf "$PL"
 }

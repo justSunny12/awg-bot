@@ -42,6 +42,36 @@ def test_immediate_takes_the_write_lock_before_any_write(db):
         other.close()
 
 
+@pytest.mark.jrn_raw("второе соединение держит замок записи")
+def test_a_refused_immediate_begin_leaves_the_thread_able_to_commit(db):
+    """BEGIN IMMEDIATE отозвался «database is locked» (чужой замок дольше busy_timeout):
+    глубина потока — назад. Раньше поток навсегда считал себя внутри транзакции —
+    его записи не коммитили никогда, а первая держала замок записи до перезапуска
+    бота (потоки to_thread переиспользуются)."""
+    other = sqlite3.connect(db.path, timeout=0)
+    db._connection().execute("PRAGMA busy_timeout = 50")
+    try:
+        other.execute("BEGIN IMMEDIATE")                        # чужой замок записи
+        with pytest.raises(sqlite3.OperationalError, match="locked"):
+            with db.transaction(immediate=True):
+                pass
+        other.rollback()
+        assert getattr(db._txl, "depth", 0) == 0 and getattr(db._txl, "conn", None) is None, \
+            "после отказа замка поток считает себя внутри транзакции"
+        with db.transaction(immediate=True):                    # тот же поток — обычная транзакция
+            db.set_state("after", "1")
+        third = sqlite3.connect(db.path, timeout=0)
+        try:
+            row = third.execute("SELECT value FROM server_state WHERE key = 'after'").fetchone()
+            assert row and row[0] == "1", "запись после отказа не закоммичена"
+            third.execute("INSERT INTO server_state (key, value) VALUES ('o3', '1')")   # замок отпущен
+            third.commit()
+        finally:
+            third.close()
+    finally:
+        other.close()
+
+
 def test_an_empty_immediate_transaction_is_not_a_commit(db):
     seen = []
     db.set_commit_hook(seen.append)

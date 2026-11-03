@@ -153,18 +153,23 @@ def test_a_reply_before_the_leader_stops_does_not_lift_the_pause():
 
 
 def test_a_reply_after_silence_under_the_pause_lifts_it():
-    """Под паузой лидер замолк (проба пропала) и вернулся — пауза снята: дальше «не вижу» по
-    обычному сроку, а не по сроку паузы."""
-    v = _seeing()
+    """Под паузой лидер замолк дольше no_s (без паузы это было бы «не вижу») и вернулся — пауза
+    снята: дальше «не вижу» по обычному сроку, а не по сроку паузы. Одна потерянная в сети проба
+    при живом лидере — пропуск с досылками, не молчание: пауза держится (иначе потеря одного пакета
+    во время скачивания обновления снимала бы паузу до остановки лидера)."""
+    v = _seeing()                                     # ответы в T0 и T0 + 15
     v.pause(T0 + 20, 300)
-    s = v.probe_out(T0 + 25, T.probe_s)
-    v.tick(T0 + 25 + T.reply_s)                       # ответа нет — молчание под паузой
-    assert v.pause_silent
-    s = v.probe_out(T0 + 40, T.probe_s)
-    v.reply_in(_reply(s), T0 + 40.1)                  # лидер вернулся
-    assert not v.paused(T0 + 41) and not v.pause_silent
-    acts = [(k, a) for k in range(41, 200) for a in v.tick(T0 + k) if a == "uns"]
-    assert acts == [(86, "uns")], f"«не вижу» не по обычному сроку от ответа (+40,1 + {T.no_s}): {acts}"
+    v.probe_out(T0 + 25, T.probe_s)
+    v.tick(T0 + 25 + T.reply_s)                       # одна проба пропала — пропуск, не молчание
+    assert not v.pause_silent, "одна потерянная проба сняла паузу"
+    for k in range(29, 62):
+        v.tick(T0 + k)                                # молчание дольше no_s от последнего ответа (T0 + 15,1)
+    assert v.pause_silent and v.view != "uns", "молчание под паузой не отмечено или ушло «не вижу»"
+    s = v.probe_out(T0 + 70, T.probe_s)
+    v.reply_in(_reply(s), T0 + 70.1)                  # лидер вернулся
+    assert not v.paused(T0 + 71) and not v.pause_silent
+    acts = [(k, a) for k in range(71, 200) for a in v.tick(T0 + k) if a == "uns"]
+    assert acts == [(116, "uns")], f"«не вижу» не по обычному сроку от ответа (+70,1 + {T.no_s}): {acts}"
 
 
 # ── обязательство «нет» ──────────────────────────────────────────────────────
@@ -188,6 +193,34 @@ def test_release_of_another_epoch_does_not_lift_the_pledge():
     assert v.release(12)
     assert v.w_for_probe() == "see"
     assert not v.release(12), "повторный qrel что-то снял"
+
+
+@pytest.mark.parametrize("e_fact, rel", [(12, 12), (12, 11), (13, 12), (14, 12)],
+                         ids=["own-epoch", "one-below", "fact-above", "fact-far-above"])
+def test_release_without_a_raised_epoch_rolls_nothing_back(e_fact, rel):
+    """`qrel{e}` откатывает только эпоху, поднятую словом кандидата (`qtake`) без факта
+    (voter.release: epoch == e + 1 и fact ≤ e). Эпоха по фактам — ответы ответчика,
+    `qstate`, `state{e}` — от любого `qrel` не уходит: снятие обязательства снова видящему
+    шлюзу (кандидат шлёт `qrel` под эпохой из его «вижу») эпоху не трогает."""
+    v = _seeing()
+    v.epoch_in(e_fact)
+    v.said_no(T0 + 20)
+    v.release(rel)
+    assert (v.epoch, v.fact) == (e_fact, e_fact), f"qrel{{{rel}}} сдвинул эпоху по фактам {e_fact}"
+    assert (v.pledge is None) == (rel == e_fact), "обязательство снято не своей эпохой или своей не снято"
+
+
+def test_release_rolls_back_only_the_epoch_raised_by_qtake():
+    """Контраст к тесту выше: поднятая по `qtake{12}` эпоха 13 без факта — `qrel{12}` вернёт 12
+    (решение снято); с фактом 13 (ответ клона) — не вернёт."""
+    v = _seeing()
+    v.take(12)
+    assert v.epoch == 13 and v.fact == 12
+    assert v.release(12) and v.epoch == 12, "поднятая по qtake эпоха не откатилась по qrel"
+    v.take(12)
+    v.epoch_in(13)
+    v.release(12)
+    assert v.epoch == 13, "qrel откатил эпоху, подтверждённую фактом"
 
 
 def test_take_moves_the_epoch_forward_and_lifts_the_pledge():

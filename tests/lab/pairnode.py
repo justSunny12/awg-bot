@@ -232,7 +232,8 @@ class LabDns:
 # при включении голосования документ доходит до шлюза раньше, чем ответчик лидера слушает, а
 # первый ответ идёт ещё и после рукопожатия AWG нового пира-зонда — на стенде до 21 с от
 # сокета зонда; при 15 и 20 с шлюз успевал сказать «не вижу» и держать «да» обязательством до
-# pledge_minutes. Открытие ≈ no + up = 85 с вместо 145, ничья — 60 с вместо 180.
+# pledge_minutes (теперь резерв снимает такое обязательство `qrel` сразу после «вижу» — s06 пункт «и», —
+# но ложное «нет» в счёте кандидата и лишний ход взгляда остаются). Открытие ≈ no + up = 85 с вместо 145, ничья — 60 с вместо 180.
 LAB_FAST_DIGITS = {"quorum": {"probe_seconds": 5, "no_seconds": 30, "yes_window_seconds": 22, "down_seconds": 10,
                               "up_seconds": 55, "unfence_seconds": 10, "ask_repeat_seconds": 10, "grace_seconds": 40,
                               "pause_seconds": 100, "tie_clear_seconds": 20, "tie_minutes": 1},
@@ -269,7 +270,8 @@ def digits(_a: argparse.Namespace) -> None:
     print(f"QT_PAIR_KEEPALIVE={LAB_FAST_PAIR_KEEPALIVE if os.environ.get('LAB_FAST') == '1' else 25}")
     for k, v in (("PROBE", t.probe_s), ("NO", t.no_s), ("W", t.yes_window_s), ("DOWN", t.down_s), ("UP", t.up_s),
                  ("UNFENCE", t.unfence_s), ("TIE", t.tie_s), ("TIE_CLEAR", t.tie_clear_s), ("RF", t.rf_block_s),
-                 ("DOWN_RF", t.down_rf_s), ("GRACE", t.grace_s), ("PAUSE", t.pause_s), ("HEALTHY", healthy)):
+                 ("DOWN_RF", t.down_rf_s), ("GRACE", t.grace_s), ("PAUSE", t.pause_s), ("PLEDGE", t.pledge_s),
+                 ("HEALTHY", healthy)):
         print(f"QT_{k}={int(v)}")
 
 

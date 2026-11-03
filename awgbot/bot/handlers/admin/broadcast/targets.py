@@ -31,6 +31,15 @@ _BROADCAST_COOLDOWN_SEC = 30          # анти-дабл-тап: не слат�
 _last_broadcast_at: dict[tuple, float] = {}
 
 
+def _on_cooldown(sel, now: float) -> bool:
+    """Та же выборка отправлялась меньше _BROADCAST_COOLDOWN_SEC назад. Отметки нет —
+    давно (livestep.mono_since): сравнение с нулём на хосте, загруженном меньше 30 с
+    назад (monotonic — время с загрузки), отвечало первой рассылке «только что уже
+    отправляли»."""
+    from awgbot.util.livestep import mono_since
+    return mono_since(_last_broadcast_at.get(sel), now) < _BROADCAST_COOLDOWN_SEC
+
+
 async def _bc_clients(services, extend: bool = False):
     """Профили-кандидаты. Служебный и админский исключены: у первого нет
     владельца, второй — сам отправитель. В режиме с продлением — только

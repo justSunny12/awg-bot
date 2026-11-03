@@ -45,6 +45,10 @@ def test_down_rf_keeps_the_same_gap_as_the_short_timers():
     {"tie_s": 100},                     # T_tie ≤ T_up
     {"probe_s": 4},
     {"port": 0}, {"port": 65536},
+    {"grace_s": 23},                    # < 1,4·15 + 3 = 24
+    {"unfence_s": 4}, {"ask_repeat_s": 4}, {"pause_s": 4}, {"tie_clear_s": 4},   # < такта 5 с
+    {"unfence_s": -1}, {"pause_s": 0},
+    {"pledge_s": 0}, {"pledge_s": 59}, {"pledge_s": -60},   # pledge_minutes < 1
 ])
 def test_each_broken_link_is_named(change):
     """Каждое нарушение связки — непустая строка (её покажут в карточке и журнале)."""
@@ -56,6 +60,40 @@ def test_the_edges_of_the_link_are_inclusive_where_the_concept_says_so():
     assert replace(Timing(), up_s=80, tie_s=180).check() == ""
     assert replace(Timing(), yes_window_s=36, up_s=100).check() == ""
     assert replace(Timing(), rf_block_s=101).check() == ""
+
+
+def test_the_new_links_are_inclusive_at_their_edges():
+    """grace = 1,4·P + reply, ключи «не меньше такта» = такт, pledge_minutes = 1 — ещё сходятся."""
+    assert replace(Timing(), grace_s=24).check() == ""
+    assert replace(Timing(), unfence_s=5, ask_repeat_s=5, pause_s=5, tie_clear_s=5).check() == ""
+    assert replace(Timing(), pledge_s=60).check() == ""
+
+
+def test_a_zero_pledge_is_refused_with_its_key_named():
+    """`pledge_minutes: 0` — обязательство «нет» снималось бы на следующем такте: отказ с именем
+    ключа (его покажут журнал и карточка), а не молчаливое выключение защиты."""
+    why = Timing.from_settings({"pledge_minutes": 0}).check()
+    assert "pledge_minutes" in why, why
+
+
+def test_the_grace_link_follows_the_probe_interval():
+    """grace ≥ 1,4·P + reply для каждого P: окно прежнего поколения не короче самой длинной пробы."""
+    wrong = []
+    for p in range(5, 31):
+        need = Fraction(7, 5) * p + 3
+        for g in range(int(need) - 2, int(need) + 3):
+            w = int(Fraction(7, 5) * p + 15) + 1
+            t = replace(Timing(), probe_s=p, no_s=max(45, 2 * p), yes_window_s=w, up_s=w + 40, tie_s=w + 200, grace_s=g)
+            if (t.check() == "") != (g >= need):
+                wrong.append(f"P={p} grace={g} (нужно ≥ {float(need)})")
+    assert not wrong, ", ".join(wrong)
+
+
+@pytest.mark.parametrize("p,fresh", [(5, 7), (7, 10), (10, 14), (15, 21), (21, 30), (30, 42)])
+def test_fresh_grows_with_the_probe_interval(p, fresh):
+    """Свежесть ответа — ⌈1,4·P⌉ от P, а не 21 навсегда: сжатая (стенд) или растянутая проба
+    меняет и окно свежести."""
+    assert replace(Timing(), probe_s=p).fresh_s == fresh
 
 
 def test_the_yes_window_link_is_exact_for_every_probe_interval():
@@ -78,6 +116,27 @@ def test_from_settings_reads_the_keys_and_minutes():
                              rf_block_minutes=20)
     assert (t.probe_s, t.no_s, t.yes_window_s, t.down_s, t.up_s) == (12, 50, 41, 21, 110)
     assert (t.pledge_s, t.tie_s, t.rf_block_s, t.port) == (300, 240, 1200, 9000)
+
+
+def test_settings_round_trip_with_every_field_off_its_default():
+    """to_settings → from_settings возвращает те же цифры, когда КАЖДОЕ поле не умолчание:
+    перепутанное соответствие ключ ↔ поле на умолчаниях не видно."""
+    d = Timing()
+    t = Timing(probe_s=11, no_s=47, yes_window_s=43, down_s=23, unfence_s=31, up_s=111, rf_block_s=1260,
+               ask_repeat_s=33, pledge_s=420, tie_s=240, tie_clear_s=61, grace_s=121, pause_s=301, port=9001)
+    keys = ("probe_s", "no_s", "yes_window_s", "down_s", "unfence_s", "up_s", "rf_block_s", "ask_repeat_s", "pledge_s",
+            "tie_s", "tie_clear_s", "grace_s", "pause_s")
+    assert all(getattr(t, k) != getattr(d, k) for k in keys), "подготовка: поле на умолчании"
+    back = Timing.from_settings({**t.to_settings(), "port": t.port}, t.to_settings()["rf_block_minutes"])
+    assert back == t, f"ключ ↔ поле перепутаны: {back}"
+    assert t.check() == "", t.check()
+
+
+def test_the_document_keys_are_exactly_the_settings_keys():
+    """Шлюзу едут ключи `to_settings`; проверка документа шлюза знает ровно их (gwcfg/check
+    `_TIMING_KEYS`): новый ключ, забытый там, агент молча отбросил бы."""
+    from awgbot.domain.gwcfg.check import _TIMING_KEYS
+    assert set(Timing().to_settings()) == set(_TIMING_KEYS)
 
 
 @pytest.mark.parametrize("q,rf", [

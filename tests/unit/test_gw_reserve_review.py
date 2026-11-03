@@ -71,6 +71,19 @@ def test_a_link_that_vanished_from_the_host_is_raised_again(gw, host):
 
 # ── уведомления с доставкой ─────────────────────────────────────────────────
 
+@pytest.fixture()
+def note_clock(monkeypatch):
+    """Одни часы на постановку и повтор. Отметку первой попытки `reserve_note`
+    ставит по `time.monotonic()` (импорт внутри метода — подменяем сам модуль
+    time), а повтор тест зовёт с `now=`; на настоящих часах итог зависел от
+    uptime машины: при 40–100 с повтор «не созревал», при большом uptime
+    отметка из будущего сходила за прежнюю загрузку и созревала сразу."""
+    import time
+    clock = [40.0]
+    monkeypatch.setattr(time, "monotonic", lambda: clock[0])
+    return clock
+
+
 def _note(gw, **kw):
     cur = gw.reserve_section()
     n = gw.reserve_note(cur, "🛟 DUMMY: пользователи переехали на резерв", **kw)
@@ -85,9 +98,14 @@ def test_a_note_stays_queued_until_it_is_sent(gw, host):
     assert gw.reserve_section()["pending_notes"] == [], "доставленное не снято с очереди"
 
 
-def test_an_undelivered_note_is_repeated_once_a_minute(gw, host):
+def test_an_undelivered_note_is_repeated_once_a_minute(gw, host, note_clock):
+    """Первая попытка — само возвращённое уведомление (часы 40); повтор не
+    раньше минуты от неё, иначе второе ушло бы, пока первое ещё в пути, и
+    дальше — раз в минуту, пока не подтверждена отправка."""
     _note(gw)
+    assert gw.reserve_notes_retry(now=70.0) == [], "повтор раньше минуты от первой попытки — дубль, пока первое в пути"
     first = gw.reserve_notes_retry(now=100.0)
+    assert first, "недоставленное не повторено через минуту после первой попытки"
     assert [n.text for n in first[0][1]] == ["🛟 DUMMY: пользователи переехали на резерв"]
     assert gw.reserve_notes_retry(now=130.0) == [], "повтор чаще раза в минуту"
     again = gw.reserve_notes_retry(now=161.0)
@@ -96,7 +114,7 @@ def test_an_undelivered_note_is_repeated_once_a_minute(gw, host):
     assert gw.reserve_notes_retry(now=300.0) == []
 
 
-def test_a_note_whose_condition_is_gone_is_dropped(gw, host):
+def test_a_note_whose_condition_is_gone_is_dropped(gw, host, note_clock):
     host.open = ["198.51.100.0/24"]
     _note(gw, cond={"open": True})
     host.open = []                                            # пересылка уже закрыта — переезд кончился
@@ -104,7 +122,7 @@ def test_a_note_whose_condition_is_gone_is_dropped(gw, host):
     assert gw.reserve_section()["pending_notes"] == [], "устаревшее уведомление осталось в очереди"
 
 
-def test_a_note_older_than_a_day_is_dropped(gw, host):
+def test_a_note_older_than_a_day_is_dropped(gw, host, note_clock):
     _note(gw)
     cur = gw.reserve_section()
     cur["pending_notes"][0]["at"] = timeutil.to_iso(timeutil.shift(timeutil.now(), -store_mod.NOTE_TTL_S - 60))

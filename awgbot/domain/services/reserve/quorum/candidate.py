@@ -12,6 +12,12 @@ AWG (`awgq<l>h`), взгляды её шлюзов — `qview` по гостев
 `qshare`, t точек → процесс открытия через ящик кворума), по коду (окно
 кода, когда свой взгляд «не вижу», а голосов или точек не хватает).
 Предусловия открытия (`reserve_auto_block`) — без изменений.
+
+Свой зонд слеп дольше предела (`own_blind_limit`: пробы подряд не уходят из сокета
+или зонда нет вовсе) — своего взгляда у кандидата нет: в счёт он идёт как «ещё не
+смотрел», прежний «вижу» или «не вижу» до слепоты не держится. Шлюзы при этом
+решают как обычно, а окно кода о мёртвой основе ведёт запасной сигнал по линку пары
+(codewin) — своего «не вижу» у слепого кандидата не будет никогда.
 """
 from __future__ import annotations
 
@@ -22,9 +28,19 @@ from awgbot.util import probenet, rsvkeys, timeutil
 from awgbot.util.quorum import members as qm
 from awgbot.util.quorum.candidate import Candidate
 from awgbot.util.quorum.probe import Info
+from awgbot.util.quorum.timing import Timing
 
 from ...gateway_link.common import log
 from ..opening import NEED_RETRY_S
+
+PROBE_SOCK_RETRY_S = 30         # повтор сокета зонда (runtime/quorum): свежий зонд слеп до него
+
+
+def own_blind_limit(up_s: int) -> int:
+    """Предел слепоты своего зонда: T_up — за столько кандидат со своим зрением успел бы
+    сказать «не вижу» (T_no) и принять решение, — но не меньше двух повторов сокета (свежий
+    зонд: пространство и интерфейс поднимаются, первый сокет может не встать)."""
+    return max(int(up_s), 2 * PROBE_SOCK_RETRY_S)
 
 
 class ReserveQuorumCandidateMixin:
@@ -93,21 +109,60 @@ class ReserveQuorumCandidateMixin:
 
     def reserve_quorum_peer_timing_off(self) -> str:
         """Цифры времени из `st.quo` второй стороны расходятся с моими: какие (через запятую);
-        пусто — сходятся или она их не прислала."""
+        пусто — сходятся или она их не прислала. Ключа нет в её `tm` (прежняя сборка его ещё не
+        кладёт) — у неё умолчание: сверяю с умолчанием, а не с нулём."""
         tm = self.reserve_quorum_peer_line().get("tm")
         if not isinstance(tm, dict) or not tm or not hasattr(self, "reserve_quorum_timing_digits"):
             return ""
         mine = self.reserve_quorum_timing_digits()
+        dflt = self.reserve_quorum_timing_digits(Timing())
         try:
-            return ",".join(k for k, v in mine.items() if int(tm.get(k) or 0) != int(v))
+            return ",".join(k for k, v in mine.items()
+                            if int(tm[k] if tm.get(k) is not None else dflt.get(k, 0)) != int(v))
         except (TypeError, ValueError):
             return ",".join(mine)
 
+    def reserve_quorum_own_blind(self, now: float | None = None) -> float:
+        """Свой зонд к AWG второй стороны слеп дольше предела: с какого момента (monotonic)
+        пробы подряд не уходят из сокета (или зонда нет); 0 — зонд работает или слеп недолго.
+        Снимает слепоту только факт: ответ на пробу или её пропуск без ответа."""
+        side = self.reserve_quorum_side()
+        if not side or self.reserve_hosting():
+            self.__dict__.pop("_quo_noprobe_since", None)
+            return 0.0
+        now = time.monotonic() if now is None else now
+        v = self._qvoters.get(f"awgq{probenet.other_side(side)}h")
+        if v is None:
+            since = float(self.__dict__.setdefault("_quo_noprobe_since", now))   # зонда нет — с первого такта без него
+        else:
+            self.__dict__.pop("_quo_noprobe_since", None)
+            since = float(v.blind_since)
+        blind = bool(since) and now - since >= own_blind_limit(self.reserve_quorum_timing().up_s)
+        told = self.__dict__.get("_quo_blind_told")
+        if blind and told != since:
+            self.__dict__["_quo_blind_told"] = since
+            log.warning("кворум: свой зонд к «%s» не работает %d с (пробы не уходят) — свой взгляд не учитываю, "
+                        "окно кода о ней — по линку пары", self.reserve_peer_name(), int(now - since))
+        elif not blind and told is not None:
+            self.__dict__.pop("_quo_blind_told", None)
+            log.info("кворум: свой зонд к «%s» снова работает", self.reserve_peer_name())
+        return since if blind else 0.0
+
+    def reserve_quorum_own_blind_since(self) -> str:
+        """Для карточки: с какого момента свой зонд слеп (ISO); пусто — не слеп."""
+        since = self.reserve_quorum_own_blind()
+        if not since:
+            return ""
+        return timeutil.to_iso(timeutil.shift(timeutil.now(), -int(time.monotonic() - since)))
+
     def _quorum_candidate_feed(self, c: Candidate, now: float) -> None:
-        """Свой взгляд — из зонда к её AWG; взгляды шлюзов — из `qview` гостевого канала,
-        живость — сессия канала."""
+        """Свой взгляд — из зонда к её AWG (слеп дольше предела — «ещё не смотрел»: взгляд до
+        слепоты устарел); взгляды шлюзов — из `qview` гостевого канала, живость — сессия канала."""
         v = self._qvoters.get(f"awgq{c.l}h")
-        c.set_own(v.view if v is not None else "new", now)
+        own = v.view if v is not None else "new"
+        if own != "new" and self.reserve_quorum_own_blind(now):
+            own = "new"
+        c.set_own(own, now)
         views = self.reserve_quorum_gw_views(c.l)
         for node in c.voters:
             gv = views.get(node) or {}
@@ -168,6 +223,7 @@ class ReserveQuorumCandidateMixin:
                 actions += self.reserve_quorum_tie_over(c)
         actions += self._quorum_exec_tick(c, now)
         actions += self._quorum_code_watch(c)
+        actions += self._quorum_seen_again(c)
         return took + actions
 
     def _quorum_code_settle(self) -> list[tuple]:

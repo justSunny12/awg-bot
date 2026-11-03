@@ -35,6 +35,37 @@ from awgbot.util.livestep import (Liveness, step, PROBE_EVERY, PROBE_COUNT,  # n
 __all__ = ["Liveness", "step", "PROBE_EVERY", "PROBE_COUNT", "_ping", "_alive", "_word", "ReserveLivenessMixin"]
 
 
+PAIR_TICK_S = 5                       # такт живости линка пары (runtime/scheduler/reserve: job_liveness)
+
+
+def keepalive_upper_s() -> int:
+    """Верхняя граница keepalive линка пары — client_config.keepalive_seconds («25-35» или число;
+    тот же ключ берёт install/reserve-pair-setup.sh для PersistentKeepalive линка)."""
+    raw = str(settings.get("app.client_config.keepalive_seconds", config.KEEPALIVE_SECONDS) or "25-35")
+    try:
+        return int(raw.split("-")[-1].strip())
+    except ValueError:
+        return 35
+
+
+def pair_suspect_floor_s() -> int:
+    """Нижняя планка порога подозрения: keepalive плюс такт — тишина короче бывает и у живого
+    линка (умолчание 40 = 35 + 5 — ровно планка)."""
+    return keepalive_upper_s() + PAIR_TICK_S
+
+
+def pair_liveness_problem() -> str:
+    """`reserve.suspect_seconds` ниже планки — ложные «недоступен» на ровном месте: причина
+    строкой (карточка, замечание при запуске); пусто — настройка в порядке. Такт живости
+    такую настройку не исполняет, а держит планку."""
+    suspect = settings.get_int("reserve.suspect_seconds", 40)
+    floor = pair_suspect_floor_s()
+    if suspect < floor:
+        return (f"reserve.suspect_seconds {suspect} меньше keepalive линка пары {keepalive_upper_s()} с плюс такт "
+                f"{PAIR_TICK_S} с — ложные «недоступен»; действует {floor}")
+    return ""
+
+
 class ReserveLivenessMixin:
 
     @property
@@ -84,8 +115,8 @@ class ReserveLivenessMixin:
                 self.__dict__.pop("_lv_base", None)
             return "", []
         self.__dict__.pop("_lv_base", None)
-        act = step(lv, now, rx, suspect_s=settings.get_int("reserve.suspect_seconds", 40),
-                   probe_s=settings.get_int("reserve.probe_seconds", 15))
+        act = step(lv, now, rx, suspect_s=max(settings.get_int("reserve.suspect_seconds", 40), pair_suspect_floor_s()),
+                   probe_s=settings.get_int("reserve.probe_seconds", 15))   # планка — pair_liveness_problem
         notes: list[Notification] = []
         if act == "down":
             lv.told = True

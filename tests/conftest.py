@@ -133,10 +133,12 @@ def pytest_configure(config):
                                        "на тест) — без прямого вызова conftest")
 
 
-def _script_tmp_root() -> pathlib.Path | None:
+def _script_tmp_roots() -> list[pathlib.Path]:
     """Куда кладёт временное mktemp без шаблона у скрипта без своего TMPDIR:
-    на macOS — личный временный каталог пользователя (getconf, мимо TMPDIR),
-    иначе — TMPDIR или /tmp."""
+    на macOS — личный временный каталог пользователя (getconf, мимо TMPDIR);
+    иначе — и TMPDIR процесса, и /tmp: скрипт, которому тест дал окружение без
+    TMPDIR (`env={"PATH": …}`), кладёт tmp.* в /tmp, даже когда у pytest свой
+    TMPDIR (на стенде — /var/tmp/awglab-tmp)."""
     import subprocess
     import sys
     if sys.platform == "darwin":
@@ -144,9 +146,10 @@ def _script_tmp_root() -> pathlib.Path | None:
             out = subprocess.run(["getconf", "DARWIN_USER_TEMP_DIR"], capture_output=True, text=True,
                                  timeout=5).stdout.strip()
         except (OSError, subprocess.SubprocessError):
-            return None
-        return pathlib.Path(out) if out else None
-    return pathlib.Path(os.environ.get("TMPDIR") or "/tmp")
+            return []
+        return [pathlib.Path(out)] if out else []
+    roots = [pathlib.Path(os.environ.get("TMPDIR") or "/tmp"), pathlib.Path("/tmp")]
+    return list(dict.fromkeys(roots))
 
 
 def _script_tmp_names(root: pathlib.Path | None) -> set[str]:
@@ -157,27 +160,23 @@ def _script_tmp_names(root: pathlib.Path | None) -> set[str]:
 
 
 def pytest_sessionstart(session):
-    """Сторож мусора: что лежало в каталоге временного скриптов до прогона."""
+    """Сторож мусора: что лежало в каталогах временного скриптов до прогона."""
     if hasattr(session.config, "workerinput"):          # воркер xdist — сторож у контроллера
         return
-    root = _script_tmp_root()
-    session.config._awg_tmp_root = root
-    session.config._awg_tmp_before = _script_tmp_names(root)
+    session.config._awg_tmp_before = {root: _script_tmp_names(root) for root in _script_tmp_roots()}
 
 
 def pytest_terminal_summary(terminalreporter, config):
-    """Новые tmp.* в каталоге временного скриптов за прогон — строкой в итоге
+    """Новые tmp.* в каталогах временного скриптов за прогон — строкой в итоге
     (не провалом: их мог оставить и параллельный прогон другого дерева).
     Скрипт под тестом без своего TMPDIR и mktemp из tests.conftest (tmp_env)
     кладёт временное туда, и всё, что он не убрал, копится между прогонами."""
-    root = getattr(config, "_awg_tmp_root", None)
-    if root is None:
-        return
-    new = sorted(_script_tmp_names(root) - config._awg_tmp_before)
-    if new:
-        terminalreporter.write_line(
-            f"сторож временного: за прогон в {root} появилось {len(new)} tmp.* "
-            f"({', '.join(new[:5])}{'…' if len(new) > 5 else ''}) — скрипту под тестом нужен tmp_env")
+    for root, before in (getattr(config, "_awg_tmp_before", None) or {}).items():
+        new = sorted(_script_tmp_names(root) - before)
+        if new:
+            terminalreporter.write_line(
+                f"сторож временного: за прогон в {root} появилось {len(new)} tmp.* "
+                f"({', '.join(new[:5])}{'…' if len(new) > 5 else ''}) — скрипту под тестом нужен tmp_env")
 
 
 @pytest.hookimpl(hookwrapper=True)
@@ -314,7 +313,8 @@ def fake_routing(monkeypatch, tmp_path):
     state = types.SimpleNamespace(
         sets={}, chain=None, conf=None, conf_writes=0,
         marking=None, probe="ok", enabled=True,
-        dns={},                       # домен → IPv4, что «вернёт» резолвер
+        dns={},                       # домен → IPv4, что ответит dnsmasq бота на досев
+        asked=[],                     # досев: (адрес dnsmasq, домен, таймаут) по порядку
         # Счётчики пира линка. По умолчанию мир такой: пользователи через линк
         # ходят (tx растёт), обратно не приходит ничего (rx стоит) — то есть
         # спрос есть, улик прохождения нет, и вердикт активного слота решает
@@ -327,13 +327,24 @@ def fake_routing(monkeypatch, tmp_path):
     def replace_members(name, kind, members, current=None):
         state.sets[name] = list(members)
 
-    def add_networks(name, members):
-        # ДОПИСАТЬ, как настоящий: в наборе уже лежат адреса, накопленные
-        # dnsmasq, и затирать их нельзя
-        have = state.sets.setdefault(name, [])
-        new = [m for m in members if m not in have]
-        have.extend(new)
-        return len(new)
+    def ask_dnsmasq(server, domain, timeout):
+        # Досев: бот спрашивает dnsmasq, а адреса в набор кладёт dnsmasq по своей
+        # строке ipset= из записанного конфига (самая длинная подходящая —
+        # домен и его поддомены), как от запроса устройства; бот набор не трогает
+        state.asked.append((server, domain, timeout))
+        ips = list(state.dns.get(domain, []))
+        best, sets_ = -1, []
+        for line in (state.conf or "").splitlines():
+            if not line.startswith("ipset=/"):
+                continue
+            *doms, names = line[len("ipset=/"):].split("/")
+            for d in doms:
+                if (domain == d or domain.endswith("." + d)) and len(d) > best:
+                    best, sets_ = len(d), names.split(",")
+        for name in sets_:
+            have = state.sets.setdefault(name, [])
+            have.extend(ip for ip in ips if ip not in have)
+        return bool(ips)
 
     def ensure_set(name, kind, exists=False):
         # создать, не трогая содержимое — так бот обращается с доменными
@@ -372,8 +383,7 @@ def fake_routing(monkeypatch, tmp_path):
     _set("replace_members", replace_members)
     _set("ensure_set", ensure_set)
     _set("invalidate_self_check", lambda: None)
-    _set("add_networks", add_networks)
-    _set("resolve_a", lambda dom, timeout=3.0: list(state.dns.get(dom, [])))
+    _set("ask_dnsmasq", ask_dnsmasq)
     # Сигнатуры двойников повторяют настоящие ВКЛЮЧАЯ iface: интерфейсов на
     # время переезда два, и двойник без этого параметра молча разошёлся бы с
     # боевым кодом ровно на той правке, ради которой параметр и появился.
@@ -792,6 +802,25 @@ def _fresh_join_presses():
     gwmark._PRESSED.clear()
     yield
     gwmark._PRESSED.clear()
+
+
+@pytest.fixture(autouse=True)
+def _broadcast_cooldown_off_the_boot_clock(monkeypatch):
+    """Анти-дабл-тап рассылки (broadcast/send.py) сравнивает time.monotonic() с
+    отметкой прошлой отправки, а без отметки — с нулём: на машине, загруженной
+    меньше 30 с назад (холодная ВМ стенда), первая же рассылка теста отвечала
+    «Только что уже отправляли». Часы кулдауна — настоящие со сдвигом на сутки:
+    итог не зависит от uptime, двойное нажатие внутри теста по-прежнему
+    отсекается. Память отправок — своя у каждого теста (под xdist сосед по
+    процессу с тем же набором адресатов иначе попадал в кулдаун)."""
+    import time as _time
+    import types
+    from awgbot.bot.handlers.admin.broadcast import send, targets
+    real = _time.monotonic
+    monkeypatch.setattr(send, "time", types.SimpleNamespace(monotonic=lambda: real() + 86400.0))
+    targets._last_broadcast_at.clear()
+    yield
+    targets._last_broadcast_at.clear()
 
 
 @pytest.fixture(autouse=True)

@@ -144,7 +144,15 @@ class DatabaseCore:
             self._txl.kind = None
             self._txl.counters_changes = -1
             if immediate and not conn.in_transaction:
-                conn.execute("BEGIN IMMEDIATE")
+                try:
+                    conn.execute("BEGIN IMMEDIATE")
+                except Exception:
+                    # замок не взят (database is locked после busy_timeout): глубина — назад, иначе
+                    # поток навсегда считал бы себя внутри транзакции — его записи не коммитили бы
+                    # никогда, а первая держала бы замок записи до перезапуска бота
+                    self._txl.depth = depth
+                    self._txl.conn = None
+                    raise
                 quiet = conn.total_changes
         cur = conn.cursor()
         try:

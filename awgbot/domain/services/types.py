@@ -92,6 +92,11 @@ class RoutingAddResult:
     rejected: list[tuple[str, str]] = field(default_factory=list)
     over_limit: int = 0            # не влезло в потолок списка
     limit: int = 0                 # сам потолок (для текста)
+    # досев: из added направлено сразу (dnsmasq ответил адресами и положил их
+    # в набор) и при первом запросе устройства (без ответа, вне предела досева,
+    # досева не было); в сумме — len(added)
+    routed_now: int = 0
+    routed_later: int = 0
 
 
 @dataclass

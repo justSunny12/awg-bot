@@ -267,6 +267,56 @@ def test_a_gateway_that_said_no_and_now_sees_the_clone_still_gets_qrel(aw):
     assert (1, {"l": "a", "e": 9, "tgt": "r"}) in gwlink(acts, "qrel"), f"шлюзу 1 qrel не ушёл: {gwlink(acts, 'qrel')}"
 
 
+def _lone_no_then_see(aw) -> list[tuple]:
+    """Шлюз 1 сказал «нет» о клоне один (свой взгляд «вижу» — отсчёта нет) и снова «вижу»."""
+    aw.clone.view = "see"
+    aw.gw_view(1, "uns")
+    assert not gwlink(aw.tick(), "qrel")
+    aw.gw_view(1, "see", since="2026-10-30T14:30:00+03:00")
+    return aw.tick()
+
+
+def test_a_lone_no_about_the_clone_seen_again_gets_qrel_once(aw):
+    """Q1 — то же правило, что у кандидата о второй линии (pledges.py): одиночное «не вижу»
+    о госте на резерве и снова «вижу» — `qrel{9}` сразу, одно на обязательство; без него
+    пробы шлюза гостю шли бы `held` до `pledge_minutes`."""
+    acts = _lone_no_then_see(aw)
+    assert gwlink(acts, "qrel") == [(1, {"l": "a", "e": 9, "tgt": "r"})], f"qrel о клоне: {acts}"
+    assert not gwlink(aw.run(120), "qrel"), "qrel на одно обязательство повторяется"
+    assert ("take_home",) not in acts
+
+
+@pytest.mark.parametrize("kind", ["await_merge", "decided", "no_since", "rf_since"])
+def test_no_qrel_about_the_clone_while_the_return_or_a_count_lives(aw, kind):
+    """Возврат уже пошёл (`await_merge`: рычаг или аварийный по кворуму — `qtake` отдан, шлюзы
+    держат поднятую эпоху), «забираю» отдано или идёт отсчёт — `qrel` нет; снято — один."""
+    aw.clone.view = "see"
+    aw.gw_view(1, "uns")
+    aw.tick()
+    c = aw.s._qback
+    aw.gw_view(1, "see", since="2026-10-30T14:30:00+03:00")
+    if kind == "await_merge":
+        aw.s.rsv_update("rsv_out", await_merge=True)
+        assert not gwlink(aw.tick(), "qrel"), "qrel о клоне посреди возврата"
+        aw.s.rsv_update("rsv_out", await_merge=False)
+    else:
+        setattr(c, kind, True if kind == "decided" else aw.w.clock.t)   # без такта: отсчёт он бы сам снял
+        c.view_in("a1", "see", aw.w.clock.t, since="2026-10-30T14:30:00+03:00", e=9)
+        assert aw.s._quorum_back_seen_again(c, aw.clone) == [], f"{kind}: qrel о клоне посреди решения"
+        setattr(c, kind, False if kind == "decided" else None)
+    assert c.pledged() == ["a1"], f"{kind}: обязательство снято без слова"
+    assert gwlink(aw.tick(), "qrel") == [(1, {"l": "a", "e": 9, "tgt": "r"})], kind
+
+
+def test_qrel_about_the_clone_needs_the_epoch_of_the_gateways_see(aw):
+    aw.clone.view = "see"
+    aw.gw_view(1, "uns")
+    aw.tick()
+    aw.s.reserve_quorum_link_in(1, "qview", {"l": "a", "g": 1, "w": "see", "e": 10, "tgt": "r",
+                                             "since": "2026-10-30T14:30:00+03:00"})
+    assert not gwlink(aw.tick() + aw.run(30), "qrel"), "qrel о клоне под эпохой, о которой шлюз не говорил"
+
+
 def _solo(aw) -> None:
     """Состав из двух серверов: о клоне голосую только я (v = 1)."""
     aw.s.rsv_update("rsv_quorum", active={"l": "a", "g": 1, "members": ["a", "b"]},
