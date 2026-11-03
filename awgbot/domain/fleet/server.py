@@ -74,9 +74,7 @@ class FleetServerMixin:
         if out.server == "apply":
             run_id = str(self.fleet_run().get("id") or "") or "1"
             try:
-                if hasattr(self, "reserve_quorum_pause_sync"):
-                    self.reserve_quorum_pause_sync()              # кворум: плановая пауза лидера на время обновления
-                self.apply_update(out.step, hold=run_id)
+                self.apply_update(out.step, hold=run_id)      # паузу кворума шлёт сам apply_update — после скачивания
             except Exception as e:                        # noqa: BLE001 — сеть, sha256, переезд
                 import logging
                 logging.getLogger("awgbot.fleet").warning(
@@ -94,7 +92,12 @@ class FleetServerMixin:
 
     def fleet_server_failed(self, reason: str) -> FleetOut:
         """Ступень сервера не запустилась (сеть GitHub, sha256, место) — сервер
-        на прежнем: шаг снимается, откат того, что успели."""
+        на прежнем: шаг снимается, откат того, что успели. Плановая пауза кворума,
+        попрошенная под эту ступень, — снять (`qpause{dur: 0}`): лидер жив и не
+        останавливается, а голосующие держали бы её весь срок, и о его смерти в
+        ближайшие минуты второй сервер узнал бы только по сроку паузы."""
+        if hasattr(self, "reserve_quorum_pause_cancel_sync"):
+            self.reserve_quorum_pause_cancel_sync()
         with _LOCK:
             run = self.fleet_run()
             if run.get("state") != RUNNING:

@@ -22,7 +22,7 @@ def _quorum_off_why(codes: list, peer: str) -> str:
         if c == "no_gateways":
             return "у этого сервера нет шлюзов с агентом v4.2.0 — переезд кнопкой и по аварийному коду, автоматического нет"
         if c.startswith("timing:"):
-            return "цифры времени не сходятся (reserve.quorum в reserve.yaml)"
+            return "цифры времени не сходятся (раздел quorum в reserve.yaml)"
         if c.startswith("overlap:"):
             return f"блок зондов <code>169.254.88.0/24</code> пересекается с <code>{_e(c[8:])}</code>"
         if c.startswith("slot:"):
@@ -101,6 +101,11 @@ def quorum_peer_lines(q: dict) -> list[str]:
         since = _when(p.get("tie_since") or "")
         return [f"└ ⚠️ Ничья{(' с ' + _e(since)) if since else ''}: {peer} видят {int(cand.get('see') or 0)}, "
                 f"не видят {int(cand.get('no') or 0)} — сам бот пользователей не переведёт"]
+    if p.get("blind_since"):                                  # свой зонд слеп: своего взгляда нет
+        since = _when(p.get("blind_since") or "")
+        return [f"└ ⚠️ Зонд этого сервера к {peer} не работает{(' с ' + _e(since)) if since else ''}: сам этот сервер "
+                f"{peer} не видит и в голосовании не участвует — пропадёт {peer} со связи, приём аварийного кода "
+                "откроется по линку пары"]
     if unseen and cand.get("deadline_at") and w in ("see", "held"):   # Т-К3б: случай 3
         first = min((g.get("since") or "" for g in unseen), default="")
         return [f"└ 🟡 Шлюзы {peer} не видят его{(' с ' + _e(_when(first))) if first else ''}, а этот сервер видит — если так "

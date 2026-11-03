@@ -8,7 +8,7 @@ routing/ — единственный слой команд условной м�
   marking    цепочка маркировки, ip rule, маршрут линка
   policy     наблюдение за состоянием и сборка политики: правило, маршрут таблицы, MSS-клэмп, включение маркировки
   probes     живость линка: адрес и состояние пира, зонды, пинг, возраст рукопожатия
-  feeds      внешние списки и конфиг dnsmasq: загрузка, резолв, добавление сетей, запись конфига
+  feeds      внешние списки и конфиг dnsmasq: загрузка, запрос к dnsmasq бота для досева, запись конфига
   lanmap     таблица inet awg_lan_map: адреса в туннеле локальных сетей шлюзов (своё
              пространство имён: routing.lanmap.render и т. п., в общий список не входит)
 
@@ -61,10 +61,10 @@ __all__ = [
     # имена наборов
     "user_set", "src_set",
     # наборы
-    "ensure_set", "replace_members", "add_networks", "destroy_set", "list_sets",
+    "ensure_set", "replace_members", "destroy_set", "list_sets",
     # маркировка и политика
     "rebuild_chain", "set_marking_enabled", "link_handshake_age", "link_peer_state",
-    "probe_gateway", "link_peer_address", "resolve_a",
+    "probe_gateway", "link_peer_address", "ask_dnsmasq",
     "PROBE_OK", "PROBE_NO_PATH", "PROBE_DOWN",
     "ensure_mss_clamp", "mss_clamp_present",
     "rule_present", "table_route", "set_count", "hook_present", "ensure_policy",

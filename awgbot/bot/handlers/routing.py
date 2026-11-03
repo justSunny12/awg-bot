@@ -337,7 +337,8 @@ async def routing_add_apply(message: Message, client, services, state: FSMContex
                                 RoutingCB(action="sites", ref=profile.id).pack())
     report = texts.routing_add_report(res.added, res.rejected, res.over_limit, res.limit,
                                       owner=_foreign(profile, client),
-                                      bot_username=getattr(services, "bot_username", "") or "", snap=snap)
+                                      bot_username=getattr(services, "bot_username", "") or "", snap=snap,
+                                      routed_now=res.routed_now)
     await back_to_context(message, services, data, role, client, note=report, state=state)
 
 

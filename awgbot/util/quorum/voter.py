@@ -9,16 +9,20 @@ voter.py — часть пакета quorum: правило голосующег
 два ответа подряд, из `sus` — один. Взгляд в пробе — до этой пробы. Проба, не
 ушедшая из своего сокета (`unsent`: сокета зонда ещё нет — пространство и
 интерфейс поднимаются, повтор через 30 с; ошибка отправки), — моя слепота, а не
-молчание лидера: ответа она не ждёт, и время до неё в `no_s` не идёт.
+молчание лидера: ответа она не ждёт, и время до неё в `no_s` не идёт. Слепота
+подряд — с первой неушедшей пробы (`blind_since`) до факта, что проба ушла: на неё
+пришёл ответ или она пропала без ответа (из сокета она, значит, вышла).
 
 Обязательство «нет»: отдав кандидату `qview{uns}` под эпохой e, голосующий
 не скажет лидеру «вижу» под той же эпохой — пробы идут со взглядом `held`,
 пока кандидат не скажет `qrel{e}` (снято) или `qtake{e}` (эпоха e + 1), но не
 дольше `pledge_s`. `qpause{until, dur}` лидера — «не вижу» кандидату не уходит до
 срока (`dur` — длительность, если есть: часы сторон могут расходиться) или до ответа
-после молчания под паузой (лидер замолк и вернулся): лидер шлёт qpause до остановки, и
-ответ, пришедший, пока процесс ещё завершается, паузу не снимает — иначе она гасла бы
-до остановки и второй сервер забирал пользователей посреди планового обновления.
+после молчания под паузой дольше `no_s` — того, что без паузы было бы «не вижу» (лидер
+замолк и вернулся): лидер шлёт qpause до остановки, и ответ, пришедший, пока процесс ещё
+завершается, паузу не снимает — иначе она гасла бы до остановки и второй сервер забирал
+пользователей посреди планового обновления; одна потерянная в сети проба при живом лидере
+(пропуск с досылками) молчанием тоже не считается.
 Эпоха — наибольшая из ответов пробы, `qstate`, `state{e}`.
 
 Машина без ввода-вывода: такт отдаёт действия: `probe` (пора слать),
@@ -58,6 +62,7 @@ class Voter:
     started: float = 0.0
     last_reply: float = 0.0       # последний ответ (monotonic), 0 — ещё не было
     blind_at: float = 0.0         # последняя проба, не ушедшая из сокета (monotonic), 0 — не было
+    blind_since: float = 0.0      # пробы подряд не уходят из сокета с (monotonic), 0 — уходят
     next_probe: float = 0.0
     pending: dict = field(default_factory=dict)   # s → когда отправлена
     streak: int = 0               # ответов подряд (для «вижу» из uns/new)
@@ -65,7 +70,7 @@ class Voter:
     seq: int = 0
     pledge: dict | None = None    # {"e": эпоха, "at": monotonic}
     pause_until: float = 0.0
-    pause_silent: bool = False    # под паузой пропала проба: лидер замолк — следующий ответ снимает паузу
+    pause_silent: bool = False    # под паузой молчание дольше no_s (лидер замолк) — следующий ответ снимает паузу
     last: Reply | None = None     # последний ответ (роль, счёт, справка)
 
     # ── пробы ───────────────────────────────────────────────────────────────
@@ -92,6 +97,13 @@ class Voter:
         от него). Взгляд не меняется: о лидере проба ничего не узнала."""
         if self.pending.pop(int(s), None) is not None:
             self.blind_at = max(self.blind_at, float(now))
+            if not self.blind_since:
+                self.blind_since = float(now)
+
+    def blind_for(self, now: float) -> float:
+        """Сколько секунд подряд пробы не уходят из сокета (0 — уходят): снимает только факт —
+        ответ на пробу или её пропуск без ответа."""
+        return max(0.0, float(now) - self.blind_since) if self.blind_since else 0.0
 
     def reply_in(self, r: Reply, now: float) -> list[str]:
         """Ответ ответчика. Действия: `see` (взгляд стал «вижу»), `adopt:<e>`."""
@@ -101,6 +113,7 @@ class Voter:
         self.pending.clear()
         self.last_reply, self.last = now, r
         self.resends = 0
+        self.blind_since = 0.0                                # проба ушла и вернулась — сокет работает
         if self.pause_silent:                                 # пауза — до срока или ответа после молчания
             self.pause_until, self.pause_silent = 0.0, False
         if int(r.e) > int(self.fact):
@@ -147,9 +160,8 @@ class Voter:
         if lost:
             for s in lost:
                 del self.pending[s]
+            self.blind_since = 0.0                             # пропала без ответа — значит, из сокета ушла
             self.streak = 0                                    # «вижу» из uns/new — два ответа ПОДРЯД
-            if self.paused(now):
-                self.pause_silent = True
             if self.view == "see":
                 self._set("sus", now)
                 out.append("sus")
@@ -159,9 +171,12 @@ class Voter:
                 self.next_probe = min(self.next_probe, now + t.resend_s)
         # «не вижу»: ответа нет no_s
         base = max(self.last_reply or self.started, self.blind_at)   # время слепоты (проба не ушла) — не молчание
-        if base and now - base >= t.no_s and self.view != "uns" and not self.paused(now):
-            self._set("uns", now)
-            out.append("uns")
+        if base and now - base >= t.no_s and self.view != "uns":
+            if self.paused(now):
+                self.pause_silent = True                       # молчание, которое без паузы было бы «не вижу»
+            else:
+                self._set("uns", now)
+                out.append("uns")
         # обязательство — по сроку; и когда линия ушла за его эпоху (клон или новый лидер ответил
         # эпохой больше): «не скажу «да» лидеру под e» больше не о ком — переезд состоялся
         if self.pledge is not None and (now - float(self.pledge.get("at") or 0) >= t.pledge_s

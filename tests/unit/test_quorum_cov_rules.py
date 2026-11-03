@@ -278,9 +278,9 @@ def test_the_probe_number_wraps_and_still_matches_its_reply():
 
 
 def test_a_reply_after_silence_lifts_a_pause_before_its_term():
-    """Пауза лидера (`qpause`) — до срока или до ответа после молчания под паузой: лидер
-    вернулся раньше — следующий провал снова считается без отсрочки. Ответ без молчания
-    (лидер ещё не остановился) паузу не снимает."""
+    """Пауза лидера (`qpause`) — до срока или до ответа после молчания под паузой дольше T_no:
+    лидер вернулся раньше — следующий провал снова считается без отсрочки. Ответ без молчания
+    (лидер ещё не остановился) и одна потерянная проба паузу не снимают."""
     v = _voter()
     v.pause(T0, 240)
     assert v.paused(T0 + 1)
@@ -288,12 +288,15 @@ def test_a_reply_after_silence_lifts_a_pause_before_its_term():
     v.reply_in(Reply("a", 4, EPOCH, "lead", s, 2, 3), T0 + 3)
     assert v.paused(T0 + 4), "ответ до остановки лидера снял паузу"
     v.probe_out(T0 + 5, T.probe_s)
-    v.tick(T0 + 5 + T.reply_s)                                 # молчание под паузой
-    s = v.probe_out(T0 + 10, T.probe_s)
-    v.reply_in(Reply("a", 4, EPOCH, "lead", s, 2, 3), T0 + 11)
-    assert not v.paused(T0 + 12), "ответ после молчания не снял паузу"
-    acts = [(k, a) for k in range(12, 200) for a in v.tick(T0 + k) if a == "uns"]
-    assert acts and acts[0][0] == 11 + T.no_s, f"после снятой паузы «не вижу» не через T_no от ответа: {acts}"
+    v.tick(T0 + 5 + T.reply_s)                                 # одна проба пропала — пропуск, не молчание
+    assert v.paused(T0 + 9), "одна потерянная проба сняла паузу"
+    for k in range(9, 50):
+        v.tick(T0 + k)                                         # молчание дольше T_no от ответа (T0 + 3)
+    s = v.probe_out(T0 + 50, T.probe_s)
+    v.reply_in(Reply("a", 4, EPOCH, "lead", s, 2, 3), T0 + 51)
+    assert not v.paused(T0 + 52), "ответ после молчания не снял паузу"
+    acts = [(k, a) for k in range(52, 200) for a in v.tick(T0 + k) if a == "uns"]
+    assert acts and acts[0][0] == 51 + T.no_s, f"после снятой паузы «не вижу» не через T_no от ответа: {acts}"
 
 
 def test_a_reply_of_a_lower_epoch_does_not_lower_the_known_one():

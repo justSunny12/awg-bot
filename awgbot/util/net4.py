@@ -89,34 +89,53 @@ class IMAP44(imaplib.IMAP4):
 
 
 def _ehlo_name(local_hostname):
-    """Имя для EHLO: заданное — как есть; иначе локальное имя машины. smtplib по
-    умолчанию зовёт socket.getfqdn() — обратный запрос в DNS без предела по времени
-    (медленный резолвер держал бы проверку и отправку почты сверх «наружу ≤ 10 с»)."""
+    """Имя для EHLO: заданное — как есть; иначе локальное имя машины, если оно с точкой
+    (RFC 5321 §4.1.1.1: в EHLO — полное имя или адресный литерал; голое имя строгий SMTP
+    отвергает); имя без точки — адресный литерал `[адрес]` с уже открытого сокета
+    (`_get_socket`), а до соединения — заглушка-литерал. smtplib по умолчанию зовёт
+    socket.getfqdn() — обратный запрос в DNS без предела по времени (медленный резолвер
+    держал бы проверку и отправку почты сверх «наружу ≤ 10 с»)."""
     if local_hostname:
         return local_hostname
-    return socket.gethostname() or "localhost"
+    name = socket.gethostname() or ""
+    return name if "." in name else "[127.0.0.1]"
+
+
+def _ehlo_literal(obj, sock) -> None:
+    """Имя машины без точки и имя не задано — EHLO адресным литералом с сокета."""
+    if getattr(obj, "_ehlo_given", False) or "." in (socket.gethostname() or ""):
+        return
+    try:
+        obj.local_hostname = "[%s]" % sock.getsockname()[0]
+    except (OSError, IndexError, TypeError):
+        pass
 
 
 class SMTP4(smtplib.SMTP):
     """SMTP (STARTTLS по месту вызова), соединение только по IPv4."""
 
     def __init__(self, host="", port=0, local_hostname=None, *args, **kw):
-        super().__init__(host, port, _ehlo_name(local_hostname), *args, **kw)
-
-    def _get_socket(self, host, port, timeout):
-        if timeout is not None and not timeout:
-            raise ValueError("Non-blocking socket (timeout=0) is not supported")
-        return connect4(host, port, timeout, self.source_address)
-
-
-class SMTP_SSL4(smtplib.SMTP_SSL):
-    """SMTP с TLS сразу (порт 465), соединение только по IPv4 (SNI и проверка имени — по хосту)."""
-
-    def __init__(self, host="", port=0, local_hostname=None, *args, **kw):
+        self._ehlo_given = bool(local_hostname)
         super().__init__(host, port, _ehlo_name(local_hostname), *args, **kw)
 
     def _get_socket(self, host, port, timeout):
         if timeout is not None and not timeout:
             raise ValueError("Non-blocking socket (timeout=0) is not supported")
         sock = connect4(host, port, timeout, self.source_address)
+        _ehlo_literal(self, sock)
+        return sock
+
+
+class SMTP_SSL4(smtplib.SMTP_SSL):
+    """SMTP с TLS сразу (порт 465), соединение только по IPv4 (SNI и проверка имени — по хосту)."""
+
+    def __init__(self, host="", port=0, local_hostname=None, *args, **kw):
+        self._ehlo_given = bool(local_hostname)
+        super().__init__(host, port, _ehlo_name(local_hostname), *args, **kw)
+
+    def _get_socket(self, host, port, timeout):
+        if timeout is not None and not timeout:
+            raise ValueError("Non-blocking socket (timeout=0) is not supported")
+        sock = connect4(host, port, timeout, self.source_address)
+        _ehlo_literal(self, sock)
         return self.context.wrap_socket(sock, server_hostname=self._host)

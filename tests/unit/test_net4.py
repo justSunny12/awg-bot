@@ -233,12 +233,34 @@ def test_urlopen_without_an_explicit_timeout_uses_the_project_limit(monkeypatch)
 
 
 def test_smtp_without_a_name_says_the_local_host_name_and_never_asks_dns(monkeypatch):
-    """Имя EHLO по умолчанию — локальное имя машины: smtplib сам звал socket.getfqdn()
+    """Имя EHLO по умолчанию: имя машины с точкой — как есть; без точки — адресный литерал,
+    не голое имя (RFC 5321 §4.1.1.1 — строгий SMTP отвергает); smtplib сам звал socket.getfqdn()
     (обратный DNS без предела) — проверка и отправка почты висели бы на медленном резолвере."""
     import socket as _s
     from awgbot.util import net4
     monkeypatch.setattr(_s, "getfqdn", lambda *a: (_ for _ in ()).throw(AssertionError("getfqdn вызван")))
+    monkeypatch.setattr(_s, "gethostname", lambda: "srv-a.example.net")
+    assert net4.SMTP4().local_hostname == "srv-a.example.net"
+    assert net4.SMTP_SSL4().local_hostname == "srv-a.example.net"
     monkeypatch.setattr(_s, "gethostname", lambda: "srv-a")
-    assert net4.SMTP4().local_hostname == "srv-a"
-    assert net4.SMTP_SSL4().local_hostname == "srv-a"
+    assert net4.SMTP4().local_hostname == "[127.0.0.1]", "до соединения — заглушка-литерал, не голое имя"
     assert net4.SMTP4(local_hostname="mx.example.org").local_hostname == "mx.example.org"
+
+
+def test_smtp_with_a_bare_host_name_says_the_address_literal_of_its_socket(monkeypatch):
+    """Имя машины без точки: после соединения EHLO несёт `[адрес]` с открытого сокета —
+    без DNS; заданное имя литералом не подменяется."""
+    import socket as _s
+    from awgbot.util import net4
+
+    class FakeSock:
+        def getsockname(self):
+            return ("203.0.113.7", 54321)
+    monkeypatch.setattr(_s, "gethostname", lambda: "srv-a")
+    monkeypatch.setattr(net4, "connect4", lambda host, port, timeout, src=None: FakeSock())
+    s = net4.SMTP4()
+    assert s._get_socket("mx.example.org", 587, 10) is not None
+    assert s.local_hostname == "[203.0.113.7]"
+    given = net4.SMTP4(local_hostname="mx.example.org")
+    given._get_socket("mx.example.org", 587, 10)
+    assert given.local_hostname == "mx.example.org", "заданное имя подменено литералом"

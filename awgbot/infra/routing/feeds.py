@@ -1,9 +1,8 @@
-"""feeds.py — внешние списки и конфиг dnsmasq: загрузка, резолв, добавление сетей, запись конфига."""
+"""feeds.py — внешние списки и конфиг dnsmasq: загрузка, запрос к dnsmasq бота для досева, запись конфига."""
 
 from __future__ import annotations
 
 import os
-import socket
 import subprocess
 from typing import Optional
 
@@ -11,7 +10,6 @@ from awgbot.core import config
 from awgbot.infra import systemd
 from awgbot.util import fsatomic, net4
 
-from . import base, sets
 from .base import log, RoutingError
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -47,50 +45,30 @@ def fetch(url: str, timeout: int = 10) -> tuple[Optional[str], str, int]:
         return None, (str(e) or e.__class__.__name__)[:200], 0
 
 
-def resolve_a(domain: str, timeout: float = 3.0) -> list[str]:
-    """IPv4-адреса домена. Пустой список — не разрезолвилось; это не ошибка.
+def ask_dnsmasq(server: str, domain: str, timeout: float) -> bool:
+    """Задать dnsmasq бота A-запрос по домену. True — в ответе есть адреса.
 
-    Нужно, чтобы набор не стоял пустым до первого DNS-запроса пользователя. Домен
-    добавляют ровно тогда, когда сайт только что не открылся, — значит адрес
-    уже лежит в кэше браузера, устройство переспросит DNS не скоро, а до тех пор
-    пойдёт мимо набора. Резолвим сами и досеиваем.
+    Досев набора: адреса в набор кладёт сам dnsmasq по своей директиве
+    `ipset=/домен/vpn_uN` — она действует на любой ответ, и спросивший бот для
+    неё ничем не отличается от устройства (man dnsmasq, --ipset: «Places the
+    resolved IP addresses of queries for one or more domains in the specified
+    Netfilter IP set»). Бот в набор ничего не пишет, поэтому набор совпадает
+    с тем, что dnsmasq отдаёт устройствам.
 
-    Ответ системного резолвера может отличаться от того, что dnsmasq отдаст
-    пользователю (CDN крутит адреса). Это не мешает: адреса ДОПИСЫВАЮТСЯ, и запрос
-    пользователя добавит свои.
+    Цена лишнего адреса в наборе — «поедет на шлюз»: досев по домену на общем
+    хостинге может утащить в канал шлюза чужой адрес. Эффект заперт в наборе
+    одного профиля и снимается удалением домена из его списка — ровно как от
+    запроса самого устройства.
 
-    Цена лишнего адреса в наборе теперь ДРУГАЯ, чем была. В обратной модели он
-    означал «поедет за границу» и был безобиден. Сейчас он означает «поедет
-    на шлюз»: досев по домену на общем хостинге может утащить в канал шлюза
-    чужой адрес. Эффект заперт в наборе одного профиля и снимается удалением
-    домена из его списка, но безобидным его называть больше нельзя.
+    Свой DNS-клиент по UDP (dnsapi.common.query), порт 53, потолок — timeout:
+    нет ответа, ошибка сервера, искажённый ответ — False, не исключение.
     """
-    from concurrent import futures
-    from awgbot.util.nets import getaddrinfo_timed
+    from awgbot.util.dnsapi import common as dns
     try:
-        info = getaddrinfo_timed(domain, timeout=timeout, family=socket.AF_INET)
-    except (OSError, UnicodeError, futures.TimeoutError):
-        return []
-    return sorted({i[4][0] for i in info})
-
-
-def add_networks(name: str, members) -> int:
-    """Дописать подсети в набор. Возвращает число принятых.
-
-    ДОПИСАТЬ, а не заменить: в том же наборе живут адреса, которые накопил
-    dnsmasq по мере резолва доменов, и перезапись стёрла бы их — маркировать
-    стало бы нечем до следующего запроса к каждому домену.
-
-    Через `ipset restore` одной пачкой, а не по команде на запись: списки
-    измеряются сотнями строк на профиль, и раздельные вызовы растянули бы
-    обновление. `-exist` делает операцию идемпотентной.
-    """
-    sets.ensure_set(name, "hash:net")
-    payload = "".join(f"add {name} {m} -exist\n" for m in members)
-    if not payload:
-        return 0
-    base._host(["ipset", "restore", "-exist"], input_data=payload.encode())
-    return payload.count("\n")
+        recs = dns.query(server, domain, 1, timeout)
+    except dns.DnsError:
+        return False
+    return any(rtype == 1 for _name, rtype, *_rest in recs)
 
 
 def write_dnsmasq_conf(text: str, path: str = None) -> bool:

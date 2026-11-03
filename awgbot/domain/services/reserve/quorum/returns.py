@@ -105,6 +105,7 @@ class ReserveQuorumReturnsMixin:
                 actions += self._quorum_force_return(c, v)
             elif act == "tie":
                 log.warning("кворум: ничья о моём боте на «%s»", self.reserve_peer_name())
+        actions += self._quorum_back_seen_again(c, v)
         return actions
 
     def _quorum_to_own_gw(self, node: str, kind: str, body: dict) -> list[tuple]:

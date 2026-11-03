@@ -125,9 +125,13 @@ async def main() -> None:
     # запасной канал для критичных алертов: почта, когда Telegram не отвечает
     from awgbot.bot import notifier as _notifier
 
-    async def _mail_fallback(text: str) -> None:
-        if await asyncio.to_thread(services.email_alert_fallback_enabled):
-            await asyncio.to_thread(services.email_send_alert, text)
+    async def _mail_fallback(text: str) -> bool:
+        """True — письмо ушло; False — почта как запасной канал выключена (notifier тогда
+        откладывает повтор, а не считает алерт доставленным)."""
+        if not await asyncio.to_thread(services.email_alert_fallback_enabled):
+            return False
+        await asyncio.to_thread(services.email_send_alert, text)
+        return True
     _notifier.set_email_fallback(_mail_fallback)
 
     # ── стартовые задачи ─────────────────────────────────────────────────────
