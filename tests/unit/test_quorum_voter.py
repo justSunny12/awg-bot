@@ -195,6 +195,34 @@ def test_release_of_another_epoch_does_not_lift_the_pledge():
     assert not v.release(12), "повторный qrel что-то снял"
 
 
+@pytest.mark.parametrize("e_fact, rel", [(12, 12), (12, 11), (13, 12), (14, 12)],
+                         ids=["own-epoch", "one-below", "fact-above", "fact-far-above"])
+def test_release_without_a_raised_epoch_rolls_nothing_back(e_fact, rel):
+    """`qrel{e}` откатывает только эпоху, поднятую словом кандидата (`qtake`) без факта
+    (voter.release: epoch == e + 1 и fact ≤ e). Эпоха по фактам — ответы ответчика,
+    `qstate`, `state{e}` — от любого `qrel` не уходит: снятие обязательства снова видящему
+    шлюзу (кандидат шлёт `qrel` под эпохой из его «вижу») эпоху не трогает."""
+    v = _seeing()
+    v.epoch_in(e_fact)
+    v.said_no(T0 + 20)
+    v.release(rel)
+    assert (v.epoch, v.fact) == (e_fact, e_fact), f"qrel{{{rel}}} сдвинул эпоху по фактам {e_fact}"
+    assert (v.pledge is None) == (rel == e_fact), "обязательство снято не своей эпохой или своей не снято"
+
+
+def test_release_rolls_back_only_the_epoch_raised_by_qtake():
+    """Контраст к тесту выше: поднятая по `qtake{12}` эпоха 13 без факта — `qrel{12}` вернёт 12
+    (решение снято); с фактом 13 (ответ клона) — не вернёт."""
+    v = _seeing()
+    v.take(12)
+    assert v.epoch == 13 and v.fact == 12
+    assert v.release(12) and v.epoch == 12, "поднятая по qtake эпоха не откатилась по qrel"
+    v.take(12)
+    v.epoch_in(13)
+    v.release(12)
+    assert v.epoch == 13, "qrel откатил эпоху, подтверждённую фактом"
+
+
 def test_take_moves_the_epoch_forward_and_lifts_the_pledge():
     v = _seeing()
     v.said_no(T0 + 20)

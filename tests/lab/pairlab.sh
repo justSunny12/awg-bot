@@ -38,7 +38,7 @@ PL_USER="${SUDO_USER:-$(id -un)}"; PL_HOME="$(getent passwd "$PL_USER" | cut -d:
 PL_VENV="${LAB_VENV:-$PL_HOME/venv}"
 PY="${LAB_PY:-$PL_VENV/bin/python}"
 # QT_PROBE, QT_NO, QT_W, QT_DOWN, QT_UP, QT_UNFENCE, QT_TIE, QT_TIE_CLEAR, QT_RF, QT_DOWN_RF, QT_GRACE,
-# QT_PAUSE, QT_HEALTHY — цифры кворума и «здоров» уровня стенда (LAB_FAST=1 — быстрый, pairnode.LAB_FAST_DIGITS):
+# QT_PAUSE, QT_PLEDGE, QT_HEALTHY — цифры кворума и «здоров» уровня стенда (LAB_FAST=1 — быстрый, pairnode.LAB_FAST_DIGITS):
 # пределы проверок сценариев — от них, узлы получают те же в reserve.yaml
 eval "$(cd "$PL_ROOT" && "$PY" -m tests.lab.pairnode digits)" || exit 1
 # keepalive линка пары стенда: живость пары (reserve.suspect_seconds) обязана его перекрывать — быстрый уровень
