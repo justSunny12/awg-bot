@@ -13,7 +13,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from tests.conftest import SH
+from tests.conftest import SH, fake_cmd
 
 SCRIPT = Path(__file__).resolve().parents[2] / "install" / "routing-host-setup.sh"
 
@@ -78,21 +78,113 @@ def test_dot_is_rejected_not_dropped(script):
     assert re.search(r"--dport 853[^\n]*\n?[^\n]*-j DROP", script) is None
 
 
-def test_dot_reject_is_inserted_after_the_accepts(script):
-    """Порядок в файле = порядок в цепочке, наоборот.
+# Шаги 4–4a гоняются настоящим кодом скрипта (ensure_rule/drop_rule/top_rule,
+# run через sh -c) с подставным iptables: цепочка — файл, строка — правило в
+# том виде, как его передал скрипт; -C/-I [n]/-A/-D честно. Проверяется ИТОГ
+# в цепочке, а не порядок строк в файле: на хосте с правилами прежнего выпуска
+# порядок вызовов ничего не гарантирует.
 
-    ensure_rule вставляет через -I, то есть КАЖДОЕ следующее правило встаёт выше
-    предыдущего. Значит блок с REJECT обязан идти в файле ПОЗЖЕ разрешающих
-    ACCEPT — иначе ACCEPT окажется в цепочке над ним и REJECT не сработает
-    никогда, молча и без единой ошибки.
-    """
-    # только часть apply: в откате порядок обратный и к цепочке отношения не имеет
-    body = script[script.index("# 4) выход наружу"):]
-    accept = body.index('ensure_rule filter FORWARD -s "$CLIENT_SUBNET" -m comment --comment awg-bot -j ACCEPT')
-    reject = body.index("--dport 853")
-    assert reject > accept, (
-        "REJECT 853 стоит в файле раньше ACCEPT — из-за -I он окажется в цепочке "
-        "ниже разрешающего правила и не сработает")
+SUBNET = "10.8.1.0/24"
+REJECT = f"-s {SUBNET} -p tcp --dport 853 -j REJECT --reject-with tcp-reset"
+TAGGED = [f"-s {SUBNET} -m comment --comment awg-bot -j ACCEPT",
+          f"-d {SUBNET} -m comment --comment awg-bot -j ACCEPT"]
+# прежний выпуск ставил те же разрешения без метки и тем же порядком вызовов,
+# то есть REJECT над ними
+OLD_RELEASE = [REJECT, f"-d {SUBNET} -j ACCEPT", f"-s {SUBNET} -j ACCEPT"]
+
+
+def _fake_iptables(tmp_path):
+    bin_dir = tmp_path / "bin"; bin_dir.mkdir(exist_ok=True)
+    chains = tmp_path / "chains"; chains.mkdir(exist_ok=True)
+    fake_cmd(bin_dir / "iptables",
+             f'C={chains}\n'
+             't=filter; [ "$1" = -w ] && shift\n'
+             '[ "$1" = -t ] && { t="$2"; shift 2; }\n'
+             'op="$1"; ch="$2"; shift 2; R="$C/$t.$ch"; touch "$R"\n'
+             'case "$op" in\n'
+             '  -C) grep -qxF -- "$*" "$R"; exit $? ;;\n'
+             '  -D) grep -qxF -- "$*" "$R" || exit 1\n'
+             '      awk -v r="$*" \'!d && $0 == r {d = 1; next} {print}\' "$R" > "$R.t" && mv "$R.t" "$R"; exit 0 ;;\n'
+             '  -A) printf "%s\\n" "$*" >> "$R"; exit 0 ;;\n'
+             '  -I) n=1; case "$1" in [0-9]*) n="$1"; shift ;; esac\n'
+             '      awk -v r="$*" -v n="$n" \'NR == n {print r; done = 1} {print} END {if (!done) print r}\' "$R" > "$R.t"\n'
+             '      mv "$R.t" "$R"; exit 0 ;;\n'
+             '  -S) sed "s/^/-A $ch /" "$R"; exit 0 ;;\n'
+             'esac\nexit 2\n')
+    # таблицы бота нет — прежняя схема, MASQUERADE ставит скрипт
+    fake_cmd(bin_dir / "nft", "exit 1\n")
+    return bin_dir, chains
+
+
+def _apply_forward(script: str, tmp_path, start: list[str], *, mode: str = "apply") -> list[str]:
+    bin_dir, chains = _fake_iptables(tmp_path)
+    (chains / "filter.FORWARD").write_text("".join(r + "\n" for r in start), encoding="utf-8")
+    helpers = script[script.index("\nsay()  {") + 1:script.index("\n# Юнит обязан ссылаться")]
+    fns = script[script.index("\nensure_rule() {") + 1:script.index("\n# Имя awg-интерфейса нужно")]
+    block = script[script.index("# 4) выход наружу"):script.index("# 5) чужой маршрут")]
+    prog = "\n".join(["set -e", f"MODE={mode}", f"CLIENT_SUBNET={SUBNET}", "AWG_IF=awg0",
+                      "LINK_IF=awglink", "MIGRATION_IF=", helpers, fns, block])
+    r = subprocess.run([SH, "-c", prog], capture_output=True, text=True, timeout=30,
+                       env={"PATH": f"{bin_dir}:/usr/bin:/bin"})
+    assert r.returncode == 0, r.stdout + r.stderr
+    return [ln for ln in (chains / "filter.FORWARD").read_text(encoding="utf-8").splitlines() if ln]
+
+
+def _reject_above_every_accept(chain: list[str]) -> bool:
+    accepts = [i for i, r in enumerate(chain) if r.endswith("-j ACCEPT") and SUBNET in r]
+    return REJECT in chain and all(chain.index(REJECT) < i for i in accepts)
+
+
+@pytest.mark.parametrize("start", [
+    pytest.param([], id="clean-host"),
+    pytest.param(OLD_RELEASE, id="old-release-untagged"),
+    pytest.param(OLD_RELEASE[1:] + [REJECT], id="old-accepts-above-reject"),
+])
+def test_dot_reject_ends_up_above_every_accept_in_the_chain(script, tmp_path, start):
+    """REJECT 853 после --apply — выше всех ACCEPT подсети, на любом исходном
+    состоянии. На хосте с правилами прежнего выпуска -C находил REJECT и не
+    трогал его, а помеченные ACCEPT вставали через -I над ним: DoT проходил,
+    Android Private DNS обходил резолвер бота, маршрутизация по DNS-наборам у
+    таких устройств молча не работала."""
+    chain = _apply_forward(script, tmp_path, start)
+    assert _reject_above_every_accept(chain), chain
+    assert chain.count(REJECT) == 1, chain
+    for r in TAGGED:
+        assert chain.count(r) == 1, chain
+    # прежние без метки остаются: отличить их от правил AmneziaWG нечем
+    for r in start:
+        assert r in chain, chain
+
+
+def test_repeated_apply_over_its_own_rules_keeps_the_order_and_duplicates_nothing(script, tmp_path):
+    first = _apply_forward(script, tmp_path, OLD_RELEASE)
+    again = _apply_forward(script, tmp_path, first)
+    assert again == first, (first, again)
+    assert _reject_above_every_accept(again)
+
+
+def test_the_plan_changes_nothing_and_terminates(script, tmp_path):
+    """План (без --apply) на хосте с правилами: run ничего не снимает, и цикл
+    снятия обязан выйти, а не крутиться вечно."""
+    start = OLD_RELEASE[1:] + [REJECT] + TAGGED
+    assert _apply_forward(script, tmp_path, start, mode="plan") == start
+
+
+def test_drop_rule_in_the_plan_does_not_spin_on_an_existing_rule(script, tmp_path):
+    """drop_rule снимает правило, пока -C его находит. В плане run не исполняет
+    ничего, и на хосте с правилом (RETURN резолвера админа, шаг 3) план
+    крутился вечно, печатая одно и то же «would: … -D …»."""
+    bin_dir, chains = _fake_iptables(tmp_path)
+    rule = f"-s {SUBNET} -d 10.255.53.53 -p udp --dport 53 -j RETURN"
+    (chains / "nat.PREROUTING").write_text(rule + "\n", encoding="utf-8")
+    helpers = script[script.index("\nsay()  {") + 1:script.index("\n# Юнит обязан ссылаться")]
+    fns = script[script.index("\nensure_rule() {") + 1:script.index("\n# Имя awg-интерфейса нужно")]
+    prog = "\n".join(["set -e", "MODE=plan", helpers, fns, f"drop_rule nat PREROUTING {rule}"])
+    r = subprocess.run([SH, "-c", prog], capture_output=True, text=True, timeout=10,
+                       env={"PATH": f"{bin_dir}:/usr/bin:/bin"})
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert r.stdout.count("would: iptables -t nat -D PREROUTING") == 1, r.stdout
+    assert (chains / "nat.PREROUTING").read_text(encoding="utf-8") == rule + "\n"
 
 
 def test_rollback_removes_what_apply_installs(script):
