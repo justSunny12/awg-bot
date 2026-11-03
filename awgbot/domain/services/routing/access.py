@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import time
 from typing import Optional
 from awgbot.core import config
 from awgbot.core import settings
-from awgbot.infra import routing
+from awgbot.infra import resolver, routing
 from awgbot.domain import routing as domain_routing
 from awgbot.domain.services.types import Notification, RoutingAddResult, ServiceError
 from awgbot.domain.notices.routing import (ROUTING_GRANTED_NOTICE, ROUTING_REVOKED_NOTICE,
@@ -327,35 +328,67 @@ class RoutingAccessMixin:
                 continue
             if self.db.add_routing_domain(client_id, dom):
                 added.append(dom)
+        routed = 0
         if added:
             self.reconcile_routing()
-            self._routing_preseed(client_id, added)
+            routed = self._routing_preseed(added)
         return RoutingAddResult(added=added, rejected=rejected,
-                                over_limit=over, limit=limit)
+                                over_limit=over, limit=limit,
+                                routed_now=routed, routed_later=len(added) - routed)
 
-    _RT_PRESEED_MAX = 20                  # доменов за раз; дальше ждём резолва устройства
+    _RT_PRESEED_BUDGET = 10.0             # с на весь досев: правило «наружу ≤ 10 с»
+    _RT_PRESEED_ASK = 3.0                 # с на один запрос (внутри общего предела)
 
-    def _routing_preseed(self, client_id: int, domains: list[str]) -> None:
-        """Досеять набор адресами только что добавленных доменов.
+    def _routing_preseed(self, domains: list[str]) -> int:
+        """Наполнить набор адресами только что добавленных доменов: спросить о
+        них dnsmasq бота. Возвращает, сколько доменов направлено сразу.
 
         Без этого набор для домена пуст до первого DNS-запроса пользователя, а его
         не будет, пока не истечёт кэш браузера, — со стороны выглядит как
         «добавил, но не работает; потом само заработало».
 
-        Не критично: резолв может не удаться, набор всё равно наполнится по
-        запросам пользователя. Поэтому все ошибки глотаем и работу не срываем.
+        В набор бот НИЧЕГО не пишет. Реконсиляция только что перезапустила
+        dnsmasq с новыми строками `ipset=/домен/vpn_uN`, и бот задаёт ему
+        A-запрос по каждому домену, как устройство: dnsmasq кладёт адреса ответа
+        в набор сам — директива действует на любой ответ, кто бы ни спросил
+        (man dnsmasq, --ipset: «Places the resolved IP addresses of queries for
+        one or more domains in the specified Netfilter IP set»; клиента
+        директива не различает, как и --nftset). Поэтому в наборе ровно то, что
+        dnsmasq отдаст устройству, и расхождения с ним нет — прежний резолв
+        системным резолвером его давал (CDN крутит адреса).
+
+        Последовательно и с общим пределом на весь досев (правило «наружу
+        ≤ 10 с»): пользователь ждёт ответа бота, а молчащий dnsmasq иначе
+        держал бы его по таймауту на каждый домен. Домен, на котором предел
+        исчерпан, и все следующие не спрашиваем — они направятся при первом
+        запросе устройства. Параллельно не спрашиваем: пачка одновременных
+        запросов к апстриму рискует попасть под его ограничение частоты.
+
+        «Направлен сразу» — в ответе есть A-записи (их dnsmasq и положил в
+        набор). Нет ответа, NXDOMAIN, ответ без A — направится при первом
+        запросе. Ошибки досева добавление не срывают: набор всё равно наполнится
+        по запросам пользователя.
+
+        Досева нет, когда некуда спрашивать: маршрутизация недоступна или
+        выключена, реконсиляция не применилась (строк `ipset=` в dnsmasq нет),
+        резолвера бота на хосте нет (`resolver.listen_addrs()` пуст).
         """
-        if not routing.available():
-            return
-        addrs: list[str] = []
-        for dom in domains[:self._RT_PRESEED_MAX]:
-            addrs += routing.resolve_a(dom)
+        if not domains or not routing.available():
+            return 0
+        if not settings.get_bool("app.routing.enabled", False) or self.db.get_state(self._RT_INFRA_BAD):
+            return 0
+        addrs = resolver.listen_addrs()
         if not addrs:
-            return
-        try:
-            routing.add_networks(routing.user_set(client_id), addrs)
-        except routing.RoutingError as e:
-            log.warning("routing_preseed: %s", e)
+            return 0
+        deadline = time.monotonic() + self._RT_PRESEED_BUDGET
+        routed = 0
+        for dom in domains:
+            left = deadline - time.monotonic()
+            if left <= 0:
+                break
+            if routing.ask_dnsmasq(addrs[0], dom, timeout=min(self._RT_PRESEED_ASK, left)):
+                routed += 1
+        return routed
 
     def routing_remove_domain(self, client_id: int, domain: str) -> bool:
         removed = self.db.remove_routing_domain(client_id, domain)

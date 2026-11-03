@@ -178,9 +178,20 @@ ROUTING_ADD_PROMPT = "\n".join([
     "Пришли адреса — через пробел, с новой строки или через запятую, можно ссылками. "
     "Добавляй те, что пишут «вы не из России»."])
 
-ROUTING_APPLY_HINT = "Заработает в течение минуты; не сработало — переподключи VPN"
-# админ пополняет чужой список: переподключаться — владельцу
-ROUTING_APPLY_HINT_OWNER = "Заработает в течение минуты; не сработало — пусть владелец переподключится"
+def routing_apply_hint(added: int, now: int, *, owner: bool = False) -> str:
+    """Последняя строка итога «➕ Сайт»: сколько добавленных адресов направлено
+    сразу (бот спросил о них резолвер, и тот положил адреса в набор), сколько —
+    при первом запросе устройства. Нули не выводим: направлены все — короче, ни
+    одного — только «при первом запросе». Совет на случай «не сработало» —
+    всегда: кэш браузера держит прежний адрес, переподключение его сбрасывает;
+    админ пополняет чужой список — переподключаться владельцу."""
+    if now >= added:
+        head = "Адрес направлен сразу" if added == 1 else "Адреса направлены сразу"
+    elif now > 0:
+        head = f"Адреса {now} из {added} направлены сразу, остальные — при первом запросе"
+    else:
+        head = "Адрес направится при первом запросе" if added == 1 else "Адреса направятся при первом запросе"
+    return f"{head}; не сработало — " + ("пусть владелец переподключится" if owner else "переподключи VPN")
 ROUTING_SITES_ABOUT = "Открываются с российского адреса"
 
 
@@ -259,12 +270,13 @@ def rejected_rows(rejected: list) -> list[str]:
 
 
 def routing_add_report(added: list, rejected: list, over_limit: int, limit: int, *, owner: bool = False,
-                       bot_username: str = "", snap: str = "") -> str:
+                       bot_username: str = "", snap: str = "", routed_now: int = 0) -> str:
     """Итог разбора пачки — первыми строками экрана «Свои сайты»: что взято,
     что нет и почему (отказы — по причине, одной строкой на причину), когда
     заработает; человек вставляет списком, и молча взять половину нельзя.
     owner — список чужой (админ): переподключается владелец. snap — параметр
-    ссылки на снимок всех отказов (хвост каждой причины ведёт туда)."""
+    ссылки на снимок всех отказов (хвост каждой причины ведёт туда).
+    routed_now — сколько добавленных направлено сразу (досев, routing_apply_hint)."""
     parts = []
     if added:
         shown = ", ".join(f"<code>{_e(_short(d))}</code>" for d in added[:5])
@@ -283,7 +295,7 @@ def routing_add_report(added: list, rejected: list, over_limit: int, limit: int,
     if not parts:
         return "⚠️ Не нашёл в сообщении ни одного адреса"
     if added:
-        parts.append(ROUTING_APPLY_HINT_OWNER if owner else ROUTING_APPLY_HINT)
+        parts.append(routing_apply_hint(len(added), routed_now, owner=owner))
     return "\n".join(parts)
 
 
@@ -313,6 +325,6 @@ __all__ = [
     "gateway_installed_text",
     "routing_provision_failed", "routing_status_line",
     "GW_CARD_PAYLOAD", "routing_admin_status_line", "ROUTING_ABOUT", "ROUTING_ADD_PROMPT",
-    "ROUTING_APPLY_HINT", "ROUTING_APPLY_HINT_OWNER", "ROUTING_SITES_ABOUT", "_short", "routing_domain_removed",
+    "routing_apply_hint", "ROUTING_SITES_ABOUT", "_short", "routing_domain_removed",
     "_lent_out_lines", "routing_panel_text", "routing_sites_text", "routing_add_report",
     "routing_clear_ask", "ROUTING_UNAVAILABLE", "ROUTING_NOT_ALLOWED_ADMIN"]
