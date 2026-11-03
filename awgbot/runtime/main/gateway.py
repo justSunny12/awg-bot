@@ -93,16 +93,18 @@ async def run_gateway() -> None:
 
     from awgbot.bot import notifier as _notifier
 
-    async def _mail_fallback(text: str) -> None:
+    async def _mail_fallback(text: str) -> bool:
         # Telegram шлюза ходит через туннель; лёг линк — Telegram нет, а
         # интернет есть, и письмо уйдёт. Нет и прямого выхода — письмо не
         # уйдёт тем более: не пробуем, чтобы не засорять журнал отказами SMTP.
+        # True — письмо ушло; False — notifier откладывает повтор, а не считает доставленным
         if not await asyncio.to_thread(services.email_alert_fallback_enabled):
-            return
+            return False
         if await asyncio.to_thread(services.egress_probe) is None:
             log.warning("Telegram недоступен, и прямого выхода в интернет нет — письмо не уйдёт, не пробую")
-            return
+            return False
         await asyncio.to_thread(services.email_send_alert, text)
+        return True
     _notifier.set_email_fallback(_mail_fallback)
 
     try:

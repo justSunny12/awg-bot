@@ -52,17 +52,23 @@ def _network_failure(e: Exception) -> bool:
 
 
 async def _fallback(critical: bool, tg_id, text: str, why: str = "Telegram недоступен") -> bool:
-    """True — алерт всё-таки доставлен, письмом."""
+    """True — алерт всё-таки доставлен, письмом: запасной канал сам говорит, ушло ли
+    письмо (False — почта выключена или выхода нет). Раньше «не бросил исключения»
+    считалось доставкой, и при выключенной почте критичный алерт терялся с отметкой
+    «доставлен»."""
     from awgbot.core import config
     if not critical or _email_fallback is None or tg_id != config.ADMIN_ID:
         return False
     try:
-        await _email_fallback(text)
-        log.warning("критичный алерт ушёл на почту: %s", why)
-        return True
+        sent = await _email_fallback(text)
     except Exception as e2:                          # noqa: BLE001
         log.warning("запасной канал (почта) не сработал: %s", e2)
         return False
+    if not sent:
+        log.warning("запасной канал (почта) недоступен — алерт письмом не ушёл: %s", why)
+        return False
+    log.warning("критичный алерт ушёл на почту: %s", why)
+    return True
 
 
 async def _confirm(on_sent) -> None:
@@ -92,6 +98,7 @@ def _silent_now(force_sound: bool) -> bool:
 # сразу письмом, прочее — один отложенный повтор фоном по истечении паузы.
 _RETRY_AFTER_CAP = 30
 _deferred: set = set()                 # держатели ссылок на отложенные повторы
+_pending: dict = {}                    # (tg_id, text) → отложенный повтор: тот же текст второй раз не откладывается
 
 
 async def _delivered(sent, on_sent, on_message):
@@ -126,11 +133,16 @@ async def _later(delay, bot, tg_id, text, markup, silent, critical, on_sent, on_
     await _retry(bot, tg_id, text, markup, silent, critical, on_sent, on_message)
 
 
-def _defer(delay, *args) -> None:
+def _defer(delay, key, *args) -> None:
+    """Один отложенный повтор на (адресат, текст): монитор шлюза создаёт тот же алерт
+    заново каждый такт, пока отметка «показан» не взведена, — без этого после паузы
+    приходила бы пачка одинаковых; отметку взводит доставка первого (on_sent)."""
     from awgbot.bot import bgtask
     task = bgtask.spawn(_later(delay, *args), name="notify-retry")
     _deferred.add(task)
+    _pending[key] = task
     task.add_done_callback(_deferred.discard)
+    task.add_done_callback(lambda t, k=key: _pending.pop(k, None) if _pending.get(k) is t else None)
 
 
 async def _send(bot, tg_id, text, markup, silent, critical: bool = False, on_sent=None, on_message=None):
@@ -146,6 +158,9 @@ async def _send(bot, tg_id, text, markup, silent, critical: bool = False, on_sen
     не на месте меню выше."""
     from awgbot.bot import links
     text = links.mark_new(text)
+    if (tg_id, text) in _pending:                      # тот же текст уже ждёт паузы — не слать второй раз
+        log.info("flood-контроль: тот же текст для %s уже отложен — дубль не шлю", tg_id)
+        return None
     try:
         sent = await bot.send_message(tg_id, text, reply_markup=markup,
                                       disable_notification=silent)
@@ -159,8 +174,11 @@ async def _send(bot, tg_id, text, markup, silent, critical: bool = False, on_sen
         if await _fallback(critical, tg_id, text, f"flood-контроль Telegram на {wait} с"):
             await _confirm(on_sent)
             return None
+        if (tg_id, text) in _pending:
+            log.info("flood-контроль: тот же текст для %s уже отложен — дубль не ставлю", tg_id)
+            return None
         log.warning("flood-контроль: пауза %s с — повтор для %s отложен", wait, tg_id)
-        _defer(wait, bot, tg_id, text, markup, silent, critical, on_sent, on_message)
+        _defer(wait, (tg_id, text), bot, tg_id, text, markup, silent, critical, on_sent, on_message)
     except Exception as e:                           # noqa: BLE001
         log.warning("Не удалось отправить уведомление %s: %s", tg_id, e)
         if _network_failure(e) and await _fallback(critical, tg_id, text):
