@@ -276,8 +276,8 @@ def test_with_an_odd_v_there_is_never_a_tie(box, monkeypatch):
 
 
 def test_a_leftover_act_off_in_the_settings_does_not_silence_the_alarm(c):
-    """Ключа `quorum.act` больше нет: оставшийся в чьём-то app.yaml `false`
-    не читается — решения по кворуму идут всегда, тревога ничьей тоже."""
+    """Ключа `quorum.act` больше нет: оставшийся в чьём-то reserve.yaml `false`
+    (перенесён из app.yaml) не читается — решения по кворуму идут всегда, тревога ничьей тоже."""
     settings.set_value("reserve.quorum.act", False)
     acts = c.tie() + c.run(T_TIE + 5)
     assert set(_tie_notes(acts)) == {config.ADMIN_ID, rc.PEER_ADMIN}, "прежний act=false заглушил тревогу ничьей"

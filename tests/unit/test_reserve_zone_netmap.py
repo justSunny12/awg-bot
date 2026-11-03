@@ -202,7 +202,7 @@ def test_the_plan_follows_the_pool_from_the_environment(zone):
 
 
 def test_without_the_environment_the_script_takes_the_template_pool(zone):
-    """Ручной запуск скрипта (без обёртки) — пул по умолчанию тот же, что в шаблоне conf/app.yaml."""
+    """Ручной запуск скрипта (без обёртки) — пул по умолчанию тот же, что в шаблоне conf/reserve.yaml."""
     r = zone.sh('netmap_plan "" 10.8.1.1/24')
     assert r.stdout.split() == ["10.8.1.0/24=169.254.96.0/24"], r.stdout + r.stderr
 

@@ -231,8 +231,9 @@ def test_held_yes_is_not_counted_for_the_return(q):
 # ── без решений ─────────────────────────────────────────────────────────────
 
 def test_a_leftover_act_off_in_the_settings_still_fences(q):
-    """Ключа `quorum.act` больше нет: `false`, оставшийся в чьём-то app.yaml,
-    не читается — лидер без большинства дольше T_down лишён права записи."""
+    """Ключа `quorum.act` больше нет: `false`, оставшийся в чьём-то reserve.yaml
+    (перенесён из app.yaml), не читается — лидер без большинства дольше T_down лишён
+    права записи."""
     settings.set_value("reserve.quorum.act", False)
     _lead(q)
     acts = _fence(q)
