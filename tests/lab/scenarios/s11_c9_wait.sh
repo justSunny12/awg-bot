@@ -113,9 +113,17 @@ for _ in $(seq 1 40); do [ -e "$PL/G/edit_one.done" ] && break; sleep 0.25; done
 grep -q '"id"' "$PL/G/edit_one.done" 2>/dev/null || pl_fail "гость (держатель за разрезом) правку не выполнил: $(cat "$PL/G/edit_one.done" 2>/dev/null)"
 bash "$PL_HERE/net.sh" heal >/dev/null
 T0=$(date +%s)
-wait_t A "int((s.get('c9') or {}).get('moved') or 0) >= 1" 300 "правка гостя перенесена хвостом С9" || exit 1
-t_tail=$WT
-[ "$(pl_q A "int(s['c9']['upto']) > $F")" = true ] || pl_fail "upto отметки С9 не дальше F=$F: $(pl_q A 's["c9"]')"
+# хвост пришёл — резерв тут же отвечает jc9none, и основа снимает отметку фактом (перенесено N в журнале);
+# отметка живёт между переносом и снятием меньше секунды — ждём факт по журналу, не по состоянию
+for _ in $(seq 1 300); do grep -q "отметка С9 снята (перенесено" "$PL/A/node.log" && break; sleep 1; done
+done_line="$(grep "отметка С9 снята (перенесено" "$PL/A/node.log" | tail -1)"
+[ -n "$done_line" ] || { pl_wait A "False" 1 "правка гостя перенесена хвостом С9, отметка снята фактом"; exit 1; }
+t_tail=$(since "$T0"); pl_mark "A: правка гостя перенесена хвостом С9, отметка снята фактом"
+moved="$(printf '%s' "$done_line" | grep -o 'перенесено [0-9]*' | grep -o '[0-9]*$')"
+upto="$(printf '%s' "$done_line" | grep -o 'после [0-9]* у него нет' | grep -o '[0-9]\+' | head -1)"
+[ "${moved:-0}" -ge 1 ] || pl_fail "хвостом С9 ничего не перенесено: $done_line"
+[ "${upto:-0}" -gt "$F" ] || pl_fail "upto отметки С9 не дальше F=$F: $done_line"
+[ "$(pl_q A 'bool(s.get("c9"))')" = false ] || pl_fail "после снятия фактом отметка С9 на месте: $(pl_q A 's["c9"]')"
 [ "$(sql "$PL/A/data/bot.db" "SELECT count(*) FROM clients WHERE name = 'Правка-гостя-С9'")" = 1 ] \
     || pl_fail "правки гостя нет в базе A после хвоста С9"
 note "4: правка гостя хвостом С9 через ${t_tail} с после восстановления линка"
