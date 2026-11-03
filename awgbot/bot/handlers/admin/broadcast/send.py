@@ -11,7 +11,7 @@ from awgbot.bot.callbacks import BroadcastCB
 from awgbot.bot.handlers.common import edit, edit_nav, cleanup_content, send_menu
 from awgbot.bot.notifier import send_notifications
 from awgbot.bot.handlers.admin.panel import _panel_parts
-from .targets import router, _BROADCAST_COOLDOWN_SEC, _last_broadcast_at, _bc_selected, _on_cooldown
+from .targets import router, _last_broadcast_at, _bc_selected, _on_cooldown
 from .draft import _bc_cancel_render
 from awgbot.bot.handlers.admin import broadcast as pkg       # имена пакета — через него: их подменяют тесты
 
