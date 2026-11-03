@@ -778,7 +778,8 @@ async def _sites_report(services, make_active_client, fake_bot, monkeypatch, rej
     _routing_all(services, c.id, True)
     c = services.db.get_client(c.id)
     monkeypatch.setattr(services, "routing_add_domains",
-                        lambda cid, text: SimpleNamespace(added=[], rejected=list(rejected), over_limit=0, limit=100))
+                        lambda cid, text: SimpleNamespace(added=[], rejected=list(rejected), over_limit=0, limit=100,
+                                                          routed_now=0, routed_later=0))
     st = FakeState()
     await st.update_data(rt_client=c.id)
     msg = FakeMessage(text="x", chat_id=7102, user_id=7102, bot=fake_bot)

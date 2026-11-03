@@ -1,5 +1,5 @@
-"""Условная маршрутизация: личные списки доменов, проекция в dnsmasq, досев
-набора при добавлении домена.
+"""Условная маршрутизация: личные списки доменов, проекция в dnsmasq (досев
+набора при добавлении домена — test_services_routing_preseed.py).
 
 Инфраструктура подменена фейком (fixture fake_routing) — проверяем, ЧТО именно
 проецируется наружу, а не как выглядит вывод ipset.
@@ -141,54 +141,7 @@ def test_allowed_but_switched_off_profile_marks_nothing(
         "у выключенного профиля src-набор обязан быть пуст"
 
 
-# ── Досев набора при добавлении домена ───────────────────────────────────────
-
-def test_added_domain_is_preseeded_into_the_set(
-        services, make_active_client, fake_routing):
-    """Домен добавляют ровно тогда, когда сайт только что не открылся, — адрес
-    уже в кэше браузера, и клиент переспросит DNS не скоро. Если ждать его
-    запроса, набор стоит пустым и сайт продолжает не открываться: «добавил, но
-    не работает; потом само заработало». Поэтому резолвим сами.
-    """
-    from awgbot.infra import routing
-    c = make_active_client()
-    fake_routing.dns["bank.com"] = ["203.0.113.7", "203.0.113.8"]
-    services.routing_add_domains(c.id, "bank.com")
-
-    members = fake_routing.sets[routing.user_set(c.id)]
-    assert "203.0.113.7" in members and "203.0.113.8" in members
-
-
-def test_preseed_keeps_what_dnsmasq_collected(
-        services, make_active_client, fake_routing):
-    """Досев ДОПИСЫВАЕТ: в наборе живут адреса, накопленные dnsmasq по запросам
-    пользователя, и перезапись оставила бы маркировать нечем."""
-    from awgbot.infra import routing
-    c = make_active_client()
-    services.routing_add_domains(c.id, "first.com")
-    fake_routing.sets[routing.user_set(c.id)].append("198.51.100.1")   # «от dnsmasq»
-
-    fake_routing.dns["second.com"] = ["203.0.113.9"]
-    services.routing_add_domains(c.id, "second.com")
-    assert "198.51.100.1" in fake_routing.sets[routing.user_set(c.id)]
-
-
-def test_failed_resolve_does_not_break_the_add(
-        services, make_active_client, fake_routing):
-    """Резолв — не критичный путь: набор всё равно наполнится по запросам
-    пользователя, поэтому неудача не должна ронять добавление."""
-    def boom(dom, timeout=3.0):
-        raise OSError("нет сети")
-    from awgbot.infra import routing
-    import pytest
-    monkey = pytest.MonkeyPatch()
-    monkey.setattr(routing.feeds, "resolve_a", lambda dom, timeout=3.0: [])
-    try:
-        c = make_active_client()
-        res = services.routing_add_domains(c.id, "unresolvable.invalid")
-        assert res.added == ["unresolvable.invalid"]
-    finally:
-        monkey.undo()
+# ── Выключатель функции против зонда ─────────────────────────────────────────
 
 
 def test_hot_switch_off_wins_over_a_healthy_gateway(services, fake_routing, monkeypatch):

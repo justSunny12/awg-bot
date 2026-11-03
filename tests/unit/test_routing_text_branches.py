@@ -45,3 +45,25 @@ def test_smb_pending_with_the_channel_down_waits_for_the_link():
 def test_domain_example_in_a_refusal_is_monospaced():
     out = texts.routing_add_report([], [("x", "нужен адрес вида sberbank.ru")], 0, 100)
     assert out.endswith("— нужен адрес вида <code>sberbank.ru</code>"), out
+
+
+def test_add_report_tells_how_many_sites_are_routed_right_away():
+    """Итог «➕ Сайт» честно говорит, сколько добавленных адресов направлено
+    сразу (резолвер бота ответил и положил адреса в набор), а сколько — при
+    первом запросе устройства; нули не выводим, конец без точки."""
+    two = ["a.com", "b.com"]
+    tail = "; не сработало — переподключи VPN"
+    assert texts.routing_add_report(two, [], 0, 100, routed_now=2).endswith("\nАдреса направлены сразу" + tail)
+    assert texts.routing_add_report(["a.com"], [], 0, 100, routed_now=1).endswith("\nАдрес направлен сразу" + tail)
+    three = two + ["c.com"]
+    assert texts.routing_add_report(three, [], 0, 100, routed_now=1).endswith(
+        "\nАдреса 1 из 3 направлены сразу, остальные — при первом запросе" + tail)
+    assert texts.routing_add_report(two, [], 0, 100, routed_now=0).endswith(
+        "\nАдреса направятся при первом запросе" + tail)
+    assert texts.routing_add_report(["a.com"], [], 0, 100).endswith(
+        "\nАдрес направится при первом запросе" + tail)
+    owner = texts.routing_add_report(two, [], 0, 100, owner=True, routed_now=1)
+    assert owner.endswith("\nАдреса 1 из 2 направлены сразу, остальные — при первом запросе; "
+                          "не сработало — пусть владелец переподключится"), owner
+    assert "0 из" not in texts.routing_add_report(two, [], 0, 100, routed_now=0)
+    assert "сразу" not in texts.routing_add_report([], [("x", "уже в списке")], 0, 100)

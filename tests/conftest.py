@@ -314,7 +314,8 @@ def fake_routing(monkeypatch, tmp_path):
     state = types.SimpleNamespace(
         sets={}, chain=None, conf=None, conf_writes=0,
         marking=None, probe="ok", enabled=True,
-        dns={},                       # домен → IPv4, что «вернёт» резолвер
+        dns={},                       # домен → IPv4, что ответит dnsmasq бота на досев
+        asked=[],                     # досев: (адрес dnsmasq, домен, таймаут) по порядку
         # Счётчики пира линка. По умолчанию мир такой: пользователи через линк
         # ходят (tx растёт), обратно не приходит ничего (rx стоит) — то есть
         # спрос есть, улик прохождения нет, и вердикт активного слота решает
@@ -327,13 +328,24 @@ def fake_routing(monkeypatch, tmp_path):
     def replace_members(name, kind, members, current=None):
         state.sets[name] = list(members)
 
-    def add_networks(name, members):
-        # ДОПИСАТЬ, как настоящий: в наборе уже лежат адреса, накопленные
-        # dnsmasq, и затирать их нельзя
-        have = state.sets.setdefault(name, [])
-        new = [m for m in members if m not in have]
-        have.extend(new)
-        return len(new)
+    def ask_dnsmasq(server, domain, timeout):
+        # Досев: бот спрашивает dnsmasq, а адреса в набор кладёт dnsmasq по своей
+        # строке ipset= из записанного конфига (самая длинная подходящая —
+        # домен и его поддомены), как от запроса устройства; бот набор не трогает
+        state.asked.append((server, domain, timeout))
+        ips = list(state.dns.get(domain, []))
+        best, sets_ = -1, []
+        for line in (state.conf or "").splitlines():
+            if not line.startswith("ipset=/"):
+                continue
+            *doms, names = line[len("ipset=/"):].split("/")
+            for d in doms:
+                if (domain == d or domain.endswith("." + d)) and len(d) > best:
+                    best, sets_ = len(d), names.split(",")
+        for name in sets_:
+            have = state.sets.setdefault(name, [])
+            have.extend(ip for ip in ips if ip not in have)
+        return bool(ips)
 
     def ensure_set(name, kind, exists=False):
         # создать, не трогая содержимое — так бот обращается с доменными
@@ -372,8 +384,7 @@ def fake_routing(monkeypatch, tmp_path):
     _set("replace_members", replace_members)
     _set("ensure_set", ensure_set)
     _set("invalidate_self_check", lambda: None)
-    _set("add_networks", add_networks)
-    _set("resolve_a", lambda dom, timeout=3.0: list(state.dns.get(dom, [])))
+    _set("ask_dnsmasq", ask_dnsmasq)
     # Сигнатуры двойников повторяют настоящие ВКЛЮЧАЯ iface: интерфейсов на
     # время переезда два, и двойник без этого параметра молча разошёлся бы с
     # боевым кодом ровно на той правке, ради которой параметр и появился.

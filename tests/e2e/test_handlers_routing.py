@@ -273,6 +273,26 @@ async def test_add_domains_without_dialog_context_lands_on_main_with_the_report(
     assert services.routing_domains(c.id) == ["bank.com"]
 
 
+async def test_add_report_says_how_many_were_routed_right_away(
+        services, make_active_client, fake_bot, fake_routing, monkeypatch):
+    """Итог «➕ Сайт» несёт счёт досева из сервиса: резолвер бота ответил по
+    одному адресу из двух — «1 из 2 направлены сразу, остальные — при первом
+    запросе»."""
+    from awgbot.infra import resolver
+    monkeypatch.setattr(resolver, "listen_addrs", lambda path=None: ["10.8.1.1"])
+    fake_routing.dns["bank.com"] = ["203.0.113.7"]
+    c = _allowed_client(services, make_active_client, 98)
+    _routing_all(services, c.id, True)
+    c = services.db.get_client(c.id)
+    msg = FakeMessage(text="bank.com\nnothing.example", chat_id=98, user_id=98, bot=fake_bot)
+    await routing_h.routing_add_apply(msg, c, services, FakeState())
+
+    sent = [s for s in msg.sent if s[0] == "answer"]
+    first = sent[0][1].split("\n\n", 1)[0]
+    assert first.endswith("\nАдреса 1 из 2 направлены сразу, остальные — при первом запросе; "
+                          "не сработало — переподключи VPN"), first
+
+
 async def test_revoked_permission_blocks_the_pending_input(
         services, make_active_client, fake_bot):
     """Между «пришли адреса» и отправкой списка админ мог отозвать разрешение.
