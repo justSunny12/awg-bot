@@ -17,6 +17,9 @@ from .common import DnsError, http, ipv4
 
 id = "digitalplat"
 human = "DigitalPlat"
+# срок доставки правки на авторитетные серверы dns1/dns2.digitalplat.org (common.apply_wait_s):
+# официальной цифры нет, правка идёт очередью; TTL записи — 300 с
+APPLY_S = 300
 _API = "https://domain-api.digitalplat.org/api/v1"
 
 

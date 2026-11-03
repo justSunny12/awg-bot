@@ -242,6 +242,22 @@ def provider_for(cfg: dict) -> Provider:
     return mod
 
 
+# предел подтверждения правки провайдера, у которого своей цифры нет (и незнакомого)
+APPLY_DEFAULT_S = 300
+
+
+def apply_wait_s(cfg: dict) -> int:
+    """Сколько ждать, пока правка записи из API провайдера дойдёт до авторитетных серверов
+    зоны (поле `APPLY_S` модуля провайдера): предел ожидания факта, когда исход смены
+    неизвестен (ответ провайдера не дошёл или не разобран). Не TTL записи — факт читается у
+    авторитетного сервера мимо кэшей. Провайдер с большим сроком — своя цифра в своём модуле."""
+    pid = str((cfg or {}).get("provider") or "").strip().lower()
+    try:
+        return max(1, int(getattr(PROVIDERS.get(pid), "APPLY_S", APPLY_DEFAULT_S) or APPLY_DEFAULT_S))
+    except (TypeError, ValueError):
+        return APPLY_DEFAULT_S
+
+
 def _load() -> dict:
     from . import cloudflare, digitalplat, duckdns, dyndns2, manual
     return {m.id: m for m in (cloudflare, digitalplat, duckdns, dyndns2, manual)}

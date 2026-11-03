@@ -10,6 +10,9 @@ from .common import DnsError, http, ipv4, read_authoritative
 
 id = "duckdns"
 human = "DuckDNS"
+# срок доставки правки на авторитетные серверы (common.apply_wait_s): официальной цифры нет,
+# TTL записи — 60 с
+APPLY_S = 300
 _URL = "https://www.duckdns.org/update"
 
 

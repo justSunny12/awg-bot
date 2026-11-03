@@ -13,6 +13,9 @@ from .common import DnsError, http, ipv4, read_authoritative
 
 id = "dyndns2"
 human = "DynDNS2 (No-IP, Dynu, OVH DynHost…)"
+# срок доставки правки на авторитетные серверы (common.apply_wait_s): цифр у провайдеров протокола
+# не найдено — общий предел API-провайдеров
+APPLY_S = 300
 
 
 def _url(cfg: dict) -> str:

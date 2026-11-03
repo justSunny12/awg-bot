@@ -39,3 +39,20 @@ def record_back(reserve: str, record: str, own: str, why: str) -> str:
     """Админу основы: резерв не принял её пользователей после смены записи — запись на себя."""
     return (f"↩️ Запись <code>{_e(record)}</code> снова на <code>{_e(own)}</code>: {_n(reserve)} не принял твоих "
             f"пользователей" + (f" — {_e(why)}" if why else ""))
+
+
+# ── исход смены записи процессом открытия неизвестен (inbound_recwait) ───────
+
+def record_unknown(primary: str, record: str, ip: str, minutes: int, why: str) -> str:
+    """Админу резерва: вход в ожидание факта — ответ провайдера не дошёл или процесс открытия погиб."""
+    rec = f"<code>{_e(record)}</code>" if record else "DNS"
+    to = f" на <code>{_e(ip)}</code>" if ip else ""
+    return (f"⏳ Запись {rec} пользователей {_n(primary)}: исход смены{to} неизвестен" + (f" — {_e(why)}" if why else "")
+            + f"; проверяю у авторитетного сервера раз в минуту, до {minutes} мин")
+
+
+def record_confirmed(primary: str, record: str, ip: str) -> str:
+    """Админу резерва: факт после ожидания — запись здесь, приём идёт дальше."""
+    rec = f"<code>{_e(record)}</code>" if record else "DNS"
+    to = f": <code>{_e(ip)}</code>" if ip else ""
+    return f"✅ Запись {rec} подтвердилась у авторитетного сервера{to} — приём пользователей {_n(primary)} продолжается"

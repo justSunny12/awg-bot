@@ -13,6 +13,9 @@ from .common import DnsError, http, ipv4
 
 id = "cloudflare"
 human = "Cloudflare"
+# срок доставки правки из API на авторитетные серверы зоны (common.apply_wait_s): документированный
+# максимум Cloudflare — «изменения могут занять до 5 минут»; Auto TTL — 300 с
+APPLY_S = 300
 _API = "https://api.cloudflare.com/client/v4"
 
 

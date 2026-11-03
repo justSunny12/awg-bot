@@ -48,12 +48,26 @@ reserve open` (root, без этой песочницы).
 Шаги и строки хода (stdout и open.status): `m` → `k` → `parts` → `store`
 (env, conf, data — база и кэш списков РФ-доступа `routing-<вид>.lst` из части
 бота: источники списков гостю недоступны, — ключ, вебхук, пул) → `clone_up`
-(--take: клон, veth, dnsmasq, юнит бота основы) → `record_set` → `record_fact` → `done`; отказ — `fail
+(--take: клон, veth, dnsmasq, юнит бота основы) → `record_try` → `record_set` → `record_fact` → `done`; отказ — `fail
 <причина>`, код 1. При готовом `k` вместо `m` → `k` — шаг `k_given`; по конверту — `eph` → `k_sealed`. Ждёт
 факта записи у авторитетного сервера до 30 минут; по факту кладёт отметку
 `tg_take` — бот основы на резерве ставит вебхук. Отказ после смены записи (факт
 за 30 минут не наступил, любой сбой дальше) несёт поля `record=set`, `name`, `ip`:
-бот резерва зону тогда не снимает и доделывает не сделанное сам. Без записи (`set_record`
+бот резерва зону тогда не снимает и доделывает не сделанное сам.
+Исход смены записи неизвестен: перед запросом к провайдеру — шаг-намерение
+`record_try{name, ip, limit}` (`limit` — срок доставки правки на авторитетные
+серверы, dnsapi `apply_wait_s`: 5 минут у API-провайдеров); запрос кончился
+исключением (таймаут, ответ не дошёл или не разобран) — это не «запись не
+сменена»: сразу читается авторитетный ответ, адрес уже мой — `record_set` и
+`record_fact` как обычно; нет — шаг `record_wait{name, ip, limit, why}`, клоны
+стоят, авторитетный ответ раз в минуту ± 40 % до `limit` от `record_try`
+(последнее чтение — на самом пределе): появился — `record_set`, `record_fact`;
+нет — `fail запись DNS не подтвердилась за N мин: …` без поля `record` (прежний
+срыв со снятием зоны). Отказ «вручную» (`NotSupported`: запроса не было) — сразу
+`fail запись DNS: …`. Любой сбой между `record_try` и итогом несёт поля
+`record=try`, `name`, `ip`, `limit`: процесс погиб или отказал посреди
+неизвестного — ожидание факта доводит бот резерва по open.status той же
+логикой (domain/services/reserve/inbound_recwait). Без записи (`set_record`
 false, нет `target_ip` или провайдера — переезд кнопкой и по согласию основы:
 запись меняет она) — `done record=skipped` после `clone_up`, отметку тогда
 ставит поле `tg_take: true` во входе (иначе её даёт бот резерва по локальному
@@ -109,6 +123,7 @@ import time
 from awgbot.infra.rsvproc.status import OpenError, _RECORD, _fail, _fail_err, _step
 from awgbot.infra.rsvproc.intake import _read_input, _read_line_within
 from awgbot.infra.rsvproc.guestconf import DEFAULT_TG_POOL, _guest_app_yaml, _host_pool, _make_cert, _yaml_dump
+from awgbot.infra.rsvproc.record import FACT_RETRY_S, auth_has, wait_unknown
 
 TARGET_WAIT_S = 30 * 60
 FACT_POLL_S = (15, 40)
@@ -116,7 +131,7 @@ K_WAIT_S = 120                  # конверт с K от основы посл
 
 # имена процесса для вызывающих и подмен — и вынесенные в infra/rsvproc (берут их по-прежнему отсюда)
 __all__ = ["main", "run", "OpenError", "recover_keys", "await_sealed_k", "fill_store", "set_record", "wait_fact",
-           "DEFAULT_TG_POOL", "TARGET_WAIT_S", "FACT_POLL_S", "K_WAIT_S"]
+           "auth_has", "wait_unknown", "DEFAULT_TG_POOL", "TARGET_WAIT_S", "FACT_POLL_S", "FACT_RETRY_S", "K_WAIT_S"]
 
 
 def await_sealed_k(pkg_gen: int, budget_s: float = K_WAIT_S) -> bytes:
@@ -401,15 +416,32 @@ def run(data: dict) -> int:
         if data.get("tg_take"):
             rsvzone.write_private(rsvzone.TG_TAKE_FILE, "1")
         return 0
+    from awgbot.util import dnsapi
+    name = str(dns.get("name") or "")
+    limit = dnsapi.apply_wait_s(dns)                          # срок доставки правки провайдера на авторитетные серверы
+    deadline = time.monotonic() + limit
+    # намерение — до запроса: процесс, погибший после ответа провайдера, не оставит «запись не сменена»
+    _RECORD.update(record="try", name=name, ip=target, limit=limit)
+    _step("record_try", name=name, ip=target, limit=limit)
+    why = ""
     try:
         set_record(dns, target)
-    except Exception as e:                                     # noqa: BLE001 — DnsError, NotSupported, сеть
+    except dnsapi.NotSupported as e:                           # «вручную»: запроса не было — исход известен
+        _RECORD.clear()
         return _fail(f"запись DNS: {e}")
-    name = str(dns.get("name") or "")
+    except Exception as e:                                     # noqa: BLE001 — таймаут, ответ не дошёл или не разобран
+        why = str(e)[:160] or type(e).__name__
     dns = {}                                                   # токен провайдера дальше не нужен
+    if why and not auth_has(name, target):
+        # исход неизвестен, адреса у авторитетного сервера пока нет — ждать факта до предела, клоны стоят
+        _step("record_wait", name=name, ip=target, limit=limit, why=why)
+        if not wait_unknown(name, target, deadline):
+            _RECORD.clear()
+            return _fail(f"запись DNS не подтвердилась за {max(1, limit // 60)} мин: {why}")
+    _RECORD.clear()
     _RECORD.update(record="set", name=name, ip=target)
     _step("record_set", name=name, ip=target)
-    if not wait_fact(name, target):
+    if not why and not wait_fact(name, target):               # исход был неизвестен — факт уже прочитан
         return _fail("факт записи не подтвердился за 30 минут")
     _step("record_fact", name=name, ip=target)
     rsvzone.write_private(rsvzone.TG_TAKE_FILE, "1")

@@ -28,7 +28,7 @@ from awgbot.util import livestep, nets, timeutil
 
 from ..types import Notification
 from ..gateway_link.common import log
-from .inbound import REPLICA_WAIT_S
+from .inbound import REPLICA_WAIT_S, UP_STEPS
 from .outbound import RELEASED_WAIT_S
 from .state import _LOCK
 
@@ -211,7 +211,7 @@ class ReserveInboundBackMixin:
         # могли прийти раньше, чем процесс открытия дойдёт до record_set; срыв раньше клона — сразу
         # idle (лишний хвост безвреден: кончится по тишине relay_idle_hours)
         step = str(rsvzone.open_status().get("step") or "")
-        had_clients = str(inn.get("state") or "") != "taking" or step in ("clone_up", "record_set", "record_fact", "done")
+        had_clients = str(inn.get("state") or "") != "taking" or step in UP_STEPS
         if str(inn.get("state") or "") == "taking":
             try:
                 self._rsvopen_stop()                          # переезд сорвался на открытии — юнит прочь

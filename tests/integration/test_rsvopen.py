@@ -25,12 +25,14 @@ import sqlite3
 import stat
 import subprocess
 import sys
+import types
 from pathlib import Path
 
 import pytest
 
 from awgbot.core import config
 from awgbot.infra import rsvzone
+from awgbot.infra.rsvproc import record as rsvrecord
 from awgbot.util import dnsapi, rsvkeys
 from awgbot.util.rsvpkg import bot as pkgbot, seal, vpn as pkgvpn
 from tools import rsvopen
@@ -111,6 +113,17 @@ class Box:
         mp.setattr(rsvopen, "_make_cert", self._cert)
         mp.setattr(rsvopen, "set_record", self._set_record)
         mp.setattr(rsvopen, "wait_fact", self._wait_fact)
+        # исход смены записи неизвестен: авторитетный сервер и часы процесса — подставные
+        self.t = 0.0
+        self.sleeps: list[float] = []
+        self.auth: list[str] = []                             # что отдаёт авторитетный сервер
+        self.auth_from: float | None = None                   # с этой секунды часов процесса — адрес цели
+        self.auth_reads: list[float] = []
+        self.applied_on_error = False                         # провайдер принял правку, а ответ не дошёл
+        clock = types.SimpleNamespace(monotonic=lambda: self.t, sleep=self._sleep)
+        mp.setattr(rsvopen, "time", clock)
+        mp.setattr(rsvrecord, "time", clock)
+        mp.setattr(dnsapi, "read_authoritative", self._read_auth)
         self.write_package()
 
     # подмены
@@ -138,8 +151,21 @@ class Box:
 
     def _set_record(self, dns, ip):
         self.calls.append(("set_record", dict(dns), ip))
+        self.at_set_record = rsvzone.open_status().get("step")
         if self.record_error:
+            if self.applied_on_error:
+                self.auth = [ip]
             raise self.record_error
+
+    def _sleep(self, s: float) -> None:
+        self.sleeps.append(s)
+        self.t += s
+
+    def _read_auth(self, name, timeout=3.0):
+        self.auth_reads.append(self.t)
+        if self.auth_from is not None and self.t >= self.auth_from:
+            return ["203.0.113.20"]
+        return list(self.auth)
 
     def _wait_fact(self, name, ip, budget_s=0):
         self.at_fact_wait = {"tg_take": rsvzone.TG_TAKE_FILE.exists(), "step": rsvzone.open_status().get("step")}
@@ -252,7 +278,7 @@ def box(tmp_path, monkeypatch, capsys):
     return Box(tmp_path, monkeypatch, capsys)
 
 
-STEPS_OK = ["m", "k", "parts", "store", "clone_up", "record_set", "record_fact", "done"]
+STEPS_OK = ["m", "k", "parts", "store", "clone_up", "record_try", "record_set", "record_fact", "done"]
 
 
 # ── успех ────────────────────────────────────────────────────────────────────
@@ -277,7 +303,7 @@ def test_the_emergency_code_with_the_code_point_and_box_opens_the_package_too(bo
 
 def test_a_given_k_opens_without_m_and_needs_the_dns_from_the_input(box):
     assert box.open(k=box.k.hex(), dns=DNS) == 0, box.out
-    assert box.steps == ["k_given", "parts", "store", "clone_up", "record_set", "record_fact", "done"]
+    assert box.steps == ["k_given", "parts", "store", "clone_up", "record_try", "record_set", "record_fact", "done"]
     assert [c for c in box.calls if c[0] == "set_record"][0][1]["name"] == "vpn.example.net"
 
 
@@ -541,10 +567,123 @@ def test_a_zone_failure_is_reported_with_its_reason_and_no_record_is_touched(box
 
 
 def test_a_failed_record_update_is_a_failure_and_the_webhook_is_not_marked(box):
+    """Ошибка запроса — исход неизвестен: факта нет и за предел — срыв (запись не сменена)."""
     box.record_error = dnsapi.DnsError("токен не принят")
     assert box.open(**box.points(1)) == 1
-    assert "запись DNS" in box.out and "токен не принят" in box.out
+    assert "запись DNS не подтвердилась за 5 мин" in box.out and "токен не принят" in box.out
     assert "wait_fact" not in box.kinds() and not rsvzone.TG_TAKE_FILE.exists()
+
+
+# ── исход смены записи неизвестен (record_try → record_wait) ────────────────
+# Провайдер мог принять правку, а ответ не дошёл (таймаут 10 с) или процесс погиб между
+# запросом и шагом record_set. «Запись не сменена» тогда — ложь: бот резерва снял бы зону, а
+# пользователи по новой записи шли бы на адрес без клона. Шаг-намерение до запроса и факт у
+# авторитетного сервера до предела провайдера (dnsapi.apply_wait_s).
+
+def test_the_intent_is_written_before_the_provider_is_asked(box):
+    assert box.open(**box.points(1)) == 0, box.out
+    assert box.at_set_record == "record_try", "намерения нет до запроса — гибель после ответа неотличима от «не сменена»"
+    assert box.steps[-5:] == ["clone_up", "record_try", "record_set", "record_fact", "done"], box.steps
+    assert box.auth_reads == [], "успешный ответ провайдера — факт ждёт wait_fact, как прежде"
+
+
+@pytest.mark.parametrize("provider, limit", [("cloudflare", 300), ("digitalplat", 300), ("duckdns", 300),
+                                             ("dyndns2", 300), ("manual", 1800)])
+def test_the_intent_carries_the_providers_limit(box, provider, limit):
+    box.write_package(dns={**DNS, "provider": provider})
+    box.record_error = TimeoutError("timed out")
+    assert box.open(**box.points(1)) == 1
+    assert dnsapi.apply_wait_s({"provider": provider}) == limit
+    st = rsvzone.open_status()
+    assert st["step"] == "fail" and f"за {limit // 60} мин" in st["reason"], st
+    assert box.auth_reads[-1] == limit, "последнее чтение — не на пределе провайдера"
+
+
+def test_a_timeout_with_the_record_applied_is_a_record_change(box):
+    """Таймаут ответа, а правка у провайдера легла: первое же чтение авторитетного ответа — моё."""
+    box.record_error = dnsapi.DnsError("провайдер DNS не ответил: timed out")
+    box.applied_on_error = True
+    assert box.open(**box.points(1)) == 0, box.out
+    assert box.steps[-4:] == ["record_try", "record_set", "record_fact", "done"], box.steps
+    assert box.auth_reads == [0.0] and box.sleeps == [], "факт — сразу, без ожидания"
+    assert "wait_fact" not in box.kinds(), "факт уже прочитан — второе ожидание не нужно"
+    assert rsvzone.TG_TAKE_FILE.read_text() == "1"
+
+
+def test_a_timeout_with_a_late_record_waits_for_the_fact_once_a_minute(box, monkeypatch):
+    from awgbot.util import backoff
+    monkeypatch.setattr(backoff.random, "uniform", lambda a, b: 1.0)
+    box.record_error = dnsapi.DnsError("провайдер DNS не ответил: timed out")
+    box.auth_from = 150                                       # правка дошла до авторитетного сервера на 150-й с
+    assert box.open(**box.points(1)) == 0, box.out
+    assert box.steps[-5:] == ["record_try", "record_wait", "record_set", "record_fact", "done"], box.steps
+    assert box.sleeps == [60, 60, 60] and box.auth_reads == [0, 60, 120, 180], (box.sleeps, box.auth_reads)
+    assert rsvzone.TG_TAKE_FILE.exists()
+
+
+def test_the_wait_step_says_what_is_waited_for(box, monkeypatch):
+    seen = {}
+    real = rsvopen.wait_unknown
+
+    def spy(name, ip, deadline):
+        seen.update(rsvzone.open_status())
+        return real(name, ip, deadline)
+    monkeypatch.setattr(rsvopen, "wait_unknown", spy)
+    box.record_error = dnsapi.DnsError("провайдер DNS не ответил: timed out")
+    box.auth_from = 10
+    assert box.open(**box.points(1)) == 0
+    assert (seen["step"], seen["name"], seen["ip"], seen["limit"]) == \
+        ("record_wait", "vpn.example.net", "203.0.113.20", "300"), seen
+    assert "timed out" in seen["why"] and "DUMMY-cf-token" not in json.dumps(seen), seen
+
+
+def test_a_timeout_with_a_record_not_applied_fails_at_the_limit(box, monkeypatch):
+    """Факта нет за предел — прежний срыв: итог без поля record (бот снимет зону), последнее чтение — на пределе."""
+    from awgbot.util import backoff
+    monkeypatch.setattr(backoff.random, "uniform", lambda a, b: 1.4)
+    box.record_error = dnsapi.DnsError("провайдер DNS не ответил: timed out")
+    assert box.open(**box.points(1)) == 1
+    st = rsvzone.open_status()
+    assert st["step"] == "fail" and st["reason"].startswith("запись DNS не подтвердилась за 5 мин: провайдер DNS"), st
+    assert "record" not in st, "исход стал известен — поле record=try бот принял бы за неизвестный"
+    assert sum(box.sleeps) == 300 and box.auth_reads[-1] == 300, (box.sleeps, box.auth_reads)
+    assert max(box.sleeps) <= 84, "чтения реже раза в минуту с разбросом"
+    assert not rsvzone.TG_TAKE_FILE.exists() and "record_set" not in box.steps
+
+
+def test_a_crash_inside_the_unknown_says_record_try(box, monkeypatch):
+    """Сбой посреди неизвестного — итог с record=try, именем, адресом и пределом: ожидание доводит бот резерва."""
+    def boom(name, ip, deadline):
+        raise OSError("сокет не создан")
+    monkeypatch.setattr(rsvopen, "wait_unknown", boom)
+    box.record_error = dnsapi.DnsError("провайдер DNS не ответил: timed out")
+    assert box.open(**box.points(1)) == 1
+    st = rsvzone.open_status()
+    assert (st["step"], st.get("record"), st.get("name"), st.get("ip"), st.get("limit")) == \
+        ("fail", "try", "vpn.example.net", "203.0.113.20", "300"), st
+
+
+def test_a_manual_provider_refusal_is_known_and_not_waited(box):
+    """«Вручную»: провайдер запроса не принимает вовсе (NotSupported) — исход известен, ждать нечего."""
+    box.write_package(dns={**DNS, "provider": "manual"})
+    box.record_error = dnsapi.NotSupported("запись меняется вручную у провайдера")
+    assert box.open(**box.points(1)) == 1
+    st = rsvzone.open_status()
+    assert st["reason"] == "запись DNS: запись меняется вручную у провайдера" and "record" not in st, st
+    assert box.auth_reads == [] and box.sleeps == []
+
+
+def test_a_manual_record_with_an_unknown_outcome_waits_30_minutes(box, monkeypatch):
+    from awgbot.util import backoff
+    monkeypatch.setattr(backoff.random, "uniform", lambda a, b: 1.0)
+    box.write_package(dns={**DNS, "provider": "manual"})
+    box.record_error = TimeoutError("timed out")
+    box.auth_from = 1700                                      # человек сменил запись на 28-й минуте
+    assert box.open(**box.points(1)) == 0, box.out
+    assert box.auth_reads[-1] == 1740 and "record_wait" in box.steps
+    box.auth_from = None
+    assert box.open(**box.points(1)) == 1
+    assert sum(box.sleeps[-30:]) == 1800 and "за 30 мин" in rsvzone.open_status()["reason"]
 
 
 def test_a_record_that_never_shows_up_is_a_failure_and_the_webhook_is_not_marked(box):
