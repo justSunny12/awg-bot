@@ -7,7 +7,9 @@
 #
 #   q_up <слоты через запятую>    свежая пара, шлюзы, кворум линии A включён, A — лидер, все видят A
 #   fault <правило nft>           свой рычаг в таблице рычагов net.sh (net.sh heal её снимает)
+#   fault_off <комментарий>       снять один свой рычаг по его комментарию (остальные — на месте)
 #   wait_t <узел> <выражение> <срок> <что>   ждать истины; секунд с T0 — в WT
+#   gw_wait <слот> <выражение> <срок> <что>  то же над статусом шлюза (pl_gq)
 #   take_check <что> <срок>       B начал открытие не позже срока с T0 (секунды — в WT)
 #   guest_epoch_check <эпоха A>   процесс открытия done, эпоха гостя — A + 1, держатель
 #   tg_count <токен> <чат> <подстрока> [с ts]   сколько sendMessage бота в чат с подстрокой
@@ -30,7 +32,24 @@ EOF
     ip netns exec lab-inet nft add rule ip labfault faults $1
 }
 
+fault_off() {
+    local h
+    for h in $(ip netns exec lab-inet nft -a list chain ip labfault faults 2>/dev/null \
+               | awk -v c="comment \"$1\"" 'index($0, c) {print $NF}'); do
+        ip netns exec lab-inet nft delete rule ip labfault faults handle "$h"
+    done
+}
+
 since() { echo $(( $(date +%s) - $1 )); }
+
+gw_wait() {
+    local i
+    for i in $(seq 1 "$3"); do
+        if [ "$(pl_gq "$1" "bool($2)")" = "true" ]; then WT=$(since "$T0"); pl_mark "G$1: ${4:-$2}"; return 0; fi
+        sleep 1
+    done
+    pl_fail "шлюз $1 за $3 с: не дождался «${4:-$2}» · $(pl_gq "$1" 's.get("voters")')"
+}
 
 wait_t() {
     local i
