@@ -194,7 +194,7 @@ def _finish_return(svc) -> list:
 @pytest.mark.parametrize("kind, go_sent, rotate", [("dead", False, True), ("button", True, False)])
 def test_a_return_without_a_replica_reaches_the_end_with_its_report(world, kind, go_sent, rotate):
     """Пустая реплика — возврат без слияния доходит до `_return_done`: итог
-    возврата админу со строкой «Гостя на … уже не было»; после аварийного
+    возврата админу со строкой «Гостевого сервера на … уже не было»; после аварийного
     переезда (пакет открыт не моим K) — новое поколение ключа и просьба сменить
     токен DNS, после переезда кнопкой — ни того, ни другого."""
     svc = world.svc
@@ -208,7 +208,7 @@ def test_a_return_without_a_replica_reaches_the_end_with_its_report(world, kind,
     texts = [n.text for n in notices(acts)]
     report = [t for t in texts if t.startswith("↩️")]
     assert len(report) == 1, f"итог возврата не ушёл админу: {texts}"
-    assert "Гостя на «Beta» уже не было — изменения, сделанные там, будут утеряны" in report[0], report[0]
+    assert "Гостевого сервера на «Beta» уже не было — изменения, сделанные там, будут утеряны" in report[0], report[0]
     assert "&lt;" not in report[0] and "&amp;" not in report[0], f"строка отчёта экранирована дважды: {report[0]}"
     token = [t for t in texts if "Токен API DNS" in t]
     gen_after = int(svc.rsv_get("rsv_keys").get("m_gen") or 0)
