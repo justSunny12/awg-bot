@@ -366,6 +366,30 @@ def test_a_word_of_telegram_from_before_released_does_not_count(mv):
     assert acts == [("wake_poll",)] and svc.reserve_out() == "leaving", f"старое слово Telegram сочтено за переезд: {acts}"
 
 
+def test_after_the_first_wake_a_fresh_word_of_telegram_is_acted_on_the_next_tick(mv):
+    """После первого срока поллинг разбужен, его слово приходит за секунды — решение первым же
+    тактом, а не по истечении следующих 120 с (всё это время бот молчал бы)."""
+    svc = mv.svc
+    rm.to_step(svc, "released")
+    mv.clock.advance(outbound.RELEASED_WAIT_S + 1)
+    assert svc.reserve_out_tick() == [("wake_poll",)]
+    mv.clock.advance(5)
+    svc.reserve_set_poll("away", why="webhook_info", url="https://203.0.113.5:8443/DUMMY")
+    acts = svc.reserve_out_tick()
+    assert svc.reserve_out() == "away", f"слово Telegram после пробуждения ждёт срока: {acts}"
+    assert len(notices(acts)) == 1
+
+
+def test_a_word_of_telegram_before_the_first_deadline_is_not_acted_on(mv):
+    """До первого срока (RELEASED_WAIT_S) слово Telegram не в счёт: резерв ещё ставит вебхук,
+    «вебхука нет» — не ответ, а «ещё не успел»."""
+    svc = mv.svc
+    rm.to_step(svc, "released")
+    mv.clock.advance(60)
+    svc.reserve_set_poll("mine")                                # свежее «вебхука нет» — рано
+    assert svc.reserve_out_tick() == [] and svc.reserve_out() == "leaving"
+
+
 def test_the_released_step_with_telegram_saying_mine_fails_the_move(mv):
     svc = mv.svc
     rm.to_step(svc, "released")

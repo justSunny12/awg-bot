@@ -47,6 +47,8 @@ def card_text(d: dict, bot_username: str = "") -> str:
         lines.append("☑️ Ты не готов быть резервом — переезды в обе стороны выключены")
     else:
         lines.append(f"☑️ {_n(name)} не готов быть резервом — переезды в обе стороны выключены")
+    if d.get("liveness_problem"):
+        lines.append("⚠️ " + _e(d["liveness_problem"]))
     if not d.get("online"):
         since = d.get("down_since") or ""
         lines.append(f"🔴 Нет связи с {_n(name)}" + (f" с {_e(_when(since))}" if since else ""))

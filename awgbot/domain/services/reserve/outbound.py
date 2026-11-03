@@ -242,12 +242,18 @@ class ReserveOutboundMixin:
                 self.rsv_update("rsv_out", release_try=now)
                 return [("release",)]
             return []
-        if step == "released" and self._expired(out):
+        if step == "released":
             # резерв не ответил `taken` — право отвечать решает Telegram, не моя отметка:
-            # разбудить поллинг (getWebhookInfo) и решать по его слову, записанному после released
+            # разбудить поллинг (getWebhookInfo) и решать по его слову, записанному после released.
+            # Слово после разбуженного поллинга — решать первым же тактом, не ждать срока шага: ответ
+            # приходит за секунды, а срок — ещё до 2 мин трижды, и всё это время бот молчит. До первого
+            # срока (RELEASED_WAIT_S) слово не в счёт: резерв ещё ставит вебхук, «вебхука нет» — не ответ
             from awgbot.domain.notices import reserve as rn
             poll = self.rsv_get("rsv_poll")
             fresh = str(poll.get("since") or "") >= str(out.get("released_at") or "")
+            woken = int(out.get("poll_woken") or 0)
+            if not self._expired(out) and not (woken and fresh):
+                return []
             verdict = str(poll.get("why") or "") if fresh else ""
             if verdict in ("webhook", "webhook_info"):          # Telegram: вебхук стоит — пользователи у резерва
                 # под замком и только с шага released: `taken` из потока канала мог уже увести в away —
@@ -261,7 +267,8 @@ class ReserveOutboundMixin:
                     dead_since=str(out.get("dead_since") or ""), reserve_ip=str(out.get("target_ip") or "")))])]
             if fresh and poll.get("state") == "mine":           # Telegram: вебхука нет — переезд не состоялся
                 return self._move_fail("резерв не взял право отвечать — вебхук не поставлен", released=True, steps=("released",))
-            woken = int(out.get("poll_woken") or 0)
+            if not self._expired(out):
+                return []                                       # слово есть, но не о вебхуке — ждать срока
             if woken < 3:                                       # слова Telegram ещё нет — разбудить и подождать
                 if not self._out_step_cas("leaving", ("released",), "released", RELEASED_WAKE_S, poll_woken=woken + 1,
                                           released_at=str(out.get("released_at") or "")):
