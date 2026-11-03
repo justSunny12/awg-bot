@@ -41,6 +41,9 @@ reserve — взаимный резерв серверов AWG на сторон
   остаётся, захват повторяется (`st.in_tg`);
 - `inbound_keep` — запись DNS уже сменил процесс открытия, а приём сорвался: зона
   не снимается, не доделанное доделывается, клона нет — перезапуск открытия;
+- `inbound_recwait` — исход смены записи процессом открытия неизвестен (`record_try`
+  без итога): факт у авторитетного сервера до предела провайдера, процесса нет —
+  ожидание ведёт бот резерва; подтвердилась — как по `done`, нет — прежний срыв;
 - `openproc` — запуск процесса открытия временным юнитом (`OPEN_UNIT`,
   свойства песочницы `rsvopen_sandbox_props`), код завершения и его stderr;
 - `notify` — уведомления пользователям о переезде и возврате;
@@ -82,6 +85,7 @@ from .inbound import ReserveInboundMixin
 from .inbound_back import ReserveInboundBackMixin
 from .inbound_go import ReserveInboundGoMixin
 from .inbound_keep import ReserveInboundKeepMixin
+from .inbound_recwait import ReserveInboundRecWaitMixin
 from .inbound_tgwait import ReserveInboundTgWaitMixin
 from .journal import ReserveJournalMixin
 from .invite import ReserveInviteMixin
@@ -121,7 +125,8 @@ class ReserveMixin(ReserveStateMixin, ReserveKeysMixin, ReserveInviteMixin, Rese
                    ReserveTrafficMixin, ReserveAwayMixin, ReserveGwSideMixin, ReserveZoneLinksMixin, ReserveGwGuestMixin,
                    ReserveOpeningMixin, ReserveRfZoneMixin, ReserveRfPeerMixin, ReserveTgPoolMixin, ReserveMergeOpsMixin,
                    ReserveCodeWindowMixin, ReserveReturnMixin, ReserveOpenProcMixin, ReserveJournalMixin,
-                   ReserveInboundBackMixin, ReserveInboundTgWaitMixin, ReserveInboundKeepMixin, ReserveStuckMixin,
+                   ReserveInboundBackMixin, ReserveInboundTgWaitMixin, ReserveInboundKeepMixin, ReserveInboundRecWaitMixin,
+                   ReserveStuckMixin,
                    ReserveForcedTakeMixin, ReserveOutKeepMixin, ReserveQuorumMixin, ReservePultMixin,
                    ReserveMoveMixin, ReserveOutHealthMixin, ReserveInboundGoMixin):
     """Резерв серверов: всё о паре — в одном месте сервисов."""

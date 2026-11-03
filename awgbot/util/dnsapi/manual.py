@@ -10,6 +10,9 @@ from .common import DnsError, NotSupported, read_authoritative
 
 id = "manual"
 human = "вручную"
+# запись меняет человек: срок, который ему дан (common.apply_wait_s; как шаг записи переезда
+# кнопкой у основы — outbound RECORD_WAIT_S)
+APPLY_S = 1800
 
 
 def read(cfg: dict) -> str:

@@ -9,16 +9,21 @@ dyndns2.py — протокол DynDNS2: No-IP, Dynu, OVH DynHost, DynDNS и п�
 """
 from __future__ import annotations
 
-from .common import DnsError, http, ipv4, read_authoritative
+from .common import DnsError, Refused, http, ipv4, read_authoritative, refusal_status
 
 id = "dyndns2"
 human = "DynDNS2 (No-IP, Dynu, OVH DynHost…)"
+# срок доставки правки на авторитетные серверы (common.apply_wait_s): цифр у провайдеров протокола
+# не найдено — общий предел API-провайдеров
+APPLY_S = 300
+# ответы протокола «правка не принята» (явный отказ: учётная запись, имя, блокировка) — исход известен
+REFUSE_WORDS = frozenset({"badauth", "nohost", "abuse", "notfqdn", "badagent", "!donator", "numhost"})
 
 
 def _url(cfg: dict) -> str:
     server = str(cfg.get("server", "")).strip().strip("/")
     if not server:
-        raise DnsError("DynDNS2: не задан сервер обновления")
+        raise Refused("DynDNS2: не задан сервер обновления")      # запроса не было
     if "://" not in server:
         server = "https://" + server
     if server.endswith("/nic/update"):                       # записи прежних выпусков хранили путь в server
@@ -38,7 +43,9 @@ def set(cfg: dict, ip: str) -> None:  # noqa: A001
                       auth=(str(cfg.get("user", "")), str(cfg.get("token", ""))))
     word = text.strip().split()[0] if text.strip() else ""
     if code != 200 or word not in ("good", "nochg"):
-        raise DnsError(f"DynDNS2: ответ {text.strip()[:40] or code}")
+        # коды отказа протокола и 4xx — правка не принята; 911, dnserr, 5xx, пустой ответ — исход неизвестен
+        refused = (code == 200 and word in REFUSE_WORDS) or refusal_status(code)
+        raise (Refused if refused else DnsError)(f"DynDNS2: ответ {text.strip()[:40] or code}")
 
 
 def check(cfg: dict) -> str:

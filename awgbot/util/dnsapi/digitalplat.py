@@ -13,10 +13,13 @@ from __future__ import annotations
 import json
 import uuid
 
-from .common import DnsError, http, ipv4
+from .common import DnsError, Refused, http, ipv4, refusal_status
 
 id = "digitalplat"
 human = "DigitalPlat"
+# срок доставки правки на авторитетные серверы dns1/dns2.digitalplat.org (common.apply_wait_s):
+# официальной цифры нет, правка идёт очередью; TTL записи — 300 с
+APPLY_S = 300
 _API = "https://domain-api.digitalplat.org/api/v1"
 
 
@@ -32,7 +35,8 @@ def _call(cfg: dict, method: str, path: str, body: dict | None = None, headers: 
     if code // 100 != 2 or not data.get("success"):
         err = data.get("error") or {}
         why = str(err.get("message") or err.get("code") or "") if isinstance(err, dict) else str(err)
-        raise DnsError(f"DigitalPlat: {why or f'код {code}'}"[:200])
+        # 4xx с телом API (ключ, нет записи, etag) — явный отказ: правка не принята; 5xx — исход неизвестен
+        raise (Refused if refusal_status(code) else DnsError)(f"DigitalPlat: {why or f'код {code}'}"[:200])
     return data
 
 
@@ -47,7 +51,7 @@ def _split(cfg: dict) -> tuple[str, str]:
         if dom and (name == dom or name.endswith("." + dom)) and len(dom) > len(best):
             best = dom
     if not best:
-        raise DnsError(f"DigitalPlat: домен для {cfg.get('name')} не найден у этого ключа")
+        raise Refused(f"DigitalPlat: домен для {cfg.get('name')} не найден у этого ключа")
     rel = name[:-len(best)].rstrip(".") if name != best else ""
     return best, rel or "@"
 
@@ -60,9 +64,9 @@ def _record(cfg: dict) -> dict:
             and (str(r.get("fqdn") or "").strip(".").lower() == full
                  or str(r.get("name") or "@").strip(".").lower() in (rel, full))]
     if not recs:
-        raise DnsError(f"DigitalPlat: A-записи {cfg.get('name')} нет")
+        raise Refused(f"DigitalPlat: A-записи {cfg.get('name')} нет")
     if len(recs) > 1:
-        raise DnsError(f"DigitalPlat: у {cfg.get('name')} несколько A-записей ({len(recs)}) — оставь одну")
+        raise Refused(f"DigitalPlat: у {cfg.get('name')} несколько A-записей ({len(recs)}) — оставь одну")
     rec = dict(recs[0])
     rec["_domain"] = dom
     return rec

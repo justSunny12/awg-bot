@@ -15,11 +15,18 @@ DigitalPlat DNS — хостинг кабинета DigitalPlat One (`digitalpla
 Настройка провайдера — словарь `{provider, name, token, ...}` (хранится в
 `server_state` ключом `rsv_dns`, секрет — токен). Все вызовы синхронные
 (`urllib`), бот зовёт их из потока; сеть ограничена таймаутами.
+
+Срок доставки правки из API на авторитетные серверы — поле `APPLY_S` модуля
+провайдера (`apply_wait_s`): предел ожидания факта, когда исход смены
+неизвестен (Cloudflare, DigitalPlat, DuckDNS, DynDNS2 — 5 минут, «вручную» —
+30 минут: запись меняет человек). Явный отказ провайдера (`Refused`: 4xx с
+разобранным телом, «KO», badauth…, запись не найдена) — исход известен, ждать
+нечего.
 """
 from __future__ import annotations
 
-from .common import (DnsError, NotSupported, Provider, provider_for, read_authoritative, read_authoritative_ttl,
-                     read_system, PROVIDERS)
+from .common import (APPLY_DEFAULT_S, DnsError, NotSupported, Provider, Refused, apply_wait_s, provider_for,
+                     read_authoritative, read_authoritative_ttl, read_system, PROVIDERS)
 
-__all__ = ["DnsError", "NotSupported", "Provider", "provider_for", "read_authoritative", "read_authoritative_ttl",
-           "read_system", "PROVIDERS"]
+__all__ = ["APPLY_DEFAULT_S", "DnsError", "NotSupported", "Provider", "Refused", "apply_wait_s", "provider_for",
+           "read_authoritative", "read_authoritative_ttl", "read_system", "PROVIDERS"]

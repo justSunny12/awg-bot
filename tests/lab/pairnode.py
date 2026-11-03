@@ -210,6 +210,12 @@ class LabDns:
                 data = world._read()
                 data[str(cfg.get("name") or os.environ.get("LAB_RECORD", ""))] = ip
                 world._write(data)
+                # рычаг сценария (s14): правка легла, а процесс погиб до ответа — один раз, файл снимается
+                kill = world.path.parent / "set.kill"
+                if kill.exists():
+                    import signal
+                    kill.unlink(missing_ok=True)
+                    os.kill(os.getpid(), signal.SIGKILL)
 
             def check(self, cfg: dict) -> str:
                 return world.read_system(os.environ.get("LAB_RECORD", ""))[0] if world.read_system(

@@ -8,7 +8,10 @@ inbound_keep.py — часть пакета reserve (см. __init__): «поль
 `record=set`), срыв зону не снимает никогда: пользователи уже идут сюда, а обратный
 переезд к мёртвой цели смысла не имеет. Факт смены бот помнит в `rsv_in.rec_moved`
 (open.status живёт в /run, итог `fail` затирает шаг). На пути с K основы запись
-меняет основа — там срыв прежний. Дальше — по состоянию зоны:
+меняет основа — там срыв прежний. Шаг-намерение `record_try` (и `record_wait`, итог
+`fail` с `record=try`) — ещё не смена: исход неизвестен, факт ждут процесс или бот до
+предела провайдера (inbound_recwait); подтвердилась — то же правило. Дальше — по
+состоянию зоны:
 
 - клоны стоят (фаза зоны taking | serving, интерфейс есть) — serving без
   `tg_taken`, не сделанное доделывает такт serving: факт записи не подтвердился —
@@ -43,7 +46,10 @@ KEEP_KINDS = ("record", "serve", "relaunch", "tg")
 # поля эпизода — сбрасываются в начале нового приёма и при срыве
 KEEP_RESET = {"rec_moved": False, "rec_name": "", "rec_ip": "", "rec_fact": False, "keep_k": "", "keep_why": "",
               "keep_at": "", "keep_at_ts": 0, "keep_told": "", "keep_mono": 0, "serve_due": False, "relaunch": False,
-              "relaunch_n": 0}
+              "relaunch_n": 0,
+              # исход смены записи неизвестен (inbound_recwait)
+              "rec_try": False, "rec_limit": 0, "rec_until": 0, "rec_wait": False, "rec_poll_mono": 0, "rec_why": "",
+              "rec_told": "", "rec_done": False}
 
 
 class ReserveInboundKeepMixin:
@@ -59,9 +65,16 @@ class ReserveInboundKeepMixin:
         if self._in_by_k(inn):
             return inn
         step, rec = str(st.get("step") or ""), str(st.get("record") or "")
+        if step in ("record_try", "record_wait") or rec == "try":
+            return self._rec_try_observe(inn, st)             # исход смены неизвестен — inbound_recwait
+        if step == "fail" and not rec and inn.get("rec_try") and not inn.get("rec_moved"):
+            # итог процесса после намерения без поля record — исход известен: запись не сменена
+            return self.rsv_update("rsv_in", rec_try=False)
         if not (step in ("record_set", "record_fact") or (step == "done" and rec != "skipped") or rec == "set"):
             return inn
         upd: dict = {}
+        if inn.get("rec_try") or inn.get("rec_wait"):
+            upd.update(rec_try=False, rec_wait=False)        # исход стал известен: запись моя
         if not inn.get("rec_moved"):
             upd["rec_moved"] = True
             log.info("резерв: процесс открытия сменил запись DNS на этот сервер — зона больше не снимается срывом")
@@ -154,8 +167,9 @@ class ReserveInboundKeepMixin:
             rsvzone.open_status_write("launching")           # прежний итог не должен сойти за ход нового процесса
             self._rsvopen_forget()                            # и код прежнего процесса — за его итог
             # up_sent — заново: на clone_up нового процесса такт перерисует файервол хоста под его клоны
+            # rec_done — итог прошлого процесса, который доделал я (inbound_recwait), — не этому
             self.rsv_update("rsv_in", relaunch=False, relaunch_n=n, deadline=now + OPEN_WAIT_S, served=False,
-                            done_mono=0, up_sent=False, step="open", step_at=timeutil.now_iso())
+                            done_mono=0, up_sent=False, rec_done=False, step="open", step_at=timeutil.now_iso())
         try:
             self._rsvopen_launch(dict(payload))
         except ServiceError as e:

@@ -32,6 +32,19 @@ class NotSupported(DnsError):
     """Действие у этого провайдера невозможно (режим «вручную»)."""
 
 
+class Refused(DnsError):
+    """Явный отказ провайдера — правка не принята, исход известен: HTTP 4xx с разобранным
+    телом (кроме 408), DuckDNS «KO», DynDNS2 badauth/nohost/abuse…, зона или запись не
+    найдены, записей несколько, настройка не годится до запроса. Таймаут, сетевой сбой,
+    5xx и неразобранный ответ — обычный DnsError: провайдер мог правку принять (процесс
+    открытия тогда ждёт факта у авторитетного сервера)."""
+
+
+def refusal_status(code: int) -> bool:
+    """HTTP-код явного отказа: 4xx, кроме 408 (таймаут запроса — исход неизвестен)."""
+    return 400 <= int(code) < 500 and int(code) != 408
+
+
 class Provider(Protocol):
     id: str
     human: str
@@ -240,6 +253,22 @@ def provider_for(cfg: dict) -> Provider:
     if mod is None:
         raise DnsError(f"провайдер DNS {pid!r} неизвестен")
     return mod
+
+
+# предел подтверждения правки провайдера, у которого своей цифры нет (и незнакомого)
+APPLY_DEFAULT_S = 300
+
+
+def apply_wait_s(cfg: dict) -> int:
+    """Сколько ждать, пока правка записи из API провайдера дойдёт до авторитетных серверов
+    зоны (поле `APPLY_S` модуля провайдера): предел ожидания факта, когда исход смены
+    неизвестен (ответ провайдера не дошёл или не разобран). Не TTL записи — факт читается у
+    авторитетного сервера мимо кэшей. Провайдер с большим сроком — своя цифра в своём модуле."""
+    pid = str((cfg or {}).get("provider") or "").strip().lower()
+    try:
+        return max(1, int(getattr(PROVIDERS.get(pid), "APPLY_S", APPLY_DEFAULT_S) or APPLY_DEFAULT_S))
+    except (TypeError, ValueError):
+        return APPLY_DEFAULT_S
 
 
 def _load() -> dict:

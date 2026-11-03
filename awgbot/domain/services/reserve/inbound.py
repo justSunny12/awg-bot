@@ -39,7 +39,10 @@ inbound_tgwait), путь с K основы (кнопка и
 гостю сам (`tg_take_forced`), ещё TAKEN_WAIT_S, иначе срыв (взял — её `back`
 гостя не снимает, inbound_back). Запись уже сменил процесс открытия — любой срыв
 зону не снимает (одно правило в `_take_fail`, inbound_keep: доделать или
-перезапустить открытие). Иначе отказ процесса —
+перезапустить открытие). Исход смены записи неизвестен (шаг-намерение `record_try`
+без итога: процесс погиб, ответ провайдера не дошёл) — тоже: факт у авторитетного
+сервера ждут процесс или бот до предела провайдера (inbound_recwait), подтвердилась
+— как по `done`, нет — прежний срыв. Иначе отказ процесса —
 один раз под замком: `down{причина}`, юнит открытия стоп, зона снята, шлюзам
 — `state{idle, reason}` (шлюз, отдавший точку ключа кворума, говорит своему
 админу «переезд не состоялся», Т-РА5), отметка `fail_at` (пауза после срыва,
@@ -69,6 +72,7 @@ from awgbot.util import livestep, timeutil
 from ..types import Notification
 from ..gateway_link.common import log
 from .inbound_keep import KEEP_RESET
+from .inbound_recwait import REC_GRACE_S, REC_STEPS
 from .state import _LOCK
 
 OPEN_WAIT_S = 35 * 60            # процесс открытия: факт записи ≤ 30 мин
@@ -79,7 +83,10 @@ REPLICA_WAIT_S = 90              # реплика от гостя после sto
 # шаги процесса открытия после сборки ключа основы (tools/rsvopen): по ним резерв говорит основе, что её
 # ключ мог стать ему известен (`st.exposed`); отказ до сборки процесс помечает полем итога `pre_m`
 # (код не подошёл или не проверен) — CODE_PRE_M лишь запас для итога без поля (прежний процесс)
-M_STEPS = frozenset({"m", "k", "parts", "journal", "store", "clone_up", "record_set", "record_fact", "done"})
+M_STEPS = frozenset({"m", "k", "parts", "journal", "store", "clone_up", "record_try", "record_wait", "record_set",
+                     "record_fact", "done"})
+# шаги после подъёма клона: основе — `up` (повтор раз в 30 с), пользователи могли прийти на клон
+UP_STEPS = ("clone_up", "record_try", "record_wait", "record_set", "record_fact", "done")
 CODE_PRE_M = ("аварийный код", "пакета нет", "пакет:", "нет ни точек", "точка не того вида")
 
 
@@ -118,14 +125,17 @@ class ReserveInboundMixin:
         from awgbot.infra import rsvzone
         if inn.get("relaunch"):
             return self._tick_relaunch(inn)                   # запись здесь, клона нет — перезапуск по сроку
+        if inn.get("rec_wait"):
+            return self._tick_rec_unknown(inn)                # исход смены записи неизвестен, процесса нет — жду факта сам
         st = rsvzone.open_status()
         inn = self._rec_observe(inn, st)
-        step = str(st.get("step") or "")
-        actions: list[tuple] = []
+        # открытие, которое по факту записи доделал я (процесс погиб посреди неизвестного, inbound_recwait), — как done
+        step = "done" if inn.get("rec_done") else str(st.get("step") or "")
+        actions: list[tuple] = self._rec_wait_notes(inn, step)   # процесс ждёт факта (record_wait) или дождался
         if step in M_STEPS and str(inn.get("by") or "") == "code":
             self.reserve_exposed_mark("code")                 # код подошёл: ключ основы собран — основе отметка
         if step == "fail":
-            return self._take_fail(str(st.get("reason") or "процесс открытия отказал"), pre_m=open_fail_pre_m(st))
+            return actions + self._take_fail(str(st.get("reason") or "процесс открытия отказал"), pre_m=open_fail_pre_m(st))
         if step != "done":
             rc, tail = self._rsvopen_exit()                   # юнит не стартовал (226) или процесс убит (OOM): сразу, не через 35 мин
             if rc is not None:
@@ -135,16 +145,22 @@ class ReserveInboundMixin:
                 inn = self._rec_observe(inn, st)
                 step = str(st.get("step") or "")
                 if step == "fail":
-                    return self._take_fail(str(st.get("reason") or "процесс открытия отказал"), pre_m=open_fail_pre_m(st))
+                    return actions + self._take_fail(str(st.get("reason") or "процесс открытия отказал"),
+                                                     pre_m=open_fail_pre_m(st))
                 if step != "done":
-                    return self._take_fail(f"процесс открытия завершился без итога (код {rc})" + (f": {tail}" if tail else ""))
+                    return actions + self._take_fail(f"процесс открытия завершился без итога (код {rc})" + (f": {tail}" if tail else ""))
         now = time.monotonic()
+        if step in REC_STEPS and self._rec_unknown(inn) and inn.get("rec_until") and \
+                livestep.mono_expired(float(inn.get("rec_until") or 0) + REC_GRACE_S, now):
+            # процесс жив, а итога смены записи нет дольше предела — ожидание факта веду я
+            return actions + self._take_fail(f"процесс открытия не подвёл итог смены записи за "
+                                             f"{max(1, int(inn.get('rec_limit') or 0) // 60)} мин")
         if step == "eph" and inn.get("sealed") and not inn.get("k_passed") and livestep.mono_due(inn.get("eph_sent"), now, EPH_RESEND_S):
             # процесс ждёт конверт: разовый ключ — основе (повтор, пока ждёт: сессия могла оборваться)
             self.rsv_update("rsv_in", eph_sent=now)
             actions.append(("send", "open_eph", {"gen": int(inn.get("gen") or 0), "eph": str(st.get("eph") or ""),
                                                  "oid": str(st.get("oid") or "")}))
-        if step in ("clone_up", "record_set", "record_fact", "done") and not inn.get("up_sent"):
+        if step in UP_STEPS and not inn.get("up_sent"):
             self.rsv_update("rsv_in", up_sent=True, up_resent=now, clone_at=timeutil.now_iso())
             jgap, jlost = int(st.get("jgap") or 0), int(st.get("jlost") or 0)
             if jgap or jlost:
@@ -180,7 +196,7 @@ class ReserveInboundMixin:
             if inn.get("relay_flush_due"):
                 self.rsv_update("rsv_in", relay_flush_due=False)
             actions.append(("relay_flush",))
-        elif step in ("clone_up", "record_set", "record_fact", "done") and livestep.mono_due(inn.get("up_resent"), now, 30):
+        elif step in UP_STEPS and livestep.mono_due(inn.get("up_resent"), now, 30):
             self.rsv_update("rsv_in", up_resent=now)          # сессия могла оборваться в секунду clone_up — повтор, основа дубли не берёт
             actions.append(("send", "up", self._word_oid(inn)))
         if step == "done" and not inn.get("served"):
@@ -247,7 +263,9 @@ class ReserveInboundMixin:
         её в базе, и после старта taking стоял бы навсегда (каждый срыв — «уже идёт»); новый
         процесс срыв просто доделывает (юнит стоп, снятие и стирание зоны идемпотентны).
         Запись уже сменил процесс открытия — зону не снимать (`keep`, inbound_keep): одно правило
-        для всех причин. `rec_back` — основа жива, запись вернёт она (поле `rec` в `down`).
+        для всех причин. Процесс начал смену записи (`record_try`), а исход не известен — тоже не
+        снимать: факт ждёт бот до предела провайдера (`_take_rec_wait`, inbound_recwait).
+        `rec_back` — основа жива, запись вернёт она (поле `rec` в `down`).
         `pre_m` — признак процесса «отказ до сборки M» (open.status); None — поля нет."""
         with _LOCK:
             inn = self._inn()
@@ -257,6 +275,8 @@ class ReserveInboundMixin:
         try:
             if keep and self._rec_moved(self._inn()):
                 return self._take_keep(reason)
+            if keep and self._rec_unknown(self._inn()):
+                return self._take_rec_wait(reason)            # исход смены записи неизвестен — жду факта (inbound_recwait)
             return self._take_fail_do(reason, pre_m, rec_back=rec_back)
         finally:
             self.__dict__.pop("_rsv_take_failing", None)
