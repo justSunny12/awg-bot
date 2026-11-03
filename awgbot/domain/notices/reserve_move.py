@@ -40,7 +40,7 @@ def hosting_failed(primary: str, reason: str) -> str:
 def hosting_without_bot(primary: str, reason: str) -> str:
     """Запись DNS уже на мне, клон несёт пользователей, а бот основы здесь Telegram не взял:
     зона остаётся (VPN работает), захват повторяется."""
-    return (f"⚠️ Пользователи {_n(primary)} у тебя, VPN работает, а бот {_n(primary)} здесь не отвечает в Telegram: "
+    return (f"⚠️ Пользователи {_n(primary)} у тебя, VPN работает, но гостевой бот не отвечает в Telegram: "
             f"{_e(reason)} — повторяю раз в минуту")
 
 
@@ -49,7 +49,7 @@ def return_resumed(primary: str, bot: bool = True) -> str:
     до возврата он здесь Telegram не держал (VPN без бота), и после — так же, захват повторяется."""
     head = f"⚠️ Возврат пользователей {_n(primary)} не состоялся: слияние данных у {_n(primary)} не прошло — "
     if not bot:
-        return (head + f"пользователи {_n(primary)} снова у тебя, VPN работает, а бот {_n(primary)} здесь не "
+        return (head + f"пользователи {_n(primary)} снова у тебя, VPN работает, но гостевой бот не "
                 f"отвечает в Telegram — повторяю раз в минуту; возврат повторит админ {_n(primary)}")
     return head + f"пользователи и бот {_n(primary)} снова у тебя; возврат повторит админ {_n(primary)}"
 

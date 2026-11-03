@@ -111,7 +111,7 @@ def card_text(d: dict, bot_username: str = "") -> str:
         if d.get("peer_pult"):                                # её Telegram у неё (пульт), пользователи здесь
             lines.append(pult_peer_line(name))
         if d.get("in_tg_wait"):                               # VPN здесь, а бот второй стороны Telegram не взял
-            lines.append(f"└ ⚠️ бот {_n(name)} здесь не отвечает в Telegram: {_why(d['in_tg_wait'])} — повторяю раз в минуту")
+            lines.append(f"└ ⚠️ гостевой бот не отвечает в Telegram: {_why(d['in_tg_wait'])} — повторяю раз в минуту")
         keep = d.get("in_keep") or {}                         # запись уже здесь, приём сорвался — доделываю
         if keep.get("k") in _KEEP_LINES:
             lines.append(f"└ ⚠️ {_KEEP_LINES[keep['k']][0]}: {_why(keep.get('why') or '')} — {_KEEP_LINES[keep['k']][1]}")

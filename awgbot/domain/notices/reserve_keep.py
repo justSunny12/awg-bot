@@ -9,8 +9,7 @@ from __future__ import annotations
 from .reserve_fmt import _e, _n
 from .reserve_move import hosting_without_bot
 
-_TODO = {"record": "смена DNS-записи не подтвердилась", "serve": "Telegram не пропущен к гостевому серверу",
-         "tg": "гостевой бот не отвечает в Telegram"}
+_TODO = {"record": "смена DNS-записи не подтвердилась", "serve": "Telegram не пропущен к гостевому серверу"}   # tg — hosting_without_bot
 _RETRY = {"record": "проверяю запись раз в минуту", "serve": "повторяю раз в минуту"}
 
 

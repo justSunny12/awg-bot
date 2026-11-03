@@ -149,7 +149,7 @@ def test_resume_restores_the_vpn_without_the_bot_when_the_guest_did_not_hold_tel
     assert "не взял право отвечать" in inn.get("tg_wait", "") and svc.reserve_st_body()["in_tg"] == "wait"
     text = notices(acts)[0].text
     assert text == ("⚠️ Возврат пользователей «Beta» не состоялся: слияние данных у «Beta» не прошло — пользователи "
-                    "«Beta» снова у тебя, VPN работает, а бот «Beta» здесь не отвечает в Telegram — повторяю раз в "
+                    "«Beta» снова у тебя, VPN работает, но гостевой бот не отвечает в Telegram — повторяю раз в "
                     "минуту; возврат повторит админ «Beta»"), text
     monkeypatch.setattr(inbound_tgwait, "subprocess", host.spawn)
     monkeypatch.setattr(rsvzone, "guest_unit_active", lambda: True)
