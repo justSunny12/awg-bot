@@ -25,7 +25,8 @@ Dotted-ключ = «<файл>.<путь-внутри-файла>»: первы�
 Раздел, переехавший в свой файл (`_MOVED_SECTIONS`: `app.reserve` →
 `conf/reserve.yaml`, 4.2.0), `init()` переносит до первого чтения: значения
 ложатся поверх шаблона нового файла, раздел в прежнем остаётся копией для отката
-с меткой `moved`. Шим — снять вместе с копией при сдвиге минимумов выше 4.2.0.
+с меткой `moved` и отпечатками значений. Шим — снять, когда и UPDATE_FROM, и
+COMPAT_FLOOR (core/compat) не ниже 4.2.0, шагом снятия копии из живых app.yaml.
 """
 from __future__ import annotations
 
@@ -81,13 +82,30 @@ def _read_yaml(path: Path):
 
 
 # Разделы, переехавшие в свой файл: (файл, раздел, новый файл). Перенос — при init, до
-# чтения: значения раздела ложатся поверх шаблона нового файла (досеян обновлением). Раздел
-# в прежнем файле остаётся копией для отката на выпуск линии ниже (его код читает только
-# прежнее место) с меткой `moved` — бот её не читает и второй раз не переносит; раздел без
-# метки (восстановлен бэкап прежнего выпуска) переносится снова. Шим: снять вместе с копией
-# при сдвиге COMPAT_FLOOR выше 4.2.0.
+# чтения: значения раздела ложатся поверх шаблона нового файла (досеян обновлением). Значения
+# читаются тем же разбором, что у бота (PyYAML: дубль ключа — последний), ruamel — только на
+# запись. Раздел в прежнем файле остаётся копией для отката на выпуск линии ниже (его код
+# читает только прежнее место) с меткой `moved` и отпечатками значений по ключам `moved_sum`
+# на момент переноса. Ключ копии, разошедшийся с отпечатком (после отката код прежней линии
+# писал туда), переносится заново и отпечаток обновляется; раздел без метки (восстановлен
+# бэкап прежнего выпуска) переносится целиком. Прежний файл не разбирается ruamel (дубль ключа
+# после ручной правки) — метку не поставить: значения всё равно ложатся в новый файл, а
+# отпечатки — ключом `moved_from` на его верхнем уровне; он главнее метки в копии и снимается,
+# когда метка в прежнем файле записана. Шим из двух частей: перенос нужен, пока установки
+# ниже 4.2.0 обновляются сюда напрямую (UPDATE_FROM в core/compat), копия и повторный перенос —
+# пока откат и бэкапы ниже 4.2.0 допустимы (COMPAT_FLOOR). Снимать, когда и UPDATE_FROM, и
+# COMPAT_FLOOR не ниже 4.2.0, — и тем же выпуском шагом снять копию раздела из живых app.yaml
+# (drop_keys `app.reserve`): сама она с хостов не уйдёт.
 _MOVED_SECTIONS: tuple[tuple[str, str, str], ...] = (("app", "reserve", "reserve"),)
-_MOVED_MARK = "moved"
+_MOVED_MARK = "moved"            # в копии: имя нового файла
+_MOVED_SUM = "moved_sum"         # в копии: {ключ: отпечаток значения} на момент переноса
+_MOVED_ASIDE = "moved_from"      # в новом файле: {прежний файл: отпечатки}, когда копию не записать
+_move_failures: list[tuple[str, str, str, str]] = []   # (раздел, файл, новый файл, причина) — init
+
+
+def move_failures() -> list[tuple[str, str, str, str]]:
+    """Сбои переноса разделов последнего init — для замечаний при запуске админу."""
+    return list(_move_failures)
 
 
 def _merge_into(dst, src) -> None:
@@ -98,45 +116,138 @@ def _merge_into(dst, src) -> None:
             dst[k] = v
 
 
+def _sums(sec: dict) -> dict[str, str]:
+    """Отпечатки значений раздела по ключам верхнего уровня (метки — мимо)."""
+    import hashlib
+    import json
+    out = {}
+    for k, v in sec.items():
+        if k in (_MOVED_MARK, _MOVED_SUM):
+            continue
+        raw = json.dumps(v, sort_keys=True, default=str, ensure_ascii=False)
+        out[str(k)] = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:8]
+    return out
+
+
+def _flow(sums: dict):
+    from ruamel.yaml.comments import CommentedMap
+    m = CommentedMap(sums)
+    m.fa.set_flow_style()        # одной строкой: служебное, не для правки руками
+    return m
+
+
+def _dump(ruamel, path: Path, doc) -> None:
+    tmp = path.with_suffix(".yaml.tmp")
+    with tmp.open("w", encoding="utf-8") as f:
+        ruamel.dump(doc, f)
+    os.replace(tmp, path)
+
+
+def _same_sums(a, b) -> bool:
+    return isinstance(a, dict) and isinstance(b, dict) and \
+        {str(k): str(v) for k, v in a.items()} == {str(k): str(v) for k, v in b.items()}
+
+
+def _why(e: Exception) -> str:
+    """Причина одной строкой: у ruamel суть — строка «found …», первая лишь «while …»."""
+    lines = [ln.strip() for ln in str(e).splitlines() if ln.strip()]
+    found = [ln for ln in lines if ln.startswith("found")]
+    return ((found or lines or [type(e).__name__])[0])[:160]
+
+
+def _move_one(conf_dir: Path, src_stem: str, section: str, dst_stem: str) -> None:
+    from ruamel.yaml import YAML
+    src_path, dst_path = conf_dir / f"{src_stem}.yaml", conf_dir / f"{dst_stem}.yaml"
+    src_name = src_path.name
+    try:
+        with src_path.open(encoding="utf-8") as f:
+            plain = yaml.safe_load(f)
+    except yaml.YAMLError:
+        return                                   # файл не читает и бот — скажет его же чтение в init
+    sec = plain.get(section) if isinstance(plain, dict) else None
+    if not isinstance(sec, dict):
+        return
+    ruamel = YAML()
+    ruamel.preserve_quotes = True
+    try:
+        with src_path.open(encoding="utf-8") as f:
+            src = ruamel.load(f) or {}
+        rsec = src.get(section) if isinstance(src, dict) else None
+    except Exception as e:                       # noqa: BLE001 — ruamel-иерархия
+        log.warning("settings: conf/%s не разбирается на запись (%s) — метка переноса раздела %s "
+                    "ляжет в conf/%s.yaml", src_name, _why(e), section, dst_stem)
+        src = rsec = None
+    writable = isinstance(rsec, dict)
+    dst = {}
+    if dst_path.exists():
+        with dst_path.open(encoding="utf-8") as f:
+            dst = ruamel.load(f) or {}
+    if not isinstance(dst, dict):
+        raise ValueError(f"conf/{dst_stem}.yaml — не словарь")
+    aside_all = dst.get(_MOVED_ASIDE)
+    aside = aside_all.get(src_name) if isinstance(aside_all, dict) else None
+    sums = _sums(sec)
+    marked = bool(sec.get(_MOVED_MARK))
+    if isinstance(aside, dict):
+        base = aside                             # записан, когда копию было не записать, — новее метки
+    elif marked:
+        base = sec.get(_MOVED_SUM)
+        if not isinstance(base, dict):
+            base = sums                          # метка без отпечатков: копия — та, что перенесли
+    else:
+        base = None                              # первый перенос или бэкап прежнего выпуска
+    keys = [k for k in sec if str(k) in sums and (base is None or str(base.get(k)) != sums[str(k)])]
+    moved = {}
+    for k in keys:
+        # узел ruamel — если он о том же (кавычки и вид значения целы), иначе значение бота
+        moved[k] = rsec[k] if writable and k in rsec and rsec[k] == sec[k] else sec[k]
+    dst_dirty = bool(moved)
+    _merge_into(dst, moved)
+    if not writable and not _same_sums(aside, sums):
+        if not isinstance(dst.get(_MOVED_ASIDE), dict):
+            dst[_MOVED_ASIDE] = {}
+        dst[_MOVED_ASIDE][src_name] = _flow(sums)
+        dst_dirty = True
+    if dst_dirty:
+        _dump(ruamel, dst_path, dst)
+    if writable:
+        if not marked or not _same_sums(rsec.get(_MOVED_SUM), sums):
+            if not marked:
+                rsec[_MOVED_MARK] = f"{dst_stem}.yaml"
+                if hasattr(src, "yaml_set_comment_before_after_key"):
+                    src.yaml_set_comment_before_after_key(
+                        section, before=f"Раздел перенесён в {dst_stem}.yaml — бот читает его там; здесь копия "
+                                        f"для отката на прежний выпуск.\nПравьте {dst_stem}.yaml: ключ, "
+                                        f"изменённый здесь, бот перенесёт туда при следующем старте")
+            rsec[_MOVED_SUM] = _flow(sums)
+            _dump(ruamel, src_path, src)
+        if aside is not None:                    # метка в копии на месте — запасная не нужна
+            del dst[_MOVED_ASIDE][src_name]
+            if not dst[_MOVED_ASIDE]:
+                del dst[_MOVED_ASIDE]
+            _dump(ruamel, dst_path, dst)
+    if moved:
+        log.info("settings: раздел %s перенесён из conf/%s в conf/%s.yaml (%s; копия для отката — на месте)",
+                 section, src_name, dst_stem,
+                 "целиком" if base is None else "заново ключи " + ", ".join(map(str, moved)))
+
+
 def _move_sections(conf_dir: Path) -> None:
     """Перенести разделы `_MOVED_SECTIONS` в свои файлы (ruamel round-trip, атомарно).
     Сначала пишется новый файл, потом метка в прежнем: оборванный перенос повторится
-    на следующем старте с тем же итогом. Сбой — строка в журнал, бот работает на
-    прежнем раскладе (ключи нового файла — умолчания шаблона)."""
-    from ruamel.yaml import YAML
+    на следующем старте с тем же итогом. Сбой — строка в журнал и запись для замечаний
+    при запуске (`move_failures`), бот работает на новом файле как есть."""
+    _move_failures.clear()
     for src_stem, section, dst_stem in _MOVED_SECTIONS:
-        src_path, dst_path = conf_dir / f"{src_stem}.yaml", conf_dir / f"{dst_stem}.yaml"
-        if not src_path.exists():
+        if not (conf_dir / f"{src_stem}.yaml").exists():
             continue
-        ruamel = YAML()
-        ruamel.preserve_quotes = True
         try:
-            with src_path.open(encoding="utf-8") as f:
-                src = ruamel.load(f) or {}
-            sec = src.get(section) if isinstance(src, dict) else None
-            if not isinstance(sec, dict) or sec.get(_MOVED_MARK):
-                continue
-            dst = {}
-            if dst_path.exists():
-                with dst_path.open(encoding="utf-8") as f:
-                    dst = ruamel.load(f) or {}
-            _merge_into(dst, sec)
-            sec[_MOVED_MARK] = f"{dst_stem}.yaml"
-            if hasattr(src, "yaml_set_comment_before_after_key"):
-                src.yaml_set_comment_before_after_key(
-                    section, before=f"Раздел перенесён в {dst_stem}.yaml — бот читает его там; здесь копия "
-                                    f"для отката на прежний выпуск, правки в ней не действуют")
-            for path, doc in ((dst_path, dst), (src_path, src)):
-                tmp = path.with_suffix(".yaml.tmp")
-                with tmp.open("w", encoding="utf-8") as f:
-                    ruamel.dump(doc, f)
-                os.replace(tmp, path)
+            _move_one(conf_dir, src_stem, section, dst_stem)
         except Exception as e:                     # noqa: BLE001 — ruamel-иерархия и ОС
+            why = _why(e)
             log.warning("settings: раздел %s из conf/%s.yaml в conf/%s.yaml не перенесён: %s",
                         section, src_stem, dst_stem, e)
-            continue
-        log.info("settings: раздел %s перенесён из conf/%s.yaml в conf/%s.yaml (копия для отката — на месте)",
-                 section, src_stem, dst_stem)
+            _move_failures.append((section, f"{src_stem}.yaml", f"{dst_stem}.yaml", why))
 
 
 def init(conf_dir) -> None:

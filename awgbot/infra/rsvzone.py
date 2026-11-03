@@ -200,7 +200,7 @@ def _script() -> Path:
     return config.BASE_DIR / "install" / "reserve-zone-setup.sh"
 
 
-DEFAULT_POOL = "169.254.96.0/19"                 # умолчание reserve.zone_pool — то же, что в conf/app.yaml и скрипте
+DEFAULT_POOL = "169.254.96.0/19"                 # умолчание reserve.zone_pool — то же, что в conf/reserve.yaml и скрипте
 _pool_told: set[str] = set()                     # битые значения пула, о которых журнал уже сказал
 
 

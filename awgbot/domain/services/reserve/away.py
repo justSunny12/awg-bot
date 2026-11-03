@@ -24,7 +24,7 @@ RETURN_KEY = "reserve.return"          # рычаг возврата (Т-Р15): 
 def return_mode() -> str:
     """Рычаг возврата пользователей с резерва — одно чтение на всех (карточка,
     гость, автовозврат, рычаг в обработчике): «immediate» или «button»; ключа
-    нет или пуст — «immediate», как по умолчанию в app.yaml."""
+    нет или пуст — «immediate», как по умолчанию в reserve.yaml."""
     return str(settings.get(RETURN_KEY, "immediate") or "immediate")
 
 

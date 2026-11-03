@@ -73,8 +73,10 @@ def test_the_reserve_template_has_exactly_the_agreed_keys_and_defaults(rsv):
 
 
 def test_app_template_has_no_reserve_section(app):
-    """Раздел переехал в conf/reserve.yaml: оставшийся в шаблоне app.yaml блок перенос
-    при старте (core/settings) снял бы с каждого сервера, а свежая установка читала бы оттуда."""
+    """Раздел переехал в conf/reserve.yaml: оставшийся в шаблоне app.yaml блок перенос при
+    старте (core/settings) положил бы в reserve.yaml свежей установки умолчаниями шаблона
+    app.yaml поверх её собственного шаблона и оставил бы в app.yaml копию с меткой, которой
+    у свежей установки быть не должно."""
     assert "reserve" not in app
 
 
@@ -108,7 +110,7 @@ def test_the_reserve_subnets_do_not_overlap_each_other():
 
 def test_the_code_defaults_match_the_template():
     """Порт линка пары и порт канала пары читаются с умолчанием в коде: оно
-    обязано совпадать с шаблоном, иначе сервер без ключа в своём app.yaml
+    обязано совпадать с шаблоном, иначе сервер без ключа в своём reserve.yaml
     (досев не дошёл) поднимет линк или слушатель не на том порту, а
     файервол откроет другой."""
     from awgbot.domain.services.reserve import invite
@@ -120,7 +122,7 @@ def test_the_code_defaults_match_the_template():
 @pytest.mark.parametrize("stored", ["absent", ""], ids=["no-key", "empty"])
 def test_the_zone_wrapper_defaults_match_the_template(monkeypatch, stored):
     """Подсети veth и пул NETMAP обёртка зоны передаёт скрипту окружением при
-    каждом вызове; без ключа в app.yaml сервера (досев не дошёл) или с пустым
+    каждом вызове; без ключа в reserve.yaml сервера (досев не дошёл) или с пустым
     значением — умолчание кода. Разойдись оно с шаблоном — зона отобразит
     подсети клонов на один пул, а файервол хоста по документации и ожиданиям
     админа будет считать своим другой."""
