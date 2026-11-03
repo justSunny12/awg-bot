@@ -49,7 +49,7 @@ def move_live(d: dict) -> str:
              f"{mark(3)} {name} поднял профили",
              f"{mark(4)} " + (f"запись <code>{record}</code> → <code>{target}</code>" if pos > 4
                                else (f"смени запись <code>{record}</code> на <code>{target}</code> у провайдера — жду…"
-                                     if d.get("manual") else f"жду смену записи <code>{record}</code> → <code>{target}</code>…")),
+                                     if d.get("manual") else f"жду смену DNS-записи <code>{record}</code> → <code>{target}</code>…")),
              f"{mark(5)} передаю бот на {name}…" if pos < 6 else f"✅ бот передан на {name}"]
     return "\n".join(lines)
 

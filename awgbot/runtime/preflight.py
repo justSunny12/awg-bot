@@ -77,7 +77,7 @@ def check_fatal() -> None:
         raise PreflightError(
             "Проверка окружения не пройдена — бот не запущен:\n  • "
             + "\n  • ".join(problems)
-            + "\nИсправьте и перезапустите (systemctl restart awg-bot).")
+            + "\nИсправь и перезапусти бота (`systemctl restart awg-bot`).")
 
 
 # ── WARNING ──────────────────────────────────────────────────────────────────
@@ -87,8 +87,8 @@ def _settings_move_warnings() -> list[str]:
     читает, пока резерв не откажет «готовность выключена»."""
     from awgbot.core import settings as _settings
     return [f"раздел {sec} из conf/{src} не перенесён в conf/{dst} ({why}) — бот берёт "
-            f"настройки из conf/{dst} как есть, без значений из {src}. Исправьте файл и "
-            f"перезапустите (systemctl restart awg-bot)"
+            f"настройки из conf/{dst} как есть, без значений из {src}. Исправь файл и "
+            f"перезапусти бота (`systemctl restart awg-bot`)"
             for sec, src, dst, why in _settings.move_failures()]
 
 
@@ -207,7 +207,7 @@ def _pair_liveness_warnings(services) -> list[str]:
         return []
     from awgbot.domain.services.reserve.liveness import pair_liveness_problem
     why = pair_liveness_problem()
-    return [f"⚠️ Резерв: {why}"] if why else []
+    return [why[:1].lower() + why[1:]] if why else []   # пункт списка замечаний — со строчной, как соседние
 
 
 def collect_warnings(services, server_ok: bool | None = None) -> list[str]:
@@ -259,7 +259,7 @@ def collect_warnings(services, server_ok: bool | None = None) -> list[str]:
     try:
         alive = server_ok if server_ok is not None else services.server_ok()
         if not alive:
-            warns.append(f"awg не отвечает на старте — проверьте "
+            warns.append(f"awg не отвечает на старте — проверь "
                          f"`ip link show {config.AWG_INTERFACE}` и `awg show`")
     except Exception as e:                               # noqa: BLE001
         log.warning("preflight: проверка awg не удалась: %s", e)

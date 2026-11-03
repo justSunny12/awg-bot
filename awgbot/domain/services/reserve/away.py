@@ -55,7 +55,7 @@ class ReserveAwayMixin:
             return {"name": name, "dot": dot, "text": text}
 
         if o == "leaving":
-            return st("🟡", "твои пользователи переезжают — жду смену записи")
+            return st("🟡", "твои пользователи переезжают — жду смену DNS-записи")
         if o == "away":
             return st("🟢", f"несёт твоих пользователей и бот с {_when(str(out.get('taken_at') or out.get('since') or ''))}")
         if o == "returning":

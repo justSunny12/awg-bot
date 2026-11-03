@@ -161,7 +161,13 @@ def test_a_dead_primary_and_a_blind_probe_open_the_window_by_the_link(box, monke
     assert box.s.rsv_get("rsv_view")["code"]["by"] == "link"
     texts = [n.text for n in notes(w.acts)]
     assert {n.tg_id for n in notes(w.acts)} >= {PEER_ADMIN}, texts
-    assert any("зонд резерва к серверу не работает" in t for t in texts), texts
+    to_peer = [n.text for n in notes(w.acts) if n.tg_id == PEER_ADMIN]
+    mine = [n.text for n in notes(w.acts) if n.tg_id != PEER_ADMIN]
+    assert any("зонд резерва к серверу не работает" in t for t in to_peer), to_peer
+    # админу резерва зонд — его собственный: как в карточке, а не «зонд резерва»
+    name = box.s.reserve_peer_name()
+    assert mine and all(f"зонд этого сервера к «{name}» не работает" in t for t in mine), mine
+    assert not any("зонд резерва" in t for t in mine), mine
 
 
 def test_two_voters_one_gateway_not_seeing_open_the_window_by_the_link(box, monkeypatch):

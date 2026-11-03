@@ -244,7 +244,7 @@ def test_the_live_message_in_manual_mode_asks_for_the_record_change_at_the_recor
 def test_the_live_message_in_automatic_mode_only_waits(ui):
     rm.automatic(ui.svc)
     text = _live_text(ui, "record")
-    assert "жду смену записи" in text and "смени запись" not in text
+    assert "жду смену DNS-записи" in text and "смени запись" not in text
 
 
 def test_the_live_message_summarizes_success_and_failure(ui):

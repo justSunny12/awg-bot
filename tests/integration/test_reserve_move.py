@@ -52,7 +52,7 @@ def test_every_obstacle_gives_its_own_reason_and_no_start(mv):
     assert "у «Beta» выключено «Готов быть резервом»" in svc.reserve_move_check(), "причина не называет сторону"
     rm.st_in(svc)
     settings.set_value("app.network.server_host", "203.0.113.5")
-    assert "записи DNS нет" in svc.reserve_move_check(), "адрес для пользователей — IP: менять нечего"
+    assert "DNS-записи нет" in svc.reserve_move_check(), "адрес для пользователей — IP: менять нечего"
     settings.set_value("app.network.server_host", rc.HOST_A)
     svc.rsv_update("rsv_in", state="serving")
     assert "возврат" in svc.reserve_move_check(), "у меня пользователи резерва — переезд поверх них невозможен"
@@ -239,7 +239,7 @@ def test_the_move_is_not_announced_until_the_record_points_to_the_reserve(mv):
         acts = svc.reserve_out_tick()
         assert not actions_of(acts, "release"), acts
         assert svc.reserve_out() == "leaving"
-    assert "жду смену записи" in svc.reserve_main_line()
+    assert "жду смену DNS-записи" in svc.reserve_main_line()
     mv.dns.auth = [PEER_IP]
     mv.clock.advance(30)
     acts = svc.reserve_out_tick()

@@ -21,7 +21,7 @@ DNS_MORE = ("▸ подробнее: Бот меняет только эту A-�
 def dns_text(d: dict) -> str:
     name = d.get("name") or ""
     if not name:
-        return ("🌐 <b>DNS-запись</b>\n\n⛔ Вместо доменного имени сервера — IP, записи DNS у него нет. Задай домен в "
+        return ("🌐 <b>DNS-запись</b>\n\n⛔ Вместо доменного имени сервера — IP, DNS-записи у него нет. Задай домен в "
                 "«🖥 Сервер AWG» — без записи переезд невозможен")
     lines = [f"🌐 <b>DNS-запись</b> · <code>{_e(name)}</code>", ""]
     cur = d.get("current") or ""

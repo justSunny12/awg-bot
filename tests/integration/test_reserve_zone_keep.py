@@ -99,7 +99,7 @@ def test_a_record_fact_timeout_keeps_the_zone_loudly(host):
     assert "факт записи не подтвердился за 30 минут" in note.text and "проверяю запись раз в минуту" in note.text
     assert not host.zone.take.exists(), "отметка tg_take раньше факта записи — два бота на один токен"
     card = card_text(svc.reserve_card_data())
-    assert "└ ⚠️ запись DNS не подтвердилась: факт записи не подтвердился за 30 минут — проверяю раз в минуту" in card, card
+    assert "└ ⚠️ DNS-запись не подтвердилась: факт записи не подтвердился за 30 минут — проверяю раз в минуту" in card, card
     keep = svc.reserve_st_body()["in_keep"]
     assert keep["k"] == "record" and "30 минут" in keep["why"], keep
     assert svc.reserve_in_tick() == [], "уведомление о том же сбое повторилось"
@@ -309,7 +309,7 @@ def test_the_zone_removed_past_the_bot_ends_the_kept_hosting(host):
 def test_a_failure_before_the_record_change_ends_the_hosting_as_before(host):
     svc = host.svc
     _emergency(host, moved=False)
-    host.zone.status = {"step": "fail", "reason": "запись DNS: токен не принят"}
+    host.zone.status = {"step": "fail", "reason": "DNS-запись: токен не принят"}
     acts = svc.reserve_in_tick()
     assert svc.reserve_in() == "idle" and "down" in sent(acts) and "teardown" in host.zone.names()
     assert all(not a[2].get("rec") for a in acts if a[:2] == ("send", "down")), "запись не менялась — вернуть нечего"

@@ -62,11 +62,11 @@ reserve open` (root, без этой песочницы).
 `record_fact` как обычно; нет — шаг `record_wait{name, ip, limit, why}`, клоны
 стоят, авторитетный ответ раз в минуту ± 40 % до `limit` от `record_try`
 (последнее чтение — на самом пределе): появился — `record_set`, `record_fact`;
-нет — `fail запись DNS не подтвердилась за N мин: …` без поля `record` (прежний
+нет — `fail DNS-запись не подтвердилась за N мин: …` без поля `record` (прежний
 срыв со снятием зоны). Отказ «вручную» (`NotSupported`: запроса не было) и явный
 отказ провайдера (`dnsapi.Refused`: 4xx с разобранным телом, DuckDNS «KO», DynDNS2
 badauth/nohost/abuse…, зона или запись не найдены) — исход известен: сразу
-`fail запись DNS: …` (`record_try` перед ним остаётся, он безвреден). Любой сбой между `record_try` и итогом несёт поля
+`fail DNS-запись: …` (`record_try` перед ним остаётся, он безвреден). Любой сбой между `record_try` и итогом несёт поля
 `record=try`, `name`, `ip`, `limit`: процесс погиб или отказал посреди
 неизвестного — ожидание факта доводит бот резерва по open.status той же
 логикой (domain/services/reserve/inbound_recwait). Без записи (`set_record`
@@ -430,7 +430,7 @@ def run(data: dict) -> int:
         set_record(dns, target)
     except (dnsapi.NotSupported, dnsapi.Refused) as e:         # «вручную» или явный отказ провайдера — исход известен
         _RECORD.clear()
-        return _fail(f"запись DNS: {e}")
+        return _fail(f"DNS-запись: {e}")
     except Exception as e:                                     # noqa: BLE001 — таймаут, ответ не дошёл или не разобран
         why = str(e)[:160] or type(e).__name__
     dns = {}                                                   # токен провайдера дальше не нужен
@@ -439,7 +439,7 @@ def run(data: dict) -> int:
         _step("record_wait", name=name, ip=target, limit=limit, why=why)
         if not wait_unknown(name, target, deadline):
             _RECORD.clear()
-            return _fail(f"запись DNS не подтвердилась за {max(1, limit // 60)} мин: {why}")
+            return _fail(f"DNS-запись не подтвердилась за {max(1, limit // 60)} мин: {why}")
     _RECORD.clear()
     _RECORD.update(record="set", name=name, ip=target)
     _step("record_set", name=name, ip=target)

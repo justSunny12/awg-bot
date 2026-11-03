@@ -33,14 +33,17 @@ class ReserveCodeWindowMixin:
         return {"open": bool(cw.get("open")), "since": str(cw.get("since") or "")}
 
     def reserve_code_window_set(self, open_: bool, *, since: str = "", n: int = 0, v: int = 0, t: int = 0,
-                                by: str = "quorum", off_why: str = "", quiet: bool = False) -> list[tuple]:
+                                by: str = "quorum", off_codes: list | None = None, quiet: bool = False) -> list[tuple]:
         """Окно кода кандидата: открыть — Т-К21 админу резерва и (если он открывал бота)
         админу основы с кнопкой кода; тот же эпизод снова — админу основы без звука;
-        закрыть — взгляды вернулись (Т-РН3 админу основы, если его звали)."""
+        закрыть — взгляды вернулись (Т-РН3 админу основы, если его звали). off_codes — коды
+        «голосование не включено» (Т-К21д, сигнал по линку пары): причина словами — по адресату."""
         view = self.rsv_get("rsv_view")
         cw = dict(view.get("code") or {})
         primary = self.reserve_peer_name()
         rn = self._rn()
+        off_why = rn_off_why(off_codes) if off_codes is not None else ""                  # админу основы
+        off_mine = rn_off_why(off_codes, primary) if off_codes is not None else ""       # админу резерва — как в карточке
         if open_:
             if cw.get("open") or cw.get("pending") or not self.reserve_zone_free():   # relay уступает открытию
                 return []                                     # pending — окно закрыто на время ввода кода: его исход ещё впереди
@@ -54,7 +57,7 @@ class ReserveCodeWindowMixin:
                                                      text=rn.quorum_code_needed_primary(primary, str(config.SERVER_NAME or ""), since, n, v, t, off_why))])]
                 return []
             opened = bool(self.rsv_get("rsv_peer_admin").get("opened"))
-            notes = [Notification(tg_id=int(config.ADMIN_ID), text=rn.quorum_code_needed_reserve(primary, since, n, v, t, opened, off_why))]
+            notes = [Notification(tg_id=int(config.ADMIN_ID), text=rn.quorum_code_needed_reserve(primary, since, n, v, t, opened, off_mine))]
             if pid and opened:
                 notes.append(Notification(tg_id=pid, force_sound=True, keyboard="peer_code",
                                           text=rn.quorum_code_needed_primary(primary, str(config.SERVER_NAME or ""), since, n, v, t, off_why)))
@@ -116,7 +119,7 @@ class ReserveCodeWindowMixin:
                 return []
             why = ([f"timing:{tm_off}"] if tm_off else []) + (["blind"] if blind else []) \
                 + [str(w) for w in (line.get("why") or [])]
-            return self.reserve_code_window_set(True, since=since, by="link", off_why=rn_off_why(why))
+            return self.reserve_code_window_set(True, since=since, by="link", off_codes=why)
         if (not down or seen) and cw.get("open") and cw.get("by") == "link":
             return self.reserve_code_window_set(False, by="link" if not down else "quorum")
         return []
@@ -241,15 +244,17 @@ class ReserveCodeWindowMixin:
         return rn
 
 
-def rn_off_why(codes: list) -> str:
-    """Причина «голосование не включено» для уведомления — словами, по первому коду."""
+def rn_off_why(codes: list, primary: str = "") -> str:
+    """Причина «голосование не включено» для уведомления — словами, по первому коду. primary —
+    имя основы, когда адресат — админ резерва: свой зонд он видит так же, как в карточке
+    («Зонд этого сервера к «Alpha» не работает»); пусто — админу основы."""
     for c in codes or []:
         if c == "no_gateways":
             return "нет шлюзов с агентом v4.2.0"
         if c == "not_acked":
             return "состав голосующих не подтверждён"
         if c == "blind":
-            return "зонд резерва к серверу не работает"
+            return f"зонд этого сервера к «{primary}» не работает" if primary else "зонд резерва к серверу не работает"
         if c == "keys":
             return "ключи голосования ещё не у всех"
         if str(c).startswith("timing:"):

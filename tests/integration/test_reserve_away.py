@@ -165,7 +165,7 @@ def test_without_a_pair_the_status_and_the_line_are_empty(services, rsv):
 def test_the_status_follows_the_move_and_the_return(mv):
     svc = mv.svc
     svc.reserve_set_out("leaving")
-    assert _st(svc) == ("Beta", "🟡", "твои пользователи переезжают — жду смену записи")
+    assert _st(svc) == ("Beta", "🟡", "твои пользователи переезжают — жду смену DNS-записи")
     svc.reserve_set_out("away", taken_at="2026-10-21T03:12:00+05:00")
     assert _st(svc) == ("Beta", "🟢", f"несёт твоих пользователей и бот с {_clock('2026-10-21T03:12:00+05:00')}")
     svc.reserve_set_out("returning")

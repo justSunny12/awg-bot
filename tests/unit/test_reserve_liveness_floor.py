@@ -20,7 +20,8 @@ def _set(monkeypatch, suspect: int, keepalive="25-35") -> None:
 def test_a_threshold_below_keepalive_plus_tick_is_a_problem_naming_the_floor(monkeypatch):
     _set(monkeypatch, 30)
     why = lv.pair_liveness_problem()
-    assert "reserve.suspect_seconds 30" in why and "35" in why and "действует 40" in why, why
+    assert why == "Порог подозрения резерва (30 с) меньше keepalive линка плюс такт — ложные «недоступен»; действует 40 с", why
+    assert "reserve.suspect_seconds" not in why, "строка для человека — без имени ключа конфига"
 
 
 @pytest.mark.parametrize("keepalive,floor", [("25-35", 40), ("25", 30), ("мусор", 40), ("", 40)])
@@ -34,11 +35,11 @@ def test_the_floor_follows_the_upper_keepalive_bound(monkeypatch, keepalive, flo
 def test_the_card_shows_the_problem_line():
     from awgbot.bot.texts.reserve.section.card import card_text
     d = {"peer": {"name": "Beta", "host": "203.0.113.5"}, "peer_state": {"ready": True}, "ready": True,
-         "online": True, "seen": "ok", "liveness_problem": "reserve.suspect_seconds 30 меньше keepalive линка пары 35 с"}
+         "online": True, "seen": "ok", "liveness_problem": "Порог подозрения резерва (30 с) меньше keepalive линка плюс такт"}
     text = card_text(d)
-    assert "⚠️ reserve.suspect_seconds 30 меньше keepalive линка пары 35 с" in text, text
+    assert "⚠️ Порог подозрения резерва (30 с) меньше keepalive линка плюс такт" in text, text
     d["liveness_problem"] = ""
-    assert "⚠️ reserve.suspect_seconds" not in card_text(d)
+    assert "Порог подозрения" not in card_text(d)
 
 
 def test_preflight_warns_only_when_paired(monkeypatch):
@@ -53,7 +54,7 @@ def test_preflight_warns_only_when_paired(monkeypatch):
         def reserve_paired(self):
             return False
     warns = preflight._pair_liveness_warnings(Paired())
-    assert len(warns) == 1 and warns[0].startswith("⚠️ Резерв: reserve.suspect_seconds 30"), warns
+    assert len(warns) == 1 and warns[0].startswith("порог подозрения резерва (30 с) меньше"), warns
     assert preflight._pair_liveness_warnings(Alone()) == []
     _set(monkeypatch, 40)                                       # умолчание — ровно планка
     assert preflight._pair_liveness_warnings(Paired()) == []
