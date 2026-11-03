@@ -9,8 +9,8 @@ from __future__ import annotations
 from .reserve_fmt import _e, _n
 from .reserve_move import hosting_without_bot
 
-_TODO = {"record": "DNS-запись не подтвердилась", "serve": "вход вебхука в зону не настроен",
-         "tg": "бот здесь не отвечает в Telegram"}
+_TODO = {"record": "смена DNS-записи не подтвердилась", "serve": "Telegram не пропущен к гостевому серверу",
+         "tg": "гостевой бот не отвечает в Telegram"}
 _RETRY = {"record": "проверяю запись раз в минуту", "serve": "повторяю раз в минуту"}
 
 
@@ -19,20 +19,20 @@ def kept(primary: str, kind: str, reason: str) -> str:
     if kind == "tg":
         return hosting_without_bot(primary, reason)
     if kind == "relaunch":
-        return (f"⚠️ DNS-запись пользователей {_n(primary)} уже на тебе, а клона нет: {_e(reason)} — "
+        return (f"⚠️ DNS-запись пользователей {_n(primary)} уже на тебе, но интерфейс резерва не поднят: {_e(reason)} — "
                 f"перезапускаю открытие раз в минуту")
-    return (f"⚠️ Пользователи {_n(primary)} у тебя, VPN работает, а {_TODO.get(kind, 'переезд не доделан')}: "
+    return (f"⚠️ Пользователи {_n(primary)} у тебя, VPN работает, но {_TODO.get(kind, 'переезд не доделан')}: "
             f"{_e(reason)} — {_RETRY.get(kind, 'повторяю раз в минуту')}")
 
 
 def peer_kept(reserve: str, kind: str, reason: str) -> str:
     """Админу основы: её пользователи уже идут на резерв, а там сбой — резерв повторяет сам."""
     if kind == "relaunch":
-        return (f"⚠️ Твоя DNS-запись уже на {_n(reserve)}, а клона там нет: {_e(reason)} — "
+        return (f"⚠️ Твоя DNS-запись уже на {_n(reserve)}, но интерфейс резерва там не поднят: {_e(reason)} — "
                 f"{_n(reserve)} перезапускает открытие")
-    what = {"record": "DNS-запись не подтвердилась", "serve": "вход вебхука не настроен",
+    what = {"record": "смена DNS-записи не подтвердилась", "serve": "Telegram не пропущен к гостевому серверу",
             "tg": f"твой бот на {_n(reserve)} не отвечает в Telegram"}.get(kind, "переезд не доделан")
-    return f"⚠️ Твои пользователи на {_n(reserve)}, VPN работает, а {what}: {_e(reason)} — {_n(reserve)} повторяет сам"
+    return f"⚠️ Твои пользователи на {_n(reserve)}, VPN работает, но {what}: {_e(reason)} — {_n(reserve)} повторяет сам"
 
 
 def record_back(reserve: str, record: str, own: str, why: str) -> str:

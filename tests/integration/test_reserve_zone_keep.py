@@ -179,8 +179,8 @@ def test_a_serve_failure_after_done_keeps_the_zone_and_retries_serve(host):
     acts = svc.reserve_in_tick()
     inn = svc.rsv_get("rsv_in")
     assert svc.reserve_in() == "serving" and inn.get("serve_due") and inn.get("keep_k") == "serve", inn
-    assert "порт вебхука занят" in notices(acts)[0].text and "вход вебхука в зону не настроен" in notices(acts)[0].text
-    assert "└ ⚠️ вход вебхука в зону не настроен: зона не приняла режим serve: порт вебхука занят" in \
+    assert "порт вебхука занят" in notices(acts)[0].text and "Telegram не пропущен к гостевому серверу" in notices(acts)[0].text
+    assert "└ ⚠️ Telegram не пропущен к гостевому серверу: зона не приняла режим serve: порт вебхука занят" in \
         card_text(svc.reserve_card_data())
     host.clock.advance(inbound_keep.KEEP_RETRY_S + 1)
     assert svc.reserve_in_tick() == [] and svc.rsv_get("rsv_in").get("serve_due"), "повтор отказа — молча, без снятия"
@@ -233,7 +233,7 @@ def test_a_serve_refused_at_tg_taken_keeps_the_zone_and_is_retried(host):
     assert svc.reserve_in() == "serving" and inn.get("tg_taken"), "Telegram гость уже взял — слово не потерять"
     assert inn.get("serve_due") and not inn.get("served") and inn.get("keep_k") == "serve", inn
     assert "down" not in sent(acts) and "taken" in sent(acts)
-    assert "вход вебхука в зону не настроен" in notices(acts)[0].text
+    assert "Telegram не пропущен к гостевому серверу" in notices(acts)[0].text
     _no_teardown(host)
     del host.zone.fail_on["serve"]
     host.clock.advance(inbound_keep.KEEP_RETRY_S + 1)
@@ -349,8 +349,8 @@ def test_without_clones_the_opening_is_relaunched_with_the_same_input_once_a_min
     _no_teardown(host)
     assert "down" not in sent(acts)
     note = notices(acts)[0]
-    assert note.force_sound and "клона нет" in note.text and "перезапускаю открытие раз в минуту" in note.text, note
-    assert "└ ⚠️ клона нет: зона: клон awg0 не поднялся — перезапускаю открытие раз в минуту" in card_text(svc.reserve_card_data())
+    assert note.force_sound and "интерфейс резерва не поднят" in note.text and "перезапускаю открытие раз в минуту" in note.text, note
+    assert "└ ⚠️ интерфейс резерва не поднят: зона: клон awg0 не поднялся — перезапускаю открытие раз в минуту" in card_text(svc.reserve_card_data())
     host.clock.advance(inbound_keep.KEEP_RETRY_S - 5)
     assert svc.reserve_in_tick() == [] and len(host.spawn.popen) == 1, "перезапуск раньше срока"
     host.clock.advance(10)
@@ -450,7 +450,7 @@ def test_the_primary_tells_its_admin_once_per_episode(mv):
     assert len(loud) == 1 and loud[0].force_sound and "30 минут" in loud[0].text and "«Beta» повторяет сам" in loud[0].text
     assert not [n for n in rm.st_in(mv.svc, **{"in": "serving", "in_keep": keep}) if "VPN работает" in n.text]
     notes = rm.st_in(mv.svc, **{"in": "taking", "in_keep": {**keep, "k": "relaunch", "at": "2026-11-01T10:05:00+03:00"}})
-    assert [n for n in notes if "клона там нет" in n.text], "новый эпизод не сказан"
+    assert [n for n in notes if "интерфейс резерва там не поднят" in n.text], "новый эпизод не сказан"
 
 
 def _home_rec_back(mv, monkeypatch) -> None:

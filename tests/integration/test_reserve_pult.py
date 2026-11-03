@@ -310,7 +310,7 @@ def test_the_pult_mark_of_the_primary_holds_the_guest_webhook_until_given_back(h
     notes = rm.st_in(svc, out="away", tg_pult=AT)
     assert svc.reserve_pult_hold_why(), "отметка в st основы не запретила гостю вебхук"
     assert svc.reserve_guest_state_view()["tg_hold"], "гость о запрете не узнает"
-    assert [n.text for n in notes] == ["⚠️ Telegram бота «Beta» у основы — пользователи здесь"]
+    assert [n.text for n in notes] == ["⚠️ Telegram бота «Beta» на своём сервере — пользователи здесь"]
     assert notes[0].force_sound
     assert rm.st_in(svc, out="away", tg_pult=AT) == [], "уведомление на каждый st"
     assert svc.reserve_card_data()["peer_pult"]
