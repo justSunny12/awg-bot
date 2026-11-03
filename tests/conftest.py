@@ -133,10 +133,12 @@ def pytest_configure(config):
                                        "на тест) — без прямого вызова conftest")
 
 
-def _script_tmp_root() -> pathlib.Path | None:
+def _script_tmp_roots() -> list[pathlib.Path]:
     """Куда кладёт временное mktemp без шаблона у скрипта без своего TMPDIR:
-    на macOS — личный временный каталог пользователя (getconf, мимо TMPDIR),
-    иначе — TMPDIR или /tmp."""
+    на macOS — личный временный каталог пользователя (getconf, мимо TMPDIR);
+    иначе — и TMPDIR процесса, и /tmp: скрипт, которому тест дал окружение без
+    TMPDIR (`env={"PATH": …}`), кладёт tmp.* в /tmp, даже когда у pytest свой
+    TMPDIR (на стенде — /var/tmp/awglab-tmp)."""
     import subprocess
     import sys
     if sys.platform == "darwin":
@@ -144,9 +146,10 @@ def _script_tmp_root() -> pathlib.Path | None:
             out = subprocess.run(["getconf", "DARWIN_USER_TEMP_DIR"], capture_output=True, text=True,
                                  timeout=5).stdout.strip()
         except (OSError, subprocess.SubprocessError):
-            return None
-        return pathlib.Path(out) if out else None
-    return pathlib.Path(os.environ.get("TMPDIR") or "/tmp")
+            return []
+        return [pathlib.Path(out)] if out else []
+    roots = [pathlib.Path(os.environ.get("TMPDIR") or "/tmp"), pathlib.Path("/tmp")]
+    return list(dict.fromkeys(roots))
 
 
 def _script_tmp_names(root: pathlib.Path | None) -> set[str]:
@@ -157,27 +160,23 @@ def _script_tmp_names(root: pathlib.Path | None) -> set[str]:
 
 
 def pytest_sessionstart(session):
-    """Сторож мусора: что лежало в каталоге временного скриптов до прогона."""
+    """Сторож мусора: что лежало в каталогах временного скриптов до прогона."""
     if hasattr(session.config, "workerinput"):          # воркер xdist — сторож у контроллера
         return
-    root = _script_tmp_root()
-    session.config._awg_tmp_root = root
-    session.config._awg_tmp_before = _script_tmp_names(root)
+    session.config._awg_tmp_before = {root: _script_tmp_names(root) for root in _script_tmp_roots()}
 
 
 def pytest_terminal_summary(terminalreporter, config):
-    """Новые tmp.* в каталоге временного скриптов за прогон — строкой в итоге
+    """Новые tmp.* в каталогах временного скриптов за прогон — строкой в итоге
     (не провалом: их мог оставить и параллельный прогон другого дерева).
     Скрипт под тестом без своего TMPDIR и mktemp из tests.conftest (tmp_env)
     кладёт временное туда, и всё, что он не убрал, копится между прогонами."""
-    root = getattr(config, "_awg_tmp_root", None)
-    if root is None:
-        return
-    new = sorted(_script_tmp_names(root) - config._awg_tmp_before)
-    if new:
-        terminalreporter.write_line(
-            f"сторож временного: за прогон в {root} появилось {len(new)} tmp.* "
-            f"({', '.join(new[:5])}{'…' if len(new) > 5 else ''}) — скрипту под тестом нужен tmp_env")
+    for root, before in (getattr(config, "_awg_tmp_before", None) or {}).items():
+        new = sorted(_script_tmp_names(root) - before)
+        if new:
+            terminalreporter.write_line(
+                f"сторож временного: за прогон в {root} появилось {len(new)} tmp.* "
+                f"({', '.join(new[:5])}{'…' if len(new) > 5 else ''}) — скрипту под тестом нужен tmp_env")
 
 
 @pytest.hookimpl(hookwrapper=True)
