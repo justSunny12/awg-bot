@@ -248,10 +248,10 @@ if has d; then
     fault "ip saddr { 10.1.1.2, 10.1.2.2 } ip daddr 203.0.113.5 udp dport 45871 drop comment \"случай 3\""
     wait_t A 's["quo"]["fenced"] is True' 1000 "случай 3: A лишена кворума" || exit 1
     t_fence=$WT
-    [ "$t_fence" -ge $((QT_DOWN_RF - QT_W)) ] || pl_fail "случай 3: A лишена кворума через $t_fence с — раньше T_down_rf ($QT_DOWN_RF с)"
+    [ "$t_fence" -ge $((QT_DOWN_RF - QT_W)) ] || pl_fail "случай 3: A лишена кворума через $t_fence с — раньше T_down_rf − W ($QT_DOWN_RF − $QT_W = $((QT_DOWN_RF - QT_W)) с)"
     wait_t A 's["out"].get("state") == "leaving"' 400 "случай 3: B забрал по просьбе" || exit 1
     t_ask=$WT
-    [ "$t_ask" -ge $((QT_RF - 20)) ] || pl_fail "случай 3: переезд через $t_ask с — раньше T_up_rf ($QT_RF с)"
+    [ "$t_ask" -ge $((QT_RF - 20)) ] || pl_fail "случай 3: переезд через $t_ask с — раньше T_up_rf − 20 ($QT_RF − 20 = $((QT_RF - 20)) с)"
     [ "$t_fence" -lt "$t_ask" ] || pl_fail "случай 3: лишение кворума ($t_fence с) не раньше переезда ($t_ask с)"
     note "д: лишена кворума через ${t_fence} с, просьба через ${t_ask} с"
     pl_cleanup_quiet
