@@ -15,9 +15,10 @@ tests/integration/_reserve_jrn_duo.py:
   отметку фактом и шлёт итог Т-Ж5; другой эпохи, под рычагом или с `last` дальше
   перенесённого — не снимает; гость поднят — резерв молчит (шлёт гость);
   каталог журнала не читается — не «журнала нет»;
-- карточка основы: «не ждать?» — когда за C9_WAIT_S от заведения не пришли ни
-  журнал, ни «журнала нет»; пока части приходят (за C9_PROGRESS_S) — ссылки нет,
-  «🗑 Не ждать» отказывает «приходит — подожди».
+- карточка основы: «не ждать?» — когда за C9_WAIT_S от заведения или от
+  последней пришедшей части не пришли ни следующая часть, ни «журнала нет»; пока
+  части приходят (за C9_PROGRESS_S) — ссылки нет, «🗑 Не ждать» отказывает
+  «приходит — подожди».
 
 Ключи — заглушки (`DUMMY`), K — настоящие 32 байта.
 
@@ -309,12 +310,28 @@ def test_after_the_term_without_progress_the_link_shows_even_with_a_journal_on_t
     c9 = _c9_world(duo)
     keep = dict(duo.b.reserve_keep_view(), gj_e=c9["e"], gj_last=int(c9["upto"]) + 3)
     rm.st_in(duo.a, caps=JCAPS, jrn={"keep": keep}, **{"in": "idle"})
-    duo.a.rsv_update("rsv_c9", at_ts=_ago(C9_WAIT_S + 1), got_ts=_ago(C9_PROGRESS_S + 1))
+    duo.a.rsv_update("rsv_c9", at_ts=_ago(2 * C9_WAIT_S), got_ts=_ago(C9_WAIT_S + 1))
     v = duo.a.reserve_c9_wait_view()
     assert v["overdue"] and not v["drop_why"], v
     assert "не ждать?" in _card(duo.a), _card(duo.a)
     assert duo.a.reserve_c9_drop(), "снятие отказало по журналу на диске резерва"
     assert duo.a.rsv_get("rsv_c9") == {}
+
+
+def test_the_term_runs_from_the_last_part_that_arrived(duo):
+    """Срок «не ждать?» — от последней пришедшей части, а не от заведения отметки:
+    доставка, вставшая посреди журнала, получает те же C9_WAIT_S без продвижения,
+    что и не начавшаяся (решение 01.11.2026 — «по факту недоставки за те же 360 с»)."""
+    _c9_world(duo)
+    duo.a.rsv_update("rsv_c9", at_ts=_ago(10 * C9_WAIT_S), got_ts=_ago(C9_PROGRESS_S + 1))
+    v = duo.a.reserve_c9_wait_view()
+    assert not v["overdue"], "срок отсчитан от заведения, а не от последней части"
+    assert "не ждать?" not in _card(duo.a), _card(duo.a)
+    duo.a.rsv_update("rsv_c9", got_ts=_ago(C9_WAIT_S - 30))
+    assert not duo.a.reserve_c9_wait_view()["overdue"]
+    duo.a.rsv_update("rsv_c9", got_ts=_ago(C9_WAIT_S + 1))
+    assert duo.a.reserve_c9_wait_view()["overdue"]
+    assert "не ждать?" in _card(duo.a), _card(duo.a)
 
 
 def test_before_the_term_there_is_no_link_whatever_the_reserve_does(duo):
