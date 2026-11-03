@@ -223,6 +223,35 @@ def test_taking_marks_the_pult_tells_the_admin_loudly_and_keeps_following(away):
     assert _take(svc) == [], "второе взятие — второе уведомление"
 
 
+
+def test_on_the_old_path_without_the_journal_the_admins_edits_under_the_pult_are_refused_too(mv, monkeypatch):
+    """Пульт у основы на прежнем пути (SQLite без JSON-функций: захвата и `jrn1` нет): админ
+    проходит в бот, а его решения база всё равно отвергает — запрет записи не держателю
+    ставится на каждое соединение независимо от JSON-функций, а следование в away — по
+    состоянию пары, не по журналу. Правки основы мимо гостя при пульте не ложатся."""
+    import sqlite3
+    from awgbot.util import rsvjrn
+    from awgbot.util.rsvjrn import triggers
+    monkeypatch.setattr(triggers, "_CAPTURE_FAILED", {})
+    monkeypatch.setattr(triggers, "json_ok", lambda conn: False)
+    monkeypatch.setattr(rsvjrn, "json_ok", lambda conn: False)
+    monkeypatch.setattr(compat, "_JSON_OK", {})
+    svc = mv.svc
+    svc.db.close()                                            # новое соединение — триггеры прежнего пути
+    names = [r[0] for r in svc.db._connection().execute("SELECT name FROM sqlite_temp_master WHERE type = 'trigger'")]
+    assert names and not [n for n in names if n.startswith("jrn_cap_")], f"условие: захват встал — {names}"
+    assert not compat.journal_capable() and "jrn1" not in compat.caps(), "условие: путь не прежний"
+    rm.go_away(svc, kind="dead")
+    svc.db.set_state("last_server_ok", "0")
+    _silent(svc)
+    _take(svc)
+    assert svc.reserve_pult_on() and svc.reserve_following(), "условие: пульт здесь, следование"
+    with pytest.raises(sqlite3.IntegrityError) as e:
+        svc.db.create_client("Иван", 3, "2026-01-01T00:00:00+03:00", "2099-01-01T00:00:00+03:00", "INV-DUMMY-Ivan")
+    assert rsvjrn.is_refusal(e.value), e.value
+    assert not svc.db._connection().execute("SELECT 1 FROM clients WHERE name = 'Иван'").fetchone(), \
+        "решение админа основы легло мимо гостя"
+
 def test_taking_from_the_terminal_is_silent(away):
     acts = _take(away.svc, "cli")
     assert away.svc.reserve_pult_on() and notices(acts) == []
