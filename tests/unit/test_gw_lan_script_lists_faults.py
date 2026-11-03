@@ -22,7 +22,7 @@ from tests.unit._gw_lan_common import (
     FEED, RU_USER, _bin, _failing_restart, _flaky, _ru_line, _vpn_line,
 )
 
-script, lists_env = _c.script, _c.lists_env
+script, lists_env, channel_env = _c.script, _c.lists_env, _c.channel_env
 
 OLD_FEED = "".join(_vpn_line(f"old{i}.org") + "\n" for i in range(12))
 FEED_FAULT = "домены: рабочий шаг сборки фида не прошёл — фид не тронут"
@@ -175,6 +175,55 @@ def test_a_failed_subnet_sort_keeps_the_set(lists_env):
     assert "nets=5\n" in (dump / "lists.status").read_text()
 
 
+# ── число подсетей в итоге — число в наборе, а не число пришедших ───────────
+# Панель шлюза показывает его как есть: «0 подсетей» при полном наборе — ложь,
+# красной проверки нет (domains > 0), и её никто не заметит.
+
+def _nets_in_status(dump) -> str:
+    return next(ln for ln in (dump / "lists.status").read_text().splitlines() if ln.startswith("nets="))
+
+
+def test_no_subnets_at_all_keep_the_previous_count(channel_env):
+    """Канал привёз домены без nets.lst: набор не тронут — прежде в итоге nets=0."""
+    tool, dns_d, dump, log, env, feed = channel_env
+    dump.mkdir(exist_ok=True)
+    (dump / "lists.status").write_text("updated_at=x\ndomains=12\nnets=50\nrc=0\nsource=channel\n", encoding="utf-8")
+    (feed / "nets.lst").unlink()
+    r = _go(tool, env)
+    assert r.returncode == 1 and "подсети: нет" in r.stderr, r.stderr
+    assert "nft -f" not in _log(log), "набор тронут без подсетей"
+    assert _nets_in_status(dump) == "nets=50"
+
+
+def test_a_refused_subnet_set_keeps_the_previous_count(lists_env):
+    """nft отклонил транзакцию — набор прежний: прежде в итог шло число пришедших."""
+    tool, dns_d, dump, log, env = lists_env
+    _prepared(lists_env)
+    _c._fake(_bin(env), "nft", f'if [ "$1" = -f ]; then cat > /dev/null; exit 1; fi\necho "nft $*" >> {log}\n')
+    r = _go(tool, env)
+    assert r.returncode == 1 and "подсети: nft отклонил набор" in r.stderr, r.stderr
+    assert _nets_in_status(dump) == "nets=5"
+
+
+def test_a_topped_up_subnet_set_is_counted_by_the_set_itself(lists_env):
+    """Один фид не скачался — набор только пополняется, в нём и подсети прежних
+    прогонов: в итоге число по самому набору (интервал из слияния — один), а не
+    число скачанных сейчас."""
+    tool, dns_d, dump, log, env = lists_env
+    _prepared(lists_env)
+    listing = ("table inet awg_lan {\\n\\tset lan_vpn_nets4 {\\n\\t\\ttype ipv4_addr\\n\\t\\tflags interval\\n"
+               "\\t\\tauto-merge\\n\\t\\telements = { 1.2.3.0/24, 5.6.0.0/16,\\n"
+               "\\t\\t\\t     8.8.8.0/24, 91.108.4.0-91.108.7.255,\\n\\t\\t\\t     149.154.160.0/20, 157.240.0.0/16 }\\n"
+               "\\t}\\n}\\n")
+    _c._fake(_bin(env), "nft", f'if [ "$1" = -f ]; then echo "nft -f: $(cat)" >> {log}; exit 0; fi\n'
+                               f'echo "nft $*" >> {log}; printf "{listing}"\n')
+    r = _go(tool, {**env, "AWG_LAN_SUBNET_SERVICES": "telegram missing"})
+    assert r.returncode == 1 and "подсети: missing не скачался" in r.stderr, r.stderr
+    assert "flush set" not in _log(log), "при недошедшем фиде набор сброшен"
+    # прежний итог — 5, скачано сейчас — 3, в наборе — 6
+    assert _nets_in_status(dump) == "nets=6"
+
+
 def test_a_failed_status_write_is_reported(lists_env):
     tool, dns_d, dump, log, env = lists_env
     _prepared(lists_env)
@@ -199,3 +248,16 @@ def test_without_faults_the_same_update_goes_through(lists_env):
     assert "flush set inet awg_lan lan_vpn_nets4" in _log(log)
     assert cnt.read_text().strip() == "1", "подмена awk не встала на путь вычета"
     assert not list((dump / "rollback").glob("*"))
+
+
+def test_an_unopenable_lock_is_a_step_failure(lists_env):
+    """Файл блокировки не открылся: у dash отказ перенаправления exec завершал
+    скрипт кодом 2 мимо всех строк — теперь код 1 и «списки не тронуты»."""
+    tool, dns_d, dump, log, env = lists_env
+    _prepared(lists_env)
+    (dump / "lists.lock").mkdir()
+    r = _go(tool, env)
+    assert r.returncode == 1 and "списки не тронуты" in r.stderr, (r.returncode, r.stderr)
+    assert (dns_d / FEED).read_text() == OLD_FEED
+    assert "nets=5\n" in (dump / "lists.status").read_text()
+    assert _log(log) == ""

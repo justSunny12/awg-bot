@@ -213,10 +213,21 @@ def _mapped_dig(env: dict) -> None:
 def _stateful_nft(env: dict, log: Path, sets: Path) -> None:
     """nft с памятью: наборы — файлы адресов в `sets`. add принимает список
     через запятую (`{ a,b,c }` — так наполняет fill_set), delete несуществующего
-    адреса — ошибка, как у настоящего nft; list set — вывод для слепка."""
+    адреса — ошибка, как у настоящего nft; list set — вывод для слепка.
+    `-f <файл>` — транзакция: каждая строка файла как отдельный вызов (в логе —
+    и `nft -f …`, и строки); NFT_FAIL_RU=1 — отказ добавления в lan_ru4, в
+    транзакции — целиком, до первой строки (набор прежний)."""
     sets.mkdir(exist_ok=True)
     body = r"""echo "nft $*" >> @LOG@
 S=@SETS@
+if [ "$1" = -f ]; then
+    if [ -n "${NFT_FAIL_RU:-}" ] && grep -q '^add element .* lan_ru4 ' "$2"; then exit 1; fi
+    while read -r a b c d e rest; do
+        if [ -n "$rest" ]; then nft "$a" "$b" "$c" "$d" "$e" "$rest"; else nft "$a" "$b" "$c" "$d" "$e"; fi || exit 1
+    done < "$2"
+    exit 0
+fi
+[ -n "${NFT_FAIL_RU:-}" ] && [ "$1 $2 $5" = "add element lan_ru4" ] && exit 1
 case "$1 $2" in
   "add element") for ip in $(echo "$6" | tr -d '{} ' | tr ',' ' '); do
           grep -qxF "$ip" "$S/$5" 2>/dev/null || echo "$ip" >> "$S/$5"; done ;;

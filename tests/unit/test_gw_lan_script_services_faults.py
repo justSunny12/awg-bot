@@ -129,3 +129,15 @@ def test_without_faults_install_and_removal_go_through(svc_env):
     r = go(None)
     assert r.returncode == 0 and not conf.exists(), r.stderr
     assert not _prev(conf).exists()
+
+
+def test_an_unopenable_lock_is_a_step_failure_not_a_bad_file(svc_env):
+    """Файл блокировки не открылся (каталог только для чтения): у dash отказ
+    перенаправления exec завершал скрипт кодом 2 — «файл не прошёл проверку»."""
+    go, conf, log = svc_env
+    conf.write_text(OLD_SVC, encoding="utf-8")
+    (conf.parent.parent / "dump" / "lists.lock").mkdir(parents=True)
+    r = go(_svc_file())
+    assert r.returncode == 1 and UNTOUCHED in r.stderr, (r.returncode, r.stderr)
+    assert conf.read_text(encoding="utf-8") == OLD_SVC
+    assert _restarts(log) == 0

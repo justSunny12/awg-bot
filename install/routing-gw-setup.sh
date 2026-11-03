@@ -42,7 +42,9 @@
 #      при политике DROP в чужой ip filter FORWARD вставляет в неё
 #      ACCEPT своим интерфейсам (линк, аплинк, локальная сеть) с меткой
 #      `-m comment --comment awg-bot` — п.3a; по ним агент и судит, что красной
-#      проверки «политика FORWARD» нет; --rollback снимает только помеченные, а
+#      проверки «политика FORWARD» нет; помеченные на интерфейсах, переставших
+#      быть своими, п.3a снимает на каждом прогоне (линк к резерву — свой);
+#      --rollback снимает только помеченные, а
 #      прежние без метки — на линке, аплинке и линке к резерву (не на
 #      интерфейсе локальной сети: там такое мог поставить чужой файервол);
 #   4) автозапуск: юнит зовёт этот же скрипт, таблица ставится ДО подъёма линка;
@@ -452,6 +454,15 @@ fwd_tagged() {                 # «-i|-o интерфейс» помеченны
     iptables -w -S FORWARD 2>/dev/null \
         | sed -n "s/^-A FORWARD \(-[io]\) \([A-Za-z0-9_.@-]*\) -m comment --comment \"\{0,1\}$FWD_TAG\"\{0,1\} -j ACCEPT\$/\1 \2/p"
 }
+fwd_prune() {                  # $@ = свои интерфейсы сейчас: помеченные ACCEPT прочих — снять
+    # интерфейс перестал быть своим (VPN-транзит выключен, аплинк или интерфейс
+    # локальной сети сменили имя) — наше же правило держало бы его транзит
+    # открытым мимо чужой политики DROP до отката
+    fwd_tagged | while read -r _d _i; do
+        case " $* " in *" $_i "*) continue ;; esac
+        run "iptables -w -D FORWARD $_d $_i -m comment --comment $FWD_TAG -j ACCEPT"
+    done
+}
 fwd_rollback() {               # $@ = свои интерфейсы (правила без метки — только на них)
     command -v iptables >/dev/null 2>&1 || return 0
     fwd_tagged | while read -r _d _i; do
@@ -553,7 +564,9 @@ cat > "$LAN_LISTS.new" <<'LISTSEOF'
 #   фиды подсетей → набор lan_vpn_nets4 (атомарно: flush + add)
 #   слепки наборов → /var/lib/awg-gw/*.nft (грузятся при старте до фидов)
 #   итог → /var/lib/awg-gw/lists.status: updated_at, domains, nets, rc,
-#          source (net — скачано, channel — привёз канал)
+#          source (net — скачано, channel — привёз канал); nets — число в
+#          наборе: не тронут — прежнее, пополнен (часть фидов не пришла) —
+#          счёт по самому набору
 set -u
 TABLE="inet awg_lan"
 D="${AWG_DNSMASQ_D:-/etc/dnsmasq.d}"
@@ -562,7 +575,9 @@ DUMP="${AWG_LAN_DUMP:-/var/lib/awg-gw}"; RB="$DUMP/rollback"
 mkdir -p "$DUMP"
 # один запуск за раз: кнопка «Обновить» и задача агента могут совпасть, а два
 # параллельных — двойная запись фида и двойной рестарт dnsmasq
-exec 9>"$DUMP/lists.lock"
+# command: у dash отказ перенаправления особой встроенной exec (каталог только
+# для чтения, не создался) завершал скрипт кодом 2 — «файл не прошёл проверку»
+command exec 9>"$DUMP/lists.lock" || { echo "рабочий шаг сборки списков не прошёл — списки не тронуты" >&2; exit 1; }
 # Ждём до двух минут, а не выходим сразу: фиды из канала, пришедшие во время
 # ручного «Обновить», иначе молча не применились бы, а агент считал бы их
 # применёнными. Не дождались — код 75 («занято»), не успех.
@@ -679,10 +694,11 @@ fi
 # префикс не короче /8: «0.0.0.0/1» из битого фида увёл бы в туннель полсети;
 # отбор, сортировка и склейка — порознь: в конвейере упавший шаг дал бы пустой
 # набор с кодом 0, и в итог ушло бы «подсетей 0» при нетронутом наборе
-elems=""; nets_built=0
+# nets_set — что стало с набором: full — пересобран, add — пополнен, пусто — не тронут
+elems=""; nets_set=""
 grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/([89]|[12][0-9]|3[0-2])$' "$NETS" > "$NETS2"
 if [ $? -le 1 ] && sort -u -o "$NETS2" "$NETS2" && elems="$(paste -sd, - < "$NETS2")"; then
-    nets_built=1
+    :
 else
     elems=""; echo "подсети: рабочий шаг сборки набора не прошёл — набор не тронут" >&2; rc=1
 fi
@@ -690,14 +706,19 @@ if [ -n "$elems" ]; then
     if [ "${nets_rc:-0}" = "0" ]; then
         # одной транзакцией: между flush и add окна нет
         printf 'flush set %s lan_vpn_nets4\nadd element %s lan_vpn_nets4 { %s }\n' "$TABLE" "$TABLE" "$elems" \
-            | nft -f - || { echo "подсети: nft отклонил набор" >&2; rc=1; }
+            | nft -f - && nets_set=full || { echo "подсети: nft отклонил набор" >&2; rc=1; }
     else
         # один из фидов не скачался: только ДОБАВИТЬ — flush стёр бы подсети
         # сервиса, чей фид не пришёл, до следующего похода
         printf 'add element %s lan_vpn_nets4 { %s }\n' "$TABLE" "$elems" \
-            | nft -f - || { echo "подсети: nft отклонил набор" >&2; rc=1; }
+            | nft -f - && nets_set=add || { echo "подсети: nft отклонил набор" >&2; rc=1; }
     fi
 fi
+count_nets() {                 # число элементов lan_vpn_nets4 по самому набору → _nets
+    nft list set $TABLE lan_vpn_nets4 > "$NETS2" 2>/dev/null \
+        && sed -n '/elements = {/,/}/p' "$NETS2" > "$NETS" && tr ',' '\n' < "$NETS" > "$NETS2" || return 1
+    _nets="$(grep -c '[0-9]' "$NETS2")"; [ $? -le 1 ]
+}
 
 # ── слепки: при старте таблица пуста, пока агент не сходит за фидами
 mkdir -p "$DUMP"
@@ -705,12 +726,16 @@ for s in lan_vpn4 lan_vpn_nets4; do
     nft list set $TABLE $s > "$DUMP/$s.nft.tmp" 2>/dev/null && mv -f "$DUMP/$s.nft.tmp" "$DUMP/$s.nft" || rm -f "$DUMP/$s.nft.tmp"
 done
 _dom="$(grep -c '^nftset=' "$FEED" 2>/dev/null)"; _dom="${_dom:-0}"
-if [ "$nets_built" = 1 ]; then
-    _nets="$(printf '%s' "$elems" | tr ',' '\n' | grep -c .)"
-else
-    # набор не тронут — в итоге прежнее число, а не ноль
-    _nets="$(sed -n 's/^nets=//p' "$DUMP/lists.status" 2>/dev/null | head -n 1)"
-fi
+# Итог — число в наборе, а не число пришедших: набор не тронут (сбор не
+# прошёл, подсети не пришли вовсе, nft отклонил) — прежнее число, а не ноль;
+# пополнен (часть фидов не пришла) — счёт по самому набору, в нём и подсети
+# прежних прогонов; счёт не вышел — прежнее
+_nets=""
+case "$nets_set" in
+    full) _nets="$(printf '%s' "$elems" | tr ',' '\n' | grep -c .)" ;;
+    add)  count_nets || _nets="" ;;
+esac
+[ -n "$_nets" ] || _nets="$(sed -n 's/^nets=//p' "$DUMP/lists.status" 2>/dev/null | head -n 1)"
 _nets="${_nets:-0}"
 # итог — во временный файл и mv: недописанный итог агент прочёл бы как «списков нет»
 printf 'updated_at=%s\ndomains=%s\nnets=%s\nrc=%s\nsource=%s\n' "$(date -Iseconds)" "$_dom" "$_nets" "$rc" \
@@ -750,10 +775,14 @@ cat > "$LAN_DOMAIN.new" <<'DOMEOF'
 # уходит и из набора lan_ru4 (flush + dig оставшихся: набор маленький и
 # наполняется только отсюда); ушедший из «в туннель» вынимается из lan_vpn4 по
 # адресам dig, ошибки глушатся (адрес мог слиться в интервал или принадлежать
-# домену фида). Копии для отката обоих файлов и фида — $DUMP/rollback/<имя>.prev.
-# Сбой рабочего шага правки — код 1: до записи списки не тронуты, после — откат.
-# Сбой сбора адресов для наборов после рестарта — код 1 без отката списков (они
-# применены, адреса наберёт и dnsmasq): набор не тронут, lan_ru4 — не пустой.
+# домену фида). Копии для отката обоих файлов и фида — $DUMP/rollback/<имя>.prev;
+# копия не легла — файл не трогается (код 1), пустой копии не бывает.
+# Сбой рабочего шага правки — код 1: до записи списки не тронуты, после — откат
+# (отказ --test и сбой записи — без рестарта dnsmasq, отказ рестарта — с ним).
+# Сбой сбора адресов для наборов после рестарта и отказ nft на lan_ru4 — код 1
+# без отката списков (они применены, адреса наберёт и dnsmasq): набор не
+# тронут, lan_ru4 — не пустой (сброс и наполнение — одной транзакцией).
+# Слепок lan_vpn4 — через свой временный файл: fill пишет его без блокировки.
 # Правило домена — DOMAIN_RE (зона буквами или punycode «xn--»);
 # то же правило применит сервер AWG к общему списку (этап 2 синхронизации).
 # AWG_HTML=1 (ставит агент: вывод уходит в чат) — домены в строках итога в
@@ -826,7 +855,13 @@ fill_set() {                   # fill_set <набор> <файл доменов>
     return 0
 }
 snapshot_vpn() {               # слепок набора грузится при старте: без него снятый адрес вернулся бы с загрузкой
-    nft list set $TABLE lan_vpn4 > "$DUMP/lan_vpn4.nft.tmp" 2>/dev/null && mv -f "$DUMP/lan_vpn4.nft.tmp" "$DUMP/lan_vpn4.nft" || rm -f "$DUMP/lan_vpn4.nft.tmp"
+    # временный — свой на запуск: fill идёт без блокировки списков, и общий
+    # lan_vpn4.nft.tmp с прогоном под ней (sync, правка, скрипт фидов) писали бы
+    # оба с усечением — после mv слепок перемешан, и при загрузке он молча не
+    # грузится. Не создался — слепок прежний, как при отказе nft
+    _snap="$(mktemp "$DUMP/lan_vpn4.nft.XXXXXX" 2>/dev/null)" || return 0
+    { nft list set $TABLE lan_vpn4 > "$_snap" 2>/dev/null && chmod 644 "$_snap" && mv -f "$_snap" "$DUMP/lan_vpn4.nft"; } \
+        || rm -f "$_snap"
 }
 plural_dom() {                 # адреса 1 домена, 2 доменов, 21 домена
     case "$1" in *1[0-9]) echo доменов;; *1) echo домена;; *) echo доменов;; esac
@@ -851,7 +886,9 @@ if [ "$cmd" = "fill" ]; then
     exit 0
 fi
 # одна блокировка со скриптом фидов: он читает ru-user.conf и тоже перезапускает dnsmasq
-exec 9>"$DUMP/lists.lock"
+# command: у dash отказ перенаправления особой встроенной exec (каталог только
+# для чтения, не создался) завершал скрипт кодом 2 — «файл не прошёл проверку»
+command exec 9>"$DUMP/lists.lock" || { echo "рабочий шаг правки не прошёл — списки не тронуты" >&2; exit 1; }
 if command -v flock >/dev/null 2>&1 && ! flock -w 120 9; then echo "обновление списков ещё идёт" >&2; exit 75; fi
 # Сбой рабочего шага (временный каталог, чтение и сборка списков, запись файлов и
 # фида — нет места, только чтение, процесс не запустился) — код 1 и строка об этом,
@@ -940,8 +977,13 @@ changed="$VPN $RU"
 # копии для отката — вне conf-dir: оттуда dnsmasq читает всё, кроме .dpkg-*
 mkdir -p "$RB" || untouched
 prev() { printf '%s/%s.prev' "$RB" "$(basename "$1")"; }
-for f in "$VPN" "$RU"; do cp -p "$f" "$(prev "$f")" 2>/dev/null || : > "$(prev "$f")" || untouched; done
-restore() { for f in $changed; do mv -f "$(prev "$f")" "$f"; done; }
+# Копия не легла (нет места, ошибка ввода-вывода) — файл не трогаем: прежде на
+# сбой cp ложилась ПУСТАЯ копия, правка шла дальше, и любой откат ставил пустоту
+# на место списка. Файла нет — нет и копии (прежнюю чужого запуска — прочь):
+# откат его снимет
+take_prev() { rm -f "$(prev "$1")" && { [ ! -f "$1" ] || cp -p "$1" "$(prev "$1")"; }; }
+for f in "$VPN" "$RU"; do take_prev "$f" || { rm -f "$(prev "$VPN")" "$(prev "$RU")"; untouched; }; done
+restore() { for f in $changed; do if [ -f "$(prev "$f")" ]; then mv -f "$(prev "$f")" "$f"; else rm -f "$f"; fi; done; }
 rollback() { restore; systemctl restart dnsmasq || true; }
 # dnsmasq с новыми списками ещё не перезапускался — откат без рестарта
 unwritten() { echo "запись списков не прошла — откатываю" >&2; restore; exit 1; }
@@ -962,14 +1004,15 @@ if [ -s "$SRC" ] && ! cmp -s "$TMPD/want_ru" "$TMPD/before_ru"; then
     grep -E '^(#.*|nftset=/[^/[:space:]]+(/[^/[:space:]]+)*/inet#awg_lan#lan_vpn4)$' "$TMPD/feed.raw" > "$TMPD/feed.conf"
     [ $? -le 1 ] || unwritten
     if [ -s "$TMPD/feed.conf" ] && ! cmp -s "$TMPD/feed.conf" "$FEED"; then
-        { cp -p "$FEED" "$(prev "$FEED")" 2>/dev/null || : > "$(prev "$FEED")"; } || unwritten
+        take_prev "$FEED" || { rm -f "$(prev "$FEED")"; unwritten; }
         changed="$changed $FEED"
         install -m 644 "$TMPD/feed.conf" "$FEED" || unwritten
     fi
 fi
 # conf-dir Debian подключает ключом из init-скрипта — голый --test файлы не видит
 if command -v dnsmasq >/dev/null 2>&1 && ! dnsmasq --test "--conf-dir=$D,.dpkg-dist,.dpkg-old,.dpkg-new" >/dev/null 2>&1; then
-    echo "dnsmasq --test отверг списки — откатываю" >&2; rollback; exit 1
+    # демон с новыми файлами ещё не перезапускался — откат без рестарта: кэш DNS сети цел
+    echo "dnsmasq --test отверг списки — откатываю" >&2; restore; exit 1
 fi
 if ! systemctl restart dnsmasq; then
     echo "dnsmasq не поднялся со своими списками — откатываю" >&2; rollback; exit 1
@@ -995,11 +1038,15 @@ done
 # «напрямую» изменилось — набор целиком заново: он маленький и наполняется только отсюда
 # адреса — до сброса: упавший сбор оставляет набор прежним, а не пустым (иначе
 # все исключения «напрямую» шли бы в туннель до первых запросов)
+# Сброс и наполнение — одной транзакцией nft (как подсети в awg-lan-lists.sh):
+# двумя вызовами между ними было окно с пустым набором, а отказ add молча
+# оставлял его пустым при коде 0. Отказ транзакции — набор прежний, код 1
 ru_ok=1
 if ! cmp -s "$TMPD/want_ru" "$TMPD/before_ru"; then
-    if gather_ips "$TMPD/want_ru"; then
-        nft flush set $TABLE lan_ru4 2>/dev/null || true
-        [ -n "$_ips" ] && nft add element $TABLE lan_ru4 "{ $_ips }" 2>/dev/null
+    if gather_ips "$TMPD/want_ru" && printf 'flush set %s lan_ru4\n' "$TABLE" > "$TMPD/ru.nft" \
+        && { [ -z "$_ips" ] || printf 'add element %s lan_ru4 { %s }\n' "$TABLE" "$_ips" >> "$TMPD/ru.nft"; } \
+        && nft -f "$TMPD/ru.nft" 2>/dev/null; then
+        :
     else
         ru_ok=0; set_failed lan_ru4
     fi
@@ -1088,7 +1135,9 @@ DUMP="${AWG_LAN_DUMP:-/var/lib/awg-gw}"; RB="$DUMP/rollback"; PREV="$RB/peer-ser
 DOMAIN='awg\.internal'
 [ "$(id -u)" = "0" ] || { echo "нужен root" >&2; exit 1; }
 mkdir -p "$DUMP" "$RB"
-exec 9>"$DUMP/lists.lock"
+# command: у dash отказ перенаправления особой встроенной exec (каталог только
+# для чтения, не создался) завершал скрипт кодом 2 — «файл не прошёл проверку»
+command exec 9>"$DUMP/lists.lock" || { echo "рабочий шаг записей SMB не прошёл — записи не тронуты" >&2; exit 1; }
 if command -v flock >/dev/null 2>&1 && ! flock -w 120 9; then echo "обновление списков или записей SMB ещё идёт" >&2; exit 75; fi
 # conf-dir Debian подключает ключом из init-скрипта — голый --test файл не видит
 test_conf() { dnsmasq --test "--conf-dir=$D,.dpkg-dist,.dpkg-old,.dpkg-new" >/dev/null 2>&1; }
@@ -2223,7 +2272,13 @@ fi
 # из аплинка и из локальной сети умирает молча. Правила — в его же цепочке,
 # идемпотентно, с меткой FWD_TAG; при откате снимаются только помеченные (и
 # прежние без метки на своих интерфейсах). Только когда политика действительно DROP.
+# Помеченные правила интерфейсов, переставших быть своими, снимаются на каждом
+# прогоне, при любой политике; линк к резерву (awgrsv) — свой: его правила
+# ведёт reserve-gw-setup.sh
 step "3a. Чужая политика FORWARD"
+if command -v iptables >/dev/null 2>&1; then
+    fwd_prune "$LINK_IF" "${UPLINK_IF:-}" "${LAN_IF_PRE:-}" "$(printf '%s' "${RSV_IF:-awgrsv}" | tr -cd 'A-Za-z0-9_.-')"
+fi
 if command -v iptables >/dev/null 2>&1 && iptables -w -S FORWARD 2>/dev/null | grep -q '^-P FORWARD DROP'; then
     say "  ip filter FORWARD: DROP (чужой файервол) — открываю транзит своим интерфейсам"
     for _i in "$LINK_IF" "${UPLINK_IF:-}" "${LAN_IF_PRE:-}"; do fwd_allow -i "$_i"; fwd_allow -o "$_i"; done
