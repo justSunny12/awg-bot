@@ -580,7 +580,7 @@ def test_an_unclear_failure_waits_for_the_fact_until_the_limit(box):
     box.record_error = dnsapi.DnsError("Cloudflare ответил не JSON (код 502)")
     assert box.open(**box.points(1)) == 1
     assert "запись DNS не подтвердилась за 5 мин" in box.out and "код 502" in box.out
-    assert sum(box.sleeps) == 300 and not rsvzone.TG_TAKE_FILE.exists()
+    assert sum(box.sleeps) == pytest.approx(300) and not rsvzone.TG_TAKE_FILE.exists()
 
 
 # настоящий set_record (Box подменяет его) — для явных отказов провайдеров через их http
@@ -620,7 +620,7 @@ def test_an_explicit_provider_refusal_fails_at_once_and_an_unclear_one_waits(box
         assert st["reason"].startswith("запись DNS: ") and box.sleeps == [] and box.auth_reads == [], \
             f"явный отказ ждал предел: {st}"
     else:
-        assert st["reason"].startswith("запись DNS не подтвердилась за 5 мин") and sum(box.sleeps) == 300, st
+        assert st["reason"].startswith("запись DNS не подтвердилась за 5 мин") and sum(box.sleeps) == pytest.approx(300), st
 
 
 # ── исход смены записи неизвестен (record_try → record_wait) ────────────────
@@ -695,7 +695,7 @@ def test_a_timeout_with_a_record_not_applied_fails_at_the_limit(box, monkeypatch
     st = rsvzone.open_status()
     assert st["step"] == "fail" and st["reason"].startswith("запись DNS не подтвердилась за 5 мин: провайдер DNS"), st
     assert "record" not in st, "исход стал известен — поле record=try бот принял бы за неизвестный"
-    assert sum(box.sleeps) == 300 and box.auth_reads[-1] == 300, (box.sleeps, box.auth_reads)
+    assert sum(box.sleeps) == pytest.approx(300) and box.auth_reads[-1] == pytest.approx(300), (box.sleeps, box.auth_reads)
     assert max(box.sleeps) <= 84, "чтения реже раза в минуту с разбросом"
     assert not rsvzone.TG_TAKE_FILE.exists() and "record_set" not in box.steps
 
