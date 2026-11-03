@@ -75,8 +75,8 @@ def test_the_worst_plausible_card_fits_telegram_with_a_margin(kw):
 def test_reasons_from_state_are_clipped_by_one_helper():
     text = card_text(_worst(), "awg_bot")
     assert WHY not in text, "ошибка из состояния вошла в карточку целиком"
-    keep = next(ln for ln in text.split("\n") if ln.startswith("└ ⚠️ клона нет: "))
-    why = keep.removeprefix("└ ⚠️ клона нет: ").removesuffix(" — перезапускаю открытие раз в минуту")
+    keep = next(ln for ln in text.split("\n") if ln.startswith("└ ⚠️ интерфейс резерва не поднят: "))
+    why = keep.removeprefix("└ ⚠️ интерфейс резерва не поднят: ").removesuffix(" — перезапускаю открытие раз в минуту")
     assert why.endswith("…") and _u16(why) == WHY_MAX, why
 
 
