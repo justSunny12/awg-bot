@@ -200,6 +200,16 @@ def _resolver_warnings(services) -> list[str]:
             "journalctl -u dnsmasq -o short-iso -e"]
 
 
+def _pair_liveness_warnings(services) -> list[str]:
+    """Пара есть, а `reserve.suspect_seconds` ниже keepalive линка плюс такт — такт держит планку,
+    админу — почему его цифра не действует."""
+    if not getattr(services, "reserve_paired", lambda: False)():
+        return []
+    from awgbot.domain.services.reserve.liveness import pair_liveness_problem
+    why = pair_liveness_problem()
+    return [f"⚠️ Резерв: {why}"] if why else []
+
+
 def collect_warnings(services, server_ok: bool | None = None) -> list[str]:
     """Не-блокирующие замечания. Возвращает список строк для отправки админу.
     Каждая проверка изолирована: её собственный сбой не роняет остальные и не
@@ -222,6 +232,12 @@ def collect_warnings(services, server_ok: bool | None = None) -> list[str]:
         warns += _firewall_warnings(services)
     except Exception as e:                       # noqa: BLE001
         log.warning("preflight: проверка файервола: %s", e)
+
+    # живость линка пары: порог подозрения ниже keepalive — ложные «резерв недоступен»
+    try:
+        warns += _pair_liveness_warnings(services)
+    except Exception as e:                       # noqa: BLE001
+        log.warning("preflight: проверка порога живости пары: %s", e)
 
     # свой DNS-резолвер пользователей: приватный адрес в конфигах обязан отвечать
     try:

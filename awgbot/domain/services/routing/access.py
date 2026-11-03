@@ -117,7 +117,12 @@ class RoutingAccessMixin:
         # соседи), а обвязке нужен ЮНИТ — иначе routing-host-setup.sh честно
         # остановится на полпути.
         from awgbot.infra import systemd
-        if not systemd.unit_file_listed("dnsmasq.service", timeout=30):
+        try:
+            dnsmasq_unit = systemd.unit_file_listed("dnsmasq.service", timeout=30)
+        except (OSError, subprocess.SubprocessError) as e:
+            # голое исключение уходило мимо обработчика — экран «Разворачиваю…» оставался без кнопок
+            raise ServiceError(f"проверка юнита dnsmasq не прошла: {e}")
+        if not dnsmasq_unit:
             run(["apt-get", "install", "-y", "--no-install-recommends", "dnsmasq"],
                 "установка dnsmasq")
         run(["sh", str(base / "routing-host-setup.sh"), "--apply"], "обвязка хоста")
