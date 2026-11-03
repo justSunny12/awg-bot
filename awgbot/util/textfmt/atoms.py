@@ -138,6 +138,13 @@ def toast(text, limit: int = TOAST_MAX, *, html: bool = False) -> str:
     plain = str(text or "")
     if html:
         plain = _html.unescape(_TAG.sub("", plain))
+    return clip(plain, limit)
+
+
+def clip(text, limit: int) -> str:
+    """Простой текст (без разметки) не длиннее limit единиц UTF-16 — с «…» в конце;
+    короче — как есть. Им режет toast; им же — причины и ошибки в строках экранов."""
+    plain = str(text or "")
     if _u16(plain) <= limit:
         return plain
     cut = plain[:limit - 1]

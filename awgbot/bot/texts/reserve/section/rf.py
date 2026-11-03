@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from ...fmt import _e
-from ..common import _n, _when
+from ..common import _n, _when, _why
 
 
 # ── РФ-доступ через второй сервер: строки карточки (Т-РТ1…Т-РТ3, на вычитку) ─
@@ -19,7 +19,7 @@ def rfpeer_mine_lines(r: dict, peer: str) -> list[str]:
         return [f"└ 🇷🇺 РФ-доступ — через шлюзы {name}" + (f" с {_e(since)}" if since else "") + ": свои шлюзы не отвечают"]
     if r.get("offer_missing"):
         mark = "☑️" if str(r.get("offer_missing_code") or "off") == "off" else "⚠️"   # ☑️ — выключенная настройка; невыполненное условие — ⚠️
-        return [f"└ {mark} Запасного РФ-доступа через шлюзы {name} нет: {_e(r['offer_missing'])}"]
+        return [f"└ {mark} Запасного РФ-доступа через шлюзы {name} нет: {_why(r['offer_missing'])}"]
     if r.get("probe_down") is not None:
         since = _when(r.get("probe_down") or "")
         return [f"└ ⚠️ Шлюзы {name} для РФ-доступа не отвечают" + (f" с {_e(since)}" if since else "") + " — запасного пути сейчас нет"]

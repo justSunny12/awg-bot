@@ -61,11 +61,17 @@ def test_names_are_escaped():
     assert "<i>" not in text and "&lt;i&gt;&amp;" in text, text
 
 
-def test_no_more_than_ten_voters_in_the_row():
+def test_the_voters_row_is_capped_and_says_how_many_are_left_out():
+    """Строка голосующих — не больше VOTERS_SHOWN имён (предел карточки 4096), остальные —
+    хвостом « [+N]», а не молча."""
+    from awgbot.bot.texts.reserve.section.votes import VOTERS_SHOWN
     q = _card()
     q["mine"]["voters"] = [{"node": f"a{i}", "name": f"Шлюз {i}", "w": "see", "since": "", "age": 1, "silent": False}
                            for i in range(1, 15)]
-    assert quorum_mine_lines(q)[1].count("— видит") == 10
+    row = quorum_mine_lines(q)[1]
+    assert row.count("— видит") == VOTERS_SHOWN and row.endswith(f" [+{14 - VOTERS_SHOWN}]"), row
+    q["mine"]["voters"] = q["mine"]["voters"][:VOTERS_SHOWN]
+    assert "[+" not in quorum_mine_lines(q)[1]
 
 
 def test_a_fenced_leader_line_names_the_episode_start():

@@ -8,7 +8,8 @@ bot/ui ре-экспортируют их под прежними именами
 
 Части: base — экранирование, ссылки на экраны, дерево вложенных строк,
 объёмы, устройства, ссылки на людей, склонения; atoms — сборщик экрана и
-атомы текста (шапка, статус, тумблер, подтверждение, итог, всплывашка); tail —
+атомы текста (шапка, статус, тумблер, подтверждение, итог, всплывашка,
+обрезка с «…»); tail —
 хвост обрезанного списка (ссылкой на экран со всем списком или «[+N]»).
 """
 from __future__ import annotations
@@ -22,7 +23,7 @@ from .base import (
 from .tail import more_link, more_count, more_line
 from .atoms import (
     STATUS, TOAST_MAX, TEXT_MAX, _TAG, st, tick, head, prompt, label, sub, screen, confirm,
-    fail, result, changed, Toast, _u16, toast, note_budget)
+    fail, result, changed, Toast, _u16, toast, clip, note_budget)
 
 __all__ = [
     "deep_link", "profile_link", "admin_device_link", "_SUB", "tree", "sub_line",
@@ -32,4 +33,4 @@ __all__ = [
     "client_link", "owner_name", "holder_name", "owner_link", "holder_link", "_n_devices",
     "num", "more", "more_link", "more_count", "more_line", "unlimited", "plural_ru", "_days_word", "_days",
     "STATUS", "TOAST_MAX", "TEXT_MAX", "_TAG", "st", "tick", "head", "prompt", "label", "sub",
-    "screen", "confirm", "fail", "result", "changed", "Toast", "_u16", "toast", "note_budget"]
+    "screen", "confirm", "fail", "result", "changed", "Toast", "_u16", "toast", "clip", "note_budget"]

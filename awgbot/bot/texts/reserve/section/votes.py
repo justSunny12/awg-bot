@@ -3,12 +3,15 @@
 Отдельно — самый ветвистый кусок карточки, его тесты бьют сюда напрямую."""
 from __future__ import annotations
 
+from awgbot.util.textfmt.tail import more_count
+
 from ...fmt import _e
 from ..common import _n, _when
 
 
 # ── кворум: блок голосов карточки (Т-К1…Т-К3, Т-К20; на вычитку) ───────────
 
+VOTERS_SHOWN = 8                    # голосующих поимённо в строке-сводке; дальше — « [+N]» (предел карточки 4096)
 _W = {"see": "видит", "held": "видит", "uns": "не видит", "sus": "сомневается", "new": "ещё не смотрел", "silent": "молчит"}
 
 
@@ -74,12 +77,13 @@ def quorum_mine_lines(q: dict) -> list[str]:
     else:
         out.append(f"└ 🗳 Голосующих об этом сервере: {v}, порог переезда — {t}")
     rows = []
-    for vt in (mine.get("voters") or [])[:10]:
+    voters = mine.get("voters") or []
+    for vt in voters[:VOTERS_SHOWN]:
         w = "silent" if vt.get("silent") and vt.get("w") not in ("uns", "sus") else (vt.get("w") or "silent")
         since = _when(vt.get("since") or "")
         rows.append(f"{_qn(vt.get('name') or vt.get('node') or '?')} — {_W.get(w, w)}" + (f" с {_e(since)}" if since and w in ("uns", "silent") else ""))
     if rows:
-        out.append("└ " + " · ".join(rows))
+        out.append("└ " + " · ".join(rows) + more_count(len(voters) - VOTERS_SHOWN))
     for names, net in mine.get("correlation") or []:          # Т-К15
         out.append(f"└ ⚠️ {' и '.join(_n(n) for n in names)} выходят в интернет из одной сети <code>{_e(net)}</code> — "
                    "её отказ снимет " + ("оба голоса" if len(names) == 2 else "все их голоса"))
