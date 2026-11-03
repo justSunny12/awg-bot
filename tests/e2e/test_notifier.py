@@ -132,7 +132,7 @@ async def test_email_fallback_counts_as_delivery():
     done = []
 
     async def fb(text):
-        pass
+        return True                                   # письмо ушло
     notifier.set_email_fallback(fb)
     try:
         await notifier.send_notifications(DeadBot(), [
@@ -219,6 +219,7 @@ def mails():
 
     async def fb(text):
         sent.append(text)
+        return True                                   # письмо ушло
     notifier.set_email_fallback(fb)
     yield sent
     notifier.set_email_fallback(None)
@@ -296,6 +297,41 @@ async def test_a_long_retry_after_on_a_plain_notice_is_retried_later_not_in_plac
     await _drain_deferred()
     assert sleeps == [300] and bot.attempts == [111, 111] and bot.delivered == [111]
     assert done == [1] and mails == []
+
+
+async def test_a_long_retry_after_with_the_mail_channel_off_is_retried_later_not_confirmed(sleeps):
+    """Запасной канал повешен, но почта выключена: канал отвечает False — алерт не считается
+    доставленным (раньше «не бросил исключения» сходило за доставку, и критичный алерт терялся
+    с отметкой «показан»); повтор — отложенный, отметка — только доставкой."""
+    async def fb(text):
+        return False
+    notifier.set_email_fallback(fb)
+    try:
+        bot = ScriptedBot({_cfg.ADMIN_ID: [_ra(120)]})
+        done = []
+        await notifier.send_notifications(bot, [
+            Notification(_cfg.ADMIN_ID, "🚨 крит", critical=True, on_sent=lambda: done.append(1))])
+        assert done == [] and sleeps == [], "выключенная почта сошла за доставку"
+        await _drain_deferred()
+        assert sleeps == [120] and bot.delivered == [_cfg.ADMIN_ID] and done == [1]
+    finally:
+        notifier.set_email_fallback(None)
+
+
+async def test_the_same_text_is_not_deferred_twice_while_the_first_retry_waits(sleeps):
+    """Монитор создаёт тот же алерт заново каждый такт, пока отметка не взведена: пока
+    первый повтор ждёт паузу, тот же текст тому же адресату не шлётся и второго повтора
+    не ставит — после паузы админу приходит одно сообщение, отметку взводит оно."""
+    notifier.set_email_fallback(None)
+    bot = ScriptedBot({_cfg.ADMIN_ID: [_ra(120)]})
+    done = []
+    await notifier.send_notifications(bot, [Notification(_cfg.ADMIN_ID, "🚨 крит", on_sent=lambda: done.append("a"))])
+    await notifier.send_notifications(bot, [Notification(_cfg.ADMIN_ID, "🚨 крит", on_sent=lambda: done.append("b"))])
+    assert bot.attempts == [_cfg.ADMIN_ID], "дубль ушёл в Telegram"
+    assert len(notifier._deferred) == 1, "второй отложенный повтор"
+    await _drain_deferred()
+    assert sleeps == [120] and bot.delivered == [_cfg.ADMIN_ID] and done == ["a"]
+    assert notifier._pending == {}
 
 
 async def test_a_long_retry_after_on_a_critical_alert_without_mail_is_retried_later(sleeps):
