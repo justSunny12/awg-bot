@@ -55,6 +55,34 @@ def test_each_broken_link_is_named(change):
     assert replace(Timing(), **change).check() != ""
 
 
+@pytest.mark.parametrize("change,named", [
+    ({"up_s": 79}, "up_seconds"),
+    ({"yes_window_s": 35, "up_s": 200}, "yes_window_seconds"),
+    ({"rf_block_s": 100}, "rf_block_minutes"),
+    ({"no_s": 29}, "no_seconds"),
+    ({"down_s": -1000}, "T_down_rf"),
+    ({"tie_s": 100}, "tie_minutes"),
+    ({"probe_s": 4}, "probe_seconds"),
+    ({"port": 0}, "порт"), ({"port": 65536}, "порт"),
+    ({"grace_s": 23}, "grace_seconds"),
+    ({"pledge_s": 0}, "pledge_minutes"), ({"pledge_s": 59}, "pledge_minutes"),
+    ({"unfence_s": 4}, "unfence_seconds"), ({"ask_repeat_s": 4}, "ask_repeat_seconds"),
+    ({"pause_s": 4}, "pause_seconds"), ({"tie_clear_s": 4}, "tie_clear_seconds"),
+])
+def test_each_broken_link_names_its_own_key(change, named):
+    """Нарушение связки называет тот ключ, который сломан: строку читают в карточке «🛟 Резерв» и в
+    журнале, и админ правит именно его в reserve.yaml. Ветка, отвечающая чужим именем (или более ранняя
+    ветка, перехватившая случай), отправила бы его править не ту цифру, а кворум так и не включился бы."""
+    why = replace(Timing(), **change).check()
+    assert named in why, f"{change}: ждали имя {named!r}, связка ответила {why!r}"
+
+
+def test_a_key_below_the_tick_is_named_with_the_tick():
+    """«Меньше такта» — с самим тактом в строке: без него админу не из чего понять, до скольки поднимать."""
+    why = replace(Timing(), tie_clear_s=3).check()
+    assert why == "tie_clear_seconds 3 < такта 5", why
+
+
 def test_the_edges_of_the_link_are_inclusive_where_the_concept_says_so():
     """up = W + T_down + 20 и W = 1,4·P + 15 — ещё сходятся (знак «≥» концепта)."""
     assert replace(Timing(), up_s=80, tie_s=180).check() == ""

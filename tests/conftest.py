@@ -32,6 +32,24 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
+# Временные каталоги тестов (tmp_path) — свои у каждого рабочего дерева. Без этого все деревья делят
+# `pytest-of-<user>` в общем $TMPDIR, и выход точечного прогона в соседнем дереве (retention_count = 1 в
+# pytest.ini) стирал каталоги упавших тестов только что кончившегося прогона этого — разбирать было нечего.
+# Корень — не --basetemp: тот стирается целиком при старте, и два прогона одного дерева рвали бы друг
+# другу каталоги; под PYTEST_DEBUG_TEMPROOT pytest ведёт прежние нумерованные pytest-N с блокировкой
+# идущего прогона. Свой корень, заданный снаружи, и --basetemp (очередь полных прогонов) — главнее.
+# Имя короткое: путь tmp_path длиннее на него, а unix-сокету тестов на macOS дано не больше 104 байт.
+def _tree_temproot(root: str) -> str:
+    import hashlib
+    import tempfile
+    tag = hashlib.sha256(os.path.realpath(root).encode()).hexdigest()[:10]
+    return os.path.join(tempfile.gettempdir(), f"awgt-{tag}")
+
+
+if not os.environ.get("PYTEST_DEBUG_TEMPROOT"):
+    os.makedirs(_tree_temproot(_ROOT), mode=0o700, exist_ok=True)
+    os.environ["PYTEST_DEBUG_TEMPROOT"] = _tree_temproot(_ROOT)
+
 # Сеть закрыта — до любого импорта awgbot (модуль, взявший ссылку на
 # socket.getaddrinfo при импорте, иначе держал бы настоящую): tests/netguard.py,
 # проверка по тестам — автоматическая фикстура _no_network ниже.
