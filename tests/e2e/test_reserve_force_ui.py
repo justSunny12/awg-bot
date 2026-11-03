@@ -225,7 +225,7 @@ def test_the_reserve_admin_is_told_once_that_the_webhook_left_the_guest(services
     notes = [n for a in services.reserve_guest_webhook_in({"foreign": True, "stalled": False}) if a[0] == "notify"
              for n in a[1]]
     assert len(notes) == 1 and notes[0].force_sound, notes
-    assert notes[0].text == ("⚠️ Вебхук бота «Beta» указывает не на этот сервер — Telegram у основы, бот основы "
+    assert notes[0].text == ("⚠️ Вебхук бота «Beta» указывает не на этот сервер — гостевой бот "
                              "здесь решения больше не принимает"), notes[0].text
     assert services.reserve_guest_webhook_in({"foreign": True, "stalled": False}) == [], "повтор на каждом надзоре"
 

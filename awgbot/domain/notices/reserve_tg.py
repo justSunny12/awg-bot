@@ -41,7 +41,7 @@ def webhook_stalled_reserve(primary: str, since: str, error: str, port: int) -> 
 
 def webhook_foreign_reserve(primary: str) -> str:
     """Админу резерва: вебхук бота основы больше не у её бота здесь — Telegram забрала основа."""
-    return (f"⚠️ Вебхук бота {_n(primary)} указывает не на этот сервер — Telegram у основы, бот основы здесь "
+    return (f"⚠️ Вебхук бота {_n(primary)} указывает не на этот сервер — гостевой бот здесь "
             "решения больше не принимает")
 
 

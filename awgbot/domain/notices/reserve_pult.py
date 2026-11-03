@@ -26,4 +26,4 @@ def pult_handed(reserve: str) -> str:
 
 def pult_at_primary(primary: str) -> str:
     """Админу резерва, один раз на отметку пульта: Telegram бота основы у неё, её пользователи здесь."""
-    return f"⚠️ Telegram бота {_n(primary)} у основы — пользователи здесь"
+    return f"⚠️ Telegram бота {_n(primary)} на своём сервере — пользователи здесь"
