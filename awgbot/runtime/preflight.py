@@ -81,6 +81,17 @@ def check_fatal() -> None:
 
 
 # ── WARNING ──────────────────────────────────────────────────────────────────
+def _settings_move_warnings() -> list[str]:
+    """Перенос раздела настроек в свой файл на старте не удался (core/settings): бот
+    читает новый файл как есть, без значений прежнего раздела, — а журнал никто не
+    читает, пока резерв не откажет «готовность выключена»."""
+    from awgbot.core import settings as _settings
+    return [f"раздел {sec} из conf/{src} не перенесён в conf/{dst} ({why}) — бот берёт "
+            f"настройки из conf/{dst} как есть, без значений из {src}. Исправьте файл и "
+            f"перезапустите (systemctl restart awg-bot)"
+            for sec, src, dst, why in _settings.move_failures()]
+
+
 def collect_warnings_gateway(services=None) -> list[str]:
     """Warnings роли gateway: свои у каждой роли, потому что чинится разное.
     Проверки сервера awg шлюзу не о чем сказать — у него его нет."""
@@ -88,6 +99,7 @@ def collect_warnings_gateway(services=None) -> list[str]:
     from awgbot.core import config as _c
     warns: list[str] = []
     warns += _service_autostart_warning()
+    warns += _settings_move_warnings()
     if not os.path.exists(_c.GW_LINK_CONF):
         warns.append(f"нет конфига линка {_c.GW_LINK_CONF} — линк не поднимется; "
                      "шлюз подключается командой из бота сервера AWG: «🛰 Шлюзы» → «🛰 Подключить шлюз»")
@@ -194,6 +206,7 @@ def collect_warnings(services, server_ok: bool | None = None) -> list[str]:
     роняет бота — в худшем случае конкретная проверка молча пропускается.
     server_ok — живость awg, если старт её уже измерил: второй exec незачем."""
     warns: list[str] = []
+    warns += _settings_move_warnings()   # настройки резерва без значений прежнего раздела
 
     # Автозагрузка awg-интерфейса. Дыра, найденная ребутом ВПС: интерфейс
     # поднимает awg-quick@<iface>, и если юнит не включён — после ребута
