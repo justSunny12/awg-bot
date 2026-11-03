@@ -277,6 +277,10 @@ class SelfUpdateCoreMixin:
         if reason:
             raise updates.UpdateError(reason)
         blob = updates.download_asset(release)
+        if hasattr(self, "reserve_quorum_pause_sync"):
+            # кворум: плановая пауза лидера — после скачивания ассета, за секунды до остановки:
+            # пауза, объявленная до скачивания, тянулась всё время скачивания при живом ответчике
+            self.reserve_quorum_pause_sync()
         self.db.set_state("update_pending", release.tag)
         # sha256 ассета — апдейтеру: совпал с архивом — версия и digest в
         # installed-digest, бот на старте перенесёт их в базу (marks.py)

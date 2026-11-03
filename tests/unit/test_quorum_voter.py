@@ -153,18 +153,23 @@ def test_a_reply_before_the_leader_stops_does_not_lift_the_pause():
 
 
 def test_a_reply_after_silence_under_the_pause_lifts_it():
-    """Под паузой лидер замолк (проба пропала) и вернулся — пауза снята: дальше «не вижу» по
-    обычному сроку, а не по сроку паузы."""
-    v = _seeing()
+    """Под паузой лидер замолк дольше no_s (без паузы это было бы «не вижу») и вернулся — пауза
+    снята: дальше «не вижу» по обычному сроку, а не по сроку паузы. Одна потерянная в сети проба
+    при живом лидере — пропуск с досылками, не молчание: пауза держится (иначе потеря одного пакета
+    во время скачивания обновления снимала бы паузу до остановки лидера)."""
+    v = _seeing()                                     # ответы в T0 и T0 + 15
     v.pause(T0 + 20, 300)
-    s = v.probe_out(T0 + 25, T.probe_s)
-    v.tick(T0 + 25 + T.reply_s)                       # ответа нет — молчание под паузой
-    assert v.pause_silent
-    s = v.probe_out(T0 + 40, T.probe_s)
-    v.reply_in(_reply(s), T0 + 40.1)                  # лидер вернулся
-    assert not v.paused(T0 + 41) and not v.pause_silent
-    acts = [(k, a) for k in range(41, 200) for a in v.tick(T0 + k) if a == "uns"]
-    assert acts == [(86, "uns")], f"«не вижу» не по обычному сроку от ответа (+40,1 + {T.no_s}): {acts}"
+    v.probe_out(T0 + 25, T.probe_s)
+    v.tick(T0 + 25 + T.reply_s)                       # одна проба пропала — пропуск, не молчание
+    assert not v.pause_silent, "одна потерянная проба сняла паузу"
+    for k in range(29, 62):
+        v.tick(T0 + k)                                # молчание дольше no_s от последнего ответа (T0 + 15,1)
+    assert v.pause_silent and v.view != "uns", "молчание под паузой не отмечено или ушло «не вижу»"
+    s = v.probe_out(T0 + 70, T.probe_s)
+    v.reply_in(_reply(s), T0 + 70.1)                  # лидер вернулся
+    assert not v.paused(T0 + 71) and not v.pause_silent
+    acts = [(k, a) for k in range(71, 200) for a in v.tick(T0 + k) if a == "uns"]
+    assert acts == [(116, "uns")], f"«не вижу» не по обычному сроку от ответа (+70,1 + {T.no_s}): {acts}"
 
 
 # ── обязательство «нет» ──────────────────────────────────────────────────────
