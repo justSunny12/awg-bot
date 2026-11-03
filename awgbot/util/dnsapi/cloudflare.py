@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 
-from .common import DnsError, http, ipv4
+from .common import DnsError, Refused, http, ipv4, refusal_status
 
 id = "cloudflare"
 human = "Cloudflare"
@@ -30,7 +30,8 @@ def _call(cfg: dict, method: str, path: str, body: dict | None = None) -> dict:
     if code != 200 or not data.get("success"):
         errors = data.get("errors") if isinstance(data.get("errors"), list) else []
         errs = "; ".join(str(e.get("message", e) if isinstance(e, dict) else e) for e in errors[:2]) or f"код {code}"
-        raise DnsError(f"Cloudflare: {errs}"[:200])
+        # 4xx с телом API — явный отказ (правка не принята); 5xx и прочее — исход неизвестен
+        raise (Refused if refusal_status(code) else DnsError)(f"Cloudflare: {errs}"[:200])
     return data
 
 
@@ -41,16 +42,16 @@ def _zone_id(cfg: dict) -> str:
         res = _call(cfg, "GET", f"/zones?name={zone}&status=active").get("result") or []
         if res:
             return str(res[0]["id"])
-    raise DnsError(f"Cloudflare: зона для {cfg.get('name')} не найдена у этого токена")
+    raise Refused(f"Cloudflare: зона для {cfg.get('name')} не найдена у этого токена")
 
 
 def _record(cfg: dict) -> dict:
     zid = _zone_id(cfg)
     res = _call(cfg, "GET", f"/zones/{zid}/dns_records?type=A&name={cfg.get('name')}").get("result") or []
     if not res:
-        raise DnsError(f"Cloudflare: A-записи {cfg.get('name')} нет")
+        raise Refused(f"Cloudflare: A-записи {cfg.get('name')} нет")
     if len(res) > 1:
-        raise DnsError(f"Cloudflare: у {cfg.get('name')} несколько A-записей ({len(res)}) — оставь одну")
+        raise Refused(f"Cloudflare: у {cfg.get('name')} несколько A-записей ({len(res)}) — оставь одну")
     rec = dict(res[0])
     rec["_zone"] = zid
     return rec

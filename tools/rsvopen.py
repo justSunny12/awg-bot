@@ -63,8 +63,10 @@ reserve open` (root, без этой песочницы).
 стоят, авторитетный ответ раз в минуту ± 40 % до `limit` от `record_try`
 (последнее чтение — на самом пределе): появился — `record_set`, `record_fact`;
 нет — `fail запись DNS не подтвердилась за N мин: …` без поля `record` (прежний
-срыв со снятием зоны). Отказ «вручную» (`NotSupported`: запроса не было) — сразу
-`fail запись DNS: …`. Любой сбой между `record_try` и итогом несёт поля
+срыв со снятием зоны). Отказ «вручную» (`NotSupported`: запроса не было) и явный
+отказ провайдера (`dnsapi.Refused`: 4xx с разобранным телом, DuckDNS «KO», DynDNS2
+badauth/nohost/abuse…, зона или запись не найдены) — исход известен: сразу
+`fail запись DNS: …` (`record_try` перед ним остаётся, он безвреден). Любой сбой между `record_try` и итогом несёт поля
 `record=try`, `name`, `ip`, `limit`: процесс погиб или отказал посреди
 неизвестного — ожидание факта доводит бот резерва по open.status той же
 логикой (domain/services/reserve/inbound_recwait). Без записи (`set_record`
@@ -426,7 +428,7 @@ def run(data: dict) -> int:
     why = ""
     try:
         set_record(dns, target)
-    except dnsapi.NotSupported as e:                           # «вручную»: запроса не было — исход известен
+    except (dnsapi.NotSupported, dnsapi.Refused) as e:         # «вручную» или явный отказ провайдера — исход известен
         _RECORD.clear()
         return _fail(f"запись DNS: {e}")
     except Exception as e:                                     # noqa: BLE001 — таймаут, ответ не дошёл или не разобран

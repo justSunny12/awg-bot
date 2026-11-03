@@ -456,6 +456,78 @@ def test_dyndns2_keeps_an_explicit_scheme_and_refuses_an_empty_server(monkeypatc
         dyndns2.set({**DYN, "server": " "}, "203.0.113.9")
 
 
+# ── явный отказ (Refused) против неизвестного исхода ─────────────────────────
+# Явный отказ — правка точно не принята: процесс открытия на резерве срывается сразу. Прочее
+# (таймаут, 5xx, неразобранный ответ) — провайдер мог правку принять: процесс ждёт факта у
+# авторитетного сервера до предела. Отказ, принятый за неизвестный, — пять минут лишнего
+# ожидания в аварию; неизвестный, принятый за отказ, — зона снята при сменённой записи.
+
+def _cf_patch(resp):
+    return _cf_routes() | {("PATCH", "/zones/Z1/dns_records/R1"): resp}
+
+
+@pytest.mark.parametrize("case, refused", [
+    ("cf-401", True), ("cf-403", True), ("cf-404-zone", True), ("cf-no-record", True), ("cf-408", False),
+    ("cf-502-html", False), ("cf-500-json", False),
+    ("dp-401", True), ("dp-409-etag", True), ("dp-no-record", True), ("dp-503", False), ("dp-html", False),
+    ("duck-KO", True), ("duck-401", True), ("duck-bad-name", True), ("duck-500", False), ("duck-empty", False),
+    ("dyn-badauth", True), ("dyn-nohost", True), ("dyn-abuse", True), ("dyn-401", True), ("dyn-no-server", True),
+    ("dyn-911", False), ("dyn-dnserr", False), ("dyn-502", False),
+])
+def test_explicit_refusals_are_refused_and_unclear_answers_are_not(monkeypatch, case, refused):
+    err = lambda code, msg: (code, json.dumps({"success": False, "errors": [{"message": msg}]}))  # noqa: E731
+    dperr = lambda code, msg: (code, json.dumps({"success": False, "error": {"message": msg}}))   # noqa: E731
+    cfg, ip = CF, "203.0.113.9"
+    if case.startswith("cf-"):
+        mod, routes = cloudflare, {
+            "cf-401": _cf_patch(err(401, "Invalid API Token")), "cf-403": _cf_patch(err(403, "Authentication error")),
+            "cf-404-zone": _cf_routes() | {("GET", "/zones?name=example.net&"): err(404, "Not found")},
+            "cf-no-record": _cf_routes() | {("GET", "/zones/Z1/dns_records?type=A&name=vpn.example.net"):
+                                          (200, json.dumps({"success": True, "result": []}))},
+            "cf-408": _cf_patch(err(408, "Request Timeout")),
+            "cf-502-html": _cf_patch((502, "<html>Bad gateway</html>")),
+            "cf-500-json": _cf_patch(err(500, "Internal error")),
+        }[case]
+    elif case.startswith("dp-"):
+        cfg, mod, patch = DP, digitalplat, ("PATCH", "/domains/example.dpdns.org/dns/records/R7")
+        routes = _dp_routes({
+            "dp-401": {("GET", "/domains"): dperr(401, "Invalid API key")},
+            "dp-409-etag": {patch: dperr(409, "Record was modified")},
+            "dp-no-record": {("GET", "/domains/example.dpdns.org/dns/records"): (200, _dp_records())},
+            "dp-503": {patch: dperr(503, "busy")},
+            "dp-html": {patch: (200, "<html>maintenance</html>")},
+        }[case])
+    elif case.startswith("duck-"):
+        cfg, mod = DUCK, duckdns
+        if case == "duck-bad-name":
+            cfg = {**DUCK, "name": "vpn.example.net"}
+        resp = {"duck-KO": (200, "KO"), "duck-401": (401, "KO"), "duck-bad-name": (200, "OK"), "duck-500": (500, ""),
+                "duck-empty": (200, "")}[case]
+        routes = {("GET", "duckdns.org/update"): resp}
+    else:
+        cfg, mod = DYN, dyndns2
+        if case == "dyn-no-server":
+            cfg = {**DYN, "server": ""}
+        resp = {"dyn-badauth": (200, "badauth"), "dyn-nohost": (200, "nohost"), "dyn-abuse": (200, "abuse"),
+                "dyn-401": (401, ""), "dyn-no-server": (200, "good"), "dyn-911": (200, "911"),
+                "dyn-dnserr": (200, "dnserr"), "dyn-502": (502, "")}[case]
+        routes = {("GET", "/nic/update"): resp}
+    _Http(monkeypatch, mod, routes)
+    with pytest.raises(dnsapi.DnsError) as got:
+        mod.set(cfg, ip)
+    assert isinstance(got.value, dnsapi.Refused) is refused, f"{case}: {type(got.value).__name__}: {got.value}"
+
+
+def test_no_answer_at_all_is_not_a_refusal(monkeypatch):
+    """Ответа HTTP нет (таймаут, сеть) — DnsError из http(), не Refused: правка могла лечь."""
+    def boom(req, timeout=None):
+        raise TimeoutError("timed out")
+    monkeypatch.setattr(common.net4, "urlopen", boom)
+    with pytest.raises(dnsapi.DnsError) as got:
+        common.http("PATCH", "https://dns.example.net/x", body={"a": 1})
+    assert not isinstance(got.value, dnsapi.Refused)
+
+
 def test_manual_cannot_set_and_reads_through_the_authoritative_server(monkeypatch):
     with pytest.raises(dnsapi.NotSupported):
         manual.set({"provider": "manual", "name": "vpn.example.net"}, "203.0.113.9")

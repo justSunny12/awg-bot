@@ -567,11 +567,60 @@ def test_a_zone_failure_is_reported_with_its_reason_and_no_record_is_touched(box
 
 
 def test_a_failed_record_update_is_a_failure_and_the_webhook_is_not_marked(box):
-    """Ошибка запроса — исход неизвестен: факта нет и за предел — срыв (запись не сменена)."""
-    box.record_error = dnsapi.DnsError("токен не принят")
+    """Явный отказ провайдера — исход известен: срыв сразу, без ожидания факта."""
+    box.record_error = dnsapi.Refused("токен не принят")
     assert box.open(**box.points(1)) == 1
-    assert "запись DNS не подтвердилась за 5 мин" in box.out and "токен не принят" in box.out
+    assert rsvzone.open_status()["reason"] == "запись DNS: токен не принят" and "record" not in rsvzone.open_status()
+    assert box.auth_reads == [] and box.sleeps == [], "явный отказ ждёт предел"
     assert "wait_fact" not in box.kinds() and not rsvzone.TG_TAKE_FILE.exists()
+
+
+def test_an_unclear_failure_waits_for_the_fact_until_the_limit(box):
+    """Ошибка без явного отказа (DnsError: 5xx, ответ не разобран) — исход неизвестен: факта нет за предел — срыв."""
+    box.record_error = dnsapi.DnsError("Cloudflare ответил не JSON (код 502)")
+    assert box.open(**box.points(1)) == 1
+    assert "запись DNS не подтвердилась за 5 мин" in box.out and "код 502" in box.out
+    assert sum(box.sleeps) == 300 and not rsvzone.TG_TAKE_FILE.exists()
+
+
+# настоящий set_record (Box подменяет его) — для явных отказов провайдеров через их http
+_REAL_SET_RECORD = rsvopen.set_record
+_DUCK = {"provider": "duckdns", "name": "myvpn.duckdns.org", "token": "DUMMY-duck"}
+_DYN = {"provider": "dyndns2", "name": "vpn.example.net", "server": "dyn.example.net", "user": "me", "token": "DUMMY-dyn"}
+_DPL = {"provider": "digitalplat", "name": "vpn.example.net", "token": "DUMMY-dp_live"}
+_CF401 = (401, json.dumps({"success": False, "errors": [{"code": 10000, "message": "Authentication error"}]}))
+_DP401 = (401, json.dumps({"success": False, "error": {"code": "unauthorized", "message": "Invalid API key"}}))
+
+
+@pytest.mark.parametrize("cfg, resp, refused", [
+    (DNS, _CF401, True),                                      # Cloudflare: 401 с телом API
+    (DNS, (404, json.dumps({"success": False, "errors": [{"message": "Not found"}]})), True),
+    (DNS, (502, "<html>Bad gateway</html>"), False),          # 5xx без тела API — исход неизвестен
+    (_DPL, _DP401, True),                                     # DigitalPlat: неверный ключ
+    (_DPL, (503, json.dumps({"success": False, "error": {"message": "busy"}})), False),
+    (_DUCK, (200, "KO"), True),                               # DuckDNS: «KO»
+    (_DUCK, (500, ""), False),
+    (_DYN, (200, "badauth"), True),                           # DynDNS2: коды отказа протокола
+    (_DYN, (200, "nohost"), True),
+    (_DYN, (200, "abuse"), True),
+    (_DYN, (200, "911"), False),                              # сбой у провайдера — исход неизвестен
+], ids=["cf-401", "cf-404", "cf-502", "dp-401", "dp-503", "duck-KO", "duck-500", "dyn-badauth", "dyn-nohost",
+        "dyn-abuse", "dyn-911"])
+def test_an_explicit_provider_refusal_fails_at_once_and_an_unclear_one_waits(box, monkeypatch, cfg, resp, refused):
+    from awgbot.util.dnsapi import common
+    monkeypatch.setattr(rsvopen, "set_record", _REAL_SET_RECORD)
+    mod = dnsapi.PROVIDERS[cfg["provider"]]
+    monkeypatch.setattr(mod, "http", lambda *a, **k: resp)
+    monkeypatch.setattr(common, "http", lambda *a, **k: resp)
+    box.write_package(dns=dict(cfg))
+    assert box.open(**box.points(1)) == 1
+    st = rsvzone.open_status()
+    assert st["step"] == "fail" and "record" not in st, st
+    if refused:
+        assert st["reason"].startswith("запись DNS: ") and box.sleeps == [] and box.auth_reads == [], \
+            f"явный отказ ждал предел: {st}"
+    else:
+        assert st["reason"].startswith("запись DNS не подтвердилась за 5 мин") and sum(box.sleeps) == 300, st
 
 
 # ── исход смены записи неизвестен (record_try → record_wait) ────────────────
