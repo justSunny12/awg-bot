@@ -7,14 +7,15 @@
 #
 # --fast — быстрый уровень (LAB_FAST=1): цифры кворума и «здоров» сжаты настройками узлов
 # (tests/lab/pairnode.LAB_FAST_DIGITS), пределы проверок сценариев — от них; без флага — умолчания
-# продукта (полный уровень, перед предрелизной сборкой). --only — сценарий или список через пробел
+# продукта (полный уровень, перед предрелизной сборкой; LAB_CONST сценариев s09–s11 действует и на нём). --only — сценарий или список через пробел
 # или запятую. --no-scenarios — только набор тестов (его и держит блокировка полных прогонов);
 # сценарии на нескольких ВМ сразу — tests/lab/par.sh с Mac.
 #
 # Сценарии — tests/lab/scenarios/*.sh, по одному на случай аварии или перехода;
 # каждый сам поднимает, что ему нужно, через lab.sh/net.sh и печатает
 # `PASS <имя>` или `FAIL <имя>: <почему>`. Набор тестов гоняется из venv
-# `~/venv` пользователя, под которым запущен sudo (SUDO_USER), с TMPDIR вне tmpfs.
+# `~/venv` пользователя, под которым запущен sudo (SUDO_USER), с TMPDIR вне tmpfs; `-q` — уже в
+# pytest.ini (второй прятал бы строку итога `N passed`).
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
@@ -41,6 +42,11 @@ if [ "$SCEN" -eq 1 ]; then
     bash "$HERE/lab.sh" up >/dev/null && bash "$HERE/lab.sh" status
 
     printf '=== сценарии\n'
+    # имя из --only, которому нет файла (опечатка, суффикс .sh), — провал с этим именем: иначе ни один
+    # сценарий не запускался, а итог «пройдено 1, провалено 0» засчитывал одну самопроверку зоны
+    for want in $ONLY; do
+        [ -f "$HERE/scenarios/$want.sh" ] || { printf 'FAIL %s: нет такого сценария в tests/lab/scenarios\n' "$want"; fail=$((fail + 1)); }
+    done
     for s in "$HERE"/scenarios/*.sh; do
         [ -f "$s" ] || continue
         name="$(basename "$s" .sh)"
@@ -61,7 +67,7 @@ if [ "$SUITE" -eq 1 ]; then
     user="${SUDO_USER:-$(id -un)}"
     home="$(getent passwd "$user" | cut -d: -f6)"
     mkdir -p /var/tmp/awglab-tmp && chown "$user" /var/tmp/awglab-tmp
-    if ! su "$user" -c "cd '$ROOT' && TMPDIR=/var/tmp/awglab-tmp '$home/venv/bin/python' -m pytest -q -p no:cacheprovider" ; then
+    if ! su "$user" -c "cd '$ROOT' && TMPDIR=/var/tmp/awglab-tmp '$home/venv/bin/python' -m pytest -p no:cacheprovider" ; then
         fail=$((fail + 1))
     else
         passed=$((passed + 1))

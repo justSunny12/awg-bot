@@ -133,10 +133,12 @@ def pytest_configure(config):
                                        "на тест) — без прямого вызова conftest")
 
 
-def _script_tmp_root() -> pathlib.Path | None:
+def _script_tmp_roots() -> list[pathlib.Path]:
     """Куда кладёт временное mktemp без шаблона у скрипта без своего TMPDIR:
-    на macOS — личный временный каталог пользователя (getconf, мимо TMPDIR),
-    иначе — TMPDIR или /tmp."""
+    на macOS — личный временный каталог пользователя (getconf, мимо TMPDIR);
+    иначе — и TMPDIR процесса, и /tmp: скрипт, которому тест дал окружение без
+    TMPDIR (`env={"PATH": …}`), кладёт tmp.* в /tmp, даже когда у pytest свой
+    TMPDIR (на стенде — /var/tmp/awglab-tmp)."""
     import subprocess
     import sys
     if sys.platform == "darwin":
@@ -144,9 +146,10 @@ def _script_tmp_root() -> pathlib.Path | None:
             out = subprocess.run(["getconf", "DARWIN_USER_TEMP_DIR"], capture_output=True, text=True,
                                  timeout=5).stdout.strip()
         except (OSError, subprocess.SubprocessError):
-            return None
-        return pathlib.Path(out) if out else None
-    return pathlib.Path(os.environ.get("TMPDIR") or "/tmp")
+            return []
+        return [pathlib.Path(out)] if out else []
+    roots = [pathlib.Path(os.environ.get("TMPDIR") or "/tmp"), pathlib.Path("/tmp")]
+    return list(dict.fromkeys(roots))
 
 
 def _script_tmp_names(root: pathlib.Path | None) -> set[str]:
@@ -157,27 +160,23 @@ def _script_tmp_names(root: pathlib.Path | None) -> set[str]:
 
 
 def pytest_sessionstart(session):
-    """Сторож мусора: что лежало в каталоге временного скриптов до прогона."""
+    """Сторож мусора: что лежало в каталогах временного скриптов до прогона."""
     if hasattr(session.config, "workerinput"):          # воркер xdist — сторож у контроллера
         return
-    root = _script_tmp_root()
-    session.config._awg_tmp_root = root
-    session.config._awg_tmp_before = _script_tmp_names(root)
+    session.config._awg_tmp_before = {root: _script_tmp_names(root) for root in _script_tmp_roots()}
 
 
 def pytest_terminal_summary(terminalreporter, config):
-    """Новые tmp.* в каталоге временного скриптов за прогон — строкой в итоге
+    """Новые tmp.* в каталогах временного скриптов за прогон — строкой в итоге
     (не провалом: их мог оставить и параллельный прогон другого дерева).
     Скрипт под тестом без своего TMPDIR и mktemp из tests.conftest (tmp_env)
     кладёт временное туда, и всё, что он не убрал, копится между прогонами."""
-    root = getattr(config, "_awg_tmp_root", None)
-    if root is None:
-        return
-    new = sorted(_script_tmp_names(root) - config._awg_tmp_before)
-    if new:
-        terminalreporter.write_line(
-            f"сторож временного: за прогон в {root} появилось {len(new)} tmp.* "
-            f"({', '.join(new[:5])}{'…' if len(new) > 5 else ''}) — скрипту под тестом нужен tmp_env")
+    for root, before in (getattr(config, "_awg_tmp_before", None) or {}).items():
+        new = sorted(_script_tmp_names(root) - before)
+        if new:
+            terminalreporter.write_line(
+                f"сторож временного: за прогон в {root} появилось {len(new)} tmp.* "
+                f"({', '.join(new[:5])}{'…' if len(new) > 5 else ''}) — скрипту под тестом нужен tmp_env")
 
 
 @pytest.hookimpl(hookwrapper=True)
@@ -803,6 +802,25 @@ def _fresh_join_presses():
     gwmark._PRESSED.clear()
     yield
     gwmark._PRESSED.clear()
+
+
+@pytest.fixture(autouse=True)
+def _broadcast_cooldown_off_the_boot_clock(monkeypatch):
+    """Анти-дабл-тап рассылки (broadcast/send.py) сравнивает time.monotonic() с
+    отметкой прошлой отправки, а без отметки — с нулём: на машине, загруженной
+    меньше 30 с назад (холодная ВМ стенда), первая же рассылка теста отвечала
+    «Только что уже отправляли». Часы кулдауна — настоящие со сдвигом на сутки:
+    итог не зависит от uptime, двойное нажатие внутри теста по-прежнему
+    отсекается. Память отправок — своя у каждого теста (под xdist сосед по
+    процессу с тем же набором адресатов иначе попадал в кулдаун)."""
+    import time as _time
+    import types
+    from awgbot.bot.handlers.admin.broadcast import send, targets
+    real = _time.monotonic
+    monkeypatch.setattr(send, "time", types.SimpleNamespace(monotonic=lambda: real() + 86400.0))
+    targets._last_broadcast_at.clear()
+    yield
+    targets._last_broadcast_at.clear()
 
 
 @pytest.fixture(autouse=True)

@@ -48,22 +48,36 @@ if has tie; then
     [ $((t_alarm - t_tie0)) -ge $((QT_TIE - 10)) ] || pl_fail "тревога ничьей через $((t_alarm - t_tie0)) с после начала — раньше T_tie ($QT_TIE с)"
     [ "$(tg_count "$TOKEN_B" "$ADMIN_B" "ещё не открывал" "$ts0")" = 1 ] || pl_fail "Т-К5б без строки «админ бот не открывал»"
     [ "$(tg_count "$TOKEN_B" "$ADMIN_B" "со слов шлюз" "$ts0")" -ge 1 ] || pl_fail "в Т-К5б нет справки со слов видящего шлюза"
-    [ "$(pl_q B '(s.get("code_window") or {}).get("open")')" = "true" ] || pl_fail "у B при ничьей и своём «не вижу» окно кода закрыто"
+    [ "$(pl_q B '(s.get("code_window") or {}).get("open")')" = "true" ] || \
+        pl_fail "у B при ничьей и своём «не вижу» окно кода закрыто · $(pl_quo_trace B)"
     sleep $((QT_TIE_CLEAR + 10))
     na="$(tg_count "$TOKEN_A" "$ADMIN_A" "🚨 Ничья о сервере" "$ts0")"; nb="$(tg_count "$TOKEN_B" "$ADMIN_B" "🚨 Ничья о сервере" "$ts0")"
     [ "$na" = 1 ] && [ "$nb" = 1 ] || pl_fail "тревога ничьей повторилась: от A $na, от B $nb"
     bash "$PL_HERE/net.sh" heal >/dev/null
     T0=$(date +%s)
+    # отбой — T_tie_clear после конца ничьей, а она кончается позже починки (два ответа подряд видящему):
+    # отсчёт от починки — нижний предел без запаса, от конца ничьей у B (status.json раз в секунду, цикл опроса сценария) —
+    # с запасом на них (6 с); отбой без ожидания T_tie_clear пришёл бы через такт после конца ничьей
+    t_gone=""; t_oa=""; t_ob=""
     for _ in $(seq 1 240); do
-        [ "$(tg_count "$TOKEN_A" "$ADMIN_A" "больше нет" "$ts0")" -ge 1 ] && [ "$(tg_count "$TOKEN_B" "$ADMIN_B" "больше нет" "$ts0")" -ge 1 ] && break
+        [ -n "$t_gone" ] || [ "$(pl_q B 'not (s["quo"]["cand"].get("no") == 2 and s["quo"]["cand"].get("see") == 2)')" != "true" ] || t_gone=$(since "$T0")
+        oa="$(tg_count "$TOKEN_A" "$ADMIN_A" "больше нет" "$ts0")"; ob="$(tg_count "$TOKEN_B" "$ADMIN_B" "больше нет" "$ts0")"
+        [ -n "$t_oa" ] || [ "$oa" -lt 1 ] || t_oa=$(since "$T0")
+        [ -n "$t_ob" ] || [ "$ob" -lt 1 ] || t_ob=$(since "$T0")
+        [ "$oa" -ge 1 ] && [ "$ob" -ge 1 ] && break
         sleep 1
     done
     t_over=$(since "$T0")
     sleep $((QT_TIE_CLEAR / 2))
     oa="$(tg_count "$TOKEN_A" "$ADMIN_A" "больше нет" "$ts0")"; ob="$(tg_count "$TOKEN_B" "$ADMIN_B" "больше нет" "$ts0")"
-    [ "$oa" = 1 ] && [ "$ob" = 1 ] || pl_fail "отбой ничьей: от A $oa, от B $ob (за $t_over с после починки) — ожидалось по одному"
-    [ "$t_over" -ge $((QT_TIE_CLEAR - 5)) ] || pl_fail "отбой ничьей через $t_over с — раньше T_tie_clear ($QT_TIE_CLEAR с) без ничьей"
-    note "tie: тревога через $((t_alarm - t_tie0)) с ничьей, отбой через $t_over с после починки"
+    [ "$oa" = 1 ] && [ "$ob" = 1 ] || pl_fail "отбой ничьей: от A $oa, от B $ob (за $t_over с после починки) — ожидалось по одному · $(pl_quo_trace B)"
+    t_first=$(( t_oa < t_ob ? t_oa : t_ob ))
+    [ "$t_first" -ge "$QT_TIE_CLEAR" ] || \
+        pl_fail "отбой ничьей через $t_first с после починки (A $t_oa, B $t_ob) — раньше T_tie_clear ($QT_TIE_CLEAR с): ничья не может кончиться раньше починки"
+    [ -n "$t_gone" ] || pl_fail "отбой ничьей от B через $t_ob с после починки, а конца ничьей у B в status.json не было · $(pl_quo_trace B)"
+    [ $((t_ob - t_gone)) -ge $((QT_TIE_CLEAR - 6)) ] || \
+        pl_fail "отбой ничьей от B через $((t_ob - t_gone)) с после конца ничьей у B — меньше T_tie_clear ($QT_TIE_CLEAR с) за вычетом запаса на status.json и опрос (6 с) · $(pl_quo_trace B)"
+    note "tie: тревога через $((t_alarm - t_tie0)) с ничьей, отбой через $t_first–$t_over с после починки ($((t_ob - t_gone)) с от конца ничьей у B)"
     pl_cleanup_quiet
 fi
 
