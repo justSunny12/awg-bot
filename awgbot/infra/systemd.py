@@ -1,11 +1,11 @@
-"""systemctl одним способом: живость и автозагрузка юнита, пуск, остановка,
+"""systemctl одним способом: живость и автозагрузка юнита, остановка,
 перезапуск, включение и снятие с автозагрузки, сброс неудачи, перечитывание
-юнитов и наличие файла юнита.
+юнитов и наличие файла юнита. Пуска здесь нет: юниты гостя и процесса открытия
+машина резерва запускает сама (тесты наблюдают запуск подменой в её модулях).
 
-Пуск, остановка, перезапуск, enable/disable, reset-failed и daemon-reload
+Остановка, перезапуск, enable/disable, reset-failed и daemon-reload
 бросают исключения ОС и subprocess как есть — вызывающий решает, отказ это
-или строка в журнал (`except (OSError, subprocess.SubprocessError)`); start
-дополнительно считает отказом ненулевой код. restart, enable, disable и
+или строка в журнал (`except (OSError, subprocess.SubprocessError)`). restart, enable, disable и
 daemon_reload отдают итог целиком (код и вывод): причину отказа — хвост
 stderr — вызывающие показывают человеку. Потолок задаётся всегда: зависший на
 D-Bus systemctl иначе держал бы поток бота без предела.
@@ -43,14 +43,6 @@ def _call(args: list[str], timeout: float) -> subprocess.CompletedProcess:
 
 def _ctl(verb: str, unit: str, timeout: float) -> int:
     return _call([verb, unit], timeout).returncode
-
-
-def start(unit: str, timeout: float = 60) -> None:
-    """`systemctl start`; ненулевой код — subprocess.SubprocessError «код N»,
-    нет systemctl или завис — OSError / TimeoutExpired как есть."""
-    rc = _ctl("start", unit, timeout)
-    if rc != 0:
-        raise subprocess.SubprocessError(f"код {rc}")
 
 
 def stop(unit: str, timeout: float = 60) -> int:

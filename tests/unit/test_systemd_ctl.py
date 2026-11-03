@@ -50,27 +50,29 @@ def _rec(monkeypatch, rc=0, exc=None):
     return seen
 
 
-def test_start_stop_and_reset_failed_call_systemctl_with_a_ceiling(monkeypatch):
+def test_stop_and_reset_failed_call_systemctl_with_a_ceiling(monkeypatch):
     seen = _rec(monkeypatch)
-    systemd.start("awg-guest.service")
     assert systemd.stop("awg-guest.service") == 0
     assert systemd.reset_failed("awg-guest.service", timeout=5) == 0
-    assert seen == [(["systemctl", "start", "awg-guest.service"], 60),
-                    (["systemctl", "stop", "awg-guest.service"], 60),
+    assert seen == [(["systemctl", "stop", "awg-guest.service"], 60),
                     (["systemctl", "reset-failed", "awg-guest.service"], 5)]
 
 
-def test_a_failed_start_is_an_error_and_a_failed_stop_is_a_code(monkeypatch):
+def test_a_failed_stop_is_a_code(monkeypatch):
     _rec(monkeypatch, rc=5)
-    with pytest.raises(subprocess.SubprocessError, match="^код 5$"):
-        systemd.start("x.service")
     assert systemd.stop("x.service") == 5 and systemd.reset_failed("x.service") == 5
+
+
+def test_there_is_no_start_helper():
+    """Пуск юнитов машина резерва делает сама (тесты наблюдают его подменой в её модулях):
+    помощник пуска без вызывающих — мёртвый код."""
+    assert not hasattr(systemd, "start")
 
 
 @pytest.mark.parametrize("exc", [FileNotFoundError(2, "systemctl"), subprocess.TimeoutExpired(["systemctl"], 60)])
 def test_no_systemctl_or_a_hang_reaches_the_caller(monkeypatch, exc):
     _rec(monkeypatch, exc=exc)
-    for call in (systemd.start, systemd.stop, systemd.reset_failed):
+    for call in (systemd.stop, systemd.reset_failed):
         with pytest.raises((OSError, subprocess.SubprocessError)):
             call("x.service")
 
