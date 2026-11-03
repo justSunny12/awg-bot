@@ -84,6 +84,32 @@ def test_fill_does_not_take_the_lists_lock(own_env, tmp_path):
     assert not (dump / "lists.lock").exists(), "fill открыл файл блокировки"
 
 
+_CLEAN_SNAPSHOT = "table inet awg_lan {\n  set lan_vpn4 {\n    elements = { 10.3.3.3 }\n  }\n}\n"
+
+
+def test_fill_takes_its_snapshot_through_its_own_temp_file(own_env, tmp_path):
+    """fill без блокировки, а общий lan_vpn4.nft.tmp пишут и прогоны под ней
+    (sync, правка, скрипт фидов). Пока nft fill печатает слепок, сосед
+    открывает тот же tmp с усечением и пишет свой — прежде после mv слепок
+    оказывался перемешанным, и при загрузке `nft -f` его молча не грузил:
+    lan_vpn4 пуст до запросов."""
+    tool, dns_d, dump, log, env = own_env
+    _fake(_bin(env), "nft",
+          f'echo "nft $*" >> {log}\n'
+          'if [ "$1 $2" = "list set" ]; then\n'
+          '  echo "table inet awg_lan {"\n'
+          '  printf "сосед под блокировкой\\n" > "$AWG_LAN_DUMP/lan_vpn4.nft.tmp"\n'
+          '  echo "  set lan_vpn4 {"; echo "    elements = { 10.3.3.3 }"; echo "  }"; echo "}"\n'
+          'fi\nexit 0\n')
+    r = _fill_run(tool, env, tmp_path, "news.org\n")
+    assert r.returncode == 0, r.stdout + r.stderr
+    snap = dump / "lan_vpn4.nft"
+    assert snap.read_text() == _CLEAN_SNAPSHOT, f"слепок перемешан с соседом: {snap.read_bytes()!r}"
+    assert snap.stat().st_mode & 0o777 == 0o644
+    left = {p.name for p in dump.glob("lan_vpn4.nft.*")} - {"lan_vpn4.nft.tmp"}     # tmp — соседа
+    assert not left, f"временный файл слепка остался: {left}"
+
+
 def test_fill_leaves_the_dnsmasq_files_alone(own_env, tmp_path):
     """fill — только набор и слепок: ни файлов dnsmasq.d, ни рестарта."""
     tool, dns_d, dump, log, env = own_env

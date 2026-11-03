@@ -184,6 +184,63 @@ def test_a_failed_list_write_rolls_back_before_the_feed(own_env):
     assert _no_copies_left(dump)
 
 
+# ── копия для отката не легла — файл не трогается ──────────────────────────
+# Прежде `cp … || : > копия`: на сбой cp (нет места, ошибка ввода-вывода)
+# ложилась ПУСТАЯ копия, правка шла дальше, и любой откат ставил пустоту на
+# место списка — после ближайшего рестарта dnsmasq своих списков нет.
+
+@pytest.mark.parametrize("nth", [1, 2], ids=["vpn-copy", "ru-copy"])
+def test_a_failed_list_copy_refuses_before_writing(own_env, nth):
+    tool, dns_d, dump, log, env = own_env
+    before = _two_exceptions(own_env)
+    _flaky(env, "cp", when="*/rollback/*", nth=nth)
+    _c._failing_restart(_bin(env), log)
+    r = _run(tool, env, "del", "shop.ru")
+    assert r.returncode == 1 and UNTOUCHED in r.stderr, r.stdout + r.stderr
+    assert _state(dns_d) == before, "список тронут при несложившейся копии"
+    assert _no_copies_left(dump), "копия отката осталась"
+    assert "systemctl" not in _log(log), "рестарт при несделанной правке"
+
+
+def test_a_failed_feed_copy_rolls_back_without_emptying_the_feed(own_env):
+    """Копия фида не легла: прежде пустая копия, и отказ рестарта ставил пустой
+    фид — локальная сеть без доменов «в туннель» до следующей сборки фидов."""
+    tool, dns_d, dump, log, env = own_env
+    before = _two_exceptions(own_env)
+    _flaky(env, "cp", when=f"*/rollback/{FEED}.prev")
+    _c._failing_restart(_bin(env), log)
+    r = _run(tool, env, "del", "shop.ru")
+    assert r.returncode == 1 and UNWRITTEN in r.stderr, r.stdout + r.stderr
+    assert _state(dns_d) == before, "откат вернул не всё или поставил пустой фид"
+    assert _no_copies_left(dump)
+    assert "systemctl" not in _log(log), "откат до рестарта — рестарт не нужен"
+
+
+def test_a_rejected_check_rolls_back_without_restarting_dnsmasq(own_env):
+    """Отказ `dnsmasq --test`: демон с новыми файлами ещё не перезапускался —
+    откат без рестарта (прежде рестарт сбрасывал кэш DNS всей сети вхолостую)."""
+    tool, dns_d, dump, log, env = own_env
+    before = _two_exceptions(own_env)
+    r = _run(tool, {**env, "DNSMASQ_TEST_RC": "1"}, "del", "shop.ru")
+    assert r.returncode == 1 and "dnsmasq --test отверг списки — откатываю" in r.stderr, r.stdout + r.stderr
+    assert _state(dns_d) == before
+    assert _no_copies_left(dump)
+    assert "systemctl" not in _log(log), "лишний рестарт dnsmasq при откате до рестарта"
+
+
+def test_a_missing_feed_is_removed_again_by_the_rollback(own_env):
+    """Фида не было (исходник есть, фид удалили руками): откат его снимает, а
+    не оставляет пустой файл в conf-dir."""
+    tool, dns_d, dump, log, env = own_env
+    _two_exceptions(own_env)
+    (dns_d / FEED).unlink()
+    _c._failing_restart(_bin(env), log)
+    r = _run(tool, env, "del", "shop.ru")
+    assert r.returncode == 1 and "откатываю" in r.stderr, r.stdout + r.stderr
+    assert not (dns_d / FEED).exists(), "откат оставил фид, которого не было"
+    assert _no_copies_left(dump)
+
+
 def test_without_faults_the_same_change_goes_through(own_env):
     """Сторож самих подмен: тот же сценарий без сбоя — домен вернулся в фид."""
     tool, dns_d, dump, log, env = own_env

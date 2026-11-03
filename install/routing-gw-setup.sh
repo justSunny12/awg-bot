@@ -750,10 +750,14 @@ cat > "$LAN_DOMAIN.new" <<'DOMEOF'
 # уходит и из набора lan_ru4 (flush + dig оставшихся: набор маленький и
 # наполняется только отсюда); ушедший из «в туннель» вынимается из lan_vpn4 по
 # адресам dig, ошибки глушатся (адрес мог слиться в интервал или принадлежать
-# домену фида). Копии для отката обоих файлов и фида — $DUMP/rollback/<имя>.prev.
-# Сбой рабочего шага правки — код 1: до записи списки не тронуты, после — откат.
-# Сбой сбора адресов для наборов после рестарта — код 1 без отката списков (они
-# применены, адреса наберёт и dnsmasq): набор не тронут, lan_ru4 — не пустой.
+# домену фида). Копии для отката обоих файлов и фида — $DUMP/rollback/<имя>.prev;
+# копия не легла — файл не трогается (код 1), пустой копии не бывает.
+# Сбой рабочего шага правки — код 1: до записи списки не тронуты, после — откат
+# (отказ --test и сбой записи — без рестарта dnsmasq, отказ рестарта — с ним).
+# Сбой сбора адресов для наборов после рестарта и отказ nft на lan_ru4 — код 1
+# без отката списков (они применены, адреса наберёт и dnsmasq): набор не
+# тронут, lan_ru4 — не пустой (сброс и наполнение — одной транзакцией).
+# Слепок lan_vpn4 — через свой временный файл: fill пишет его без блокировки.
 # Правило домена — DOMAIN_RE (зона буквами или punycode «xn--»);
 # то же правило применит сервер AWG к общему списку (этап 2 синхронизации).
 # AWG_HTML=1 (ставит агент: вывод уходит в чат) — домены в строках итога в
@@ -826,7 +830,13 @@ fill_set() {                   # fill_set <набор> <файл доменов>
     return 0
 }
 snapshot_vpn() {               # слепок набора грузится при старте: без него снятый адрес вернулся бы с загрузкой
-    nft list set $TABLE lan_vpn4 > "$DUMP/lan_vpn4.nft.tmp" 2>/dev/null && mv -f "$DUMP/lan_vpn4.nft.tmp" "$DUMP/lan_vpn4.nft" || rm -f "$DUMP/lan_vpn4.nft.tmp"
+    # временный — свой на запуск: fill идёт без блокировки списков, и общий
+    # lan_vpn4.nft.tmp с прогоном под ней (sync, правка, скрипт фидов) писали бы
+    # оба с усечением — после mv слепок перемешан, и при загрузке он молча не
+    # грузится. Не создался — слепок прежний, как при отказе nft
+    _snap="$(mktemp "$DUMP/lan_vpn4.nft.XXXXXX" 2>/dev/null)" || return 0
+    { nft list set $TABLE lan_vpn4 > "$_snap" 2>/dev/null && chmod 644 "$_snap" && mv -f "$_snap" "$DUMP/lan_vpn4.nft"; } \
+        || rm -f "$_snap"
 }
 plural_dom() {                 # адреса 1 домена, 2 доменов, 21 домена
     case "$1" in *1[0-9]) echo доменов;; *1) echo домена;; *) echo доменов;; esac
@@ -940,8 +950,13 @@ changed="$VPN $RU"
 # копии для отката — вне conf-dir: оттуда dnsmasq читает всё, кроме .dpkg-*
 mkdir -p "$RB" || untouched
 prev() { printf '%s/%s.prev' "$RB" "$(basename "$1")"; }
-for f in "$VPN" "$RU"; do cp -p "$f" "$(prev "$f")" 2>/dev/null || : > "$(prev "$f")" || untouched; done
-restore() { for f in $changed; do mv -f "$(prev "$f")" "$f"; done; }
+# Копия не легла (нет места, ошибка ввода-вывода) — файл не трогаем: прежде на
+# сбой cp ложилась ПУСТАЯ копия, правка шла дальше, и любой откат ставил пустоту
+# на место списка. Файла нет — нет и копии (прежнюю чужого запуска — прочь):
+# откат его снимет
+take_prev() { rm -f "$(prev "$1")" && { [ ! -f "$1" ] || cp -p "$1" "$(prev "$1")"; }; }
+for f in "$VPN" "$RU"; do take_prev "$f" || { rm -f "$(prev "$VPN")" "$(prev "$RU")"; untouched; }; done
+restore() { for f in $changed; do if [ -f "$(prev "$f")" ]; then mv -f "$(prev "$f")" "$f"; else rm -f "$f"; fi; done; }
 rollback() { restore; systemctl restart dnsmasq || true; }
 # dnsmasq с новыми списками ещё не перезапускался — откат без рестарта
 unwritten() { echo "запись списков не прошла — откатываю" >&2; restore; exit 1; }
@@ -962,14 +977,15 @@ if [ -s "$SRC" ] && ! cmp -s "$TMPD/want_ru" "$TMPD/before_ru"; then
     grep -E '^(#.*|nftset=/[^/[:space:]]+(/[^/[:space:]]+)*/inet#awg_lan#lan_vpn4)$' "$TMPD/feed.raw" > "$TMPD/feed.conf"
     [ $? -le 1 ] || unwritten
     if [ -s "$TMPD/feed.conf" ] && ! cmp -s "$TMPD/feed.conf" "$FEED"; then
-        { cp -p "$FEED" "$(prev "$FEED")" 2>/dev/null || : > "$(prev "$FEED")"; } || unwritten
+        take_prev "$FEED" || { rm -f "$(prev "$FEED")"; unwritten; }
         changed="$changed $FEED"
         install -m 644 "$TMPD/feed.conf" "$FEED" || unwritten
     fi
 fi
 # conf-dir Debian подключает ключом из init-скрипта — голый --test файлы не видит
 if command -v dnsmasq >/dev/null 2>&1 && ! dnsmasq --test "--conf-dir=$D,.dpkg-dist,.dpkg-old,.dpkg-new" >/dev/null 2>&1; then
-    echo "dnsmasq --test отверг списки — откатываю" >&2; rollback; exit 1
+    # демон с новыми файлами ещё не перезапускался — откат без рестарта: кэш DNS сети цел
+    echo "dnsmasq --test отверг списки — откатываю" >&2; restore; exit 1
 fi
 if ! systemctl restart dnsmasq; then
     echo "dnsmasq не поднялся со своими списками — откатываю" >&2; rollback; exit 1
@@ -995,11 +1011,15 @@ done
 # «напрямую» изменилось — набор целиком заново: он маленький и наполняется только отсюда
 # адреса — до сброса: упавший сбор оставляет набор прежним, а не пустым (иначе
 # все исключения «напрямую» шли бы в туннель до первых запросов)
+# Сброс и наполнение — одной транзакцией nft (как подсети в awg-lan-lists.sh):
+# двумя вызовами между ними было окно с пустым набором, а отказ add молча
+# оставлял его пустым при коде 0. Отказ транзакции — набор прежний, код 1
 ru_ok=1
 if ! cmp -s "$TMPD/want_ru" "$TMPD/before_ru"; then
-    if gather_ips "$TMPD/want_ru"; then
-        nft flush set $TABLE lan_ru4 2>/dev/null || true
-        [ -n "$_ips" ] && nft add element $TABLE lan_ru4 "{ $_ips }" 2>/dev/null
+    if gather_ips "$TMPD/want_ru" && printf 'flush set %s lan_ru4\n' "$TABLE" > "$TMPD/ru.nft" \
+        && { [ -z "$_ips" ] || printf 'add element %s lan_ru4 { %s }\n' "$TABLE" "$_ips" >> "$TMPD/ru.nft"; } \
+        && nft -f "$TMPD/ru.nft" 2>/dev/null; then
+        :
     else
         ru_ok=0; set_failed lan_ru4
     fi

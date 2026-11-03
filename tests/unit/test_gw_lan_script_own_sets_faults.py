@@ -10,8 +10,9 @@ awg-lan-domain.sh, правка своих списков — сбой рабо�
 в те же упавшие шаги). Цена ошибки: прежде упавший шаг давал код 0 и «N
 адрес(а) в наборе» про адреса, которых в наборе нет, а lan_ru4 после сброса
 оставался пустым — все исключения «напрямую» шли в туннель. Отказ самого nft
-сбоем не считается — как в fill (адрес внутри интервала). Сбой подставной
-утилитой: в PATH она стоит раньше системной.
+при добавлении в lan_vpn4 сбоем не считается — как в fill (адрес внутри
+интервала); lan_ru4 перестраивается одной транзакцией, и её отказ — сбой (набор
+прежний). Сбой подставной утилитой: в PATH она стоит раньше системной.
 """
 from __future__ import annotations
 
@@ -135,3 +136,28 @@ def test_without_faults_add_and_ru_fill_the_sets(own_env):
     r = _c._run(tool, env, "ru", "bank.ru")
     assert r.returncode == 0 and "bank.ru → 1 адрес(а) в наборе lan_ru4" in r.stdout, r.stdout + r.stderr
     assert _set(_sets_of(dump), "lan_ru4") == {"10.1.1.1", "10.2.2.2"}
+
+
+# ── отказ nft на «напрямую»: сброс и наполнение одной транзакцией ───────────
+
+def test_a_refused_direct_set_keeps_lan_ru4_and_says_so(own_env):
+    """lan_ru4 наполняет только скрипт. Прежде сброс и наполнение шли двумя
+    вызовами nft: отказ add оставлял набор пустым — все исключения «напрямую»
+    уходили в туннель до первых запросов — при коде 0 и «→ N адрес(а) в
+    наборе». Теперь одна транзакция: её отказ — набор прежний, код 1."""
+    tool, dns_d, dump, log, env = own_env
+    _prepared(own_env)
+    r = _c._run(tool, {**env, "NFT_FAIL_RU": "1"}, "ru", "bank.ru")
+    assert r.returncode == 1 and _fault("lan_ru4") in r.stderr, r.stdout + r.stderr
+    assert "в наборе" not in r.stdout, r.stdout
+    assert _set(_sets_of(dump), "lan_ru4") == {"10.1.1.1"}, "набор «напрямую» сброшен и не наполнен"
+    assert _ru_line("bank.ru") in (dns_d / RU_USER).read_text(), "списки не применены"
+
+
+def test_sync_with_a_refused_direct_set_keeps_lan_ru4(own_env, tmp_path):
+    tool, dns_d, dump, log, env = own_env
+    _prepared(own_env)
+    r = _sync(tool, {**env, "NFT_FAIL_RU": "1"}, tmp_path, "vpn news.org\nru shop.ru\nru bank.ru\n")
+    assert r.returncode == 1 and _fault("lan_ru4") in r.stderr, r.stdout + r.stderr
+    assert "свои списки:" not in r.stdout, f"итог sync при несделанном наборе: {r.stdout}"
+    assert _set(_sets_of(dump), "lan_ru4") == {"10.1.1.1"}
