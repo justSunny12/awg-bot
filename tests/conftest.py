@@ -795,6 +795,25 @@ def _fresh_join_presses():
 
 
 @pytest.fixture(autouse=True)
+def _broadcast_cooldown_off_the_boot_clock(monkeypatch):
+    """Анти-дабл-тап рассылки (broadcast/send.py) сравнивает time.monotonic() с
+    отметкой прошлой отправки, а без отметки — с нулём: на машине, загруженной
+    меньше 30 с назад (холодная ВМ стенда), первая же рассылка теста отвечала
+    «Только что уже отправляли». Часы кулдауна — настоящие со сдвигом на сутки:
+    итог не зависит от uptime, двойное нажатие внутри теста по-прежнему
+    отсекается. Память отправок — своя у каждого теста (под xdist сосед по
+    процессу с тем же набором адресатов иначе попадал в кулдаун)."""
+    import time as _time
+    import types
+    from awgbot.bot.handlers.admin.broadcast import send, targets
+    real = _time.monotonic
+    monkeypatch.setattr(send, "time", types.SimpleNamespace(monotonic=lambda: real() + 86400.0))
+    targets._last_broadcast_at.clear()
+    yield
+    targets._last_broadcast_at.clear()
+
+
+@pytest.fixture(autouse=True)
 def _no_channel_listener_from_a_neighbour(monkeypatch):
     """Слушатель канала процесса (linkserver._server) — модульный: такт живости
     и join_job заводят его на сервисах своего теста, и он переживал тест.

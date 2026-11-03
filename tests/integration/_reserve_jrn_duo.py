@@ -24,7 +24,7 @@ import types
 from awgbot.core import config
 from awgbot.domain.services import Services
 from awgbot.domain.services.reserve import compat
-from awgbot.domain.services.reserve.journal import guestj, ship
+from awgbot.domain.services.reserve.journal import guestj, ship, tail
 from awgbot.infra import rsvzone
 from awgbot.infra.db import Database
 from awgbot.util import pairproto
@@ -62,6 +62,9 @@ class Duo:
         stub = types.SimpleNamespace(monotonic=self.clock.monotonic)
         monkeypatch.setattr(ship, "time", stub)
         monkeypatch.setattr(guestj, "time", stub)
+        # повтор хвоста (TAIL_RESEND_S = 60) без отметки сверяется с нулём: на настоящих
+        # часах первый jtail не уходил на машине, загруженной меньше минуты назад
+        monkeypatch.setattr(tail, "time", stub)
         bdir = tmp_path / "beta"
         bdir.mkdir()
         self.bdb = Database(str(bdir / "bot.db"))
