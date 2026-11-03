@@ -251,7 +251,9 @@ GitHub `vX.Y.Z.P — …`.
   `bot/handlers/guest.py`, тексты `bot/texts/reserve/guest.py`), слияние при
   возврате (`domain/backup/merge/policy.py`, `reserve.py`), процесс открытия
   `tools/rsvopen.py` с частями без ключей `infra/rsvproc/`, сторож обновления и восстановления `tools/rsvbusy.py` (его зовёт общий
-  `install/lib/update.sh` на обеих ролях, но у агента пары нет — он всегда «свободен»), обёртка зоны `infra/rsvzone.py` и файервол резерва в
+  `install/lib/update.sh` на обеих ролях, но у агента пары нет — он всегда «свободен»), запасной путь рычага «вернуть
+  пользователей без резерва» из терминала (с 4.2.0, `awg-bot reserve home --force`):
+  `tools/rsvhome.py` и его исполнитель в процессе бота `runtime/rsvhome.py`, обёртка зоны `infra/rsvzone.py` и файервол резерва в
   `infra/nftguard/`. Туда же — запись DNS, переезд кнопкой и возврат:
   автоматы `domain/services/reserve/{dns,outbound,outbound_move,outbound_health,outbound_return,merge_ops,inbound,inbound_go,openproc,notify,traffic,away}.py`,
   уведомления `domain/notices/reserve*.py` (в том числе `reserve_tail.py`)
