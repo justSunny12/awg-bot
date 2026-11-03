@@ -41,7 +41,7 @@ import json
 import time
 
 from awgbot.core import config
-from awgbot.util import pairproto, timeutil
+from awgbot.util import pairproto, timeutil, livestep
 from awgbot.util.rsvjrn import schema_too_old
 
 from ...gateway_link.common import log
@@ -183,7 +183,9 @@ class ReserveTailMixin:
         if not self.reserve_tail_pending():
             return []
         now = time.monotonic()
-        if now - float(self.__dict__.get("_tail_sent_at") or 0) < TAIL_RESEND_S:
+        # отметки нет — давно (livestep.mono_since): сравнение с нулём на хосте, загруженном меньше
+        # TAIL_RESEND_S назад (monotonic — время с загрузки), задерживало первый хвост до минуты
+        if livestep.mono_since(self.__dict__.get("_tail_sent_at"), now) < TAIL_RESEND_S:
             return []
         if getattr(self, "guest", False):
             send = "guest_send"                               # гость: по локальному каналу боту резерва
