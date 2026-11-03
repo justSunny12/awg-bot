@@ -3,8 +3,9 @@
 шаблона и app.yaml на месте; раздел в app.yaml остаётся копией для отката на выпуск
 линии ниже (его код читает только app.yaml) с меткой `moved` и отпечатками значений —
 второй раз не переносится, а ключ, разошедшийся с отпечатком (после отката его правил
-код прежней линии), переносится заново; раздел без метки (бэкап прежнего выпуска) —
-переносится снова. Значения читаются как у бота (PyYAML): app.yaml с дублем ключа
+код прежней линии), переносится заново; раздел без метки (восстановлен бэкап прежнего
+выпуска — перенос на первом старте 4.2.0 после него) переносится снова целиком поверх
+reserve.yaml как есть. Значения читаются как у бота (PyYAML): app.yaml с дублем ключа
 переносится, метка ложится в reserve.yaml."""
 from __future__ import annotations
 
@@ -140,7 +141,7 @@ def test_app_yaml_with_a_duplicate_key_still_moves_the_section(tmp_path):
 
 
 def test_a_failed_move_is_told_to_the_admin(tmp_path, caplog):
-    """reserve.yaml не разбирается — переноса нет, строка в журнал и замечание при запуске; init не падает."""
+    """reserve.yaml не разбирается на запись (дубль ключа) — переноса нет, строка в журнал и замечание при запуске; init не падает."""
     import logging
     from awgbot.runtime import preflight
     from tests.conftest import restore_settings
@@ -161,14 +162,38 @@ def test_a_failed_move_is_told_to_the_admin(tmp_path, caplog):
 
 
 def test_a_restored_old_section_without_the_mark_moves_again(tmp_path):
-    """Восстановлен бэкап прежнего выпуска: раздел без метки — его значения снова главные."""
+    """Восстановлен бэкап прежнего выпуска на 4.2.0: восстановление переводит код на выпуск
+    бэкапа и кладёт только его файлы — app.yaml с разделом без метки, reserve.yaml остаётся
+    с периода до восстановления. Перенос — на первом старте 4.2.0 после этого (следующее
+    обновление): значения раздела из бэкапа ложатся поверх целиком, ключи, которых в разделе
+    не было (`quorum.*`, `healthy_seconds`), остаются в reserve.yaml как были, комментарии
+    шаблона целы; следующий старт — без записей."""
     from tests.conftest import restore_settings
-    d = _conf(tmp_path)
-    settings.init(d)
+    old = APP.replace("  quorum:\n    probe_seconds: 20\n    act: true\n", "")      # раздел 4.1.x: без quorum
+    d = _conf(tmp_path, app=old, rsv=RSV + "healthy_seconds: 300           # здоровье\n")
+    settings.init(d)                                                # первый старт 4.2.0
     try:
-        (d / "app.yaml").write_text(APP.replace("pair_port: 47200", "pair_port: 47300"), encoding="utf-8")
+        settings.set_value("reserve.ready", False)                  # карточка 4.2.0
+        settings.set_value("reserve.pair_port", 47555)
+        settings.set_value("reserve.healthy_seconds", 200)
+        settings.set_value("reserve.quorum.no_seconds", 50)
+        # бэкап 4.1.x: раздел без метки и отпечатков; 4.1.x поработал, reserve.yaml не тронут
+        (d / "app.yaml").write_text(old.replace("pair_port: 47200", "pair_port: 47300\n  rf_via_mine: false"),
+                                    encoding="utf-8")
+        settings.init(d)                                            # снова 4.2.0
+        assert settings.get("reserve.ready") is True, "значение бэкапа не легло поверх правки карточки"
+        assert settings.get_int("reserve.pair_port") == 47300 and settings.get("reserve.rf_via_mine") is False
+        assert settings.get_int("reserve.healthy_seconds") == 200, "ключ вне раздела бэкапа потерян"
+        assert settings.get_int("reserve.quorum.no_seconds") == 50 and settings.get_int("reserve.quorum.probe_seconds") == 15, \
+            "цифры кворума вне раздела бэкапа потеряны"
+        assert settings.get_int("reserve.pkg_minutes") == 30
+        legacy = settings.get("app.reserve")
+        assert legacy["moved"] == "reserve.yaml" and set(legacy["moved_sum"]) == {"ready", "pair_port", "rf_via_mine"}
+        app, rsv = (d / "app.yaml").read_text(encoding="utf-8"), (d / "reserve.yaml").read_text(encoding="utf-8")
+        assert "# тумблер" in rsv and "# проба" in rsv and "# здоровье" in rsv and "moved" not in rsv, rsv
         settings.init(d)
-        assert settings.get_int("reserve.pair_port") == 47300 and settings.get("app.reserve.moved") == "reserve.yaml"
+        assert (d / "app.yaml").read_text(encoding="utf-8") == app
+        assert (d / "reserve.yaml").read_text(encoding="utf-8") == rsv
     finally:
         restore_settings()
 

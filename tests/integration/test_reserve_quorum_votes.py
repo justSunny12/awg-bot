@@ -178,8 +178,9 @@ def test_the_starting_leader_is_fenced_until_the_first_majority_of_yes(lead):
 
 
 def test_a_leftover_act_off_in_the_settings_is_not_read(lead):
-    """Ключа `quorum.act` больше нет: `false`, оставшийся в чьём-то app.yaml,
-    не включает «только наблюдение» — правило лидера ведёт журнал как обычно."""
+    """Ключа `quorum.act` больше нет: `false`, оставшийся в чьём-то reserve.yaml
+    (перенесён из app.yaml), не включает «только наблюдение» — правило лидера ведёт
+    журнал как обычно."""
     settings.set_value("reserve.quorum", {**lead.reserve_quorum_settings(), "act": False})
     acts = lead.reserve_quorum_leader_tick()
     assert lead.db.jrn_meta()["role"] == "follower", f"прежний act=false: старт лидера не снял право записи: {acts}"

@@ -218,3 +218,36 @@ def test_fresh_db_has_the_unique_index_and_not_the_old_one(db):
         "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'devices'")}
     assert "idx_devices_twin_uniq" in names
     assert "idx_devices_twin" not in names
+
+
+# ddl выпусков до 4.2.0 (v4.1.1, infra/db/schema/ddl.py): их init_schema ставит неуникальный индекс заново
+_OLD_TWIN_DDL = "CREATE INDEX IF NOT EXISTS idx_devices_twin     ON devices(twin_of) WHERE twin_of IS NOT NULL;"
+
+
+def _devices_indexes(db) -> set[str]:
+    return {r[0] for r in db._connection().execute(
+        "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'devices'")}
+
+
+@pytest.mark.jrn_raw("код прежнего выпуска после отката — сырое соединение")
+def test_the_old_index_put_back_by_a_rollback_goes_on_the_next_update(db):
+    """Обновление → откат на 4.1.x (её init_schema кладёт idx_devices_twin заново рядом с
+    уникальным) → снова обновление: прежний индекс снимается, иначе на базе два индекса
+    по twin_of и лишняя запись в индекс на каждую правку; повторный старт — без записи."""
+    from awgbot.infra.db import Database
+    con = sqlite3.connect(db.path)
+    try:
+        con.executescript(_OLD_TWIN_DDL)                        # старт 4.1.x после отката
+    finally:
+        con.close()
+    assert {"idx_devices_twin", "idx_devices_twin_uniq"} <= _devices_indexes(db)
+    again = Database(db.path)
+    try:
+        again.init_schema()                                     # снова 4.2.0
+        names = _devices_indexes(again)
+        assert "idx_devices_twin_uniq" in names and "idx_devices_twin" not in names, names
+        changes = again._connection().total_changes
+        assert again.ensure_twin_unique() is True
+        assert again._connection().total_changes == changes
+    finally:
+        again.close()

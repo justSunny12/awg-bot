@@ -219,7 +219,7 @@ def test_the_fence_holds_when_the_quorum_is_off_only_on_my_side(q, why):
 def test_a_structural_switch_off_lifts_the_fence(q, why):
     """Структурное выключение и цифры (`timing:`): линия в `st.quo` выключена, кандидат второй
     стороны без `active` не решает — держать ограждение некому, иначе бот молчал бы
-    пользователям бессрочно после правки app.yaml."""
+    пользователям бессрочно после правки reserve.yaml."""
     _fence(q)
     q.active, q.why = False, why
     q.tick()
