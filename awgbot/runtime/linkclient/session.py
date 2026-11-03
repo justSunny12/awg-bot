@@ -174,10 +174,18 @@ class SessionMixin:
             self._inbox_abandon()               # остановка клиента: документ в работе не ждём
             raise
         finally:
-            await self._inbox_drain()
-            self._writer = None
-            self._set_online(False)
-            self._rst_broken()                  # передача бэкапа серверу посреди — оборвалась
+            # Дренаж может бросить CancelledError (остановка клиента посреди
+            # дообработки) — сокет и признак «онлайн» снимаются всё равно, иначе
+            # сервер держал бы сессию до таймаута, а stop() — повисший слот.
+            try:
+                await self._inbox_drain()
+            finally:
+                self._writer = None
+                self._set_online(False)
+                self._rst_broken()              # передача бэкапа серверу посреди — оборвалась
+                if writer is not None:
+                    with contextlib.suppress(Exception):
+                        writer.close()
             # Запас на своё скачивание фидов отсчитывается от конца сессии — но
             # только настоящей: отвергнутый коннект (старый ключ, чужой слот)
             # продлевал бы запас каждым стуком, и фиды застывали навсегда.
@@ -186,7 +194,6 @@ class SessionMixin:
                     await asyncio.to_thread(self.services.lan_feeds_touch)
             if writer is not None:
                 with contextlib.suppress(Exception):
-                    writer.close()
                     await writer.wait_closed()
 
     def _set_online(self, on: bool) -> None:
