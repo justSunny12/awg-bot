@@ -270,6 +270,10 @@ class BackupsMixin:
         from awgbot.core import config
         from awgbot.domain.notices import backup as nb
         from awgbot.domain.services.types import Notification
+        # ожидание почти всегда пусто: сначала чтение без замка — замок записи на каждый
+        # hello слота при занятой базе отзывался бы «database is locked» и ронял приём
+        if str(int(slot_id)) not in ((self._wait().get("slots") or {})):
+            return []
         # чтение и запись ожидания — под замком записи: hello двух слотов (потоки
         # приёма) или hello и такт (поток канала) иначе затирали друг другу снятое,
         # и вышедший на связь шлюз через 15 минут шёл в «не вышел»
@@ -287,6 +291,8 @@ class BackupsMixin:
         from awgbot.core import config
         from awgbot.domain.notices import backup as nb
         from awgbot.domain.services.types import Notification
+        if not self._wait():                                 # пусто — без замка (такт канала раз в 5 с)
+            return []
         with self.db.transaction(immediate=True):            # см. restore_wait_hello
             w = self._wait()
             if not w:
