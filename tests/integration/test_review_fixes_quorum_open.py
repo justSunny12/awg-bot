@@ -379,6 +379,32 @@ def test_a_diverging_pause_limit_switches_the_candidate_off(c):
     assert not gw_sent(acts, "qtake") and c.s.__dict__.get("_rsv_qcand") is None
 
 
+def test_a_side_without_the_pause_key_keeps_the_candidate(c):
+    """Вторая сторона прежней сборки `pause` в `tm` не кладёт — у неё умолчание 300, как у меня:
+    это не расхождение, кандидат о её линии решает (иначе на время поочерёдного обновления
+    пары автоматического переезда о ней не было бы)."""
+    _peer_digits(c)
+    quo = dict(c.s.rsv_get("rsv_peer_state").get("quo") or {})
+    quo["tm"] = {k: v for k, v in quo["tm"].items() if k != "pause"}
+    c.s.rsv_update("rsv_peer_state", quo=quo)
+    assert c.s.reserve_quorum_peer_timing_off() == ""
+    acts = _majority(c) + c.run(T_UP)
+    assert gw_sent(acts, "qtake"), "сторона без ключа pause выключила кандидата"
+
+
+def test_a_missing_key_is_compared_with_the_default_not_skipped(c, monkeypatch):
+    """Свой предел паузы не умолчание, а у второй стороны ключа нет (у неё умолчание) — это
+    расхождение: отсутствующий ключ сверяется с умолчанием, а не пропускается."""
+    from dataclasses import replace
+    from awgbot.util.quorum.timing import Timing
+    _peer_digits(c)
+    quo = dict(c.s.rsv_get("rsv_peer_state").get("quo") or {})
+    quo["tm"] = {k: v for k, v in quo["tm"].items() if k != "pause"}
+    c.s.rsv_update("rsv_peer_state", quo=quo)
+    monkeypatch.setattr(c.s, "reserve_quorum_timing", lambda: replace(Timing(), pause_s=600))
+    assert c.s.reserve_quorum_peer_timing_off() == "pause"
+
+
 def test_equal_digits_keep_the_candidate(c):
     _peer_digits(c)
     acts = _majority(c) + c.run(T_UP)

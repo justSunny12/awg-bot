@@ -75,6 +75,9 @@ class Timing:
         if self.grace_s < need_g:
             # голосующий успевает пробу под новым поколением, пока голос прежнего ещё засчитан
             return f"grace_seconds {self.grace_s} < 1,4·probe_seconds + {self.reply_s} = {need_g:g}"
+        if self.pledge_s < 60:
+            # обязательство «нет» снималось бы на следующем такте голосующего — защита §3.4.3 молча выключена
+            return f"pledge_minutes {self.pledge_s // 60} < 1"
         for key, v in (("unfence_seconds", self.unfence_s), ("ask_repeat_seconds", self.ask_repeat_s),
                        ("pause_seconds", self.pause_s), ("tie_clear_seconds", self.tie_clear_s)):
             if v < self.tick_s:

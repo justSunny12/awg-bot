@@ -321,6 +321,18 @@ def test_qpause_is_capped_at_five_minutes(ag):
     assert ag.v.view == "uns", "пауза на час держит «не вижу» дольше 5 минут"
 
 
+def test_qpause_with_zero_duration_lifts_the_pause(ag):
+    """`qpause{dur: 0}` — отмена паузы (ступень обновления лидера не запустилась, он жив): «не
+    вижу» снова идёт обычным счётом no_s от последнего ответа, а не ждёт срока прежней паузы."""
+    ag.see()
+    ag.word("qpause", until=timeutil.to_iso(timeutil.shift(timeutil.now(), 300)), dur=300)
+    ag.run(10, answer=True, step=5)
+    ag.word("qpause", until=timeutil.now_iso(), dur=0)
+    assert not ag.v.paused(ag.clock.t), "qpause{dur: 0} паузу не снял"
+    ag.run(ag.v.timing.no_s + 10, answer=False, step=5)
+    assert ag.v.view == "uns", "после отмены паузы «не вижу» ждёт срока прежней паузы"
+
+
 def test_qstate_raises_the_known_epoch(ag):
     ag.word("qstate", e=E + 3)
     assert ag.v.epoch == E + 3
