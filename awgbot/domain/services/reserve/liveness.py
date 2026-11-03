@@ -49,8 +49,9 @@ def keepalive_upper_s() -> int:
 
 
 def pair_suspect_floor_s() -> int:
-    """Нижняя планка порога подозрения: keepalive плюс такт — тишина короче бывает и у живого линка."""
-    return keepalive_upper_s() + PAIR_TICK_S + 1
+    """Нижняя планка порога подозрения: keepalive плюс такт — тишина короче бывает и у живого
+    линка (умолчание 40 = 35 + 5 — ровно планка)."""
+    return keepalive_upper_s() + PAIR_TICK_S
 
 
 def pair_liveness_problem() -> str:

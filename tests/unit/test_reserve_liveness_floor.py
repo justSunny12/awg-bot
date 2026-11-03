@@ -20,10 +20,10 @@ def _set(monkeypatch, suspect: int, keepalive="25-35") -> None:
 def test_a_threshold_below_keepalive_plus_tick_is_a_problem_naming_the_floor(monkeypatch):
     _set(monkeypatch, 30)
     why = lv.pair_liveness_problem()
-    assert "reserve.suspect_seconds 30" in why and "35" in why and "действует 41" in why, why
+    assert "reserve.suspect_seconds 30" in why and "35" in why and "действует 40" in why, why
 
 
-@pytest.mark.parametrize("keepalive,floor", [("25-35", 41), ("25", 31), ("мусор", 41), ("", 41)])
+@pytest.mark.parametrize("keepalive,floor", [("25-35", 40), ("25", 30), ("мусор", 40), ("", 40)])
 def test_the_floor_follows_the_upper_keepalive_bound(monkeypatch, keepalive, floor):
     _set(monkeypatch, floor, keepalive)
     assert lv.pair_suspect_floor_s() == floor and lv.pair_liveness_problem() == ""
@@ -55,5 +55,5 @@ def test_preflight_warns_only_when_paired(monkeypatch):
     warns = preflight._pair_liveness_warnings(Paired())
     assert len(warns) == 1 and warns[0].startswith("⚠️ Резерв: reserve.suspect_seconds 30"), warns
     assert preflight._pair_liveness_warnings(Alone()) == []
-    _set(monkeypatch, 45)
+    _set(monkeypatch, 40)                                       # умолчание — ровно планка
     assert preflight._pair_liveness_warnings(Paired()) == []

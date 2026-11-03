@@ -115,7 +115,6 @@ class RoutingAccessMixin:
         # dnsmasq: пакет dnsmasq-base даёт только бинарь (его тянут libvirt и
         # соседи), а обвязке нужен ЮНИТ — иначе routing-host-setup.sh честно
         # остановится на полпути.
-        import subprocess
         from awgbot.infra import systemd
         try:
             dnsmasq_unit = systemd.unit_file_listed("dnsmasq.service", timeout=30)

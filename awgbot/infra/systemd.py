@@ -87,5 +87,5 @@ def unit_file_listed(unit: str, timeout: float = 30) -> bool:
     return proc.returncode == 0 and unit.encode() in (proc.stdout or b"")
 
 
-__all__ = ["is_active", "enabled_state", "start", "stop", "reset_failed", "restart", "enable", "disable",
+__all__ = ["is_active", "enabled_state", "stop", "reset_failed", "restart", "enable", "disable",
            "daemon_reload", "unit_file_listed"]
