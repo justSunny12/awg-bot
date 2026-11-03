@@ -56,13 +56,20 @@ class SchemaMixin:
     def ensure_twin_unique(self) -> bool:
         """Единственность двойника — частичным уникальным индексом по twin_of.
         Прежний неуникальный idx_devices_twin снимается: уникальный покрывает
-        те же запросы. На базе с дублями индекс не встаёт (CREATE отказал бы) —
-        тогда False и строка в журнал: дубли чистит старт бота
-        (migration_dedup_twins — ему нужен awg, которого у базы нет), после
-        чего зовёт снова. Идемпотентно."""
+        те же запросы — и тогда, когда уникальный уже стоит: откат на выпуск
+        ниже 4.2.0 кладёт прежний заново своим ddl. На базе с дублями индекс
+        не встаёт (CREATE отказал бы) — тогда False и строка в журнал, прежний
+        остаётся: дубли чистит старт бота (migration_dedup_twins — ему нужен
+        awg, которого у базы нет), после чего зовёт снова. Идемпотентно, без
+        записи, когда снимать и ставить нечего."""
         conn = self._connection()
-        if conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?",
-                        (self.TWIN_UNIQUE_INDEX,)).fetchone() is not None:
+        have = {r[0] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'index' AND name IN (?, 'idx_devices_twin')",
+            (self.TWIN_UNIQUE_INDEX,))}
+        if self.TWIN_UNIQUE_INDEX in have:
+            if "idx_devices_twin" in have:
+                with self._tx() as cur:
+                    cur.execute("DROP INDEX IF EXISTS idx_devices_twin")
             return True
         dup = self.twin_duplicates()
         if dup:
