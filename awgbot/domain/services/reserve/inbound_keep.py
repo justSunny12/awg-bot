@@ -14,7 +14,8 @@ inbound_keep.py — часть пакета reserve (см. __init__): «поль
 состоянию зоны:
 
 - клоны стоят (фаза зоны taking | serving, интерфейс есть) — serving без
-  `tg_taken`, не сделанное доделывает такт serving: факт записи не подтвердился —
+  `tg_taken`; такт не застал шага clone_up — `up` основе и сброс conntrack по
+  портам клонов (`relay_flush`) здесь же; не сделанное доделывает такт serving: факт записи не подтвердился —
   проверка у авторитетного сервера раз в KEEP_RETRY_S ± 40 % (по факту — отметка
   `tg_take`), режим serve зоны не встал — его повтор, бот не взял Telegram —
   inbound_tgwait;
@@ -122,14 +123,24 @@ class ReserveInboundKeepMixin:
         if fact and served:
             return self._take_keep_vpn(reason, mark=mark)     # не доделано только взятие Telegram
         kind = "serve" if fact else "record"
+        # такт не застал ни одного шага после подъёма клона (итог `fail record=set` или выход процесса
+        # прочитаны первыми): то, что делает шаг clone_up, — здесь, иначе в serving этого не сделает никто:
+        # `up` основе и сброс записей conntrack по портам клонов — запись с DNAT на основу (уступивший хвост,
+        # правило прошлого запуска) уводила бы рукопожатия и пробы шлюзов к клону на мёртвую основу
+        first_up = not inn.get("up_sent")
+        up = {"up_sent": True, "up_resent": time.monotonic(), "clone_at": timeutil.now_iso(),
+              "relay_flush_due": False} if first_up else {}
         with _LOCK:
             self.reserve_set_in("serving", kind=str(inn.get("kind") or ""), gen=int(inn.get("gen") or 0),
                                 tg_taken=False, served=served, serve_due=not served, tg_wait="", keep_k=kind,
-                                taken_at=timeutil.now_iso(), step="", relaunch=False, **mark)
+                                taken_at=timeutil.now_iso(), step="", relaunch=False, **mark, **up)
         self._open_secret_drop()
         log.warning("резерв: пользователи «%s» у меня (запись уже здесь, клон стоит), а приём сорвался: %s — зона "
                     "остаётся, %s", name, reason, "жду факта записи" if kind == "record" else "повторяю режим serve")
-        return [("fw",)] + self._keep_told(kind, reason)
+        acts: list[tuple] = [("fw",)]
+        if first_up:
+            acts = [("send", "up", self._word_oid(inn)), ("fw",), ("relay_flush",)]
+        return acts + self._keep_told(kind, reason)
 
     def _keep_told(self, kind: str, reason: str) -> list[tuple]:
         """Админу резерва — громко, один раз на вид сбоя в эпизоде."""

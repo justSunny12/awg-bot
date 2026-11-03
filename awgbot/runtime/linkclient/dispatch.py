@@ -45,14 +45,19 @@ class DispatchMixin:
         """Прочитанное в сессии — обработать до того, как сокет снят: ответы
         уходят по этой сессии, а следующая не начнётся посреди обработки.
         Отмена задачи сессии посреди дообработки (остановка клиента) — очередь
-        брошена, обработчик снят: ждать документ минуты стоп не должен."""
+        брошена, обработчик снят: ждать документ минуты стоп не должен.
+        Чья отмена — решает счёт отмен своей задачи, а не `task.done()`:
+        отмена сессии, пришедшая в тот же такт, когда обработчик доработал,
+        иначе проглатывалась — `_run` шёл на новое подключение, а stop()
+        ждал задачу сессии без конца."""
         task = self._inbox_task
         if task is None or task.done():
             return
         try:
             await asyncio.shield(task)
         except asyncio.CancelledError:
-            if task.done():
+            me = asyncio.current_task()
+            if task.done() and not (me is not None and me.cancelling()):
                 return                                  # снят обработчик, не сессия (_inbox_abandon)
             self._inbox_abandon()
             raise

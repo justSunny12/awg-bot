@@ -154,6 +154,44 @@ def test_the_fail_field_alone_is_enough(host):
     _no_teardown(host)
 
 
+@pytest.mark.parametrize("first", ["fail", "exit"])
+def test_clone_up_missed_by_the_tick_is_done_on_keep(host, first):
+    """Такт не застал ни одного шага после подъёма клона — первым прочитан итог `fail record=set`
+    или выход процесса на record_set: `up` основе и сброс conntrack по портам клонов выдаёт
+    срыв с сохранением зоны (в serving их не выдаст никто), отметка уступившего хвоста снята."""
+    svc = host.svc
+    _emergency(host, moved=False)
+    svc.rsv_update("rsv_in", relay_flush_due=True)            # хвост основы уступил этому открытию
+    if first == "fail":
+        host.zone.status = {"step": "fail", "reason": "факт записи не подтвердился за 30 минут", "record": "set",
+                            "name": NAME, "ip": IP}
+    else:
+        host.zone.status = {"step": "record_set", "name": NAME, "ip": IP}
+        host.spawn.rc = 137                                   # процесс убит сразу после смены записи
+    acts = svc.reserve_in_tick()
+    inn = svc.rsv_get("rsv_in")
+    assert svc.reserve_in() == "serving", inn
+    assert ("relay_flush",) in acts, f"записи conntrack с DNAT на основу не сброшены: {acts}"
+    assert acts.index(("fw",)) < acts.index(("relay_flush",)), "сброс раньше перерисовки файервола"
+    assert sent(acts).count("up") == 1, acts
+    assert inn.get("up_sent") and not inn.get("relay_flush_due"), inn
+    _no_teardown(host)
+    host.clock.advance(inbound_keep.KEEP_RETRY_S + 1)
+    again = svc.reserve_in_tick()
+    assert ("relay_flush",) not in again and "up" not in sent(again), again
+
+
+def test_keep_after_the_tick_saw_clone_up_does_not_repeat_its_words(host):
+    """Шаг после подъёма клона такт застал (up и сброс уже выданы) — срыв их не повторяет."""
+    svc = host.svc
+    _emergency(host)
+    assert svc.rsv_get("rsv_in").get("up_sent"), "подготовка: такт не застал record_set"
+    host.zone.status = {"step": "fail", "reason": "факт записи не подтвердился за 30 минут", "record": "set",
+                        "name": NAME, "ip": IP}
+    acts = svc.reserve_in_tick()
+    assert svc.reserve_in() == "serving"
+    assert ("relay_flush",) not in acts and "up" not in sent(acts), acts
+
 @pytest.mark.parametrize("how", ["killed", "deadline"])
 def test_a_process_lost_after_the_record_change_keeps_the_zone(host, how):
     svc = host.svc
