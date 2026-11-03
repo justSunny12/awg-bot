@@ -35,6 +35,10 @@ def _fn(script: str, name: str) -> str:
     return fn[:fn.index("\n}\n") + 3]
 
 
+def _prune(script: str) -> str:
+    return _fn(script, "fwd_prune") if "\nfwd_prune() {" in script else ""
+
+
 class _Fwd:
     """Подставной iptables: -S, -C, -D, -I по файлу правил цепочки FORWARD."""
 
@@ -59,7 +63,8 @@ class _Fwd:
 
     def run(self, script: str, body: str):
         prog = ('MODE="apply"\n' + _helpers(script) + 'FWD_TAG="awg-bot"\n'
-                + "".join(_fn(script, n) for n in ("fwd_allow", "fwd_tagged", "fwd_rollback")) + body)
+                + "".join(_fn(script, n) for n in ("fwd_allow", "fwd_tagged", "fwd_rollback")) + _prune(script)
+                + body)
         r = _sh(prog, path=f"{self.tmp}:/usr/bin:/bin")
         assert r.returncode == 0, r.stdout + r.stderr
         return r
@@ -72,6 +77,38 @@ def test_the_accepts_of_3a_carry_the_tag(script, tmp_path):
         "правило без метки или дважды при повторном прогоне"
     sec = script.split('step "3a. Чужая политика FORWARD"', 1)[1].split('step "4.', 1)[0]
     assert "fwd_allow -i" in sec and '"$LINK_IF" "${UPLINK_IF:-}" "${LAN_IF_PRE:-}"' in sec
+
+
+def _step_3a(script: str) -> str:
+    sec = script[script.index('step "3a. Чужая политика FORWARD"'):]
+    return sec[:sec.index("\n# ── 4. автозапуск")]
+
+
+def test_3a_drops_tagged_accepts_of_interfaces_that_stopped_being_ours(script, tmp_path):
+    """VPN-транзит выключили (интерфейса локальной сети больше нет в наборе),
+    аплинк сменил имя: прежде их помеченные ACCEPT снимал только --rollback, и
+    при чужой политике DROP пересылка с них оставалась открытой нашим же
+    правилом. Линк к резерву — свой (его правила ведёт reserve-gw-setup.sh),
+    правила без метки и чужие не трогаются."""
+    f = _Fwd(tmp_path, [
+        f"-i awglink {TAG}", f"-o awglink {TAG}",
+        f"-i eth0 {TAG}", f"-o eth0 {TAG}",                  # VPN-транзит выключен
+        f"-i awgold {TAG}",                                   # прежнее имя аплинка
+        f"-i awgrsv {TAG}", f"-o awgrsv {TAG}",
+        "-i eth0 -j ACCEPT", "-j ufw-user-forward",
+    ])
+    f.run(script, 'LINK_IF=awglink\nUPLINK_IF=awg0\nLAN_IF_PRE=""\n' + _step_3a(script) + "\n")
+    assert f.now() == [f"-o awg0 {TAG}", f"-i awg0 {TAG}",
+                       f"-i awglink {TAG}", f"-o awglink {TAG}",
+                       f"-i awgrsv {TAG}", f"-o awgrsv {TAG}",
+                       "-i eth0 -j ACCEPT", "-j ufw-user-forward"], f.now()
+
+
+def test_3a_keeps_the_rules_of_current_interfaces_on_a_repeated_run(script, tmp_path):
+    rules = [f"-i br0 {TAG}", f"-o br0 {TAG}", f"-i awglink {TAG}", f"-o awglink {TAG}", "-j ufw-user-forward"]
+    f = _Fwd(tmp_path, rules)
+    f.run(script, 'LINK_IF=awglink\nUPLINK_IF=""\nLAN_IF_PRE=br0\n' + _step_3a(script) + "\n")
+    assert f.now() == rules, "повторный прогон тронул правила своих интерфейсов"
 
 
 def test_rollback_takes_tagged_rules_anywhere_and_untagged_only_on_our_interfaces(script, tmp_path):
