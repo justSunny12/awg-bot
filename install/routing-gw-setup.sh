@@ -553,7 +553,9 @@ cat > "$LAN_LISTS.new" <<'LISTSEOF'
 #   фиды подсетей → набор lan_vpn_nets4 (атомарно: flush + add)
 #   слепки наборов → /var/lib/awg-gw/*.nft (грузятся при старте до фидов)
 #   итог → /var/lib/awg-gw/lists.status: updated_at, domains, nets, rc,
-#          source (net — скачано, channel — привёз канал)
+#          source (net — скачано, channel — привёз канал); nets — число в
+#          наборе: не тронут — прежнее, пополнен (часть фидов не пришла) —
+#          счёт по самому набору
 set -u
 TABLE="inet awg_lan"
 D="${AWG_DNSMASQ_D:-/etc/dnsmasq.d}"
@@ -679,10 +681,11 @@ fi
 # префикс не короче /8: «0.0.0.0/1» из битого фида увёл бы в туннель полсети;
 # отбор, сортировка и склейка — порознь: в конвейере упавший шаг дал бы пустой
 # набор с кодом 0, и в итог ушло бы «подсетей 0» при нетронутом наборе
-elems=""; nets_built=0
+# nets_set — что стало с набором: full — пересобран, add — пополнен, пусто — не тронут
+elems=""; nets_set=""
 grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/([89]|[12][0-9]|3[0-2])$' "$NETS" > "$NETS2"
 if [ $? -le 1 ] && sort -u -o "$NETS2" "$NETS2" && elems="$(paste -sd, - < "$NETS2")"; then
-    nets_built=1
+    :
 else
     elems=""; echo "подсети: рабочий шаг сборки набора не прошёл — набор не тронут" >&2; rc=1
 fi
@@ -690,14 +693,19 @@ if [ -n "$elems" ]; then
     if [ "${nets_rc:-0}" = "0" ]; then
         # одной транзакцией: между flush и add окна нет
         printf 'flush set %s lan_vpn_nets4\nadd element %s lan_vpn_nets4 { %s }\n' "$TABLE" "$TABLE" "$elems" \
-            | nft -f - || { echo "подсети: nft отклонил набор" >&2; rc=1; }
+            | nft -f - && nets_set=full || { echo "подсети: nft отклонил набор" >&2; rc=1; }
     else
         # один из фидов не скачался: только ДОБАВИТЬ — flush стёр бы подсети
         # сервиса, чей фид не пришёл, до следующего похода
         printf 'add element %s lan_vpn_nets4 { %s }\n' "$TABLE" "$elems" \
-            | nft -f - || { echo "подсети: nft отклонил набор" >&2; rc=1; }
+            | nft -f - && nets_set=add || { echo "подсети: nft отклонил набор" >&2; rc=1; }
     fi
 fi
+count_nets() {                 # число элементов lan_vpn_nets4 по самому набору → _nets
+    nft list set $TABLE lan_vpn_nets4 > "$NETS2" 2>/dev/null \
+        && sed -n '/elements = {/,/}/p' "$NETS2" > "$NETS" && tr ',' '\n' < "$NETS" > "$NETS2" || return 1
+    _nets="$(grep -c '[0-9]' "$NETS2")"; [ $? -le 1 ]
+}
 
 # ── слепки: при старте таблица пуста, пока агент не сходит за фидами
 mkdir -p "$DUMP"
@@ -705,12 +713,16 @@ for s in lan_vpn4 lan_vpn_nets4; do
     nft list set $TABLE $s > "$DUMP/$s.nft.tmp" 2>/dev/null && mv -f "$DUMP/$s.nft.tmp" "$DUMP/$s.nft" || rm -f "$DUMP/$s.nft.tmp"
 done
 _dom="$(grep -c '^nftset=' "$FEED" 2>/dev/null)"; _dom="${_dom:-0}"
-if [ "$nets_built" = 1 ]; then
-    _nets="$(printf '%s' "$elems" | tr ',' '\n' | grep -c .)"
-else
-    # набор не тронут — в итоге прежнее число, а не ноль
-    _nets="$(sed -n 's/^nets=//p' "$DUMP/lists.status" 2>/dev/null | head -n 1)"
-fi
+# Итог — число в наборе, а не число пришедших: набор не тронут (сбор не
+# прошёл, подсети не пришли вовсе, nft отклонил) — прежнее число, а не ноль;
+# пополнен (часть фидов не пришла) — счёт по самому набору, в нём и подсети
+# прежних прогонов; счёт не вышел — прежнее
+_nets=""
+case "$nets_set" in
+    full) _nets="$(printf '%s' "$elems" | tr ',' '\n' | grep -c .)" ;;
+    add)  count_nets || _nets="" ;;
+esac
+[ -n "$_nets" ] || _nets="$(sed -n 's/^nets=//p' "$DUMP/lists.status" 2>/dev/null | head -n 1)"
 _nets="${_nets:-0}"
 # итог — во временный файл и mv: недописанный итог агент прочёл бы как «списков нет»
 printf 'updated_at=%s\ndomains=%s\nnets=%s\nrc=%s\nsource=%s\n' "$(date -Iseconds)" "$_dom" "$_nets" "$rc" \
