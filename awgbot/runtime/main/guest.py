@@ -1,4 +1,4 @@
-"""guest.py — часть пакета main (см. __init__): запуск бота основы на резерве
+"""guest.py — часть пакета main (см. __init__): запуск гостя
 (гостевой режим, run_guest).
 
 Тот же основной бот с данными основы из хранилища гостя в памяти (env, conf,
@@ -172,7 +172,7 @@ async def run_guest() -> None:
             log.error("гость: слушатель вебхука не поднялся: %s", e)
             wh = None
     scheduler.start()
-    log.info("гость: бот основы на резерве запущен (клон %s, данные в памяти)", config.AWG_INTERFACE)
+    log.info("гость: гость запущен (клон %s, данные в памяти)", config.AWG_INTERFACE)
     try:
         if not await _wait_stop(ctl):
             # сигнал юнита (systemctl stop, перезапуск): без обработчика asyncio.run завершал

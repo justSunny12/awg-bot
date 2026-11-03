@@ -4,7 +4,7 @@
 # дома снова берёт эпоху без released гостя и ждёт его правок хвостом С9.
 #
 # Проверяет:
-#   1. переезд кнопкой, боту основы на резерве закрыт макет Bot API (правило в пространстве зоны):
+#   1. переезд кнопкой, гостю закрыт макет Bot API (правило в пространстве зоны):
 #      A передаёт бота (released), гость — держатель эпохи; резерв выключается (бот B и гость
 #      остановлены, сеть B убита); A по сроку шага released (сжат до 60 с) и слову Telegram «вебхука
 #      нет» — срыв, дома держатель; отметка С9 — под эпоху гостя;
@@ -29,7 +29,7 @@ trap pl_cleanup EXIT
 C9W=awgbot.domain.services.reserve.journal.c9wait
 OUTB=awgbot.domain.services.reserve.outbound
 
-tg_block() {     # боту основы на резерве закрыт макет Bot API (выход из зоны)
+tg_block() {     # гостю закрыт макет Bot API (выход из зоны)
     ip netns exec awg-guest nft delete table ip labtg 2>/dev/null
     ip netns exec awg-guest nft -f - <<EOF
 table ip labtg {

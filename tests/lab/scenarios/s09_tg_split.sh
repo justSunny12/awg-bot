@@ -1,6 +1,6 @@
 #!/bin/bash
-# s09_tg_split — VPN и бот основы на резерве разделены (tests/lab/pairlab.sh): аварийный переезд,
-# где бот основы на резерве не взял Telegram после смены записи, зону не снимает — пользователи
+# s09_tg_split — VPN и гость разделены (tests/lab/pairlab.sh): аварийный переезд,
+# где гость не взял Telegram после смены записи, зону не снимает — пользователи
 # уже идут на клон; переезд кнопкой, при котором основа погибла между up и released, а гость
 # забрал Telegram сам, ожившая основа не откатывает.
 #
@@ -8,7 +8,7 @@
 #   1. аварийное открытие по коду (A выключена и мертва для всех): запись меняет сам процесс
 #      открытия (LAB_OPEN_RECORD — мир DNS стенда), open.status — done без record=skipped,
 #      запись — на адрес B, отметка tg_take на месте;
-#   2. боту основы на резерве закрыт макет Bot API (правило в пространстве зоны): за TAKEN_WAIT_S
+#   2. гостю закрыт макет Bot API (правило в пространстве зоны): за TAKEN_WAIT_S
 #      (сжат LAB_CONST шага 1) Telegram не взят — зона не снята (клон awg0 в зоне, фаза зоны serving), B —
 #      serving без tg_taken с причиной tg_wait; админу B — уведомление «VPN работает, бот … не
 #      отвечает в Telegram», в карточке B — строка «└ ⚠️ бот … здесь не отвечает в Telegram»;
@@ -38,7 +38,7 @@ OUTB=awgbot.domain.services.reserve.outbound
 inject_b() {     # inject_b <json> — обновление боту B через макет (из пространства B: A мертва)
     ip netns exec lab-B curl -s -m5 -X POST "$API_B/inject/$TOKEN_B" -H 'Content-Type: application/json' -d "$1" >/dev/null
 }
-tg_block() {     # tg_block on|off — боту основы на резерве закрыт макет Bot API (выход из зоны)
+tg_block() {     # tg_block on|off — гостю закрыт макет Bot API (выход из зоны)
     ip netns exec awg-guest nft delete table ip labtg 2>/dev/null
     [ "$1" = on ] || return 0
     ip netns exec awg-guest nft -f - <<EOF
@@ -94,7 +94,7 @@ case "$card" in *"здесь не отвечает в Telegram"*) ;; *) pl_fail 
 # ── 3. повтор захвата ────────────────────────────────────────────────────────────────────────────
 # строки журнала о запуске юнита гостя такт пишет на каждом повторе, пока юнит не активен, — шаг 2 мог
 # оставить их до снятия отметки: в зачёт идёт только новая
-tg_up_re="бот основы на резерве (запущен снова|не запустился)"
+tg_up_re="гость (запущен снова|не запустился)"
 n_up0=$(grep -cE "$tg_up_re" "$PL/B/node.log" 2>/dev/null); n_up0=${n_up0:-0}
 rm -f /run/awg-bot-guest/tg_take
 t_rm=$(date +%s)
@@ -155,7 +155,7 @@ grep -q "по принудительному захвату" "$PL/A/node.log" ||
 [ "$("$PY" -c 'import json,sys; print(json.load(open(sys.argv[1])).get(sys.argv[2], ""))' "$PL/shared/dns.json" "$RECORD")" = 198.51.100.7 ] \
     || pl_fail "ожившая A откатила запись: $(cat "$PL/shared/dns.json")"
 [ "$(pl_q B 's["in"].get("state")')" = serving ] || pl_fail "B после оживления A не serving: $(pl_q B 's["in"]')"
-kill -0 "$PL_GUEST_PID" 2>/dev/null || pl_fail "бот основы на резерве снят после оживления A: $(tail -n5 "$PL/G/guest.log")"
+kill -0 "$PL_GUEST_PID" 2>/dev/null || pl_fail "гость снят после оживления A: $(tail -n5 "$PL/G/guest.log")"
 grep -q "back от" "$PL/B/node.log" && note "6: B получил back от A — ответил taken"
 rm -f "$PL/shared/auth.hold"
 pl_wait A 's.get("alive")' 90 "B на связи для кнопки возврата" || exit 1

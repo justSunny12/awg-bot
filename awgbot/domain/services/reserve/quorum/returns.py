@@ -6,7 +6,7 @@ returns.py — часть пакета quorum (см. __init__): возвраты
 мои шлюзы) продолжают пробовать мой интерфейс AWG; ответчик у меня дома
 считает их «да» (роль в ответе — `follow`), и «здоров» для рычага «сразу»
 — «да» строго больше половины v (вместо «свой AWG отвечает» и «шлюз на
-связи»). Аварийный возврат — Q1 о боте основы на резерве: я — кандидат о
+связи»). Аварийный возврат — Q1 о госте: я — кандидат о
 своём клоне (свой зонд `awgq<l>r`, взгляды своих шлюзов на клон по каналу
 конфигурации, `tgt = r`); «не видят» > v/2 дольше T_up — забираю своих сам:
 `qtake` своим шлюзам, запись на свой адрес, `deleteWebhook`, поллинг — как
@@ -55,7 +55,7 @@ class ReserveQuorumReturnsMixin:
         if not side or m is None or not self.reserve_quorum_active() or self.reserve_quorum_leader_host() == side:
             self.__dict__.pop("_rsv_qback", None)
             return None
-        voters = m.voters(probenet.other_side(side))          # лидер — бот основы на резерве: голосуют я и мои шлюзы
+        voters = m.voters(probenet.other_side(side))          # лидер — гость: голосуют я и мои шлюзы
         c = self._qback
         if c is None or c.l != side:
             c = Candidate(side, len(voters), side, timing=self.reserve_quorum_timing(), voters=tuple(n for n in voters if n != side))
@@ -116,7 +116,7 @@ class ReserveQuorumReturnsMixin:
         return [("gwlink", slot, kind, {**body, "tgt": "r"})]
 
     def _quorum_force_return(self, c: Candidate, v) -> list[tuple]:
-        """«Не видят» бот основы на резерве > v/2 дольше T_up: забираю своих сам."""
+        """«Не видят» гость > v/2 дольше T_up: забираю своих сам."""
         from ...types import ServiceError
         if self.reserve_out() != "away":
             c.reset()

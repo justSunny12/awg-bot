@@ -36,7 +36,7 @@
 #      секунд — правка через 2 с после старта отвергнута (ограждение ставит старт процесса до поллинга;
 #      провал — в конце сценария, чтобы прошли остальные пункты), правка на старте отвергнута, пользователю — Т-К9 в
 #      макете Bot API; первое большинство «да» — снова лидер;
-#   з. возврат кнопкой при включённом кворуме: переезд кнопкой, правка бота основы на резерве — в
+#   з. возврат кнопкой при включённом кворуме: переезд кнопкой, правка гостя — в
 #      базе A; возврат — A держатель и снова лидер, гость передал право записи (released) и
 #      остановился — к записи по «да» ему вернуться не из чего; окна аварийного кода у B при живой A
 #      за всё это время нет;
@@ -249,7 +249,7 @@ if has z; then
     q_move_button
     printf '{"name": "Правка-гостя"}' > "$PL/G/edit_one"
     for _ in $(seq 1 40); do [ -e "$PL/G/edit_one.done" ] && break; sleep 0.25; done
-    grep -q '"id"' "$PL/G/edit_one.done" 2>/dev/null || pl_fail "з: правка бота основы на резерве не выполнена: $(cat "$PL/G/edit_one.done" 2>/dev/null)"
+    grep -q '"id"' "$PL/G/edit_one.done" 2>/dev/null || pl_fail "з: правка гостя не выполнена: $(cat "$PL/G/edit_one.done" 2>/dev/null)"
     seen=""
     for _ in $(seq 1 60); do
         n="$("$PY" -c 'import sqlite3,sys; c=sqlite3.connect("file:"+sys.argv[1]+"?mode=ro", uri=True)
@@ -257,7 +257,7 @@ print(c.execute("SELECT count(*) FROM clients WHERE name = ?", ("Правка-г
         [ "$n" = 1 ] && { seen=1; break; }
         sleep 0.25
     done
-    [ -n "$seen" ] || pl_fail "з: правка бота основы на резерве не дошла до базы A за 15 с"
+    [ -n "$seen" ] || pl_fail "з: правка гостя не дошла до базы A за 15 с"
     T0=$(date +%s)
     res="$(pl_cmd A return '{}')" || pl_fail "з: возврат кнопкой не начат: $res"
     pl_codewin_watch B A
@@ -267,7 +267,7 @@ print(c.execute("SELECT count(*) FROM clients WHERE name = ?", ("Правка-г
     t_back=$WT
     # гость передаёт право записи (released) и останавливается: к записи по «да» вернуться ему не из чего
     for _ in $(seq 1 30); do kill -0 "$PL_GUEST_PID" 2>/dev/null || break; sleep 1; done
-    kill -0 "$PL_GUEST_PID" 2>/dev/null && pl_fail "з: бот основы на резерве жив через 30 с после возврата: $(tail -n3 "$PL/G/guest.log")"
+    kill -0 "$PL_GUEST_PID" 2>/dev/null && pl_fail "з: гость жив через 30 с после возврата: $(tail -n3 "$PL/G/guest.log")"
     grep -q "передал право записи" "$PL/G/guest.log" || pl_fail "з: гость остановился без передачи права записи: $(tail -n5 "$PL/G/guest.log")"
     for _ in $(seq 1 60); do
         [ "$(pl_q A 's["jrn"]["holder"] == "self" and s["jrn"]["role"] == "holder"')" = "true" ] \

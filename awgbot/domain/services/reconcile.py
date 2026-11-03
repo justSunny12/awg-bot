@@ -117,7 +117,7 @@ class ReconcileMixin:
         готовить то же самое удаление, только медленнее.
         """
         if getattr(self, "reserve_following", None) and self.reserve_following():
-            # следование: устройства решает бот основы на резерве — пропавший пир не удаляет
+            # следование: устройства решает гость — пропавший пир не удаляет
             # устройство, неизвестный не заводится (это решения; база их и не примет)
             return []
         db_devices = {d.public_key: d for d in self.db.list_all_devices()}
@@ -222,7 +222,7 @@ class ReconcileMixin:
             counts = {}
         fixed = 0
         holder = self.reserve_holder_blocks() if hasattr(self, "reserve_holder_blocks") else None
-        # в следовании — блокировки держателя (бот основы на резерве), а не устаревшей базы
+        # в следовании — блокировки держателя (гость), а не устаревшей базы
         wanted = list(holder) if holder is not None else list(self.db.blocked_addresses())
         for address in wanted:
             if counts.get(address, 0) > 1:

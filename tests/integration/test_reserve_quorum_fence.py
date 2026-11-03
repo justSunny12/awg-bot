@@ -355,7 +355,7 @@ def test_qstate_of_my_line_with_a_larger_epoch_adopts_and_a_smaller_one_does_not
     assert q.meta() == ("peer", "follower", e + 1), "qstate своей линии с эпохой больше не принят"
 
 
-# ── бот основы на резерве ───────────────────────────────────────────────────
+# ── гость ───────────────────────────────────────────────────
 
 def test_the_guest_leader_fences_its_own_base_the_same_way(services, monkeypatch):
     """Лидер-гость (клон основы у резерва) — то же правило на своей базе:
@@ -428,7 +428,7 @@ def test_with_the_quorum_a_reserve_serving_my_clients_after_home_makes_a_followe
 # ── гость: состояние «жду состав» ───────────────────────────────────────────
 
 def test_the_guest_starts_without_write_until_the_composition_arrives(services, monkeypatch):
-    """Решение 31.10.2026 (вариант 2): бот основы на резерве стартует в состоянии `waiting` —
+    """Решение 31.10.2026 (вариант 2): гость стартует в состоянии `waiting` —
     без права записи, пока бот резерва не пришлёт состав; «кворум выключен» это не снимает.
     Состав пришёл — старт лидера, первое большинство «да» возвращает запись."""
     monkeypatch.setattr(config, "GUEST", True)

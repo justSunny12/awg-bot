@@ -76,7 +76,7 @@
 # скрипт НЕ пишет: его рисует бот по состоянию зоны (state.json) в таблице
 # awg_bot_guard. Скрипт также НЕ переносит данные основы (хранилище гостя
 # заполняет tools/rsvopen.py между --store и --take), НЕ меняет DNS и НЕ ставит
-# вебхук Telegram — это делают процесс открытия и бот основы на резерве.
+# вебхук Telegram — это делают процесс открытия и гость.
 #
 # Режимы:
 #   --plan        без root: store=tmpfs-noswap|ramfs, cake=yes|no, netns=, awg=,
@@ -492,7 +492,7 @@ store_mount() {
 # ── юниты гостя ─────────────────────────────────────────────────────────────
 write_journal_conf() {
     cat > "$JOURNAL_CONF" <<EOF
-# awg-bot: журнал бота основы на резерве — только в памяти
+# awg-bot: журнал гостя — только в памяти
 [Journal]
 Storage=volatile
 RuntimeMaxUse=16M
@@ -525,7 +525,7 @@ RestartSec=3
 EOF
     cat > "$UNIT" <<EOF
 [Unit]
-Description=awg-bot: бот основы на резерве (гостевой режим)
+Description=awg-bot: гость (бот основы в гостевом режиме)
 After=network-online.target awg-bot-guest-dns.service
 Wants=awg-bot-guest-dns.service
 

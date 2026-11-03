@@ -1,5 +1,5 @@
 """Хвост старой эпохи и передачи эпохи — правки по ревью 4.1.0 на паре из трёх баз
-(основа, резерв, бот основы на резерве — мир tests/integration/_reserve_jrn_duo.py,
+(основа, резерв, гость — мир tests/integration/_reserve_jrn_duo.py,
 сценарии аварии — tests/integration/test_reserve_jrn_tail_pair.py).
 
 - свой хвост при держателе дома переносится тактом (`reserve_tail_settle`):

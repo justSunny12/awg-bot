@@ -108,7 +108,7 @@ def setup_reserve_jobs(scheduler, services, bot) -> None:
         except Exception as e:                           # noqa: BLE001
             log.warning("резерв: линки шлюзов: %s", e)
         try:
-            # локальный канал с ботом основы на резерве: слушатель — пока есть
+            # локальный канал с гостем: слушатель — пока есть
             # пара; состояние основы гостю — по смене
             from awgbot.runtime.pairlink import guestctl
             srv = await guestctl.ensure(services)

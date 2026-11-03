@@ -87,9 +87,9 @@ class ReserveInboundTgWaitMixin:
             proc = subprocess.run(["systemctl", "start", rsvzone.GUEST_UNIT], capture_output=True, timeout=60)
             if proc.returncode != 0:
                 raise subprocess.SubprocessError(f"код {proc.returncode}")
-            log.info("резерв: бот основы на резерве запущен снова — ставить вебхук")
+            log.info("резерв: гость запущен снова — ставить вебхук")
         except (OSError, subprocess.SubprocessError) as e:
-            log.warning("резерв: бот основы на резерве не запустился: %s", e)
+            log.warning("резерв: гость не запустился: %s", e)
         return []
 
     def reserve_in_tg(self) -> str:

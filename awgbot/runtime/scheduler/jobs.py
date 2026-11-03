@@ -75,7 +75,7 @@ def core_jobs(services, bot, db) -> dict:
             await asyncio.to_thread(db.set_state, "last_monthly_reset", ym)   # первый запуск — только фиксация
             return
         if await asyncio.to_thread(pkg.following, services):
-            # сброс делает держатель (бот основы на резерве); после возврата со слиянием он
+            # сброс делает держатель (гость); после возврата со слиянием он
             # учтён, без слияния — догон после возврата сделает его здесь
             await asyncio.to_thread(services.reserve_monthly_defer, ym)
             return

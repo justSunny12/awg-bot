@@ -129,7 +129,7 @@ def dns_token_prompt() -> InlineKeyboardMarkup:
 
 
 def guest_card(*, can_return: bool) -> InlineKeyboardMarkup:
-    """Карточка резерва в боте основы на резерве: вернуть пользователей (когда
+    """Карточка резерва в госте: вернуть пользователей (когда
     основа снова в строю и рычаг «по кнопке»), обновить, назад."""
     return ui.rows(
         ("↩️ Вернуть пользователей", RsvCB(action="back")) if can_return else None,

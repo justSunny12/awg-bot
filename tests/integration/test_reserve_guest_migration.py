@@ -1,7 +1,7 @@
 """Окно переезда профилей едет гостю (util/rsvpkg/bot.py GUEST_STATE +=
 migration_state, migration_ready_announced): двойник (devices.twin_of),
 впервые вышедший на связь на клоне второго интерфейса у резерва, получает
-поздравление от бота основы на резерве; после возврата слияние несёт
+поздравление от гостя; после возврата слияние несёт
 device_traffic.last_handshake (MAX), и основа не поздравляет второй раз.
 
 Базы настоящие (основа, реплика гостю, реплика обратно), awg — подменой:
@@ -95,7 +95,7 @@ def world(mv, fake_awg, make_active_client, monkeypatch, tmp_path):
 
 
 def _guest(w) -> Services:
-    """Бот основы на резерве: база — реплика пакета, настройки клона — те же
+    """Гость: база — реплика пакета, настройки клона — те же
     интерфейсы (awg0 и второй, awg1)."""
     path = os.path.join(str(w.tmp), "guest", "bot.db")
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -152,7 +152,7 @@ def test_the_guest_app_yaml_names_the_second_interface_as_the_migration_one():
 
 def test_the_guest_sees_the_migration_running(world):
     gsvc = _guest(world)
-    assert gsvc.migration_running() is True, "у бота основы на резерве окно переезда закрыто"
+    assert gsvc.migration_running() is True, "у гостя окно переезда закрыто"
     assert [d.id for d in gsvc.db.pending_twins()] == [world.twin_id], "гость не ждёт двойника"
 
 

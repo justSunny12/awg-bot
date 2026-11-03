@@ -11,7 +11,7 @@
 в будущем. То же с лимитом трафика, поднятым на резерве.
 
 Мир — пара из tests/integration/_reserve_move.py (записи DNS и часы автоматов
-подставные), реплика бота основы на резерве — копия базы основы с правками
+подставные), реплика гостя — копия базы основы с правками
 «людей на резерве» (`snapshot_blob`). Ключи — заглушки.
 
 Цена ошибки: основа в отъезде блокирует продлённых и шлёт им «подписка
@@ -209,7 +209,7 @@ def test_a_return_without_a_replica_reaches_the_end_with_its_report(world, kind,
     texts = [n.text for n in notices(acts)]
     report = [t for t in texts if t.startswith("↩️")]
     assert len(report) == 1, f"итог возврата не ушёл админу: {texts}"
-    assert "Переехавшего инстанса на «Beta» уже не было — изменения, сделанные там, будут утеряны" in report[0], report[0]
+    assert "Гостя на «Beta» уже не было — изменения, сделанные там, будут утеряны" in report[0], report[0]
     assert "&lt;" not in report[0] and "&amp;" not in report[0], f"строка отчёта экранирована дважды: {report[0]}"
     token = [t for t in texts if "Токен API DNS" in t]
     gen_after = int(svc.rsv_get("rsv_keys").get("m_gen") or 0)

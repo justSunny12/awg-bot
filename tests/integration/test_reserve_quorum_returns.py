@@ -131,7 +131,7 @@ def test_the_home_responder_answers_away_with_the_follow_role(aw):
 
 
 def test_q2_counts_yes_whatever_epoch_and_leaves_the_journal_alone(aw):
-    """Эпоху линии в отъезде держит бот основы на резерве: голосующие знают её,
+    """Эпоху линии в отъезде держит гость: голосующие знают её,
     а не эпоху основы. Проба с эпохой больше своей — не «чужая эпоха»."""
     before = dict(aw.s.db.jrn_meta())
     aw.probe("b", e=before["epoch"] + 5)

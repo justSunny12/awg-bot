@@ -1,6 +1,6 @@
 """Потолки памяти зоны резерва от размера данных основы: процесс открытия
 (openproc `rsvopen_sandbox_props` — MemoryMax от размера guest.pkg,
-`rsvzone.open_memory_mb`), бот основы на резерве (юнит гостя — MemoryMax от
+`rsvzone.open_memory_mb`), гость (юнит гостя — MemoryMax от
 размера базы, `rsvzone.guest_memory_mb`, процесс открытия передаёт его скрипту
 зоны в GUEST_MEMORY_MB при --take; в нём — и хранилище гостя целиком, `rsvzone.store_mb`:
 страницы tmpfs, записанные гостем, числятся в memory cgroup его юнита), предупреждение

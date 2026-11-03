@@ -528,7 +528,7 @@ def test_an_adopted_epoch_at_home_without_the_peers_word_moves_me_to_away(q3, mo
     assert q3.s.reserve_out() == "away", "принятая эпоха без слова второй стороны оставила основу дома"
     assert q3.meta()[0] == "peer", "переход в away тронул держателя"
     assert q3.s.reserve_quorum_adopted(), "отметка принятия снята переходом"
-    assert q3.s.reserve_quorum_leader_host() != "a", "в away лидер линии — бот основы на резерве (Q1 о нём)"
+    assert q3.s.reserve_quorum_leader_host() != "a", "в away лидер линии — гость (Q1 о нём)"
 
 
 def test_an_adopted_epoch_with_the_live_peer_idle_after_it_stays_home(q3, monkeypatch):

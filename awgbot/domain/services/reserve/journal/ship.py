@@ -83,7 +83,7 @@ class ReserveShipMixin:
 
     def reserve_jrn_sync(self) -> None:
         """Захват — по направлению; смена — снимок (или пакет прежнего пути) заново.
-        У бота основы на резерве захват ставит процесс открытия, а не пара."""
+        У гостя захват ставит процесс открытия, а не пара."""
         if getattr(self, "guest", False):
             return
         on = self.reserve_jrn_on()
@@ -302,7 +302,7 @@ class ReserveShipMixin:
         return backoff.jitter(max(1, settings.get_int("reserve.pkg_minutes", 30)) * 60)
 
     def _jrn_counts_rec(self, side: str, batch) -> bytes | None:
-        """Пачка счётчиков записью под K (основа — сторона a, бот основы на резерве — b);
+        """Пачка счётчиков записью под K (основа — сторона a, гость — b);
         больше части канала — не уходит (строкой журнала один раз, до подтверждения следующей)."""
         from awgbot.util.rsvjrn import event
         rec = event.seal_counts(self.reserve_k(), self.db.jrn_line(), side, batch)

@@ -210,7 +210,7 @@ class ReserveKeysMixin:
         return bytes.fromhex(self.reserve_keys().get("m") or "")
 
     def reserve_k(self) -> bytes:
-        if config.GUEST:                                      # бот основы на резерве: K — в его хранилище
+        if config.GUEST:                                      # гость: K — в его хранилище
             from awgbot.infra import rsvzone
             try:
                 return bytes.fromhex(rsvzone.K_FILE.read_text(encoding="utf-8").strip())

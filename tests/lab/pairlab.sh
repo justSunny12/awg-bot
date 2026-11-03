@@ -19,14 +19,14 @@
 #   pl_wait <узел> <выражение> <срок> [что]   ждать, пока выражение не станет истиной
 #   pl_pair_up                    pl_init, оба узла с поллингом, журнал включён, снимки приняты
 #   pl_open_wait <срок>           ход процесса открытия у B до done или fail (open.status)
-#   pl_guest_start / pl_guest_stop   бот основы на резерве (guest_main) в зоне, команды — $PL/G
+#   pl_guest_start / pl_guest_stop   гость (guest_main) в зоне, команды — $PL/G
 #   pl_conf <узел> <ключ.через.точку> <значение JSON>   правка conf узла (до pl_start): первый сегмент —
 #                                 имя файла conf/<имя>.yaml, если он есть (reserve.return), иначе app.yaml (routing.enabled)
 #   pl_gw_start <слот> / pl_gw_stop <слот>   шлюз основы с кворумом (gwnode) в lab-G1, lab-G2, lab-GR (слот 3);
 #                                 основе и резерву слоты — LAB_GW_SLOTS (до pl_start)
 #   pl_gq <слот> <выражение>      значение из status.json шлюза (выражение python над s)
 #   (РФ-доступ узлов для s08_rf_transit — rtlab.sh: LAB_RT и LAB_RF_SET идут узлам окружением;
-#    LAB_CONST — сжатые сроки резерва узлам и боту основы на резерве, LAB_OPEN_RECORD=1 — запись при
+#    LAB_CONST — сжатые сроки резерва узлам и гостю, LAB_OPEN_RECORD=1 — запись при
 #    аварийном открытии меняет процесс открытия миром DNS стенда; оба — до pl_start, см. pairnode)
 #   pl_rsv <узел> <ключ> [выражение над v]   ключ резерва из базы узла (server_state, только чтение)
 #   pl_quo_trace <узел>           отметки кворума и окна кода узла одной строкой: rsv_view.code, rsv_qlog.tie_cand,
@@ -207,7 +207,7 @@ pl_stop() {
     PL_PID[$n]=""
 }
 
-# Бот основы на резерве: юнит зоны ходил бы в настоящий Telegram (и venv у него —
+# Гость: юнит зоны ходил бы в настоящий Telegram (и venv у него —
 # /opt/awg-bot) — его гасим и запускаем tests/lab/guest_main.py в пространстве зоны
 # с окружением из хранилища гостя и макетом Bot API (через veth и NAT зоны).
 PL_GUEST_PID=""
@@ -223,7 +223,7 @@ pl_guest_start() {
         >>"$PL/G/guest.log" 2>&1 &
     PL_GUEST_PID=$!
     sleep 3
-    kill -0 "$PL_GUEST_PID" 2>/dev/null || pl_fail "бот основы на резерве не запустился: $(tail -n8 "$PL/G/guest.log")"
+    kill -0 "$PL_GUEST_PID" 2>/dev/null || pl_fail "гость не запустился: $(tail -n8 "$PL/G/guest.log")"
 }
 
 pl_guest_stop() {

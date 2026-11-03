@@ -163,7 +163,7 @@ PAIR_KINDS: dict[str, tuple[str, dict]] = {
     "jcnt":         (BOTH, {"line": (_S, 16), "side": (_S, 1), "s": (_I, None), "blob": (_S, MAX_BLOB)}),
     "jcack":        (BOTH, {"line": (_S, 16), "side": (_S, 1), "s": (_I, None)}),
     # хвост старой эпохи: бывший держатель → держатель (события под K частями); ответ — числа и,
-    # если перебазировал бот основы на резерве, полный список спорного под K (частями)
+    # если перебазировал гость, полный список спорного под K (частями)
     "jtail":        (BOTH, {"line": (_S, 16), "e": (_I, None), "F": (_I, None), "part": (_I, None), "parts": (_I, None),
                             "blob": (_S, MAX_BLOB)}),
     "jtail_ok":     (BOTH, {"line": (_S, 16), "e": (_I, None), "F": (_I, None), "moved": (_I, None),

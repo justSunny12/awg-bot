@@ -85,7 +85,7 @@ def _rsv(*, host: str = "vpn.example.org", ready: bool = False, gw: str = "none"
 
 
 def _guest(*, alive: bool = False):
-    """Бот основы на резерве: config.GUEST на снимок и состояние от бота резерва."""
+    """Гость: config.GUEST на снимок и состояние от бота резерва."""
     def build(services, mp):
         from awgbot.core import config
         who = _quiet(services)
@@ -309,8 +309,8 @@ RESERVE = [
     Shot("adm.rsv.new_code.yes", role="admin",
          press=[RSV, RsvCB(action="emerg"), RsvCB(action="new_code"), RsvCB(action="new_code_yes")],
          data=_rsv(ready=True, gw="rsv", paired=True, then=[_fixed_generation]), title="код сменён"),
-    # ── бот основы на резерве (гостевой режим): главная, корень настроек, карточка ──
-    Shot("adm.rsv.guest.main", role="admin", start="", data=_guest(), title="бот основы на резерве: главная с первой строкой"),
+    # ── гость: главная, корень настроек, карточка ──
+    Shot("adm.rsv.guest.main", role="admin", start="", data=_guest(), title="гость: главная с первой строкой"),
     Shot("adm.rsv.guest.root", role="admin", press=[SetCB(sec="root")], data=_guest(), title="резерв: «⚙️ Настройки» — одна карточка"),
     Shot("adm.rsv.guest.card", role="admin", press=[RSV], data=_guest(), title="резерв: карточка, основа не отвечает"),
     Shot("adm.rsv.guest.return", role="admin", press=[RSV], data=_guest(alive=True),

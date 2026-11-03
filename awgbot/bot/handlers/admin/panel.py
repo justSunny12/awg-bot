@@ -43,7 +43,7 @@ def _panel_text_from(services, snap: dict) -> str:
                              update_tag=snap.get("update_tag", ""), update_run=snap.get("update_run"),
                              rsv_line=snap.get("rsv_line", ""), rsv=snap.get("rsv") or None)
     if config.GUEST:
-        # бот основы на резерве: первая строка — где работаю и почему (Т-РГ1)
+        # гость: первая строка — где работаю и почему (Т-РГ1)
         from awgbot.bot.texts.reserve import guest as gt
         text = gt.main_line(snap.get("guest") or services.guest_state()) + "\n\n" + text
     return text

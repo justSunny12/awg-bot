@@ -42,7 +42,7 @@ RUN_DIR = Path(os.environ.get("RSV_RUN", "/run/awg-bot-guest"))
 VAR_DIR = Path(os.environ.get("RSV_VAR", "/var/lib/awg-bot-guest"))
 STATE_DIR = Path(os.environ.get("RSV_STATE_DIR", "/run/awg-bot/rsv"))
 STATE_PATH = STATE_DIR / "state.json"
-GUEST_SOCK = STATE_DIR / "guest.sock"           # локальный канал бот резерва ↔ бот основы на резерве
+GUEST_SOCK = STATE_DIR / "guest.sock"           # локальный канал бот резерва ↔ гость
 OPEN_STATUS = STATE_DIR / "open.status"         # ход процесса открытия (без секретов)
 REP_PATH = VAR_DIR / "rep.bin"                  # шифрованный снимок реплики под K
 K_FILE = RUN_DIR / "k"                          # ключ пакета в хранилище гостя (hex, 0600)
@@ -114,7 +114,7 @@ def store_mb(db_bytes: int) -> int:
 
 
 def guest_memory_mb(db_bytes: int) -> int:
-    """Потолок памяти бота основы на резерве: процесс — 96 МБ и копия базы в памяти, плюс
+    """Потолок памяти гостя: процесс — 96 МБ и копия базы в памяти, плюс
     хранилище гостя целиком (`store_mb`): страницы tmpfs числятся в memory cgroup того, кто
     их записал, — всё, что гость пишет в хранилище (подмена базы, `.prev`, копия снимка, WAL),
     входит в MemoryMax его юнита и без свопа не вытесняется. 96 МБ + размер базы +
@@ -359,7 +359,7 @@ def wipe() -> str:
 
 
 def guest_unit_active() -> bool:
-    """Юнит бота основы на резерве жив; systemctl не ответил — нет."""
+    """Юнит гостя жив; systemctl не ответил — нет."""
     return systemd.is_active(GUEST_UNIT, timeout=15) is True
 
 

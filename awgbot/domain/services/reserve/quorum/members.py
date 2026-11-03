@@ -252,7 +252,7 @@ class ReserveQuorumMembersMixin:
 
     def reserve_quorum_leader_host(self) -> str:
         """Хост-лидер своей линии: своя сторона дома; в отъезде (пользователи у резерва)
-        — другая (бот основы на резерве)."""
+        — другая (гость)."""
         side = self.reserve_quorum_side()
         if not side:
             return ""

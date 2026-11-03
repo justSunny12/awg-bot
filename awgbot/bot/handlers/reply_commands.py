@@ -73,7 +73,7 @@ async def on_note_action(cb: CallbackQuery, callback_data: NoteCB, state: FSMCon
     kind, ref = callback_data.kind, callback_data.ref
     guest = bool(getattr(services, "guest", False))
     if guest and role == "admin" and kind in guest_fence.GUEST_NOTES_REFUSED:
-        # бот основы на резерве: запись и шлюзы — хост основы; кнопки остаются, как у прочих отказов
+        # гость: запись и шлюзы — хост основы; кнопки остаются, как у прочих отказов
         await guest_fence.refuse(cb)
         return
     await state.clear()

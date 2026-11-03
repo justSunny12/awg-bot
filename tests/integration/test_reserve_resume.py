@@ -136,7 +136,7 @@ def test_resume_restores_the_vpn_without_the_bot_when_the_guest_did_not_hold_tel
     """До возврата VPN был здесь без бота (tg_wait): возобновление не выдумывает «бот у меня» —
     serving без `tg_taken`, причина прежняя, захват повторяется, админу — что бота нет."""
     svc = host.svc
-    _serving(host, tg_wait="бот основы на резерве не взял право отвечать (вебхук не поставлен)")
+    _serving(host, tg_wait="гость не взял право отвечать (вебхук не поставлен)")
     svc.rsv_update("rsv_in", tg_taken=False)
     assert svc.reserve_st_body()["in_tg"] == "wait"
     svc.reserve_back_req_in()

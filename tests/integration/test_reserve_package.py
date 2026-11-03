@@ -249,7 +249,7 @@ def test_no_package_leaves_without_a_live_pair_session(paired, make_active_clien
 def test_no_package_when_unpaired_or_while_the_clients_are_away(paired, make_active_client, clock):
     make_active_client(name="Профиль", tg_id=7001)
     paired.reserve_set_out("away")
-    assert _tick(paired, clock) is None, "пользователи уже у резерва — данные ведёт бот основы на резерве"
+    assert _tick(paired, clock) is None, "пользователи уже у резерва — данные ведёт гость"
     paired.reserve_set_out("home")
     paired.db.reserve_peer_delete()
     assert paired.reserve_pkg_tick() is None

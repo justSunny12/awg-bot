@@ -477,7 +477,7 @@ async def test_the_return_button_of_the_primary_is_handled_by_the_primarys_handl
     assert ui.svc.reserve_out() == "returning", "подтверждение возврата проглочено чужим хендлером"
 
 
-# ── бот основы на резерве ───────────────────────────────────────────────────
+# ── гость ───────────────────────────────────────────────────
 
 @pytest.fixture()
 def gui(mv, make_active_client, monkeypatch):

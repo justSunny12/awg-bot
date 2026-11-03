@@ -257,7 +257,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_rsv_tm_month_dir ON reserve_traffic_monthl
 CREATE TABLE IF NOT EXISTS jrn_meta (
     id            INTEGER PRIMARY KEY CHECK (id = 1),
     epoch         INTEGER NOT NULL DEFAULT 0,            -- номер права записи; растёт на каждой передаче
-    holder        TEXT    NOT NULL DEFAULT 'self',       -- self | peer (бот основы на резерве)
+    holder        TEXT    NOT NULL DEFAULT 'self',       -- self | peer (гость)
     role          TEXT    NOT NULL DEFAULT 'holder',     -- holder | follower: пишет ли решения этот процесс
     capture       INTEGER NOT NULL DEFAULT 0,            -- 1 — пара с журналом: решения пишутся событиями
     applying      INTEGER NOT NULL DEFAULT 0,

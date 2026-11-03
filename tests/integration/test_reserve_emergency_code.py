@@ -148,8 +148,7 @@ def test_a_process_failure_of_another_kind_reopens_the_window_without_a_try(h4, 
 
 
 def test_only_the_role_chat_handler_passes_a_code_to_the_reserve():
-    """Код принимается только в чате роли: ни CLI, ни канал пары, ни бот
-    основы на резерве не зовут reserve_code_in."""
+    """Код принимается только в чате роли: ни CLI, ни канал пары, ни гость  не зовут reserve_code_in."""
     callers = []
     for base in ("awgbot", "tools"):
         for path in (ROOT / base).rglob("*.py"):

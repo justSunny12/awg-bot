@@ -198,7 +198,7 @@ class InboundMixin:
     async def _in_blocks(self, sess: _Session, body: dict) -> None:
         """`blocks` в обе стороны. Я несу пользователей основы — её блокировки гостю в зону
         (основа 4.0.x решает их сама); мои пользователи у резерва и я следую — блокировки
-        держателя (бота основы на резерве) моим оставшимся сессиям."""
+        держателя (гостя) моим оставшимся сессиям."""
         addrs = [str(a) for a in (body.get("addrs") or [])][:4096]
         if await asyncio.to_thread(self.services.reserve_hosting):
             await self._actions([("guest", "blocks", {"addrs": addrs})])

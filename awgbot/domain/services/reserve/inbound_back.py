@@ -358,7 +358,7 @@ class ReserveInboundBackMixin:
         return ""
 
     def reserve_guest_back_req(self) -> list[tuple]:
-        """Кнопка «↩️ Вернуть пользователей» в боте основы на резерве → `evict` основе."""
+        """Кнопка «↩️ Вернуть пользователей» в госте → `evict` основе."""
         if self.reserve_evict_check():
             return []
         return [("send", "evict", {})]

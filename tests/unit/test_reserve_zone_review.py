@@ -21,7 +21,7 @@ test_reserve_zone_serve_wipe; `nft`, `awg`, `ip`, `mount`, `conntrack` —
 линка шлюза не поднимается, РФ-доступ пользователей основы на резерве мёртв;
 свопируемый tmpfs — ключи основы на диске резерва; снятый CAKE админа —
 его настройки очереди потеряны; resolv.conf хоста в зоне (127.0.0.53) —
-бот основы на резерве не резолвит api.telegram.org; записи conntrack от
+гость не резолвит api.telegram.org; записи conntrack от
 клонов — живые потоки пользователей не попадают под DNAT хвоста.
 """
 from __future__ import annotations

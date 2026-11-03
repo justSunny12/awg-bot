@@ -196,7 +196,7 @@ def test_a_serve_failure_after_done_keeps_the_zone_and_retries_serve(host):
 # Режим serve зоны (вход вебхука) включает такт, увидев done. Слово гостя «вебхук стоит»
 # могло прийти раньше (такт прочёл record_fact, а процесс положил tg_take и done следом;
 # такт сорвался до serve): переход в serving с отметкой served без serve — вход вебхука
-# закрыт навсегда, бот основы на резерве молчит при живом VPN.
+# закрыт навсегда, гость молчит при живом VPN.
 
 def _tg_take_before_done(host) -> None:
     host.zone.status = {"step": "record_fact", "name": NAME, "ip": IP}

@@ -103,7 +103,7 @@ class Members:
 
     def voters(self, leader: str) -> tuple[str, ...]:
         """Голосующие о хосте-лидере: ансамбль без него. Лидер — `l` (основа у
-        себя) или другой сервер (бот основы на резерве)."""
+        себя) или другой сервер (гость)."""
         if leader not in self.members:
             raise ValueError(f"лидер {leader!r} не в составе")
         return tuple(m for m in self.members if m != leader)

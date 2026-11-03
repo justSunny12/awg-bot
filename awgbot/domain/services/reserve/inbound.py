@@ -7,7 +7,7 @@ inbound_back.
 Автомат в `rsv_in` (`state`: idle | taking | serving | releasing | relay).
 Такт (`reserve_in_tick`, 3 с) читает ход процесса открытия
 (`/run/awg-bot/rsv/open.status`), состояние зоны и локального канала с
-ботом основы на резерве и отдаёт действия runtime: `("send", вид, тело)`,
+гостем и отдаёт действия runtime: `("send", вид, тело)`,
 `("guest", команда, тело)` — боту основы по локальному каналу, `("notify",
 [...])`, `("fw",)` — перерисовать файервол хоста.
 
@@ -167,7 +167,7 @@ class ReserveInboundMixin:
                 # база гостя собрана не по всему журналу (порча записи, дыра): его решения с этого места
                 # основа примет поверх своих — ей об этом скажет st, админу резерва — здесь
                 from awgbot.domain.notices import reserve_tail as rt
-                log.warning("резерв: база переехавшего инстанса открыта с разрывом журнала основы: не прочитано событий: %d, "
+                log.warning("резерв: база гостя открыта с разрывом журнала основы: не прочитано событий: %d, "
                             "не применено изменений: %d",
                             jgap, jlost)
                 self.rsv_update("rsv_in", jgap=jgap, jlost=jlost)
@@ -234,8 +234,8 @@ class ReserveInboundMixin:
         if not self._in_by_k(inn):
             if waited < TAKEN_WAIT_S:
                 return []
-            why = ("бот основы на резерве не поднялся (юнит гостя не активен)" if not rsvzone.guest_unit_active()
-                   else "бот основы на резерве не взял право отвечать (вебхук не поставлен)")
+            why = ("гость не поднялся (юнит гостя не активен)" if not rsvzone.guest_unit_active()
+                   else "гость не взял право отвечать (вебхук не поставлен)")
             return self._take_fail(why)                       # запись сменил процесс — зона остаётся (inbound_keep)
         if waited < DONE_BUTTON_WAIT_S:
             return []

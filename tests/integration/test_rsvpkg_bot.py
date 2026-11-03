@@ -120,7 +120,7 @@ def test_the_replica_has_no_history_no_device_keys_and_only_whitelisted_state(li
 
 def test_what_the_base_bot_needs_travels(live, tmp_path):
     """Профили, устройства с открытыми ключами и адресами, слоты шлюзов и
-    меню пользователей — без них бот основы на резерве не обслужит никого."""
+    меню пользователей — без них гость не обслужит никого."""
     src = sqlite3.connect(_db_path(live))
     con = _open(bot.replica(_db_path(live)), tmp_path)
     for table, cols in (("clients", "id, tg_id, name"), ("devices", "id, public_key, address, preshared_key"),

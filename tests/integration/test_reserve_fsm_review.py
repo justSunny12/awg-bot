@@ -129,7 +129,7 @@ def test_an_empty_replica_returns_without_a_merge(merge_world):
     acts = w.svc.reserve_released_in(b"")
     assert acts == [("take_tg",), ("live",)], acts
     out = w.svc.rsv_get("rsv_out")
-    assert out["step"] == "take_tg" and out["merge_report"]["lost"] == ["ℹ️ Переехавшего инстанса на «Beta» уже не было — изменения, сделанные там, будут утеряны"]
+    assert out["step"] == "take_tg" and out["merge_report"]["lost"] == ["ℹ️ Гостя на «Beta» уже не было — изменения, сделанные там, будут утеряны"]
     assert not [e for e in w.peers.events if e[0] in ("add", "remove")]
 
 
@@ -419,7 +419,7 @@ def test_back_without_the_address_of_the_primary_flushes_nothing(host, monkeypat
 def test_a_move_by_the_primary_key_on_a_quorum_ask_waits_for_released_like_the_button(host, kind):
     """Просьба кворума (`ask{q}` → `go_req{dead | rf}`): запись меняет основа, процесс открытия
     кончает `done record=skipped` — Telegram отдаст её `released`; ждать, как кнопка, а не
-    срывать через TAKEN_WAIT_S «бот основы на резерве не поднялся»."""
+    срывать через TAKEN_WAIT_S «гость не поднялся»."""
     svc = host.svc
     _taking(host, kind)
     host.zone.status = {"step": "done", "record": "skipped"}

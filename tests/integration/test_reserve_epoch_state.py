@@ -9,7 +9,7 @@
 следующий пишет итог проверки ящика и что переход эпохи не собирает пакет.
 
 Мир — пара из tests/integration/_reserve_move.py; Bot API у поллинга —
-заглушка с ответом getWebhookInfo; реплика бота основы на резерве — копия
+заглушка с ответом getWebhookInfo; реплика гостя — копия
 базы основы (`snapshot_blob`). Адреса — документационные, ключи — заглушки.
 
 Цена ошибки: следование там, где писать решения больше некому (гость
@@ -45,7 +45,7 @@ rsv = rc.rsv
 mv = rm.mv
 __all__ = ["act", "world"]
 
-HOOK = "https://backup.example.net:8443/hook"           # вебхук бота основы на резерве
+HOOK = "https://backup.example.net:8443/hook"           # вебхук гостя
 
 
 def _following(svc) -> bool:

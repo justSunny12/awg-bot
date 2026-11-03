@@ -1,4 +1,4 @@
-"""Сторож хранения бота основы на резерве: ключи пакета и реплика живут только
+"""Сторож хранения гостя: ключи пакета и реплика живут только
 в хранилище гостя в памяти и в шифрованном `rep.bin`.
 
 Проверяется по исходникам, а не по поведению: нарушение (одна лишняя строка
@@ -26,7 +26,7 @@ ROOT = Path(__file__).resolve().parents[2]
 OPENERS = {"open_k", "open_dns", "open_parts", "open_blob", "recover_m_quorum", "recover_m_code", "open_box"}
 OPENER_HOMES = {"awgbot/util/rsvpkg/seal.py", "awgbot/util/rsvkeys.py", "tools/rsvopen.py"}
 
-# модули бота основы на резерве и обёртки зоны: всё, что работает в гостевом режиме
+# модули гостя и обёртки зоны: всё, что работает в гостевом режиме
 GUEST_SIDE = (
     "awgbot/runtime/main/guest.py", "awgbot/runtime/webhook.py", "awgbot/runtime/pairlink/guestctl.py",
     "awgbot/runtime/scheduler/guest.py", "awgbot/domain/services/reserve/guest.py", "awgbot/infra/rsvzone.py",

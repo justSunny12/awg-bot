@@ -303,7 +303,7 @@ async def test_a_broken_fence_predicate_lets_people_in(world):
     assert await mw(handler, msg, {"event_from_user": User(id=USER, is_bot=False, first_name="U")}) == "client"
 
 
-# ── бот основы на резерве ───────────────────────────────────────────────────
+# ── гость ───────────────────────────────────────────────────
 
 async def test_the_fenced_guest_leader_refuses_users_with_t_k9(world, monkeypatch):
     """Концепт «кворум» §6.3 — лишённый кворума лидер-гость (бот «Alpha» на

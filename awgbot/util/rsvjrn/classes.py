@@ -106,7 +106,7 @@ NOT_TAIL = ("gateways", "traffic_monthly", "server_traffic_monthly")
 
 def captured_columns(table: str, columns: list[str], guest: bool = False) -> list[str]:
     """Колонки, которые держатель пишет событием: решения и маски; секреты — только
-    у бота основы на резерве (от основы к резерву закрытые ключи не едут); данные
+    у гостя (от основы к резерву закрытые ключи не едут); данные
     хоста основы — только у основы (гостю они нужны, основе от гостя — нет), без обрезанных
     (dbnames.HOST_TRIMMED — те же, что режет реплика)."""
     want = (DECISION, MASK, SECRET) if guest else (DECISION, MASK, HOST)
@@ -115,7 +115,7 @@ def captured_columns(table: str, columns: list[str], guest: bool = False) -> lis
 
 
 def history_captured(table: str, guest: bool = False) -> bool:
-    """История едет только от бота основы на резерве к основе (дописками)."""
+    """История едет только от гостя к основе (дописками)."""
     return bool(guest) and TABLES.get(table) == HISTORY
 
 

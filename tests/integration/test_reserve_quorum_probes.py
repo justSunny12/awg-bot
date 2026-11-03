@@ -118,7 +118,7 @@ def test_a_users_subnet_over_the_probe_block_turns_the_vote_off(quo, monkeypatch
 def test_the_leader_host_is_this_server_at_home_and_the_reserve_while_away(quo):
     assert quo.reserve_quorum_leader_host() == "a"
     quo.rsv_update("rsv_out", state="away")
-    assert quo.reserve_quorum_leader_host() == "b", "в отъезде лидер линии — бот основы на резерве"
+    assert quo.reserve_quorum_leader_host() == "b", "в отъезде лидер линии — гость"
 
 
 def test_st_carries_the_line_for_the_second_server(quo):

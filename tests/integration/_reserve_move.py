@@ -193,7 +193,7 @@ def sent(acts: list[tuple]) -> list[str]:
 
 
 def snapshot_blob(svc, edit=None, *, gen: int = 7, k: bytes | None = None) -> bytes:
-    """Реплика бота основы на резерве под `K`: копия базы основы (как настоящая — без
+    """Реплика гостя под `K`: копия базы основы (как настоящая — без
     истории и rsv_*), к которой применено `edit(db)` — то, что люди сделали на резерве."""
     import os
     import shutil

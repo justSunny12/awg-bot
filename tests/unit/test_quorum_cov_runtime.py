@@ -274,7 +274,7 @@ async def test_the_responder_is_bound_to_the_awg_interface_of_the_plan(monkeypat
 
 
 async def test_without_an_interface_in_the_plan_the_responder_is_not_bound(monkeypatch):
-    """Бот основы на резерве живёт в зоне — интерфейса в плане нет, привязки тоже."""
+    """Гость живёт в зоне — интерфейса в плане нет, привязки тоже."""
     calls = _sock_ns(monkeypatch)
     svc = _Svc()
     port = _free_port()

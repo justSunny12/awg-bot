@@ -72,7 +72,7 @@ def world(services, make_active_client):
 
 @pytest.fixture()
 def guest(tmp_path, monkeypatch):
-    """База бота основы на резерве: гостевой режим до открытия соединения."""
+    """База гостя: гостевой режим до открытия соединения."""
     monkeypatch.setattr(config, "GUEST", True)
     g = Database(str(tmp_path / "guest.db"))
     g.init_schema()
@@ -211,7 +211,7 @@ def test_the_guests_device_brings_its_private_key(guest):
 
 
 def test_history_is_captured_by_the_guest_only_as_inserts(world, guest):
-    """История едет только от бота основы на резерве — дописками; у основы
+    """История едет только от гостя — дописками; у основы
     она не событие, чистка по сроку — своя у каждой стороны."""
     before = top(world.db)
     world.db.archive_block(world.cid, 4, "тест")

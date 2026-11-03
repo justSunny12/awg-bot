@@ -1,5 +1,5 @@
 """
-webhook.py — право отвечать в Telegram у бота основы на резерве (гостевой
+webhook.py — право отвечать в Telegram у гостя (гостевой
 режим): слушатель вебхука и его постановка.
 
 У бота один адрес вебхука; пока он задан, `getUpdates` тем же токеном Bot
@@ -98,7 +98,7 @@ def _peer_filter(ip_filter):
 
 
 class WebhookServer:
-    """Слушатель вебхука в процессе бота основы на резерве."""
+    """Слушатель вебхука в процессе гостя."""
 
     def __init__(self, conf: WebhookConf, pool: list[str]):
         self.conf = conf
@@ -175,7 +175,7 @@ class WebhookServer:
             return False
         if ok:
             self.set_at = timeutil.now_iso()
-            log.info("гость: вебхук поставлен — право отвечать в Telegram у бота основы на резерве")
+            log.info("гость: вебхук поставлен — право отвечать в Telegram у гостя")
         return bool(ok)
 
     async def watch(self, bot) -> dict | None:

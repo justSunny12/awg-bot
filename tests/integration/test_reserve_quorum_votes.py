@@ -1,6 +1,6 @@
 """Кворум резерва, этап зондов, основной бот: ответчик и счёт «да» лидера
 (quorum/leader), пробы и взгляд голосующего (quorum/voter), слова каналов
-(quorum/inbound), такт и план сокетов (quorum/tick), бот основы на резерве
+(quorum/inbound), такт и план сокетов (quorum/tick), гость
 (ответчик на клоне, `quorum` и `qcount` локального канала), карточка
 (quorum/screen и bot/texts/reserve/section) — концепт «кворум» §3.2, §3.3,
 §6.1, §6.2. Решения лидера проверены здесь только на старте и при выключенных
@@ -231,7 +231,7 @@ def test_a_failing_dump_still_answers(lead, monkeypatch):
     assert r is not None and r.i.hs == 0
 
 
-# ── бот основы на резерве ────────────────────────────────────────────────────
+# ── гость ────────────────────────────────────────────────────
 
 @pytest.fixture()
 def guest(quo, monkeypatch):
@@ -244,7 +244,7 @@ def guest(quo, monkeypatch):
 def test_the_guest_responder_is_the_clones_second_address(guest):
     assert guest.reserve_quorum_responder_addr() == ("169.254.88.2", 8789)
     plan = guest.quorum_runtime_plan()
-    assert plan == {"responder": ("169.254.88.2", 8789), "probes": {}}, "бот основы на резерве поднимает свои зонды"
+    assert plan == {"responder": ("169.254.88.2", 8789), "probes": {}}, "гость поднимает свои зонды"
 
 
 def test_on_the_clone_the_primary_itself_votes_and_the_reserve_does_not(guest):

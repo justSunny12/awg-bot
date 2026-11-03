@@ -169,7 +169,7 @@ class ReserveMoveMixin:
         return []
 
     def reserve_taken_in(self, oid: str = "") -> list[tuple]:
-        """`taken` от резерва: бот основы на резерве отвечает в Telegram. Только на шагах
+        """`taken` от резерва: гость отвечает в Telegram. Только на шагах
         передачи бота (release/released): запоздалое `taken` прошлого эпизода на шаге pkg/eph/up/record
         переводило бы в away с `poll=away`, пока запись DNS ещё на мне. Вне leaving — это `taken`
         основы на её возврате с меня: её боту у меня вебхук больше не ставить (inbound_tgwait)."""

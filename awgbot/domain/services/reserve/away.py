@@ -100,9 +100,9 @@ class ReserveAwayMixin:
 
     def reserve_blocks_to_send(self) -> list[str] | None:
         """Пока мои пользователи у резерва: адреса заблокированных устройств — ему
-        (бот основы на резерве наложит DROP в зоне); None — не изменились."""
+        (гость наложит DROP в зоне); None — не изменились."""
         if not self.reserve_paired() or not self.reserve_away() or self.reserve_following() or self.reserve_jrn_moved():
-            # в следовании блокировки решает бот основы на резерве — устаревшая база здесь
+            # в следовании блокировки решает гость — устаревшая база здесь
             # их бы перерешала (держатель шлёт свои сюда: reserve_holder_blocks_in); с журналом
             # блокировки едут событиями — сообщения blocks нет
             self.__dict__.pop("_rsv_blocks_sent", None)

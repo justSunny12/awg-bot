@@ -244,7 +244,7 @@ GitHub `vX.Y.Z.P — …`.
   (`install/reserve-zone-setup.sh`, `install/reserve-pair-setup.sh`): их не зовёт ни один агент, и общее
   правило «`util/…` — обе» к ним не относится. Туда же — пакет переезда
   (сборка у основы и приём у резерва — `domain/services/reserve/package.py`),
-  бот основы на резерве (`config.GUEST`: `domain/services/reserve/guest.py`,
+  гость (`config.GUEST`: `domain/services/reserve/guest.py`,
   `runtime/main/guest.py`, `runtime/webhook.py`, локальный канал
   `runtime/pairlink/guestctl.py`, планировщик `runtime/scheduler/guest.py` и
   вынесенные из основного задания данных пользователей `runtime/scheduler/jobs.py`,
