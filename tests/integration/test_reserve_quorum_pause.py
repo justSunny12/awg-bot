@@ -165,17 +165,23 @@ async def test_the_bot_restart_from_service_pauses_the_line_before_the_restart(l
         f"перед перезапуском бота паузы нет: {order}"
 
 
-def test_the_server_update_step_pauses_the_line_before_applying(lead, monkeypatch):
+def test_the_server_update_step_pauses_the_line_after_the_download_before_applying(lead, monkeypatch):
+    """Пауза лидера — после скачивания ассета, за секунды до остановки: объявленная до
+    скачивания, она тянулась всё время скачивания при живом ответчике (и одна потеря пробы
+    за это время сняла бы её у голосующего по прежнему правилу)."""
     from awgbot.domain.fleet.order import FleetOut
+    from awgbot.domain.selfupdate import core as su
     order: list = []
     monkeypatch.setattr(rsvactions, "run_threadsafe", lambda acts: order.append(("pause", [a[:2] for a in acts])))
-    monkeypatch.setattr(lead.s, "apply_update", lambda step, hold="": order.append("apply"))
+    monkeypatch.setattr(lead.s, "update_block_reason", lambda release: "")
+    monkeypatch.setattr(su.updates, "download_asset", lambda release: order.append("download") or b"DUMMY")
+    monkeypatch.setattr(su.updates, "apply", lambda blob, hold="", sha256="": order.append("apply"))
     out = FleetOut()
     out.server = "apply"
-    out.step = types.SimpleNamespace(tag="v4.2.0")
+    out.step = types.SimpleNamespace(tag="v4.2.0", sha256="")
     lead.s.fleet_server_act(out)
-    assert order == [("pause", [("send", "qpause"), ("gwlink", 1), ("gwlink", 2)]), "apply"], \
-        f"ступень обновления сервера без паузы лидера (или после неё): {order}"
+    assert order == ["download", ("pause", [("send", "qpause"), ("gwlink", 1), ("gwlink", 2)]), "apply"], \
+        f"пауза лидера не между скачиванием и запуском апдейтера: {order}"
 
 
 # ── второй сервер как голосующий ────────────────────────────────────────────
