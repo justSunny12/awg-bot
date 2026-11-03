@@ -168,6 +168,7 @@ class ReserveQuorumCandidateMixin:
                 actions += self.reserve_quorum_tie_over(c)
         actions += self._quorum_exec_tick(c, now)
         actions += self._quorum_code_watch(c)
+        actions += self._quorum_seen_again(c)
         return took + actions
 
     def _quorum_code_settle(self) -> list[tuple]:

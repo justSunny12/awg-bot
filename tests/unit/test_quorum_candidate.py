@@ -306,3 +306,79 @@ def test_truth_table_of_the_candidate(v):
         else:
             want = None
         assert take == want, f"v={v} {combo}: «забираю» в {take}, ожидалось {want}"
+
+
+# ── обязательство снова видящего (seen_again) ───────────────────────────────
+
+def _said_no_and_sees_again(v: int = 3) -> Candidate:
+    """Шлюз a1 сказал «нет» (одиночное: свой взгляд кандидата «вижу», большинства нет)
+    и снова прислал «вижу»."""
+    c = _cand(v)
+    c.set_own("see", T0)
+    c.view_in("a1", "uns", T0)
+    assert c.tick(T0) == [] and c.idle(), "подготовка: одиночное «нет» дало отсчёт или действие"
+    c.view_in("a1", "see", T0 + 5)
+    c.tick(T0 + 5)
+    return c
+
+
+def test_a_lone_no_seen_again_is_named_while_nothing_is_decided():
+    """Концепт «кворум» §3.5.1: «нет» больше нет — обязательство снимается; такт `rel`
+    шлёт только после отсчёта, и одиночное «не вижу» без большинства держало «да»
+    живого лидера до `pledge_s`."""
+    c = _said_no_and_sees_again()
+    assert c.seen_again() == ["a1"], c.votes
+    c.unpledge(c.seen_again())
+    assert c.seen_again() == [], "снятое обязательство названо снова — второй qrel на то же «нет»"
+
+
+def test_seen_again_needs_the_see_after_the_no():
+    c = _cand(3)
+    c.set_own("see", T0)
+    c.view_in("a1", "see", T0)
+    c.view_in("a2", "uns", T0)
+    c.tick(T0)
+    assert c.seen_again() == [], "«вижу» без прежнего «нет» или «нет», которое держится, — названы"
+
+
+def test_seen_again_needs_a_live_channel():
+    c = _said_no_and_sees_again()
+    c.channel("a1", False)
+    assert c.seen_again() == [], "обязательство снимается словом по мёртвому каналу"
+
+
+def test_a_new_no_after_the_release_is_a_new_pledge():
+    """Одно слово на обязательство, а не одно навсегда: снова «нет», снова «вижу» — снова названо."""
+    c = _said_no_and_sees_again()
+    c.unpledge(c.seen_again())
+    c.view_in("a1", "uns", T0 + 20)
+    c.tick(T0 + 20)
+    assert c.seen_again() == [], "«нет» держится — названо"
+    c.view_in("a1", "see", T0 + 30)
+    c.tick(T0 + 30)
+    assert c.seen_again() == ["a1"]
+
+
+@pytest.mark.parametrize("state", ["no_since", "rf_since", "decided"])
+def test_seen_again_is_empty_while_counting_or_decided(state):
+    """Идёт отсчёт «нет» (короткий или случая 3) или «забираю» отдано — обязательства
+    снимает `rel` такта или исход решения, а не это правило."""
+    c = _said_no_and_sees_again()
+    setattr(c, state, True if state == "decided" else T0)
+    assert not c.idle()
+    assert c.seen_again() == [], f"{state}: обязательство снято посреди решения"
+
+
+def test_seen_again_after_a_dropped_majority_is_already_released_by_rel():
+    """v = 3: свой «не вижу» и «нет» a1 — большинство; a1 снова видит — такт отдаёт `rel`
+    (вызывающий снимает обязательства всех сказавших), счёт обнулён — и правило
+    названо бы то же, но вызывающий уже снял пометку."""
+    c = _cand(3)
+    c.set_own("uns", T0)
+    c.view_in("a1", "uns", T0)
+    c.tick(T0)
+    assert c.no_since == T0 and c.seen_again() == [], "при отсчёте названы снова видящие"
+    c.view_in("a1", "see", T0 + 5)
+    assert "rel" in c.tick(T0 + 5)
+    c.unpledge(c.pledged())
+    assert c.seen_again() == []
