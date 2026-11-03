@@ -445,7 +445,8 @@ class _Host:
         bin_dir = tmp_path / "bin"; bin_dir.mkdir()
         for name, body in (("systemctl", f'echo "systemctl $*" >> {self.log}\n'),
                            ("dnsmasq", f'echo "dnsmasq $*" >> {self.log}\n'),
-                           ("nft", f'echo "nft $*" >> {self.log}\n'),
+                           ("nft", f'if [ "$1" = -f ]; then {{ printf "nft -f: "; cat "$2"; }} >> {self.log}; '
+                                   f'else echo "nft $*" >> {self.log}; fi\n'),
                            ("dig", ""), ("sleep", ""), ("id", "echo 0\n")):
             fake_cmd(bin_dir / name, body)
         self.tool = tmp_path / "awg-lan-domain.sh"
@@ -744,7 +745,7 @@ async def test_the_answer_goes_at_once_and_the_set_fills_in_the_background(pair,
     c = await pi.up(a)
     assert await _until(lambda: _card(s, 1)["state"] == "applied", timeout=5), (_card(s, 1), pair.acks)
     log = pi.host.log.read_text()
-    assert "nft add element inet awg_lan lan_ru4 { 10.1.1.1 }" in log, "«напрямую» не наполнен в sync"
+    assert "add element inet awg_lan lan_ru4 { 10.1.1.1 }" in log, "«напрямую» не наполнен в sync"
     assert "lan_vpn4 { 10.3.3.3 }" not in log, "ответ ушёл только после dig — сцена не та или fill синхронный"
     assert c._fill_task is not None, "fill не запущен после ответа"
     await asyncio.wait_for(c._fill_task, 10)
