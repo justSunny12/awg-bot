@@ -69,7 +69,7 @@ def test_own_lists_wait_for_the_feeds_lock_and_give_up_with_75(own_env):
         assert r.returncode == 75, f"{args}: занятая блокировка выдана за {r.returncode}: {r.stdout}{r.stderr}"
         assert "обновление списков ещё идёт" in r.stderr
     text = _log(log)
-    assert "flock -w 120 9" in text, f"ждать надо до двух минут: {text}"
+    assert "flock -w 60 9" in text, f"ждать надо до минуты: {text}"
     assert "systemctl" not in text and "nft" not in text and "dnsmasq" not in text, \
         f"без блокировки что-то применено: {text}"
     assert (dns_d / VPN_USER).read_text() == before
@@ -103,7 +103,7 @@ def test_own_lists_run_normally_once_the_lock_is_taken(own_env):
     _fake(_bin(env), "flock", f'echo "flock $*" >> {log}\nexit 0\n')
     r = _run(tool, env, "add", "news.org")
     assert r.returncode == 0, r.stderr
-    assert "flock -w 120 9" in _log(log) and "systemctl restart dnsmasq" in _log(log)
+    assert "flock -w 60 9" in _log(log) and "systemctl restart dnsmasq" in _log(log)
     assert (dns_d / VPN_USER).read_text() == _vpn_line("news.org") + "\n"
 
 

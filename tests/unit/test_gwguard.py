@@ -355,9 +355,10 @@ def test_os_error_text_reads_the_code_of_real_subclasses(tmp_path):
 
 
 def test_both_list_scripts_wait_longer_than_the_lock(monkeypatch):
-    """Скрипты своих списков и записей SMB ждут lists.lock до 120 с: вызовы
-    агента по умолчанию ждут дольше — иначе вместо «обновление ещё идёт»
-    человек получал бы таймаут. Проверяем реальный timeout в subprocess.run."""
+    """Скрипты своих списков и записей SMB ждут lists.lock до 60 с: вызовы
+    агента по умолчанию ждут дольше на рабочий шаг — иначе вместо «обновление
+    ещё идёт» человек получал бы таймаут, а SIGKILL между записью файлов и
+    рестартом оставлял бы dnsmasq без рестарта. Проверяем реальный timeout в subprocess.run."""
     seen = []
 
     def run(argv, **kw):
@@ -366,7 +367,7 @@ def test_both_list_scripts_wait_longer_than_the_lock(monkeypatch):
     monkeypatch.setattr(gwguard.subprocess, "run", run)
     gwguard.run_lan_domain("list", [])
     gwguard.run_lan_services("")
-    assert seen == [gwguard.LAN_SCRIPT_TIMEOUT] * 2 and gwguard.LAN_SCRIPT_TIMEOUT > 120, seen
+    assert seen == [gwguard.LAN_SCRIPT_TIMEOUT] * 2 and gwguard.LAN_SCRIPT_TIMEOUT >= 60 + 90, seen
 
 
 def test_avahi_browse_available_follows_the_path(monkeypatch, tmp_path):
