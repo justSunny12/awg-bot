@@ -175,23 +175,25 @@ class SessionMixin:
             raise
         finally:
             # Дренаж может бросить CancelledError (остановка клиента посреди
-            # дообработки) — сокет и признак «онлайн» снимаются всё равно, иначе
-            # сервер держал бы сессию до таймаута, а stop() — повисший слот.
+            # дообработки) — признак «онлайн» и сокет снимаются всё равно, иначе
+            # сервер держал бы сессию до таймаута, а слот не освобождался.
             try:
-                await self._inbox_drain()
+                try:
+                    await self._inbox_drain()
+                finally:
+                    self._writer = None
+                    self._set_online(False)
+                    self._rst_broken()          # передача бэкапа серверу посреди — оборвалась
+                # Запас на своё скачивание фидов отсчитывается от конца сессии — но
+                # только настоящей: отвергнутый коннект (старый ключ, чужой слот)
+                # продлевал бы запас каждым стуком, и фиды застывали навсегда.
+                if self._confirmed:
+                    with contextlib.suppress(Exception):
+                        await asyncio.to_thread(self.services.lan_feeds_touch)
             finally:
-                self._writer = None
-                self._set_online(False)
-                self._rst_broken()              # передача бэкапа серверу посреди — оборвалась
                 if writer is not None:
                     with contextlib.suppress(Exception):
                         writer.close()
-            # Запас на своё скачивание фидов отсчитывается от конца сессии — но
-            # только настоящей: отвергнутый коннект (старый ключ, чужой слот)
-            # продлевал бы запас каждым стуком, и фиды застывали навсегда.
-            if self._confirmed:
-                with contextlib.suppress(Exception):
-                    await asyncio.to_thread(self.services.lan_feeds_touch)
             if writer is not None:
                 with contextlib.suppress(Exception):
                     await writer.wait_closed()

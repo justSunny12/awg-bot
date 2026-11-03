@@ -391,7 +391,10 @@ async def test_after_the_session_ends_the_agent_waits_half_a_day_then_downloads(
     agent.db.set_state(agent._LAN_CHANNEL_HASH_KEY, services.gwlink_lan_feeds()["hash"])
     agent.db.set_state(agent._LAN_CHANNEL_AT_KEY, str(int(time.time()) - 30 * 3600))
     await _up(services, pi)
-    await _until(lambda: agent.lan_feeds_from_channel_fresh())
+    # «свежо» — уже по online, но запас от конца сессии отсчитывается только у
+    # настоящей сессии (сервер ответил подписанным словом): ждём подтверждения,
+    # иначе под нагрузкой stop() обрывал бы сессию до первого слова сервера
+    await _until(lambda: agent.lan_feeds_from_channel_fresh() and pi["client"]._confirmed)
     # сессия продлилась больше полусуток — подтверждение при подключении давнее
     agent.db.set_state(agent._LAN_CHANNEL_AT_KEY, str(int(time.time()) - 13 * 3600))
     await pi["client"].stop()
