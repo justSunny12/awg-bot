@@ -203,6 +203,39 @@ async def test_stop_during_the_end_of_session_drain_does_not_wait_either(vps, mo
         agent.release.set()
 
 
+
+async def test_a_session_cancel_in_the_same_turn_the_handler_finishes_is_not_swallowed(gateway_role, conf):
+    """Обработчик доработал в тот же такт, когда пришла отмена сессии: дообработка
+    отмену не глотает — задача сессии снята, а не идёт на новое подключение
+    (stop() иначе ждал бы её без конца)."""
+    client = _live_client(_CfgAgent())
+    go = asyncio.Event()
+
+    async def handler():
+        await go.wait()
+
+    client._inbox_task = asyncio.create_task(handler())
+    session = asyncio.create_task(client._inbox_drain())
+    await asyncio.sleep(0)                      # дообработка ждёт обработчик
+    await asyncio.sleep(0)
+    go.set()                                    # пробуждение обработчика — в очереди первым
+    session.cancel()                            # отмена сессии — тем же тактом, следом
+    await asyncio.wait({session}, timeout=2)
+    assert client._inbox_task.done()
+    assert session.cancelled(), "отмена сессии проглочена дообработкой"
+
+
+async def test_a_handler_removed_alone_does_not_cancel_the_session(gateway_role, conf):
+    """Снят только обработчик (сессию никто не отменял): дообработка возвращается
+    без отмены — сессия кончается своим чередом."""
+    client = _live_client(_CfgAgent())
+    client._inbox_task = asyncio.create_task(asyncio.Event().wait())
+    session = asyncio.create_task(client._inbox_drain())
+    await asyncio.sleep(0)
+    client._inbox_task.cancel()
+    await asyncio.wait_for(session, timeout=2)
+    assert not session.cancelled()
+
 async def test_stop_does_not_wait_for_a_slow_document(vps, monkeypatch):
     monkeypatch.setattr("awgbot.core.config.ROLE", "gateway")
     agent = _SlowAgent()
