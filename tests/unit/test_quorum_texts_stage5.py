@@ -50,6 +50,15 @@ def test_t_k3_names_when_the_users_will_move_here():
                      "пользователи переедут сюда"], lines
 
 
+def test_a_blind_own_probe_is_said_instead_of_a_stale_view():
+    """Свой зонд слеп дольше предела: одна строка о нём (с какого момента и что окно кода о
+    пропавшем сервере откроется по линку пары) — не устаревший «не вижу» зонда."""
+    lines = quorum_peer_lines(_peer(blind_since=SINCE, my_w="see"))
+    assert lines == [f"└ ⚠️ Зонд этого сервера к «Beta» не работает с {CLOCK}: сам этот сервер «Beta» не видит и в "
+                     "голосовании не участвует — пропадёт «Beta» со связи, приём аварийного кода откроется по линку "
+                     "пары"], lines
+
+
 def test_t_k3_without_a_deadline_promises_nothing():
     q = _peer()
     q["peer"]["cand"]["deadline_at"] = ""

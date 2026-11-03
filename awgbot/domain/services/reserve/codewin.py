@@ -76,19 +76,35 @@ class ReserveCodeWindowMixin:
 
     def reserve_code_link_watch(self) -> list[tuple]:
         """Запасной сигнал окна кода (решение Р4, В): линия второго сервера без кворума
-        (цифры, блок зондов, состав не подтверждён, ключи не у всех — кандидата нет), а сам он
-        не на связи по линку пары дольше T_up — окно кода с причиной; связь вернулась — закрыть."""
+        (цифры, блок зондов, состав не подтверждён, ключи не у всех — кандидата нет) или свой
+        зонд к ней слеп дольше предела (`active` из её последнего `st.quo` после её смерти
+        остаётся true, а своего «не вижу» у слепого зонда не будет), а сама она не на связи по
+        линку пары дольше T_up — окно кода с причиной; связь вернулась — закрыть. При слепом
+        зонде шлюз, который её видит, окно не открывает и закрывает (факт против молчания)."""
         if not self.reserve_paired() or not hasattr(self, "reserve_quorum_peer_line"):
             return []
         line = self.reserve_quorum_peer_line()
         cw = dict(self.rsv_get("rsv_view").get("code") or {})
         tm_off = self.reserve_quorum_peer_timing_off() if hasattr(self, "reserve_quorum_peer_timing_off") else ""
-        if line.get("active") and not tm_off:                 # цифры расходятся — кандидата нет, сигнал по линку
+        blind = bool(line.get("active")) and not tm_off and hasattr(self, "reserve_quorum_own_blind") \
+            and bool(self.reserve_quorum_own_blind())
+        c = self.__dict__.get("_rsv_qcand")
+        down = self.reserve_peer_seen() == "down"
+        if line.get("active") and not tm_off and not blind:   # цифры расходятся — кандидата нет, сигнал по линку
             if cw.get("open") and cw.get("by") == "link":
+                own = str(getattr(c, "own", "") or "")
+                if own == "new" and down:
+                    return []                                 # зонд ожил, а взгляда ещё нет — окно держу до факта
+                if own == "uns":
+                    cw["by"] = "quorum"                       # кандидат и сам ждёт кода — тот же эпизод, без уведомлений
+                    self.rsv_update("rsv_view", code=cw)
+                    return []
+                if own in ("see", "held"):
+                    return self.reserve_code_window_set(False, by="seen")   # ожившим зондом вижу её — Т-РН3 админу основы
                 return self.reserve_code_window_set(False, by="link", quiet=True)   # дальше ведёт кандидат (Т-К21 — своим словом)
             return []
-        down = self.reserve_peer_seen() == "down"
-        if down and not cw.get("open"):
+        seen = bool(blind and c is not None and c.see_nodes())   # слепой зонд: шлюз её видит — она жива
+        if down and not seen and not cw.get("open"):
             if self.reserve_open_block(need_box=False):
                 return []                                     # код ничего не откроет: готовность, зона, мои пользователи не здесь
             since = str(self.reserve_down_since() or "")
@@ -98,10 +114,11 @@ class ReserveCodeWindowMixin:
                     return []
             except ValueError:
                 return []
-            why = ([f"timing:{tm_off}"] if tm_off else []) + [str(c) for c in (line.get("why") or [])]
+            why = ([f"timing:{tm_off}"] if tm_off else []) + (["blind"] if blind else []) \
+                + [str(w) for w in (line.get("why") or [])]
             return self.reserve_code_window_set(True, since=since, by="link", off_why=rn_off_why(why))
-        if not down and cw.get("open") and cw.get("by") == "link":
-            return self.reserve_code_window_set(False, by="link")
+        if (not down or seen) and cw.get("open") and cw.get("by") == "link":
+            return self.reserve_code_window_set(False, by="link" if not down else "quorum")
         return []
 
     def reserve_code_window_quiet(self, open_: bool) -> list[tuple]:
@@ -231,6 +248,8 @@ def rn_off_why(codes: list) -> str:
             return "нет шлюзов с агентом v4.2.0"
         if c == "not_acked":
             return "состав голосующих не подтверждён"
+        if c == "blind":
+            return "зонд резерва к серверу не работает"
         if c == "keys":
             return "ключи голосования ещё не у всех"
         if str(c).startswith("timing:"):

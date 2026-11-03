@@ -9,7 +9,9 @@ voter.py — часть пакета quorum: правило голосующег
 два ответа подряд, из `sus` — один. Взгляд в пробе — до этой пробы. Проба, не
 ушедшая из своего сокета (`unsent`: сокета зонда ещё нет — пространство и
 интерфейс поднимаются, повтор через 30 с; ошибка отправки), — моя слепота, а не
-молчание лидера: ответа она не ждёт, и время до неё в `no_s` не идёт.
+молчание лидера: ответа она не ждёт, и время до неё в `no_s` не идёт. Слепота
+подряд — с первой неушедшей пробы (`blind_since`) до факта, что проба ушла: на неё
+пришёл ответ или она пропала без ответа (из сокета она, значит, вышла).
 
 Обязательство «нет»: отдав кандидату `qview{uns}` под эпохой e, голосующий
 не скажет лидеру «вижу» под той же эпохой — пробы идут со взглядом `held`,
@@ -60,6 +62,7 @@ class Voter:
     started: float = 0.0
     last_reply: float = 0.0       # последний ответ (monotonic), 0 — ещё не было
     blind_at: float = 0.0         # последняя проба, не ушедшая из сокета (monotonic), 0 — не было
+    blind_since: float = 0.0      # пробы подряд не уходят из сокета с (monotonic), 0 — уходят
     next_probe: float = 0.0
     pending: dict = field(default_factory=dict)   # s → когда отправлена
     streak: int = 0               # ответов подряд (для «вижу» из uns/new)
@@ -94,6 +97,13 @@ class Voter:
         от него). Взгляд не меняется: о лидере проба ничего не узнала."""
         if self.pending.pop(int(s), None) is not None:
             self.blind_at = max(self.blind_at, float(now))
+            if not self.blind_since:
+                self.blind_since = float(now)
+
+    def blind_for(self, now: float) -> float:
+        """Сколько секунд подряд пробы не уходят из сокета (0 — уходят): снимает только факт —
+        ответ на пробу или её пропуск без ответа."""
+        return max(0.0, float(now) - self.blind_since) if self.blind_since else 0.0
 
     def reply_in(self, r: Reply, now: float) -> list[str]:
         """Ответ ответчика. Действия: `see` (взгляд стал «вижу»), `adopt:<e>`."""
@@ -103,6 +113,7 @@ class Voter:
         self.pending.clear()
         self.last_reply, self.last = now, r
         self.resends = 0
+        self.blind_since = 0.0                                # проба ушла и вернулась — сокет работает
         if self.pause_silent:                                 # пауза — до срока или ответа после молчания
             self.pause_until, self.pause_silent = 0.0, False
         if int(r.e) > int(self.fact):
@@ -149,6 +160,7 @@ class Voter:
         if lost:
             for s in lost:
                 del self.pending[s]
+            self.blind_since = 0.0                             # пропала без ответа — значит, из сокета ушла
             self.streak = 0                                    # «вижу» из uns/new — два ответа ПОДРЯД
             if self.view == "see":
                 self._set("sus", now)

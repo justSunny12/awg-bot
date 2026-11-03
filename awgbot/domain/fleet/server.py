@@ -92,7 +92,12 @@ class FleetServerMixin:
 
     def fleet_server_failed(self, reason: str) -> FleetOut:
         """Ступень сервера не запустилась (сеть GitHub, sha256, место) — сервер
-        на прежнем: шаг снимается, откат того, что успели."""
+        на прежнем: шаг снимается, откат того, что успели. Плановая пауза кворума,
+        попрошенная под эту ступень, — снять (`qpause{dur: 0}`): лидер жив и не
+        останавливается, а голосующие держали бы её весь срок, и о его смерти в
+        ближайшие минуты второй сервер узнал бы только по сроку паузы."""
+        if hasattr(self, "reserve_quorum_pause_cancel_sync"):
+            self.reserve_quorum_pause_cancel_sync()
         with _LOCK:
             run = self.fleet_run()
             if run.get("state") != RUNNING:

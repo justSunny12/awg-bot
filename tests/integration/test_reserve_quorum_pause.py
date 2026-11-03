@@ -198,3 +198,48 @@ def test_qpause_of_the_peer_line_holds_my_uns_until_the_term(lead):
     assert lead.s.reserve_quorum_pair_in("qpause", {"l": "b", "until": until}) == []
     assert "uns" not in v.tick(t0 + 200), "«не вижу» в паузе лидера"
     assert "uns" in v.tick(t0 + 310), "после срока паузы «не вижу» так и не наступило"
+
+
+# ── отмена паузы: ступень обновления не запустилась ─────────────────────────
+
+def test_a_failed_server_step_cancels_the_pause_with_zero_duration(lead, monkeypatch):
+    """Ступень сервера не запустилась (сеть GitHub, sha256, отказ обновления) — лидер жив и не
+    останавливается: следом за паузой уходит её отмена `qpause{dur: 0}` тем же адресатам, иначе
+    голосующие держали бы паузу весь срок и о смерти лидера в эти минуты узнали бы позже."""
+    from awgbot.domain.fleet.order import FleetOut
+    sent: list = []
+    monkeypatch.setattr(rsvactions, "run_threadsafe",
+                        lambda acts: sent.append([(a[0], a[1], a[3] if a[0] == "gwlink" else a[2]) for a in acts]))
+
+    def boom(step, hold=""):
+        raise RuntimeError("sha256 не сошёлся")
+    monkeypatch.setattr(lead.s, "apply_update", boom)
+    out = FleetOut()
+    out.server = "apply"
+    out.step = types.SimpleNamespace(tag="v4.2.0")
+    lead.s.fleet_server_act(out)
+    assert sent, "ни паузы, ни её отмены"
+    cancel = sent[-1]
+    assert [(k, d) for k, d, _b in cancel] == [("send", "qpause"), ("gwlink", 1), ("gwlink", 2)], \
+        f"отмена паузы не ушла всем голосующим: {sent}"
+    assert all(b["dur"] == 0 and _until_s(b) <= 1 for _k, _d, b in cancel), cancel
+
+
+def test_the_second_server_lifts_the_pause_on_zero_duration(lead):
+    """Второй сервер как голосующий: `qpause{dur: 0}` снимает паузу — «не вижу» снова по no_s от
+    последнего ответа, а не по сроку прежней паузы."""
+    from awgbot.util.quorum.probe import Reply
+    from awgbot.util.quorum.voter import Voter
+    import time
+    v = Voter("b", "a")
+    t0 = time.monotonic()
+    v.start(t0)
+    lead.s._qvoters["awgqbh"] = v
+    s = v.probe_out(t0, 15)
+    v.reply_in(Reply("b", 1, 0, "lead", s, 0, 1), t0)
+    lead.s.reserve_quorum_pair_in("qpause", {"l": "b", "until": timeutil.to_iso(timeutil.shift(timeutil.now(), 300)),
+                                             "dur": 300})
+    assert v.paused(time.monotonic())
+    lead.s.reserve_quorum_pair_in("qpause", {"l": "b", "until": timeutil.now_iso(), "dur": 0})
+    assert not v.paused(time.monotonic() + 0.01), "qpause{dur: 0} паузу не снял"
+    assert "uns" in v.tick(t0 + v.timing.no_s + 1), "после отмены паузы «не вижу» ждёт срока прежней"
