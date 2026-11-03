@@ -90,6 +90,10 @@ def setup(a: argparse.Namespace) -> None:
                                          subnet_prefix=a.subnet, subnet_cidr=f"{a.subnet}.0/24")
     app.setdefault("awg", {})["conf_dir"] = str(w / "awg")
     app.setdefault("client_config", {})["server_name"] = a.name
+    if os.environ.get("LAB_FAST") == "1":
+        # keepalive линка пары берут отсюда и reserve-pair-setup.sh, и планка порога подозрения
+        # (liveness.pair_suspect_floor_s): без ключа планка 40 перекрывала бы suspect_seconds 15
+        app["client_config"]["keepalive_seconds"] = str(LAB_FAST_PAIR_KEEPALIVE)
     (w / "conf" / "app.yaml").write_text(yaml.safe_dump(app, allow_unicode=True), encoding="utf-8")
     rsv = yaml.safe_load((w / "conf" / "reserve.yaml").read_text(encoding="utf-8"))
     rsv.update(ready=True, pkg_minutes=1)

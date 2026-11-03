@@ -128,8 +128,7 @@ def test_after_the_pkg_step_of_a_move_the_package_tick_stays_silent(mv, step):
 
 @pytest.mark.parametrize("state, step", [("away", ""), ("returning", "back_req"), ("returning", "merge")])
 def test_while_the_clients_are_away_or_returning_the_package_tick_stays_silent(mv, state, step):
-    """Пользователи у резерва или возвращаются: данные ведёт бот основы на
-    резерве, пакет по устаревшей базе основы резерву не нужен."""
+    """Пользователи у резерва или возвращаются: данные ведёт гость, пакет по устаревшей базе основы резерву не нужен."""
     svc = mv.svc
     svc.reserve_set_out(state, kind="button", gen=7, step=step, taken_at=timeutil.now_iso())
     svc.reserve_pkg_mark()

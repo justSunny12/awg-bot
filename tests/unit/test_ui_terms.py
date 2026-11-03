@@ -240,10 +240,13 @@ def test_hardware_and_household_words_are_absent_from_living_docs_and_code():
     files += sorted((repo / "install").glob("*.sh")) + [repo / "awg-bot.sh"]
     files += [p for p in sorted((repo / "tests").rglob("*.py")) if p.resolve() != pathlib.Path(__file__).resolve()]
     files += sorted((repo / "tests" / "screens").glob("*.txt"))
-    banned = re.compile(r"малин|квартир|домашн|бот[а-я]* основы на резерве|переехавш[а-я]* инстанс", re.I)
-    found = [f"{p.relative_to(repo)}:{i}" for p in files
-             for i, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1)
-             if banned.search(line)]
+    # прежние имена гостя ищутся по всему тексту: перенос строки (и решётка
+    # комментария) между словами сторожа не обманывает
+    banned = re.compile(r"малин|квартир|домашн|бот[а-я]*[\s#]+основы[\s#]+на[\s#]+резерве|переехавш[а-я]*[\s#]+инстанс", re.I)
+    found = []
+    for p in files:
+        text = p.read_text(encoding="utf-8")
+        found += [f"{p.relative_to(repo)}:{text.count(chr(10), 0, m.start()) + 1}" for m in banned.finditer(text)]
     assert found == [], found
 
 
