@@ -156,17 +156,20 @@ def migration_finish_confirm(dropped, old_uplink=(), bot: str = "", twinless=())
     Устройства без новой конфигурации (рождение сорвалось при включении) —
     тоже поимённо: завершение создаст её им, не выйдет — остановится."""
     tail = "Прежние конфигурации снимутся, трафик старых и новых конфигураций сложится в одну историю"
-    if not dropped:
+    twinless = list(twinless or ())
+    if not dropped and not twinless:
         text = ui.confirm("🚚 Завершить переезд?",
                           f"Все недавно активные устройства уже на новом интерфейсе. {tail}")
+    elif not dropped:                                      # «все на новом» неправда: у кого-то нет и двойника
+        text = ui.confirm("🚚 Завершить переезд?", tail)
     else:
         names = _names_capped(dropped, bot)
         text = ui.confirm("🚚 Завершить переезд?",
                           f"Потеряют связь сейчас ({len(dropped)}): {names}. Вернуть их — перенастроить "
                           f"устройства на новую конфигурацию. {tail}")
-    twinless = list(twinless or ())
     if twinless:
-        text += (f"\n⚠️ Без новой конфигурации ({len(twinless)}): {_names_capped(twinless, bot)}. "
+        # хвост «и ещё N» — без ссылки: экран «Потеряют связь» их не перечисляет (twinless не в dropped)
+        text += (f"\n⚠️ Без новой конфигурации ({len(twinless)}): {_names_capped(twinless)}. "
                  "Завершение создаст её им; не получится — остановится, прежние конфигурации останутся")
     for name, gw_bot in old_uplink:
         link = _bot_link(gw_bot)

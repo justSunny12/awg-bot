@@ -78,7 +78,7 @@ class ReservePeerAdminMixin:
             "traffic": self._reserve_traffic_view(),
             "peer_ready": bool(ps.get("ready")), "my_ready": settings.get_bool("reserve.ready", False),
             "code_needed": bool(self.reserve_code_window()["open"]),
-            "code_by": str((self.rsv_get("rsv_view").get("code") or {}).get("by") or ""),
+            "code_by": self._code_by(),
             "code_since": self.reserve_code_window()["since"],
             "in_kind": str(self.rsv_get("rsv_in").get("kind") or ""),
             "gw_views": self.reserve_gw_links_view() if hasattr(self, "reserve_gw_links_view") else [],
@@ -98,8 +98,13 @@ class ReservePeerAdminMixin:
         return {"y": int(view.get("y") or 0), "v": int(view.get("v") or 0), "w": str(view.get("w") or ""),
                 "since": str(view.get("since") or "")}
 
+    def _code_by(self) -> str:
+        """Почему окно кода открыто: `link` — линк пары молчит, а кворума о нём нет; иначе — голоса."""
+        return str((self.rsv_get("rsv_view").get("code") or {}).get("by") or "")
+
     def reserve_code_prompt_data(self) -> dict:
-        """Т-РН2: имена, момент аварии, запись основы (из заголовка пакета — нет: из st)."""
+        """Т-РН2: имена, момент аварии, почему окно кода открыто (как на экране роли),
+        запись основы (из заголовка пакета — нет: из st)."""
         return {"peer": self.reserve_peer_name(), "me": str(config.SERVER_NAME or ""),
-                "since": self.reserve_code_window()["since"],
+                "since": self.reserve_code_window()["since"], "code_by": self._code_by(),
                 "record": str(self.reserve_peer_state().get("record") or "")}

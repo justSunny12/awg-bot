@@ -95,8 +95,9 @@ class MigrationExitsMixin:
         Без третьего списка устройство без пары финал не видел вовсе: «все на
         новом интерфейсе», старый гасится, его пир остаётся на погашенном, а
         сверка потом удаляет строку — устройство пропадает у человека. Его
-        двойник ещё не рождён, значит и на новом интерфейсе его нет: в
-        уронённых оно названо, как любое без рукопожатия на двойнике."""
+        двойник ещё не рождён, значит и на новом интерфейсе его нет. В
+        уронённые оно НЕ входит: подтверждение называет его отдельной строкой
+        «без новой конфигурации», а одно имя в двух списках сбивало с толку."""
         twins = self.db.twins_by_origin()
         by_id = {d.id: d for d in self.db.list_all_devices()}
         pairs: list[tuple] = []
@@ -110,7 +111,6 @@ class MigrationExitsMixin:
             if not twin.last_handshake:
                 dropped.append(self._owned_name(old, owners))
         twinless = [d for d in self._migratable() if d.id not in twins]
-        dropped += [self._owned_name(d, owners) for d in twinless]
         return pairs, dropped, twinless
 
     def migration_orphan_twins(self) -> list:

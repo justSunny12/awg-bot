@@ -12,7 +12,7 @@ inbound_recwait.py — часть пакета reserve (см. __init__): «по�
 адрес мой — `record_set`, как обычно; нет — шаг `record_wait{name, ip, limit,
 why}`, клоны стоят, чтение раз в минуту ± 40 % до `limit` (dnsapi `apply_wait_s`:
 5 минут у API-провайдеров, «вручную» — 30) от `record_try`; не дождался —
-прежний срыв со снятием зоны («запись DNS не подтвердилась за N мин: …»).
+прежний срыв со снятием зоны («DNS-запись не подтвердилась за N мин: …»).
 
 Процесс погиб или отказал посреди неизвестного (такт видит `record_try` /
 `record_wait` без итога, процесс кончился, итог `fail` с полем `record=try`, срок
@@ -25,7 +25,7 @@ why}`, клоны стоят, чтение раз в минуту ± 40 % до `
 кончено (`rec_done`: такт идёт как по `done` — serve и ожидание `tg_taken`); не
 подтвердилась за предел — прежний срыв (`_take_fail_do`: зона снята, `down`
 основе, шлюзам `state{idle}`, админу — «⚠️ Пользователей … принять не удалось:
-запись DNS не подтвердилась за N мин: …»).
+DNS-запись не подтвердилась за N мин: …»).
 
 Админу резерва — одно уведомление на вход в ожидание (шаг `record_wait` процесса
 или ожидание бота; подтверждение первым же чтением — без него) и одно на исход
@@ -127,7 +127,7 @@ class ReserveInboundRecWaitMixin:
         if not expired:
             return self._rec_wait_notes(self._inn())
         why = str(inn.get("rec_why") or "")
-        reason = f"запись DNS не подтвердилась за {max(1, int(inn.get('rec_limit') or 0) // 60)} мин" + (f": {why}" if why else "")
+        reason = f"DNS-запись не подтвердилась за {max(1, int(inn.get('rec_limit') or 0) // 60)} мин" + (f": {why}" if why else "")
         log.warning("резерв: факт записи %s → %s за предел не наступил — прежний срыв", name or "?", ip or "?")
         if first:
             return self._take_fail_do(reason)

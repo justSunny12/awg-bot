@@ -61,8 +61,8 @@ def pair_liveness_problem() -> str:
     suspect = settings.get_int("reserve.suspect_seconds", 40)
     floor = pair_suspect_floor_s()
     if suspect < floor:
-        return (f"reserve.suspect_seconds {suspect} меньше keepalive линка пары {keepalive_upper_s()} с плюс такт "
-                f"{PAIR_TICK_S} с — ложные «недоступен»; действует {floor}")
+        return (f"Порог подозрения резерва ({suspect} с) меньше keepalive линка плюс такт — ложные «недоступен»; "
+                f"действует {floor} с")
     return ""
 
 

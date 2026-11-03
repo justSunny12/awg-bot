@@ -570,7 +570,7 @@ def test_a_failed_record_update_is_a_failure_and_the_webhook_is_not_marked(box):
     """Явный отказ провайдера — исход известен: срыв сразу, без ожидания факта."""
     box.record_error = dnsapi.Refused("токен не принят")
     assert box.open(**box.points(1)) == 1
-    assert rsvzone.open_status()["reason"] == "запись DNS: токен не принят" and "record" not in rsvzone.open_status()
+    assert rsvzone.open_status()["reason"] == "DNS-запись: токен не принят" and "record" not in rsvzone.open_status()
     assert box.auth_reads == [] and box.sleeps == [], "явный отказ ждёт предел"
     assert "wait_fact" not in box.kinds() and not rsvzone.TG_TAKE_FILE.exists()
 
@@ -579,7 +579,7 @@ def test_an_unclear_failure_waits_for_the_fact_until_the_limit(box):
     """Ошибка без явного отказа (DnsError: 5xx, ответ не разобран) — исход неизвестен: факта нет за предел — срыв."""
     box.record_error = dnsapi.DnsError("Cloudflare ответил не JSON (код 502)")
     assert box.open(**box.points(1)) == 1
-    assert "запись DNS не подтвердилась за 5 мин" in box.out and "код 502" in box.out
+    assert "DNS-запись не подтвердилась за 5 мин" in box.out and "код 502" in box.out
     assert sum(box.sleeps) == pytest.approx(300) and not rsvzone.TG_TAKE_FILE.exists()
 
 
@@ -617,10 +617,10 @@ def test_an_explicit_provider_refusal_fails_at_once_and_an_unclear_one_waits(box
     st = rsvzone.open_status()
     assert st["step"] == "fail" and "record" not in st, st
     if refused:
-        assert st["reason"].startswith("запись DNS: ") and box.sleeps == [] and box.auth_reads == [], \
+        assert st["reason"].startswith("DNS-запись: ") and box.sleeps == [] and box.auth_reads == [], \
             f"явный отказ ждал предел: {st}"
     else:
-        assert st["reason"].startswith("запись DNS не подтвердилась за 5 мин") and sum(box.sleeps) == pytest.approx(300), st
+        assert st["reason"].startswith("DNS-запись не подтвердилась за 5 мин") and sum(box.sleeps) == pytest.approx(300), st
 
 
 # ── исход смены записи неизвестен (record_try → record_wait) ────────────────
@@ -693,7 +693,7 @@ def test_a_timeout_with_a_record_not_applied_fails_at_the_limit(box, monkeypatch
     box.record_error = dnsapi.DnsError("провайдер DNS не ответил: timed out")
     assert box.open(**box.points(1)) == 1
     st = rsvzone.open_status()
-    assert st["step"] == "fail" and st["reason"].startswith("запись DNS не подтвердилась за 5 мин: провайдер DNS"), st
+    assert st["step"] == "fail" and st["reason"].startswith("DNS-запись не подтвердилась за 5 мин: провайдер DNS"), st
     assert "record" not in st, "исход стал известен — поле record=try бот принял бы за неизвестный"
     assert sum(box.sleeps) == pytest.approx(300) and box.auth_reads[-1] == pytest.approx(300), (box.sleeps, box.auth_reads)
     assert max(box.sleeps) <= 84, "чтения реже раза в минуту с разбросом"
@@ -718,7 +718,7 @@ def test_a_manual_provider_refusal_is_known_and_not_waited(box):
     box.record_error = dnsapi.NotSupported("запись меняется вручную у провайдера")
     assert box.open(**box.points(1)) == 1
     st = rsvzone.open_status()
-    assert st["reason"] == "запись DNS: запись меняется вручную у провайдера" and "record" not in st, st
+    assert st["reason"] == "DNS-запись: запись меняется вручную у провайдера" and "record" not in st, st
     assert box.auth_reads == [] and box.sleeps == []
 
 

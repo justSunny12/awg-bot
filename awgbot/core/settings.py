@@ -217,7 +217,7 @@ def _move_one(conf_dir: Path, src_stem: str, section: str, dst_stem: str) -> Non
                 if hasattr(src, "yaml_set_comment_before_after_key"):
                     src.yaml_set_comment_before_after_key(
                         section, before=f"Раздел перенесён в {dst_stem}.yaml — бот читает его там; здесь копия "
-                                        f"для отката на прежний выпуск.\nПравьте {dst_stem}.yaml: ключ, "
+                                        f"для отката на прежний выпуск.\nПравь {dst_stem}.yaml: ключ, "
                                         f"изменённый здесь, бот перенесёт туда при следующем старте")
             rsec[_MOVED_SUM] = _flow(sums)
             _dump(ruamel, src_path, src)

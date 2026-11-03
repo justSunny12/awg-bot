@@ -9,7 +9,7 @@ from __future__ import annotations
 from .reserve_fmt import _e, _n
 from .reserve_move import hosting_without_bot
 
-_TODO = {"record": "смена записи DNS не подтвердилась", "serve": "вход вебхука в зону не настроен",
+_TODO = {"record": "DNS-запись не подтвердилась", "serve": "вход вебхука в зону не настроен",
          "tg": "бот здесь не отвечает в Telegram"}
 _RETRY = {"record": "проверяю запись раз в минуту", "serve": "повторяю раз в минуту"}
 
@@ -19,7 +19,7 @@ def kept(primary: str, kind: str, reason: str) -> str:
     if kind == "tg":
         return hosting_without_bot(primary, reason)
     if kind == "relaunch":
-        return (f"⚠️ Запись DNS пользователей {_n(primary)} уже на тебе, а клона нет: {_e(reason)} — "
+        return (f"⚠️ DNS-запись пользователей {_n(primary)} уже на тебе, а клона нет: {_e(reason)} — "
                 f"перезапускаю открытие раз в минуту")
     return (f"⚠️ Пользователи {_n(primary)} у тебя, VPN работает, а {_TODO.get(kind, 'переезд не доделан')}: "
             f"{_e(reason)} — {_RETRY.get(kind, 'повторяю раз в минуту')}")
@@ -28,9 +28,9 @@ def kept(primary: str, kind: str, reason: str) -> str:
 def peer_kept(reserve: str, kind: str, reason: str) -> str:
     """Админу основы: её пользователи уже идут на резерв, а там сбой — резерв повторяет сам."""
     if kind == "relaunch":
-        return (f"⚠️ Твоя запись DNS уже на {_n(reserve)}, а клона там нет: {_e(reason)} — "
+        return (f"⚠️ Твоя DNS-запись уже на {_n(reserve)}, а клона там нет: {_e(reason)} — "
                 f"{_n(reserve)} перезапускает открытие")
-    what = {"record": "смена записи не подтвердилась", "serve": "вход вебхука не настроен",
+    what = {"record": "DNS-запись не подтвердилась", "serve": "вход вебхука не настроен",
             "tg": f"твой бот на {_n(reserve)} не отвечает в Telegram"}.get(kind, "переезд не доделан")
     return f"⚠️ Твои пользователи на {_n(reserve)}, VPN работает, а {what}: {_e(reason)} — {_n(reserve)} повторяет сам"
 
@@ -45,14 +45,14 @@ def record_back(reserve: str, record: str, own: str, why: str) -> str:
 
 def record_unknown(primary: str, record: str, ip: str, minutes: int, why: str) -> str:
     """Админу резерва: вход в ожидание факта — ответ провайдера не дошёл или процесс открытия погиб."""
-    rec = f"<code>{_e(record)}</code>" if record else "DNS"
+    rec = f"Запись <code>{_e(record)}</code>" if record else "DNS-запись"
     to = f" на <code>{_e(ip)}</code>" if ip else ""
-    return (f"⏳ Запись {rec} пользователей {_n(primary)}: исход смены{to} неизвестен" + (f" — {_e(why)}" if why else "")
+    return (f"⏳ {rec} пользователей {_n(primary)}: исход смены{to} неизвестен" + (f" — {_e(why)}" if why else "")
             + f"; проверяю у авторитетного сервера раз в минуту, до {minutes} мин")
 
 
 def record_confirmed(primary: str, record: str, ip: str) -> str:
     """Админу резерва: факт после ожидания — запись здесь, приём идёт дальше."""
-    rec = f"<code>{_e(record)}</code>" if record else "DNS"
+    rec = f"Запись <code>{_e(record)}</code>" if record else "DNS-запись"
     to = f": <code>{_e(ip)}</code>" if ip else ""
-    return f"✅ Запись {rec} подтвердилась у авторитетного сервера{to} — приём пользователей {_n(primary)} продолжается"
+    return f"✅ {rec} подтвердилась у авторитетного сервера{to} — приём пользователей {_n(primary)} продолжается"

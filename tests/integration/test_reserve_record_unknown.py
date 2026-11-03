@@ -145,10 +145,10 @@ def test_a_record_that_never_shows_fails_as_before_at_the_limit(host, monkeypatc
     assert host.dns.auth_reads == reads + 1, "на пределе — последнее чтение, не срыв вслепую"
     assert svc.reserve_in() == "idle" and {"teardown", "wipe"} <= set(host.zone.names()), host.zone.calls
     down = [a[2] for a in acts if a[:2] == ("send", "down")]
-    assert down and down[0]["reason"].startswith("запись DNS не подтвердилась за 5 мин"), acts
+    assert down and down[0]["reason"].startswith("DNS-запись не подтвердилась за 5 мин"), acts
     assert not down[0].get("rec"), "запись не сменена — основе возвращать нечего"
     texts = _texts(acts)
-    assert any("принять не удалось: запись DNS не подтвердилась за 5 мин" in t for t in texts), texts
+    assert any("принять не удалось: DNS-запись не подтвердилась за 5 мин" in t for t in texts), texts
     inn = svc.rsv_get("rsv_in")
     assert not any(inn.get(k) for k in ("rec_try", "rec_wait", "rec_done", "rec_told")), inn
 
@@ -212,7 +212,7 @@ def test_a_waiting_process_that_gives_up_ends_the_hosting_as_before(host, monkey
     _open(host, monkeypatch)
     host.zone.status = {"step": "record_wait", "name": NAME, "ip": IP, "limit": "300", "why": "timed out"}
     svc.reserve_in_tick()
-    host.zone.status = {"step": "fail", "reason": "запись DNS не подтвердилась за 5 мин: timed out", "pre_m": ""}
+    host.zone.status = {"step": "fail", "reason": "DNS-запись не подтвердилась за 5 мин: timed out", "pre_m": ""}
     acts = svc.reserve_in_tick()
     assert svc.reserve_in() == "idle" and {"teardown", "wipe"} <= set(host.zone.names())
     assert any("за 5 мин" in t for t in _texts(acts))

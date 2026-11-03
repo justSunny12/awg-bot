@@ -172,7 +172,7 @@ def test_finish_births_twins_to_the_twinless_and_names_them_before(services, mig
 
     n, dropped, twinless = services.migration_finish_preview()
     assert twinless == ["Ксюша — B"], "без двойника не назван"
-    assert "Ксюша — B" in dropped, "на новом интерфейсе его нет — потеряет связь"
+    assert dropped == [], "без двойника — отдельной строкой, а не ещё и в «Потеряют связь»"
 
     removed, dropped, failed = services.migration_finish()
     assert failed == [] and removed == 2
@@ -206,6 +206,36 @@ def test_finish_without_a_twin_for_someone_does_not_promote(services, mig, make_
     assert services.migration_running(), "рычаг погашен при незакрытом устройстве"
     assert services.db.get_device(b.device_id) is not None
     assert services.db.twins_by_origin() == {}, "строка двойника без пира осталась"
+
+
+def test_finish_confirm_names_the_twinless_once(services, mig, make_active_client):
+    """Подтверждение «🚚 Завершить переезд?»: устройство без двойника названо одной
+    строкой «⚠️ Без новой конфигурации», а не ещё и в «Потеряют связь сейчас» — одно
+    имя в двух списках читалось как два разных устройства. Не переехавший с
+    двойником — по-прежнему в «Потеряют связь»."""
+    from awgbot.bot.texts.migration import migration_finish_confirm
+    c = make_active_client(name="Ксюша", tg_id=7018)
+    a = services.add_device(c.id, "A")
+    b = services.add_device(c.id, "B")
+    _seen(services, a.device_id, ago_days=1)
+    _seen(services, b.device_id, ago_days=1)
+    services.migration_start()
+    services.db.delete_device(services.db.twins_by_origin()[b.device_id], archive_reason=None)   # рождение сорвалось
+
+    _n, dropped, twinless = services.migration_finish_preview()
+    assert dropped == ["Ксюша — A"] and twinless == ["Ксюша — B"], (dropped, twinless)
+    text = migration_finish_confirm(dropped, twinless=twinless)
+    assert text.count("Ксюша — B") == 1 and text.count("Ксюша — A") == 1, text
+    assert "Потеряют связь сейчас (1): Ксюша — A." in text, text
+    assert "⚠️ Без новой конфигурации (1): Ксюша — B." in text, text
+
+    # уронённых нет, а без двойника есть — «все уже на новом интерфейсе» было бы неправдой
+    _seen(services, _twin(services, a.device_id).id, ago_days=0)
+    _n, dropped, twinless = services.migration_finish_preview()
+    assert dropped == [] and twinless == ["Ксюша — B"], (dropped, twinless)
+    text = migration_finish_confirm(dropped, twinless=twinless)
+    assert "уже на новом интерфейсе" not in text and "Потеряют связь" not in text, text
+    assert text.count("Ксюша — B") == 1, text
 
 
 # ── одна транзакция на пару ──────────────────────────────────────────────────
