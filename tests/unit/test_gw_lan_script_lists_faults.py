@@ -248,3 +248,16 @@ def test_without_faults_the_same_update_goes_through(lists_env):
     assert "flush set inet awg_lan lan_vpn_nets4" in _log(log)
     assert cnt.read_text().strip() == "1", "подмена awk не встала на путь вычета"
     assert not list((dump / "rollback").glob("*"))
+
+
+def test_an_unopenable_lock_is_a_step_failure(lists_env):
+    """Файл блокировки не открылся: у dash отказ перенаправления exec завершал
+    скрипт кодом 2 мимо всех строк — теперь код 1 и «списки не тронуты»."""
+    tool, dns_d, dump, log, env = lists_env
+    _prepared(lists_env)
+    (dump / "lists.lock").mkdir()
+    r = _go(tool, env)
+    assert r.returncode == 1 and "списки не тронуты" in r.stderr, (r.returncode, r.stderr)
+    assert (dns_d / FEED).read_text() == OLD_FEED
+    assert "nets=5\n" in (dump / "lists.status").read_text()
+    assert _log(log) == ""

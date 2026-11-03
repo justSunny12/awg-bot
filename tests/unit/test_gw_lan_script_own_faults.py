@@ -248,3 +248,15 @@ def test_without_faults_the_same_change_goes_through(own_env):
     r = _run(tool, env, "del", "shop.ru")
     assert r.returncode == 0, r.stdout + r.stderr
     assert (dns_d / FEED).read_text() == _feed_from(_SRC, minus={"x.com"})
+
+
+def test_an_unopenable_lock_is_a_step_failure(own_env):
+    """Файл блокировки не открылся: у dash отказ перенаправления exec завершал
+    скрипт кодом 2 — у sync это «чужая строка в файле»."""
+    tool, dns_d, dump, log, env = own_env
+    before = _two_exceptions(own_env)
+    (dump / "lists.lock").mkdir()
+    r = _run(tool, env, "del", "shop.ru")
+    assert r.returncode == 1 and UNTOUCHED in r.stderr, (r.returncode, r.stderr)
+    assert _state(dns_d) == before
+    assert "systemctl" not in _log(log)
