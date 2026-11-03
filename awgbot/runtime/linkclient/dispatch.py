@@ -24,14 +24,16 @@ class DispatchMixin:
             await self._handle(msg)
             return
         box = self._inbox
+        at = len(box)
         if msg.get("t") == "cfg":
             stale = [m for m in box if m.get("t") == "cfg"]
-            for old in stale:
-                box.remove(old)
             if stale:
+                at = box.index(stale[0])                  # на место вытесненного: слова за ним ждут документа, как прежде
+                for old in stale:
+                    box.remove(old)
                 log.info("канал линка: документ gen %s ещё не применялся — его заменил gen %s",
                          stale[-1].get("gen"), msg.get("gen"))
-        box.append(msg)
+        box.insert(at, msg)
         if self._inbox_task is None or self._inbox_task.done():
             self._inbox_task = asyncio.get_running_loop().create_task(self._inbox_run())
 

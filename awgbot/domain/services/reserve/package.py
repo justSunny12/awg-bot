@@ -30,7 +30,7 @@ import os
 import time
 
 from awgbot.core import config, settings
-from awgbot.util import backoff, fsatomic, pairproto, rsvjrn, rsvkeys, timeutil
+from awgbot.util import backoff, fsatomic, pairproto, rsvjrn, rsvkeys, textfmt, timeutil
 from awgbot.util.rsvpkg import bot as pkgbot, seal, vpn as pkgvpn
 
 from ..gateway_link.common import log
@@ -435,6 +435,7 @@ class ReservePackageMixin:
             pairproto.chunks(blob.hex())
         except pairproto.ProtocolError:
             limit = pairproto.MAX_CHUNKS * pairproto.MAX_BLOB // 2
-            return (f"база больше предела передачи ({len(blob) / 1048576:.1f} МБ из {limit // 1048576}) — "
+            mb = 1048576                                  # числа — как везде в текстах: запятая, без хвостовых нулей
+            return (f"база больше предела передачи ({textfmt.amount(len(blob), mb)} из {textfmt.amount(limit, mb)} МБ) — "
                     f"сожми базу (архивы, истории) или уменьши число профилей")
         return ""

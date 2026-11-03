@@ -131,6 +131,26 @@ async def test_a_waiting_document_is_replaced_by_a_later_one(gateway_role, conf)
     assert [m["gen"] for m in _sent(client) if m["t"] == "cfg_ack"] == [7, 7], "ответов не по числу применений"
 
 
+async def test_a_replacing_document_takes_the_place_of_the_replaced_one(gateway_role, conf):
+    """Слова, пришедшие между вытесненным документом и его заменой, по-прежнему
+    обрабатываются после документа: замена встаёт на место вытесненного, а не в
+    конец очереди (иначе роль, зависящая от документа, обгоняла бы его)."""
+    agent = _SlowAgent()
+    client = _live_client(agent)
+    await client._take({"t": "cfg", "gen": 7})
+    try:
+        await _until(agent.applying.is_set)
+        await client._take({"t": "cfg", "gen": 8})
+        await client._take({"t": "role", "active": False})
+        await client._take({"t": "cfg", "gen": 9})
+        assert [m.get("t") for m in client._inbox] == ["cfg", "role"], client._inbox
+    finally:
+        agent.release.set()
+    await _until(lambda: len(agent.docs) == 2)
+    await client._inbox_drain()
+    assert agent.seen == ["cfg:7", "cfg:9", "role"], agent.seen
+
+
 async def test_words_read_before_the_session_ends_are_handled_on_it(vps):
     """Документ и сразу конец сессии: документ применён, ответ ушёл по этой же
     сессии, и `_connect_once` вернулся только после этого."""
