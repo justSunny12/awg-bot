@@ -103,8 +103,10 @@ class ReserveC9Mixin:
             fresh = str(peer.get("at") or "") > str(out.get("since") or "")
         if not fresh or self.reserve_disk_waiting():
             return []
-        log.info("резерв: «%s» на связи без моего гостя — правок бота на резерве не будет, отметка С9 снята",
-                 self.reserve_peer_name())
+        c9 = self.rsv_get("rsv_c9")
+        log.info("резерв: «%s» на связи без моего гостя — правок бота на резерве эпохи %s после %s не будет, отметка "
+                 "С9 снята (перенесено %s)", self.reserve_peer_name(), c9.get("e"), int(c9.get("upto") or 0),
+                 int(c9.get("moved") or 0))
         return self.reserve_c9_notes()
 
     def reserve_c9_none_in(self, body: dict) -> list[tuple]:

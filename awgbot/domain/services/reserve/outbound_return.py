@@ -186,21 +186,50 @@ class ReserveReturnMixin:
         return [("send", "back_req", {}), ("live",)]
 
     def _home_back_resend(self) -> list[tuple]:
-        """Дома, а живой резерв всё ещё в releasing: мой `back` потерялся (шаг relay повторял
-        его RELAY_WAIT_S и сдался) — без него резерв ждёт вечно, держит зону и отвергает
-        новый пакет («зона занята»). Повтор раз в минуту, пока он не скажет иное."""
+        """Дома, а живой резерв всё ещё держит зону под мой эпизод: мой `back` потерялся. Шаг
+        relay возврата повторял его RELAY_WAIT_S и сдался — резерв в releasing; или срыв переезда
+        (`_move_fail`) сказал его в мёртвый канал — резерв был недоступен, потому переезд и
+        сорвался, — резерв в taking моего сорвавшегося переезда (`_taking_is_my_failed_move`).
+        Без `back` резерв ждёт вечно: держит зону и гостя, отвергает новый пакет («зона
+        занята»), а правки его гостя, которых ждёт отметка С9, не приходят, пока гость не
+        остановлен (на `back` резерв сначала останавливает гостя — inbound_back). Повтор раз в
+        минуту, пока он не скажет иное."""
         out = self._out()
         if str(out.get("state") or "home") != "home" or out.get("await_merge"):
             return []
         peer = self.reserve_peer_state()
-        if str(peer.get("inn") or "") != "releasing" or not self._peer_alive(peer):
+        if not self._peer_alive(peer):
+            return []
+        inn = str(peer.get("inn") or "")
+        if inn == "taking":
+            if not self._taking_is_my_failed_move(out, peer):
+                return []
+        elif inn != "releasing":
             return []
         now = time.monotonic()
         if not livestep.mono_due(out.get("home_back_at"), now, 60):
             return []
         self.rsv_update("rsv_out", home_back_at=now)
-        log.info("резерв: «%s» всё ещё отдаёт моих пользователей — повторяю back", self.reserve_peer_name())
+        log.info("резерв: «%s» всё ещё %s — повторяю back", self.reserve_peer_name(),
+                 "отдаёт моих пользователей" if inn == "releasing" else "открывает зону под мой сорвавшийся переезд")
         return [("send", "back", {})]
+
+    @staticmethod
+    def _taking_is_my_failed_move(out: dict, peer: dict) -> bool:
+        """Резерв открывает зону под мой сорвавшийся переезд: по моему K (`in_by = k` — мой `go`
+        был, значит я уходил и вернулся срывом), под пакетом того же поколения, и говорит это
+        живым `st` после моего перехода домой (st до него — о ходе переезда; `back` на срыв
+        уже ушёл, его потерю покажет следующий st). Открытие по точкам или коду мимо меня —
+        не мой эпизод: его факт `serving` уводит в away (`_tick_home`). Гость, забравший
+        Telegram сам (`in_tg = forced`), — не снимать: на `back` резерв ответил бы `taken`."""
+        if str(peer.get("in_by") or "") != "k" or str(peer.get("in_tg") or "") == "forced":
+            return False
+        gen = int(out.get("gen") or 0)
+        if not gen or int((peer.get("pkg") or {}).get("gen") or 0) != gen:
+            return False
+        if peer.get("at_ts") is not None and out.get("at_ts") is not None:
+            return float(peer["at_ts"]) > float(out["at_ts"])
+        return str(peer.get("at") or "") > str(out.get("since") or "")
 
     def _forced_no_merge(self) -> list[tuple]:
         """Резерв вернулся пустым (перезагрузка — гость жил в памяти): сливать нечего —

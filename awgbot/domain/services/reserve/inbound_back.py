@@ -14,6 +14,11 @@ releasing до реплики; повтор просьбы — та же реп�
 хвоста, сразу idle), учёт, `relay{until}`, `--wipe`, прежний пакет — прочь,
 `wiped`, Т-РУ5 → relay до `relay_max_days` или тишины
 `relay_idle_hours` (по счётчику правила DNAT — nftguard.relay_packets) → idle.
+`back` при живом госте с журналом (срыв переезда у основы после передачи бота:
+`back` ушёл в мёртвый канал, основа повторяет его с дома — outbound_return) —
+сначала гостю `stop`, как на `back_req` (`back_pending`): его правки за время
+разрыва основа ждёт хвостом (отметка С9), снятие зоны — по его `released`
+(`_back_after_released`; `released` основе не идёт — она дома).
 Новое открытие при relay — пересылка уступает (`_relay_yield`); открытие
 сорвалось — возвращается (`_relay_restore`). `evict` — просьба вернуть
 пользователей по кнопке у резерва (в боте основы на нём).
@@ -116,8 +121,19 @@ class ReserveInboundBackMixin:
                 return self.reserve_guest_replica_in(blob)
             log.warning("резерв: реплики нет ни от гостя, ни на диске — released без реплики")
             self.rsv_update("rsv_in", released_at=timeutil.now_iso())
-            return [("send_released", {"gen": int(inn.get("gen") or 0), "blob": ""})]
+            return self._back_after_released([("send_released", {"gen": int(inn.get("gen") or 0), "blob": ""})])
         return []
+
+    def _back_after_released(self, acts: list[tuple]) -> list[tuple]:
+        """Гость отдал последние записи (`released`) или срок вышел (реплика с диска, released
+        без неё): `back` основы ждал этого (`back_pending`, `reserve_back_in` при живом госте с
+        журналом) — доделать снятие зоны. `released` основе не нужен: она дома после срыва, не в
+        возврате («released вне возврата — пропущен»)."""
+        if not self._inn().get("back_pending"):
+            return acts
+        self.rsv_update("rsv_in", back_pending=False)
+        log.info("резерв: гость остановлен — доделываю back «%s»", self.reserve_peer_name())
+        return self.reserve_back_in()
 
     def _tick_released_wait(self, inn: dict) -> list[tuple]:
         """Реплика отдана, `back` нет. Живой `st` основы после released говорит `away` —
@@ -206,6 +222,19 @@ class ReserveInboundBackMixin:
                         self.reserve_peer_name())
             return [("send", "taken", self._word_oid(inn))]
         name = self.reserve_peer_name()
+        if str(inn.get("state") or "") == "releasing" and inn.get("back_pending") and not inn.get("released_at"):
+            # гость ещё останавливается по `stop` на прошлый back (ниже): его последние записи в пути —
+            # снять зону сейчас значило бы их потерять; повтор back основы ждёт того же released
+            log.info("резерв: back от «%s», а гость ещё отдаёт свои записи — снятие зоны после его released", name)
+            return []
+        if str(inn.get("state") or "") in ("taking", "serving") and self._keep_guest_int("e"):
+            # бот основы у меня жив и ведёт журнал (срыв переезда у основы после передачи бота: его
+            # правки за время разрыва основа ждёт хвостом, отметка С9): сначала `stop` ему — последние
+            # записи основе, released, — снятие зоны по released (`_back_after_released`)
+            log.info("резерв: back от «%s», а её бот у меня жив и ведёт журнал — сначала его остановка, "
+                     "снятие зоны после его released", name)
+            self.rsv_update("rsv_in", back_pending=True)
+            return self.reserve_back_req_in()
         # пересылка хвоста нужна, только если пользователи могли прийти на клон: зона обслуживала
         # или клон уже поднят — запись по кнопке меняет основа сразу после `up`, и пользователи
         # могли прийти раньше, чем процесс открытия дойдёт до record_set; срыв раньше клона — сразу
@@ -345,7 +374,7 @@ class ReserveInboundBackMixin:
         if str(inn.get("state") or "") != "releasing":
             return []
         self.rsv_update("rsv_in", released_at=timeutil.now_iso())
-        return [("send_released", {"gen": int(inn.get("gen") or 0), "blob": blob.hex()})]
+        return self._back_after_released([("send_released", {"gen": int(inn.get("gen") or 0), "blob": blob.hex()})])
 
     # ── возврат по кнопке у резерва ─────────────────────────────────────────
     def reserve_evict_check(self) -> str:

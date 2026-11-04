@@ -193,3 +193,71 @@ def test_a_released_of_another_epoch_drops_the_stale_c9_and_takes_the_epoch(duo)
     assert not sends(acts, "jneed"), f"устаревшая отметка С9 запросила хвост, которого нет: {acts}"
     assert ("take_tg",) in acts, acts
     assert duo.a.rsv_get("rsv_c9") == {}, "устаревшая отметка С9 осталась — Т-Ж4/Т-Ж5 с чужими цифрами"
+
+
+# ── срыв после передачи бота при живом госте за разрывом ─────────────────────
+
+def test_back_at_the_live_guest_after_a_failed_move_brings_its_edits_as_the_c9_tail_and_drops_the_mark(duo, monkeypatch, caplog):
+    """Переезд кнопкой: гость взял эпоху по released, линк пары порвался, основа по сроку и
+    слову Telegram сорвалась домой (эпоха здесь, отметка С9 под эпоху гостя); гость за
+    разрывом правит. Линк вернулся — основа повторяет `back` (он ушёл в мёртвый канал);
+    резерв гостя не убивает, а останавливает: его правки доходят хвостом С9, по его released
+    зона снимается, и живой st резерва без гостя снимает отметку фактом с числом перенесённого."""
+    import logging
+    import shutil
+    from awgbot.infra import rsvzone
+    calls: list[str] = []
+    monkeypatch.setattr(rsvzone, "teardown", lambda: calls.append("teardown") or "")
+    monkeypatch.setattr(rsvzone, "relay", lambda to: calls.append("relay") or "")
+    monkeypatch.setattr(rsvzone, "wipe", lambda: (calls.append("wipe"), shutil.rmtree(rsvzone.VAR_DIR / "jrn", ignore_errors=True)) and "")
+    duo.journal_on()
+    duo.edit("Иван")
+    duo.tick()
+    duo.open_guest(button=True)
+    rm.to_step(duo.a, "release")
+    built = duo.a.reserve_release_build()
+    assert built is not None and duo.a.rsv_get("rsv_out")["step"] == "released" and duo.a.reserve_following()
+    duo.b_to_guest(duo.b.reserve_released_jrn_store(built["epoch"], built["last"]))
+    with duo.as_guest():
+        gm = duo.gdb.jrn_meta()
+        assert (gm["holder"], gm["role"]) == ("self", "holder"), gm
+    duo.b.reserve_guest_jrn_seen({"e": gm["epoch"], "fork": gm["fork_i"], "last": duo.gdb.jrn_last_i()})
+    # линк порван: срыв по сроку шага и слову Telegram — дома держатель, back ушёл в мёртвый канал
+    acts = duo.a._move_fail("резерв не взял право отвечать — вебхук не поставлен", released=True)
+    assert "back" in rm.sent(acts) and duo.a.reserve_out() == "home"
+    duo.a.reserve_out_tick()
+    c9 = duo.a.rsv_get("rsv_c9")
+    assert c9.get("e") == gm["epoch"], c9
+    with duo.as_guest():
+        duo.g.db.create_client("Ольга", 1, "2026-01-01T00:00:00+03:00", "2099-01-01T00:00:00+03:00", "INV-DUMMY-O")   # правка гостя за разрывом
+    # линк вернулся: st резерва — всё ещё taking под мой переезд → повтор back
+    rm.st_in(duo.a, caps=JCAPS, jrn={"keep": duo.b.reserve_keep_view()},
+             **{"in": "taking", "in_by": "k", "in_kind": "button", "pkg": {"gen": built["gen"], "fp": ""}})
+    acts = duo.a.reserve_out_tick()
+    assert rm.sent(acts) == ["back"], f"back после срыва не повторён: {acts}"
+    at_b = duo.b.reserve_back_in()
+    assert at_b == [("guest", "stop", {})], f"back при живом госте снял зону, не остановив его: {at_b}"
+    assert calls == [], calls
+    # гость останавливается: последние записи — основе (хвост С9), подтверждение — ему, released
+    with duo.as_guest():
+        msgs = duo.g.guest_jrn_tick()
+    at_a = duo.b_to_a(duo.guest_to_b(msgs))
+    assert "Ольга" in {c.name for c in duo.a.db.list_clients()}, "правка гостя не перенесена хвостом С9"
+    duo.b_to_guest(duo.a_to_b(at_a))
+    with duo.as_guest():
+        assert duo.g.guest_jrn_drained(), "основа не подтвердила записи гостя"
+        rel = duo.g.guest_jrn_release()
+    done = duo.b.reserve_guest_released_jrn(rel)
+    assert not [a for a in done if a[0] == "send_released"], done
+    assert [a[1] for a in done if a[0] == "send"] == ["relay", "wiped"] and calls[-1] == "wipe", (done, calls)
+    assert duo.b.reserve_in() == "relay"
+    # живой st резерва без гостя после моего перехода домой — отметка снята фактом
+    duo.b.__dict__.pop("_rsv_guest_jrn", None)
+    with caplog.at_level(logging.INFO):
+        rm.st_in(duo.a, caps=JCAPS, jrn={"keep": duo.b.reserve_keep_view()}, **{"in": "relay"})
+        notes = duo.a.reserve_out_tick()
+    assert duo.a.rsv_get("rsv_c9") == {}, "отметка С9 стоит, хотя гостя у резерва больше нет"
+    lines = [r.getMessage() for r in caplog.records if "отметка С9 снята (перенесено " in r.getMessage()]
+    assert lines and "(перенесено 0)" not in lines[0], lines   # число — событий, не профилей (стенд ждёт эту строку)
+    texts = [n.text for n in rm.notices(notes)]
+    assert any("после потери связи перенесены сюда: " in t for t in texts), texts

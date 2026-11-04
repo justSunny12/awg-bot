@@ -104,7 +104,8 @@ class ReserveHandoverMixin:
             return []
         rel = {"epoch": int(body.get("epoch") or 0), "last": int(body.get("last") or 0)}
         self.rsv_update("rsv_in", released_at=timeutil.now_iso(), jrn_back=rel)
-        return [("send_released", {"gen": int(inn.get("gen") or 0), "blob": "", **rel})]
+        # `back` основы ждал остановки гостя (inbound_back `_back_after_released`) — доделать снятие зоны
+        return self._back_after_released([("send_released", {"gen": int(inn.get("gen") or 0), "blob": "", **rel})])
 
     def reserve_released_jrn_in(self, epoch: int, last: int) -> list[tuple]:
         """Возврат с журналом: бот на резерве передал право записи по `last`. Слияния и
