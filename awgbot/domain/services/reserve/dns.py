@@ -104,7 +104,7 @@ class ReserveDnsMixin:
         авторитетного сервера. {ok, text, ip}."""
         name = self.reserve_dns_name()
         if not name:
-            return {"ok": False, "text": "Вместо доменного имени сервера — IP, DNS-записи у него нет", "ip": ""}
+            return {"ok": False, "text": "Проверка невозможна: не задано доменное имя сервера", "ip": ""}
         busy = self.reserve_busy() if hasattr(self, "reserve_busy") else ""
         if busy:
             # у DuckDNS и DynDNS2 проверка — это запись: посреди переезда она вернула бы прежний адрес

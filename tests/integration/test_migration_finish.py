@@ -124,9 +124,9 @@ async def test_promotion_ui_tells_and_restarts(services, mig, fake_bot,
     c, nav, calls = await _finish_through_the_handler(services, fake_bot, make_active_client, monkeypatch, 7110)
 
     said = [s for s in nav.sent if s[0] == "answer"]
-    assert any("Основным интерфейсом стал" in s[1] for s in said), said
+    assert any("Основным интерфейсом назначен" in s[1] for s in said), said
     assert calls == [], "перезапуск раньше срока"
-    last = [s for s in said if "Основным интерфейсом стал" in s[1]][-1]
+    last = [s for s in said if "Основным интерфейсом назначен" in s[1]][-1]
     assert "через минуту" in last[1]
     assert [[b.text for b in row] for row in last[2].inline_keyboard] == [["🔁 Перезапустить сейчас"]]
     await asyncio.sleep(0.3)

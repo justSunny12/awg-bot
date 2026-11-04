@@ -78,7 +78,7 @@ def test_the_mark_carries_its_start_and_the_card_waits_without_a_link_before_the
     v = duo.a.reserve_c9_wait_view()
     assert v and not v["overdue"] and not v["online"], v
     card = _card(duo.a)
-    assert "└ ⏳ жду события с «Beta»" in card, card
+    assert "└ ⏳ жду журнал событий с «Beta»" in card, card
     assert "не ждать?" not in card, "ссылка «не ждать» до срока — админ снимет ожидание правок, которые вот-вот придут"
 
 
@@ -87,7 +87,10 @@ def test_after_the_term_the_card_links_to_the_drop_screen(duo):
     duo.a.rsv_update("rsv_c9", at_ts=_ago(C9_WAIT_S + 1))
     assert duo.a.reserve_c9_wait_view()["overdue"]
     card = _card(duo.a)
-    assert f'└ ⏳ жду события с «Beta» (<a href="https://t.me/test_bot?start={ct.C9_PAYLOAD}">не ждать?</a>)' in card, card
+    assert f'└ ⏳ жду журнал событий с «Beta» (<a href="https://t.me/test_bot?start={ct.C9_PAYLOAD}">не ждать?</a>)' in card, card
+    # без имени бота ссылки не собрать — хвост не выводится вовсе (простой текст «(не ждать?)» никуда не вёл)
+    plain = st_t.card_text(duo.a.reserve_card_data(), "")
+    assert "└ ⏳ жду журнал событий с «Beta»\n" in plain + "\n" and "не ждать" not in plain, plain
 
 
 def test_the_term_counts_from_the_start_not_from_now(duo):
@@ -105,7 +108,7 @@ def test_a_live_guest_hides_the_link_even_after_the_term(duo):
     v = duo.a.reserve_c9_wait_view()
     assert v["online"] and v["drop_why"], v
     assert "не ждать?" not in _card(duo.a)
-    with pytest.raises(ServiceError, match="несёт твой бот"):
+    with pytest.raises(ServiceError, match="управляет ботом"):
         duo.a.reserve_c9_drop()
     assert duo.a.rsv_get("rsv_c9").get("e"), "отказ снял отметку"
 
@@ -143,7 +146,7 @@ def test_drop_removes_the_mark_logs_and_tells_the_admin(duo, caplog):
     assert [n.text for n in notes] == [rt.c9_dropped("Beta")], notes
     assert any("отметка С9 снята админом" in r.getMessage() for r in caplog.records), "нет строки в журнале"
     assert duo.a.reserve_c9_wait_view() == {}
-    assert "жду события" not in _card(duo.a)
+    assert "жду журнал событий" not in _card(duo.a)
 
 
 def test_a_second_drop_or_a_mark_settled_meanwhile_is_none(duo):
@@ -194,9 +197,9 @@ def test_the_screen_tells_what_is_lost_and_what_is_known():
     v = {"since": "2026-09-15T11:50:00+03:00", "overdue": True, "online": False,
          "down_since": "2026-09-15T11:40:00+03:00", "moved": 2, "drop_why": ""}
     t = ct.screen_text(v, "Beta")
-    assert t.startswith("⚠️ <b>Не ждать изменений от бота на «Beta»?</b>\n\n"), t
-    assert "будут потеряны и сюда не придут" in t and "Уже перенесено изменений: 2." in t, t
-    assert "«Beta» не на связи с " in t and "Ждать стоит, если «Beta» может вернуться" in t, t
+    assert t.startswith("⚠️ <b>Не ждать изменений от «Beta»?</b>\n\n"), t
+    assert "будут безвозвратно утеряны" in t and t.endswith("\nУже синхронизировано изменений: 2"), t
+    assert "«Beta» недоступен с " in t and "Запущен ли на нём ещё гостевой экземпляр — неизвестно." in t, t
     assert not t.endswith("."), "текст экрана с точкой в конце"
-    assert "Уже перенесено" not in ct.screen_text(dict(v, moved=0), "Beta"), "ноль выведен"
-    assert "уже снята" in ct.screen_text({}, "Beta")
+    assert "Уже синхронизировано" not in ct.screen_text(dict(v, moved=0), "Beta"), "ноль выведен"
+    assert "Ожидание уже отключено" in ct.screen_text({}, "Beta")

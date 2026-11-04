@@ -44,7 +44,7 @@ def accept_dialog(rf_on: bool, *, has_gateway: bool) -> InlineKeyboardMarkup:
     """«Отмена» первой: принять чужих пользователей — действие с последствиями."""
     return ui.rows(
         ("⬅️ Отмена", SetCB(sec="rsv")),
-        (f"{_chk(rf_on)} Мои шлюзы для резерва", RsvCB(action="rf")) if has_gateway else None,
+        (f"{_chk(rf_on)} Шлюзы для резерва: {'вкл' if rf_on else 'выкл'}", RsvCB(action="rf")) if has_gateway else None,
         ("🛟 Подключиться", RsvCB(action="connect")))
 
 
@@ -69,17 +69,17 @@ def card(*, ready: bool, rf_on: bool, has_gateway: bool, ret_immediate: bool, na
     строкой причины в карточке. Пульт у основы (`pult`: Telegram бота здесь,
     пользователи на резерве) — рычаг «вернуть без резерва» словами «↩️ Вернуть
     пользователей сюда» (те же проверки; нажатие при невозможном — всплывашка с
-    причиной) и «📤 Отдать Telegram резерву»; резерв на связи и обычный возврат
+    причиной) и «📤 Вернуть бота на «Beta»»; резерв на связи и обычный возврат
     возможен — вместо рычага обычный «↩️ Вернуть пользователей»."""
     return ui.rows(
         (f"🔀 Переезд на «{name}»", RsvCB(action="move")) if can_move else None,
         ("↩️ Вернуть пользователей", RsvCB(action="back")) if can_return else None,
         ("↩️ Вернуть пользователей сюда", RsvCB(action="force")) if pult and not can_return else None,
-        ("📤 Отдать Telegram резерву", RsvCB(action="pult_give")) if pult else None,
+        (f"📤 Вернуть бота на «{name}»", RsvCB(action="pult_give")) if pult else None,
         (f"⚠️ Вернуть без «{name}»", RsvCB(action="force")) if can_force and not pult else None,
         (f"↩️ Вернуть всё на «{name}»", RsvCB(action="evict")) if can_evict else None,
         (f"{_chk(ready)} Готов быть резервом", RsvCB(action="ready")),
-        (f"{_chk(rf_on)} Мои шлюзы для резерва", RsvCB(action="rfmine")) if has_gateway else None,
+        (f"{_chk(rf_on)} Шлюзы для резерва", RsvCB(action="rfmine")) if has_gateway else None,
         ("⏱ Возврат: сразу" if ret_immediate else "⏱ Возврат: по кнопке", RsvCB(action="ret")),
         ("🌐 DNS-запись", RsvCB(action="dns")),
         (f"🛰 Для «{name}»", RsvCB(action="role")) if self_admin else None,
@@ -149,8 +149,14 @@ def emergency(has_code: bool, peer_bot_url: str = "", peer_name: str = "") -> In
     return markup
 
 
+def code_message(email: bool) -> InlineKeyboardMarkup:
+    """Под сообщением с аварийным кодом: отправить на подключённый ящик (только при
+    настроенной почте) и «Скрыть»."""
+    return kc.append_hide_row(ui.rows(("✉️ Отправить на e-mail", RsvCB(action="code_mail")) if email else None))
+
+
 def confirm_new_code() -> InlineKeyboardMarkup:
-    return kc.confirm(RsvCB(action="emerg"), "🔄 Сменить", RsvCB(action="new_code_yes"))
+    return kc.confirm(RsvCB(action="emerg"), "🔄 Сменить код", RsvCB(action="new_code_yes"))
 
 
 def confirm_unpair() -> InlineKeyboardMarkup:

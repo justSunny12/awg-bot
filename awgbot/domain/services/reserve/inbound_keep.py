@@ -159,16 +159,16 @@ class ReserveInboundKeepMixin:
         if not livestep.mono_due(inn.get("keep_mono"), now, backoff.jitter(KEEP_RETRY_S)):
             return []
         self.rsv_update("rsv_in", keep_mono=now)
-        reason, name = str(inn.get("keep_why") or "клон не поднят"), self.reserve_peer_name()
+        reason, name = str(inn.get("keep_why") or "гостевой экземпляр не запущен"), self.reserve_peer_name()
         if self._primary_back_ok(inn):
             # основа жива и сказала это после срыва — пользователи к ней: запись она вернёт себе сама
             log.warning("резерв: клона нет, а «%s» на связи — приём кончаю, запись вернёт она", name)
-            return self._take_fail(f"{reason} — «{name}» на связи, пользователи возвращаются к ней", keep=False,
+            return self._take_fail(f"{reason} — «{name}» на связи, пользователи возвращаются на основной сервер", keep=False,
                                    rec_back=True)
         payload = self.__dict__.get("_rsvopen_payload")
         if not payload:
-            return self._take_fail(f"{reason} — открыть снова нечем: вход процесса открытия не сохранился "
-                                   "после перезапуска бота", keep=False)
+            return self._take_fail(f"{reason} — не удалось перезапустить сессию: параметры инициализации утеряны "
+                                   "при перезапуске бота", keep=False)
         if hasattr(self, "reserve_zone_shell_ensure"):
             self.reserve_zone_shell_ensure()
         n = int(inn.get("relaunch_n") or 0) + 1

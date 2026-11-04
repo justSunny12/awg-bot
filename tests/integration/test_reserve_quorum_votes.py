@@ -477,7 +477,7 @@ def test_the_card_text_carries_the_vote_block(lead):
     lead.reserve_quorum_leader_tick()
     text = card_text({**lead.reserve_card_data(), "dir_out": (True, "")})
     assert "🗳 Этот сервер видят 2 из 3 — пользователи переедут, если не увидят 2" in text, text
-    assert "«Beta» — видит · «GW1» — видит · «GW2» — молчит" in text, text
+    assert "«GW2» — молчит · «Beta» — видит · «GW1» — видит" in text, text     # не видящие — первыми (1.6)
 
 
 def test_the_card_says_why_the_vote_is_off(quo):

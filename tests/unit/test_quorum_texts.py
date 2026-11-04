@@ -38,7 +38,8 @@ def _card(**over) -> dict:
 def test_the_leader_line_says_how_many_see_it_and_the_threshold():
     lines = quorum_mine_lines(_card())
     assert lines[0] == "└ 🗳 Этот сервер видят 2 из 3 — пользователи переедут, если не увидят 2", lines
-    assert lines[1] == f"└ «Beta» — видит · «Шлюз 1» — видит · «Шлюз 2» — не видит с {CLOCK}", lines
+    # сначала те, кто не видит, потом видящие — в прежнем порядке
+    assert lines[1] == f"└ «Шлюз 2» — не видит с {CLOCK} · «Beta» — видит · «Шлюз 1» — видит", lines
 
 
 def test_a_silent_voter_is_never_shown_as_seeing():
@@ -63,15 +64,32 @@ def test_names_are_escaped():
 
 def test_the_voters_row_is_capped_and_says_how_many_are_left_out():
     """Строка голосующих — не больше VOTERS_SHOWN имён (предел карточки 4096), остальные —
-    хвостом « [+N]», а не молча."""
+    хвостом « [+N видит]» / « [+M не видит]» по отдельности (общее « [+N]» ничего не говорило),
+    а не молча; невидящие — в начале строки, так что за хвостом обычно видящие."""
     from awgbot.bot.texts.reserve.section.votes import VOTERS_SHOWN
     q = _card()
     q["mine"]["voters"] = [{"node": f"a{i}", "name": f"Шлюз {i}", "w": "see", "since": "", "age": 1, "silent": False}
                            for i in range(1, 15)]
     row = quorum_mine_lines(q)[1]
-    assert row.count("— видит") == VOTERS_SHOWN and row.endswith(f" [+{14 - VOTERS_SHOWN}]"), row
+    assert row.count("— видит") == VOTERS_SHOWN and row.endswith(f" [+{14 - VOTERS_SHOWN} видит]"), row
+    assert "не видит" not in row
     q["mine"]["voters"] = q["mine"]["voters"][:VOTERS_SHOWN]
     assert "[+" not in quorum_mine_lines(q)[1]
+
+
+def test_the_voters_tail_counts_the_unseeing_and_the_seeing_apart():
+    """Невидящих больше VOTERS_SHOWN: в строке они первыми, хвост — « [+N видит] [+M не видит]»;
+    только невидящие за хвостом — одна часть."""
+    from awgbot.bot.texts.reserve.section.votes import VOTERS_SHOWN
+    q = _card()
+    q["mine"]["voters"] = ([{"node": f"a{i}", "name": f"Шлюз {i}", "w": "uns", "since": SINCE, "age": 1, "silent": False}
+                            for i in range(1, VOTERS_SHOWN + 2)]
+                           + [{"node": "b", "name": "Beta", "w": "see", "since": "", "age": 1, "silent": False}])
+    row = quorum_mine_lines(q)[1]
+    assert row.count("не видит с") == VOTERS_SHOWN and "«Beta»" not in row, row
+    assert row.endswith(" [+1 видит] [+1 не видит]"), row
+    q["mine"]["voters"] = q["mine"]["voters"][:-1]
+    assert quorum_mine_lines(q)[1].endswith(" [+1 не видит]")
 
 
 def test_a_fenced_leader_line_names_the_episode_start():
@@ -87,7 +105,7 @@ def test_a_leftover_observe_flag_does_not_soften_the_fenced_line():
     q = _card(observe=True)
     q["mine"].update(role="fenced", y=1, fenced_since=SINCE)
     line = quorum_mine_lines(q)[0]
-    assert line.startswith("└ ⚠️ Без кворума") and "не отвечает пользователям" in line, line
+    assert line.startswith("└ ⚠️ Без кворума") and "не обрабатывает запросы пользователей" in line, line
 
 
 @pytest.mark.parametrize("y", [1, 0])
@@ -100,14 +118,14 @@ def test_with_v_1_the_card_says_only_the_second_server_votes_and_its_count(y):
     lines = quorum_mine_lines(q)
     text = "\n".join(lines)
     assert "Без кворума" not in text and "переедут, если" not in text, text
-    assert "автоматического нет" in lines[0] and "«Beta»" in lines[0], lines
+    assert "автоматический переезд недоступен" in lines[0] and "«Beta»" in lines[0], lines
     assert f"{y} из 1" in text, f"v = 1: карточка не говорит «{y} из 1»: {lines}"
 
 
 def test_the_bot_on_the_reserve_line_comes_from_its_count():
     q = _card()
     q["mine"].update(leader_here=False, y=3, from_guest=True)
-    assert quorum_mine_lines(q)[0] == "└ 🗳 Бот на «Beta» видят 3 из 3"
+    assert quorum_mine_lines(q)[0] == "└ 🗳 Гостевой экземпляр на «Beta» видят 3 из 3"
 
 
 def test_without_a_count_the_line_says_voters_and_threshold():
@@ -118,16 +136,31 @@ def test_without_a_count_the_line_says_voters_and_threshold():
 
 
 @pytest.mark.parametrize("code, want", [
-    ("no_gateways", "у этого сервера нет шлюзов с агентом v4.2.0 — переезд кнопкой и по аварийному коду, автоматического нет"),
+    ("no_gateways", "у этого сервера нет шлюзов с агентом v4.2.0 — переезд кнопкой и по аварийному коду, автоматический переезд недоступен"),
     ("not_acked", "состав голосующих ждёт подтверждения"),
     ("keys", "ключи голосования ещё не у всех"),
-    ("timing:up_seconds 50 < …", "цифры времени не сходятся (раздел quorum в reserve.yaml)"),
+    ("timing:up_seconds 50 < …", "настройки резервирования не сходятся (раздел quorum в reserve.yaml)"),
     ("overlap:169.254.0.0/16", "блок зондов <code>169.254.88.0/24</code> пересекается с <code>169.254.0.0/16</code>"),
     ("slot:61", "«Шлюз 61»: номер слота больше 58 — в голосовании не участвует"),
 ])
 def test_why_the_vote_is_off_is_said_by_the_first_reason(code, want):
     lines = quorum_mine_lines(_card(on=False, why=[code, "no_gateways"]))
     assert lines == [f"└ 🗳 Голосование не включено: {want}"], lines
+
+
+def test_the_code_needed_notices_do_not_repeat_a_plain_quorum_off():
+    """Причина без кода (rn_off_why → «кворум отключён») не повторяется в скобках:
+    «а кворум отключён — …», а не «а кворум отключён (кворум отключён)»; причина с кодом — в скобках."""
+    from awgbot.domain.notices import reserve_quorum as rq
+    from awgbot.domain.services.reserve.codewin import rn_off_why
+    plain = rn_off_why([])
+    assert plain == rq.OFF_PLAIN == "кворум отключён"
+    a = rq.quorum_code_needed_reserve("Alpha", "2026-11-04T11:40:00+05:00", 0, 0, 0, True, plain)
+    b = rq.quorum_code_needed_primary("Alpha", "Beta", "2026-11-04T11:40:00+05:00", 0, 0, 0, plain)
+    assert "(кворум" not in a and "а кворум отключён — принять" in a, a
+    assert "(кворум" not in b and "кворум отключён\n" in b, b
+    c = rq.quorum_code_needed_reserve("Alpha", "2026-11-04T11:40:00+05:00", 0, 0, 0, True, "состав кворума не подтверждён")
+    assert "а кворум отключён (состав кворума не подтверждён) — " in c, c
 
 
 def test_an_overlap_subnet_is_escaped():
@@ -197,7 +230,7 @@ def test_the_panel_line_before_any_reply():
 def test_the_panel_line_escapes_the_server_name_and_is_empty_without_the_section():
     assert "<b>" not in quorum_panel_line({"name": "<b>A</b>", "w": "see"})
     assert quorum_panel_line({}) == ""
-    assert quorum_panel_line({"w": "see"}) == "🗳 Голосую о «сервер AWG»: вижу"
+    assert quorum_panel_line({"w": "see"}) == "🗳 Голосую о сервере AWG: вижу"
 
 
 def test_the_panel_shows_the_line_from_the_status():

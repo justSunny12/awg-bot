@@ -167,7 +167,7 @@ def test_the_peer_name_passes_through_the_check_and_names_the_texts():
     assert gwcfg.check_reserve(_sec())["peer_name"] == ""
     lines = panel.reserve_tg_lines({"name": "Alpha", "peer_name": "Gamma", "tg_via": True,
                                     "tg_since": "2026-10-31T14:05:00+03:00", "uplink_ip": "203.0.113.10"})
-    assert lines[0].startswith("📨 Telegram — через «Gamma»: аплинк до «Alpha» молчит с "), lines
+    assert lines[0].startswith("📨 Telegram — через «Gamma»: прямой канал к «Alpha» недоступен с "), lines
     assert "на «Gamma» он не переключится" in lines[1], lines
     without = panel.reserve_tg_lines({"name": "Alpha", "tg_via": True, "tg_since": ""})
     assert without[0].startswith("📨 Telegram — через резерв:"), without

@@ -206,7 +206,7 @@ def test_v_2_to_1_with_own_see_closes_the_decision_window(box):
 
 # ── запасной сигнал по линку пары ───────────────────────────────────────────
 
-REASONS = [("timing:up_seconds 50 < …", "цифры времени"), ("overlap:10.0.0.0/8", "блок зондов"),
+REASONS = [("timing:up_seconds 50 < …", "параметров резервирования"), ("overlap:10.0.0.0/8", "подсеть адресов зондов"),
            ("slot:61", "слот"), ("not_acked", "состав"), ("keys", "ключи")]
 
 
@@ -239,7 +239,7 @@ def test_without_her_quorum_the_window_opens_after_t_up_of_no_link_and_names_the
     assert set(by) == {ADMIN, PEER_ADMIN}, f"{why}: Т-К21д не обоим админам: {[(n.tg_id, n.text) for n in notes(acts)]}"
     assert by[PEER_ADMIN].force_sound and by[PEER_ADMIN].keyboard == "peer_code"
     for n in by.values():
-        assert "голосование о" in n.text and "не включено" in n.text, n.text
+        assert "кворум отключён" in n.text, n.text
         assert word in n.text, f"{why}: в Т-К21д нет причины «{word}»: {n.text}"
     assert not notes(_watch(box, 10 * T_UP)), f"{why}: Т-К21д повторяется в том же эпизоде"
 
@@ -327,4 +327,4 @@ def test_the_link_window_without_a_peer_admin_tells_only_mine(box):
     _link_down(box)
     ns = notes(_watch(box, T_UP + 5))
     assert [n.tg_id for n in ns] == [ADMIN], [(n.tg_id, n.text) for n in ns]
-    assert "некуда" in ns[0].text, ns[0].text
+    assert "написать ему не могу" in ns[0].text, ns[0].text

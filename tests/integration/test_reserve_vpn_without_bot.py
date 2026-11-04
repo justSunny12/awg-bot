@@ -79,7 +79,7 @@ def test_a_bot_failure_after_the_record_moved_keeps_the_zone(host, monkeypatch, 
     assert "VPN работает" in text and why in text and "повторяю раз в минуту" in text, text
     assert svc.reserve_st_body()["in_tg"] == "wait"
     card = card_text(svc.reserve_card_data())
-    assert "└ ⚠️ гостевой бот не отвечает в Telegram" in card and why in card, card
+    assert "└ ⚠️ гостевой экземпляр не отвечает в Telegram" in card and why in card, card
 
 
 def test_without_the_record_change_a_bot_failure_still_ends_the_hosting(host, monkeypatch):

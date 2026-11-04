@@ -195,7 +195,7 @@ async def test_a_pasted_invitation_is_deleted_and_the_dialog_puts_cancel_first(s
     await acc_h.token_received(msg, services, state)
     assert msg.deleted, "строка приглашения с закрытым ключом осталась в чате"
     text, markup = msg.sent[-1][1], msg.sent[-1][2]
-    assert "Стать резервом" in text and f"<code>{rc.HOST_B}</code>" in text
+    assert "Стать резервом" in text and f"<code>{rc.HOST_B}:47101</code>" in text    # адрес с портом линка
     assert _labels(markup)[0] == "⬅️ Отмена", "«Отмена» не первая в диалоге с последствиями"
     assert _labels(markup)[-1] == "🛟 Подключиться"
 
@@ -219,7 +219,7 @@ async def test_an_invitation_of_a_server_below_4_2_0_is_refused_on_the_screen_be
     await acc_h.token_received(msg, services, state)
     assert msg.deleted, "отвергнутая строка с закрытым ключом осталась в чате"
     text, markup = msg.sent[-1][1], msg.sent[-1][2]
-    assert "v4.1.1" in text and "4.2.0 или новее у обоих серверов" in text, text
+    assert "v4.1.1" in text and "оба сервера должны использовать версию не ниже v4.2.0" in text, text
     assert "🛟 Подключиться" not in _labels(markup), "к серверу ниже 4.2.0 предложено подключиться"
 
 
@@ -355,6 +355,45 @@ async def test_show_code_sends_it_once_and_deletes_it_after_ten_minutes(services
     assert ev.CODE_TTL in slept and ev.CODE_TTL == 600, slept
     assert [r for r in fake_bot.records if r[0] == "delete_message"], "сообщение с кодом не удалено"
     assert services.reserve_keys()["code_shown_at"], "время показа не записано"
+
+
+async def test_the_code_message_offers_mail_only_with_a_mailbox_and_the_button_sends_it(services, paired, fake_bot,
+                                                                                         monkeypatch):
+    """Под сообщением с кодом «✉️ Отправить на e-mail» — только при подключённом ящике;
+    нажатие шлёт письмо на сам ящик, сообщение дописывается адресом, кнопка снимается."""
+    from awgbot.infra import mail
+    real_sleep = asyncio.sleep
+    monkeypatch.setattr(asyncio, "sleep", lambda *a, **kw: real_sleep(0))
+    markups: list = []
+    orig_send = fake_bot.send_message
+
+    async def send(chat_id, text, reply_markup=None, **kw):
+        markups.append(reply_markup)
+        return await orig_send(chat_id, text, reply_markup=reply_markup, **kw)
+    monkeypatch.setattr(fake_bot, "send_message", send)
+    await card_h.show_code(_cb(_nav(fake_bot), fake_bot), services)
+    assert _labels(markups[-1]) == ["Скрыть"], "без ящика кнопки почты нет"
+    acc = mail.MailAccount("admin@example.org", "DUMMY", "imap.example.org", 993, "smtp.example.org", 587)
+    monkeypatch.setattr(services, "email_account", lambda: acc)
+    letters: list[tuple] = []
+    monkeypatch.setattr(mail, "send_mail", lambda a, to, subj, body, **kw: letters.append((a.login, to, subj, body)))
+    await card_h.show_code(_cb(_nav(fake_bot), fake_bot), services)
+    assert _labels(markups[-1]) == ["✉️ Отправить на e-mail", "Скрыть"]
+    code = services.reserve_code()
+    mcb = _cb(_nav(fake_bot), fake_bot)
+    await card_h.code_mail(mcb, services)
+    assert letters and letters[0][:2] == ("admin@example.org", "admin@example.org") and code in letters[0][3], letters
+    kind, edited, markup = mcb.message.sent[-1]
+    assert kind == "edit_text" and code in edited, (kind, edited)
+    assert "✉️ Аварийный код отправлен на <code>admin@example.org</code>" in edited, edited
+    assert _labels(markup) == ["Скрыть"]
+    # письмо не ушло — всплывашка с причиной, сообщение не тронуто
+    def boom(*a, **kw):
+        raise mail.MailError("письмо не ушло: smtp.example.org отказал")
+    monkeypatch.setattr(mail, "send_mail", boom)
+    mcb2 = _cb(_nav(fake_bot), fake_bot)
+    await card_h.code_mail(mcb2, services)
+    assert mcb2.answers and "не ушло" in mcb2.answers[-1][0] and not mcb2.message.sent, (mcb2.answers, mcb2.message.sent)
 
 
 async def test_new_code_asks_first_and_changes_nothing_yet(services, paired, fake_bot):

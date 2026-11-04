@@ -135,19 +135,19 @@ def check(meta: dict | None, *, admin_id_copy: str = "", chat: bool = True) -> s
     чужую копию не восстанавливают (chat=False — терминал, можно)."""
     from awgbot.infra import awglock
     if not meta:
-        return "не похоже на бэкап сервера AWG"
+        return "не похоже на резервную копию сервера AWG"
     if str(meta.get("role") or "") == "gw":
-        return "это бэкап шлюза прежних версий — шлюзы теперь восстанавливаются из бэкапа сервера AWG"
+        return "это резервная копия шлюза прежних версий — шлюзы теперь восстанавливаются из резервной копии сервера AWG"
     ver = str(meta.get("version") or "")
     if meta.get("schema") != SCHEMA or compat.below_floor(ver):
         if not ver:
-            return f"бэкап снят версией до {compat.COMPAT_FLOOR} — восстановиться из него не получится"
-        return f"бэкап снят версией {ver} — бэкапы версий до {compat.COMPAT_FLOOR} не применяются"
+            return f"резервная копия снята версией до {compat.COMPAT_FLOOR} — восстановиться из неё не получится"
+        return f"резервная копия снята версией {ver} — резервные копии версий до {compat.COMPAT_FLOOR} не применяются"
     # версия бэкапа другая (новее или старше кода) — не отказ: восстановление
     # переходит на выпуск бэкапа (domain/fleet/restore.py)
     gen = meta.get("awg_gen")
     if isinstance(gen, int) and gen and awglock.generation() and gen != awglock.generation():
-        return "бэкап снят на другом поколении AmneziaWG — восстановление из него невозможно"
+        return "резервная копия снята на другом поколении AmneziaWG — восстановление из него невозможно"
     if chat and admin_id_copy and str(admin_id_copy) != str(config.ADMIN_ID):
-        return "бэкап другого админа — из чата его не восстановить; на сервере: sudo awg-bot restore <файл>"
+        return "резервная копия другого администратора — из чата её не восстановить; на сервере: sudo awg-bot restore <файл>"
     return ""

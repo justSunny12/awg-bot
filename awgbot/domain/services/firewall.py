@@ -146,7 +146,7 @@ class FirewallMixin:
         from awgbot.infra import nftguard
         cur = [v for v in (settings.get("app.firewall.ssh_allow", []) or []) if v != entry]
         if not cur and nftguard.enabled():
-            raise ServiceError("это последний адрес: без адресов фильтр открывает SSH снаружи всем. "
+            raise ServiceError("это последний адрес: без адресов фильтр открывает SSH наружу всем. "
                                "Сначала выключи «✅ Фильтр снаружи»")
         with self._own_settings_change():
             settings.set_value("app.firewall.ssh_allow", cur)
@@ -297,9 +297,10 @@ class FirewallMixin:
                     ", ".join(bad))
         names = ", ".join(f"<code>{html.escape(n)}</code>" for n in bad[:5]) + (f" [+{len(bad) - 5}]" if len(bad) > 5 else "")
         return [Notification(config.ADMIN_ID,
-                             f"⚠️ Фильтр снаружи: имена из списка адресов не резолвятся ({names}), прежних адресов нет — "
-                             "SSH снаружи открыт всем (только по SSH-ключам). Проверь DNS сервера или добавь адрес: "
-                             "⚙️ Настройки → 🛡 SSH-доступ → «➕ Адрес»", critical=False)]
+                             f"⚠️ Фильтр снаружи: доменные имена из списка адресов не резолвятся ({names}), сохранённых "
+                             "IP-адресов нет.\nSSH-доступ временно открыт для любых адресов (вход только по ключам). "
+                             "Проверь DNS сервера или добавь адрес: ⚙️ Настройки → 🛡 SSH-доступ → «➕ Адрес»",
+                             critical=False)]
 
     def retire_legacy_ssh_gate(self) -> None:
         """Разово снять прежние ворота (цепочка AWGBOT_SSH + PostUp-страж) —

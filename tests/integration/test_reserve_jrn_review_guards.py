@@ -198,7 +198,7 @@ def test_the_terminal_guard_bypass_lets_the_update_go_and_says_so(mv, monkeypatc
     mv.svc.rsv_update("rsv_out", await_merge=True)
     monkeypatch.delenv("AWG_RESERVE_IGNORE_WAIT", raising=False)
     code, out, _err = _busy(capsys)
-    assert code == 3 and "если не вернётся — удали пару" in out, f"нет подсказки выхода: {out!r}"
+    assert code == 3 and "(либо отмени ожидание)" in out, f"нет подсказки выхода: {out!r}"
     assert "обновить немедленно — AWG_RESERVE_IGNORE_WAIT=1" in out, f"нет подсказки обхода: {out!r}"
     monkeypatch.setenv("AWG_RESERVE_IGNORE_WAIT", "1")
     code, out, err = _busy(capsys)

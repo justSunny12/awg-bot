@@ -213,8 +213,9 @@ def test_the_old_refusal_lands_in_the_invitation_and_goes_with_the_updated_accep
     out = services.reserve_pair_hello(acc.hello(version="4.1.1", caps=[]))
     assert out.get("why") == "old" and out["st"]["old_peer_version"] == "4.1.1"
     tail = pt.invite_tail(services.reserve_invite())
-    assert tail == ("⛔ Подключался «Beta» на v4.1.1 — для резерва нужен 4.2.0 или новее у обоих серверов: "
-                    "пусть админ обновит его бот и подключится заново, приглашение ждёт"), tail
+    assert tail == ("⛔ Сервер «Beta» пытался подключиться с версии <b>v4.1.1</b>. Для резервирования оба сервера "
+                    "должны использовать версию не ниже v4.2.0.\n\n"
+                    "Попроси администратора обновить приложение и повторить попытку. Ссылка-приглашение остаётся активной"), tail
     assert services.reserve_pair_hello(acc.hello())["ok"]
     st = services.reserve_invite()
     assert "old_peer_version" not in st and "⛔" not in pt.invite_tail(st), pt.invite_tail(st)
@@ -223,14 +224,14 @@ def test_the_old_refusal_lands_in_the_invitation_and_goes_with_the_updated_accep
 def test_the_old_refusal_says_what_to_do_and_that_the_invitation_waits():
     from awgbot.bot.texts.reserve import notices as rnt
     text = rnt.refused_by_inviter("old")
-    assert "4.2.0" in text and "приглашение ждёт" in text and not text.endswith("."), text
+    assert "4.2.0" in text and "Ссылка-приглашение остаётся активной" in text and not text.endswith("."), text
 
 
 @pytest.mark.parametrize("version", ["4.1.1", "4.0.2", "4.1.9.3"])
 def test_an_invitation_from_a_server_below_4_2_0_is_refused_before_connecting(services, rsv, version):
     """Принявший 4.2.0, приглашение от сервера ниже 4.2.0 — отказ ещё до
     подключения (ServiceError с версией и требованием), а не пара без кворума."""
-    with pytest.raises(ServiceError, match="для резерва нужен 4.2.0 или новее у обоих серверов") as e:
+    with pytest.raises(ServiceError, match="оба сервера должны использовать версию не ниже v4.2.0") as e:
         services.reserve_accept_parse(Inviter(version=version).token)
     assert f"v{version}" in str(e.value), str(e.value)
 
@@ -240,7 +241,7 @@ def test_the_version_refusal_comes_before_the_readiness_and_generation_checks(se
     «обновитесь до одного поколения AWG» ему не помогут."""
     settings.set_value("reserve.ready", False)
     monkeypatch.setattr(services, "_awg_generation", lambda: 1)
-    with pytest.raises(ServiceError, match="4.2.0 или новее"):
+    with pytest.raises(ServiceError, match=r"не ниже v4\.2\.0"):
         services.reserve_accept_parse(Inviter(version="4.1.1", awg_gen=2).token)
 
 

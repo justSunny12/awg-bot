@@ -140,7 +140,7 @@ def test_own_permanent_blindness_with_the_primary_on_the_link_is_not_her_death(b
     assert peer.get("blind_since"), f"карточка не знает о слепом зонде: {peer}"
     from awgbot.bot.texts.reserve.section import quorum_peer_lines
     line = "\n".join(quorum_peer_lines(box.s.reserve_quorum_card()))
-    assert "Зонд этого сервера" in line and "не работает" in line, line
+    assert "Зонд к «" in line and "не работает" in line, line
 
 
 def test_a_short_blindness_is_not_shown_and_does_not_count(box, monkeypatch):
@@ -166,7 +166,7 @@ def test_a_dead_primary_and_a_blind_probe_open_the_window_by_the_link(box, monke
     assert any("зонд резерва к серверу не работает" in t for t in to_peer), to_peer
     # админу резерва зонд — его собственный: как в карточке, а не «зонд резерва»
     name = box.s.reserve_peer_name()
-    assert mine and all(f"зонд этого сервера к «{name}» не работает" in t for t in mine), mine
+    assert mine and all(f"локальный зонд проверки «{name}» недоступен" in t for t in mine), mine
     assert not any("зонд резерва" in t for t in mine), mine
 
 

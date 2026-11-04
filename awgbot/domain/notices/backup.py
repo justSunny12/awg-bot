@@ -52,21 +52,21 @@ def _when(iso: str) -> str:
 
 # ── раздел «💾 Бэкапы» ───────────────────────────────────────────────────────
 
-GATEWAYS_IN_BACKUP = "🛰 Конфигурации шлюзов тоже попадают в бэкап: параметры и ключи линков, настройки ботов"
+GATEWAYS_IN_BACKUP = "🛰 Конфигурации шлюзов тоже попадают в резервную копию: параметры и ключи линков, настройки ботов"
 
 
 def no_phrase_line(has_slots: bool) -> str:
     keys = "ключи линков шлюзов" if has_slots else "ключи устройств"
-    return f"⚠️ Без ключевой фразы бэкап не сделать: в нём {keys} — задай фразу в «🔐 Шифрование»"
+    return f"⚠️ Без ключевой фразы резервную копию не сделать: в ней {keys} — задай фразу в «🔐 Шифрование»"
 
 
 def slot_backup_line(ref: str, state: str, seen_iso: str = "", keep_at: str = "") -> str:
     """Строка слота в разделе — только когда есть что сказать; state —
     offline | outdated | waiting (gwchannel: gwkeep_line_state)."""
     if state == "offline":
-        return f"🟡 {ref} не на связи с {_date(seen_iso)} — в бэкапе его настройки на {_date(keep_at)}"
+        return f"🟡 {ref} не на связи с {_date(seen_iso)} — в резервной копии его настройки на {_date(keep_at)}"
     if state == "outdated":
-        return f"⚠️ {ref}: настройки бота шлюза не сохраняются в бэкап — обнови агент шлюза"
+        return f"⚠️ {ref}: настройки бота шлюза не сохраняются в резервную копию — обнови агент шлюза"
     if state == "waiting":
         return f"🟡 {ref}: настройки бота шлюза ещё не приходили — придут, когда шлюз выйдет на связь"
     return ""
@@ -74,18 +74,18 @@ def slot_backup_line(ref: str, state: str, seen_iso: str = "", keep_at: str = ""
 
 def missed_backup_notice(has_slots: bool) -> str:
     keys = "ключи линков шлюзов" if has_slots else "ключи устройств"
-    return (f"⚠️ Плановый бэкап сервера AWG не сделан: ключевая фраза шифрования не задана, а в бэкапе "
+    return (f"⚠️ Плановая резервная копия сервера AWG не сделана: ключевая фраза шифрования не задана, а в резервной копии "
             f"{keys}. Задай ключевую фразу в «💾 Бэкапы» → «🔐 Шифрование»")
 
 
-REKEY_WAIT_TOAST = "Идёт смена ключей линка {name} — бэкап сниму сразу после неё"
-JOIN_WAIT_TOAST = "Идёт подключение шлюза {name} — бэкап сниму сразу после него"
+REKEY_WAIT_TOAST = "Идёт смена ключей линка {name} — резервную копию сниму сразу после неё"
+JOIN_WAIT_TOAST = "Идёт подключение шлюза {name} — резервную копию сниму сразу после него"
 
 
 def backup_refused_notice(reason: str) -> str:
     """Бэкап по расписанию или по событию: Telegram отверг сам файл — повтор
     того же впустую, человеку — что делать."""
-    return (f"⚠️ Бэкап сервера AWG не отправлен: {_e(reason)} — попробуй вручную в «⚙️ Настройки → 💾 Бэкапы» "
+    return (f"⚠️ Резервная копия сервера AWG не отправлена: {_e(reason)} — попробуй вручную в «⚙️ Настройки → 💾 Бэкапы» "
             "или забери из терминала: <code>sudo awg-bot backup</code>")
 
 
@@ -128,7 +128,8 @@ def event_tail(why: list[dict]) -> str:
 CAPTION_MAX = 1024              # подпись файла в Telegram — не длиннее (видимый текст)
 
 
-PARTIAL_LINE = "⚠️ Бэкап неполный: база бота не снялась, причина — в журнале бота. Последний полный бэкап на сервере сохранён"
+PARTIAL_LINE = ("⚠️ <b>Резервная копия неполная:</b> база данных бота не выгружена, причина — в журнале бота. На сервере сохранён "
+                "предыдущий полный архив")
 
 
 def backup_caption(created: str, refs: list[str], offline: list[tuple[str, str, str]], why_tail: str = "",
@@ -138,7 +139,7 @@ def backup_caption(created: str, refs: list[str], offline: list[tuple[str, str, 
     Подпись файла в Telegram — не длиннее limit: шлюзы и строки «не на
     связи» — сколько влезает, остальное — «и ещё N». partial — в копии нет
     базы (снимок не снялся): строка-предупреждение сразу под заголовком."""
-    head = f"💾 Бэкап сервера AWG от {created}" + (f" — {why_tail}" if why_tail else "")
+    head = f"💾 Резервная копия сервера AWG от {created}" + (f" — {why_tail}" if why_tail else "")
     if partial:
         head += "\n" + PARTIAL_LINE
 
@@ -149,7 +150,7 @@ def backup_caption(created: str, refs: list[str], offline: list[tuple[str, str, 
     least = _refs_line(refs, 0) if refs else ""
     off: list[str] = []
     for i, (ref, seen, keep_at) in enumerate(offline):
-        line = f"🟡 {ref} не на связи с {_date(seen)} — его настройки в бэкапе на {_date(keep_at)}"
+        line = f"🟡 {ref} не на связи с {_date(seen)} — его настройки в резервной копии на {_date(keep_at)}"
         rest = len(offline) - i - 1
         if size(least, off + [line] + ([_offline_more(rest)] if rest else [])) <= limit:
             off.append(line)
@@ -175,10 +176,10 @@ def _refs_line(refs: list[str], k: int) -> str:
 
 def _offline_more(n: int) -> str:
     from awgbot.util.textfmt import plural_ru
-    return f"🟡 И ещё {n} {plural_ru(n, 'шлюз', 'шлюза', 'шлюзов')} не на связи — их настройки в бэкапе на дату последней связи"
+    return f"🟡 И ещё {n} {plural_ru(n, 'шлюз', 'шлюза', 'шлюзов')} не на связи — их настройки в резервной копии на дату последней связи"
 
 
-MAIL_BODY = ("Бэкап сервера AWG во вложении — вместе с шлюзами. Восстановить: пришли файл боту сервера AWG "
+MAIL_BODY = ("Резервная копия сервера AWG во вложении — вместе с шлюзами. Восстановить: пришли файл боту сервера AWG "
              "или выполни на сервере sudo awg-bot restore <файл>")
 
 
@@ -186,11 +187,11 @@ MAIL_BODY = ("Бэкап сервера AWG во вложении — вмест
 
 _PLAN_CASE = {
     "same": "без изменений",
-    "rekeyed": "ключи линка новее бэкапа: останутся текущие",
-    "device": "в бэкапе другое устройство: связь останется текущей",
+    "rekeyed": "ключи линка новее резервной копии: останутся текущие",
+    "device": "в резервной копии другое устройство: связь останется текущей",
     "twin": "устройство в переезде: останется текущим",
-    "removed": "снят после бэкапа: бэкап применяется только к текущим шлюзам",
-    "added": "добавлен после бэкапа: останется как есть",
+    "removed": "снят после создания резервной копии: она применяется только к текущим шлюзам",
+    "added": "добавлен после создания резервной копии: останется как есть",
 }
 
 
@@ -202,50 +203,50 @@ def _plan_ref(s, bot_username: str) -> str:
 def restore_plan(plan, *, bot_username: str = "") -> str:
     """Вопрос перед восстановлением: что вернётся, что останется текущим,
     что будет со шлюзами."""
-    parts = [f"♻️ Восстановить бэкап от {_when(plan.created_at)}?"]
+    parts = [f"♻️ Восстановить резервную копию от {_when(plan.created_at)}?"]
     from awgbot.domain.fleet import restore as fleet_restore
     version = fleet_restore.version_lines(getattr(plan, "release", None) or {})
     if plan.line == "same":
         parts[0] += ("\nВернутся к тому моменту настройки профилей, устройств и сервера; профили и "
-                     "устройства, созданные или удалённые после бэкапа, останутся как сейчас.\n"
+                     "устройства, созданные или удалённые после создания резервной копии, останутся как сейчас.\n"
                      "Статистика расхода трафика сохранится.")
         parts.append("Не откатятся: сроки и блокировки — истёкшее и заблокированное останется таким; "
                      "бонусы и отметки сброса трафика")
     elif plan.line == "clean":
-        parts.append("🆕 Сервер AWG новый: всё — из бэкапа, включая ключ сервера, порт и подсеть пользователей, — "
+        parts.append("🆕 Сервер AWG новый: всё — из резервной копии, включая ключ сервера, порт и подсеть пользователей, — "
                      "устройства и шлюзы подключатся со своими прежними конфигами")
     elif plan.line == "unreadable":
         kept = [_plan_ref(s, "") for s in plan.slots if s.case not in ("removed", "restored")]
-        text = "⚠️ Текущая база не читается — сопоставлять не с чем: всё возьму из бэкапа"
+        text = "⚠️ Текущая база не читается — сопоставлять не с чем: всё возьму из резервной копии"
         if kept:
             text += f". Шлюзы — по файлам линков на сервере: {', '.join(kept)} останутся на текущих ключах"
             first = plan.slot(1)
             if plan.first_slot_back and first is not None:
-                text += (f"; {_plan_ref(first, '')} мог быть снят после бэкапа — тогда он вернётся, "
+                text += (f"; {_plan_ref(first, '')} мог быть снят после создания резервной копии — тогда он вернётся, "
                          "сними его снова")
         parts.append(text)
     else:
         clients, devices = plan.replaced
         what = " и ".join(x for x in (f"профили ({clients})" if clients else "",
                                        f"устройства ({devices})" if devices else "") if x)
-        parts.append(f"⚠️ Бэкап снят на другом сервере: текущие {what} будут удалены и потеряют доступ, их место "
-                     "займут профили и устройства из бэкапа. Шлюзы этого сервера останутся как есть")
+        parts.append(f"⚠️ Резервная копия снята на другом сервере: текущие {what} будут удалены и потеряют доступ, их место "
+                     "займут профили и устройства из резервной копии. Шлюзы этого сервера останутся как есть")
     if plan.line != "same" and plan.expired_now:
-        parts.append(f"Подписки, истёкшие после бэкапа ({plan.expired_now}), сразу станут истёкшими — "
+        parts.append(f"Подписки, истёкшие после создания резервной копии ({plan.expired_now}), сразу станут истёкшими — "
                      "доступа у них не будет ни минуты")
     if plan.empty and plan.copy_slots():
         refs = ", ".join(_plan_ref(s, bot_username) for s in plan.slots if s.case == "restored")
         host = plan.host_copy or plan.host_cur
-        parts.append(f"🛰 Шлюзы из бэкапа вернутся: {refs}. Они найдут сервер по адресу <code>{_e(host)}</code> — "
+        parts.append(f"🛰 Шлюзы из резервной копии вернутся: {refs}. Они найдут сервер по адресу <code>{_e(host)}</code> — "
                      "если сервер AWG переехал, этот адрес должен вести сюда. Линки поднимутся, если ключи на "
-                     "шлюзах те же, что в бэкапе: после восстановления проверю каждый")
+                     "шлюзах те же, что в резервной копии: после восстановления проверю каждый")
     elif plan.line != "unreadable" and plan.slots:
         lines = ["🛰 Шлюзы — связь с сервером AWG останется текущей:"]
         lines += [f"• {_plan_ref(s, bot_username)} — {_PLAN_CASE.get(s.case, '')}" for s in plan.slots]
-        lines.append("Настройки ботов шлюзов из бэкапа предложу в их чатах при расхождении с текущими")
+        lines.append("Настройки ботов шлюзов из резервной копии предложу в их чатах при расхождении с текущими")
         parts.append("\n".join(lines))
     if plan.host_copy and plan.host_cur and plan.host_copy != plan.host_cur:
-        parts.append(f"⚠️ В бэкапе адрес сервера <code>{_e(plan.host_copy)}</code>, сейчас — "
+        parts.append(f"⚠️ В резервной копии адрес сервера <code>{_e(plan.host_copy)}</code>, сейчас — "
                      f"<code>{_e(plan.host_cur)}</code>. Устройства и шлюзы ищут сервер по прежнему: пока он "
                      "не ведёт сюда, они не подключатся. Шлюзам новый адрес придёт сам, как только они выйдут "
                      "на связь; устройствам — только с перевыпущенным конфигом")
@@ -260,16 +261,16 @@ def restore_plan(plan, *, bot_username: str = "") -> str:
 
 _DONE_CASE = {
     "rekeyed": "ключи линка оставлены текущие",
-    "device": "в бэкапе было другое устройство — связь оставлена текущей",
+    "device": "в резервной копии было другое устройство — связь оставлена текущей",
     "twin": "устройство в переезде — оставлено текущим",
-    "added": "добавлен после бэкапа — оставлен как есть",
-    "restored": "восстановлен из бэкапа",
+    "added": "добавлен после создания резервной копии — оставлен как есть",
+    "restored": "восстановлен из резервной копии",
 }
 WAITING = "🟡 жду выхода на связь"
 
 
 LOST_SHOWN = 5
-LOST_TITLE = "⚠️ Не восстановлено из бэкапа"
+LOST_TITLE = "⚠️ Не восстановлено из резервной копии"
 
 
 def restore_lost_rows(lost: list, bot_username: str = "") -> list[str]:
@@ -281,7 +282,7 @@ def restore_lost_rows(lost: list, bot_username: str = "") -> list[str]:
 def restore_report(created_at: str, report: dict, *, bot_username: str = "", snap: str = "") -> str:
     """Отчёт админу после восстановления: итог по каждому шлюзу и
     устройства, которые не встали (пять и «и ещё N» — ссылкой на снимок snap)."""
-    head = f"✅ Восстановлено из бэкапа от {_when(created_at)}"
+    head = f"✅ Восстановлено из резервной копии от {_when(created_at)}"
     slots = report.get("slots") or []
     lines = []
     for s in slots:
@@ -291,7 +292,7 @@ def restore_report(created_at: str, report: dict, *, bot_username: str = "", sna
                      bot_username=bot_username)
         if case == "removed":
             dev = gw_ref(s.get("name", ""))
-            lines.append(f"• {ref} — снят после бэкапа, бэкап к нему не применён; устройство {dev} осталось в "
+            lines.append(f"• {ref} — снят после создания резервной копии, она к нему не применена; устройство {dev} осталось в "
                          "твоём профиле — удали его, если не нужно")
             continue
         tail = " · ".join(x for x in (_DONE_CASE.get(case, ""), WAITING) if x)
@@ -308,7 +309,7 @@ def restore_report(created_at: str, report: dict, *, bot_username: str = "", sna
             rows.append(more_line(rest, bot_username, snap) if snap else f"… и ещё {rest}")
         parts.append("\n".join(rows))
     if any(str(s.get("case")) != "removed" for s in slots):
-        parts.append("Свои списки шлюзов: добавленное после бэкапа сохранится, удалённое — вернётся")
+        parts.append("Свои списки шлюзов: добавленное после создания резервной копии сохранится, удалённое — вернётся")
     return "\n\n".join(parts)
 
 
@@ -331,7 +332,7 @@ def gateway_not_back(ref: str, *, empty: bool, link_if: str = "", bot: dict | No
     if empty:
         # пустой сервер после восстановления: путь — «🔁 Настроить заново»
         return (f"⚠️ {ref} не вышел на связь за {RESTORE_WAIT_MIN} минут после восстановления. Если на шлюзе "
-                "ключи линка новее бэкапа — подключи его заново: карточка шлюза → «✏️ Изменить» → "
+                "ключи линка новее резервной копии — подключи его заново: карточка шлюза → «✏️ Изменить» → "
                 "«🔁 Заменить» → «🔁 Настроить заново»")
     return (f"⚠️ {ref} не вышел на связь за {RESTORE_WAIT_MIN} минут после восстановления — связь с ним не "
             f"менялась, загляни в «🩺 Здоровье» в чате {chat_ref(bot)}")

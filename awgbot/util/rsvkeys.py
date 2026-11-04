@@ -69,7 +69,7 @@ def new_master() -> bytes:
 def box_key(m: bytes) -> bytes:
     """32-байтный ключ SecretBox из `M`."""
     if len(m) != M_LEN:
-        raise ValueError(f"главный ключ — {M_LEN} байт")
+        raise ValueError(f"мастер-ключ — {M_LEN} байт")
     return hashlib.blake2b(bytes(m), digest_size=32, person=_PERSON).digest()
 
 
@@ -79,7 +79,7 @@ def m_print(m: bytes) -> str:
     прежними, а отпечаток — нет; сверки по номеру без него приняли бы чужое поколение.
     По отпечатку `M` не узнать: 64 бита хеша от 128 случайных бит."""
     if len(m) != M_LEN:
-        raise ValueError(f"главный ключ — {M_LEN} байт")
+        raise ValueError(f"мастер-ключ — {M_LEN} байт")
     return hashlib.sha256(_PERSON_F + bytes(m)).digest()[:MF_LEN].hex()
 
 
@@ -152,7 +152,7 @@ def cbox_key(mc: bytes) -> bytes:
 def seal_box(key: bytes, m: bytes) -> bytes:
     """Ящик: `M` под ключом ящика (SecretBox, случайный нонс)."""
     if len(m) != M_LEN:
-        raise ValueError(f"главный ключ — {M_LEN} байт")
+        raise ValueError(f"мастер-ключ — {M_LEN} байт")
     return bytes(SecretBox(bytes(key)).encrypt(bytes(m)))
 
 
@@ -163,7 +163,7 @@ def open_box(key: bytes, box: bytes) -> bytes:
     except (CryptoError, ValueError) as e:
         raise ValueError("ящик не открылся: не тот ключ или порча") from e
     if len(m) != M_LEN:
-        raise ValueError("в ящике не главный ключ")
+        raise ValueError("в ящике не мастер-ключ")
     return m
 
 

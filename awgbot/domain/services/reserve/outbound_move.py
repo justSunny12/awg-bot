@@ -34,7 +34,7 @@ class ReserveMoveMixin:
         if not ok:
             return why
         if not self.reserve_dns_name():
-            return "вместо доменного имени сервера — IP, DNS-записи нет: переезд невозможен"
+            return "не настроен домен сервера (укажи в «🖥 Сервер AWG»)"
         if not self.reserve_peer_ip():
             return f"адрес «{self.reserve_peer_name()}» не определился"
         if settings.get_bool("reserve.ready", False) is False:

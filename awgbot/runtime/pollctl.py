@@ -110,7 +110,7 @@ class PollControl:
 
     async def _pult_handed(self) -> None:
         """Вебхук снова у бота на резерве: пульт (domain reserve/pult) снят — по факту Telegram,
-        а не по нажатию «📤 Отдать Telegram резерву»."""
+        а не по нажатию «📤 Вернуть бота на «Beta»»."""
         fn = getattr(self.services, "reserve_pult_webhook_back", None)
         if fn is None:
             return

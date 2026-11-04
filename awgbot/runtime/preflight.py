@@ -77,7 +77,7 @@ def check_fatal() -> None:
         raise PreflightError(
             "Проверка окружения не пройдена — бот не запущен:\n  • "
             + "\n  • ".join(problems)
-            + "\nИсправь и перезапусти бота (`systemctl restart awg-bot`).")
+            + "\nУстрани проблему и перезапусти бота (`systemctl restart awg-bot`).")
 
 
 # ── WARNING ──────────────────────────────────────────────────────────────────
@@ -86,9 +86,9 @@ def _settings_move_warnings() -> list[str]:
     читает новый файл как есть, без значений прежнего раздела, — а журнал никто не
     читает, пока резерв не откажет «готовность выключена»."""
     from awgbot.core import settings as _settings
-    return [f"раздел {sec} из conf/{src} не перенесён в conf/{dst} ({why}) — бот берёт "
-            f"настройки из conf/{dst} как есть, без значений из {src}. Исправь файл и "
-            f"перезапусти бота (`systemctl restart awg-bot`)"
+    return [f"секция {sec} из conf/{src} не перенесена в conf/{dst} ({why}) — бот использует "
+            f"параметры из conf/{dst} без учёта изменений в {src}. Исправь файл и "
+            "перезапусти бота"
             for sec, src, dst, why in _settings.move_failures()]
 
 
@@ -158,18 +158,18 @@ def _firewall_warnings(services) -> list[str]:
     from awgbot.infra import nftguard
     if not nftguard.enabled():
         return ["файервол хоста не под управлением бота: SSH из туннеля не "
-                "фильтруется по устройствам админа. Включить — ⚙️ Настройки → "
+                "фильтруется по устройствам администратора. Включить — ⚙️ Настройки → "
                 "🛡 SSH-доступ → «✅ Фильтр снаружи»"]
     out: list[str] = []
     spec = nftguard.build_spec(services.db.admin_device_addresses(config.ADMIN_ID),
                                transit_links=services.gateway_transit_links())
     if spec.ssh_open and spec.unresolved:
-        out.append("ни одно имя из списка адресов для SSH не резолвится, прежних адресов нет — "
-                   "хост открыт для всех адресов (вход только по ключам). Проверь DNS сервера или добавь "
-                   "адрес — ⚙️ Настройки → 🛡 SSH-доступ → «➕ Адрес»")
+        out.append("ни одно доменное имя из списка адресов для SSH не резолвится, сохранённых IP-адресов нет. "
+                   "SSH-доступ временно открыт для любых адресов (вход только по ключам). Проверь DNS сервера "
+                   "или добавь адрес: ⚙️ Настройки → 🛡 SSH-доступ → «➕ Адрес»")
     elif spec.ssh_open:
-        out.append("список адресов для SSH пуст — хост открыт для всех адресов "
-                   "(вход только по ключам). Добавить свои — ⚙️ Настройки → "
+        out.append("список адресов для SSH пуст. SSH-доступ открыт для любых адресов "
+                   "(вход только по ключам). Добавь адрес: ⚙️ Настройки → "
                    "🛡 SSH-доступ → «➕ Адрес»")
     if spec.unresolved:
         out.append("firewall.ssh_allow: не резолвятся " + ", ".join(spec.unresolved))
@@ -250,7 +250,7 @@ def collect_warnings(services, server_ok: bool | None = None) -> list[str]:
         free_mb = shutil.disk_usage(config.DATA_DIR).free // (1024 * 1024)
         if free_mb < _DISK_WARN_MB:
             warns.append(f"мало места на диске: {free_mb} МБ свободно "
-                         f"(порог {_DISK_WARN_MB} МБ) — бэкапы/логи могут не поместиться")
+                         f"(порог {_DISK_WARN_MB} МБ) — резервные копии и логи могут не поместиться")
     except OSError as e:
         log.warning("preflight: проверка диска не удалась: %s", e)
 
@@ -259,7 +259,7 @@ def collect_warnings(services, server_ok: bool | None = None) -> list[str]:
     try:
         alive = server_ok if server_ok is not None else services.server_ok()
         if not alive:
-            warns.append(f"awg не отвечает на старте — проверь "
+            warns.append(f"интерфейс awg не ответил при инициализации — проверь вывод команд "
                          f"`ip link show {config.AWG_INTERFACE}` и `awg show`")
     except Exception as e:                               # noqa: BLE001
         log.warning("preflight: проверка awg не удалась: %s", e)
@@ -357,8 +357,10 @@ def _host_autostart_warnings() -> list[str]:
 def format_warnings(warns: list[str]) -> str:
     """Сообщение админу с накопленными предупреждениями старта. Тексты содержат
     str(e) — экранируем: угловая скобка в тексте ошибки не должна ломать
-    HTML-отправку (иначе предупреждение молча потеряется)."""
+    HTML-отправку (иначе предупреждение молча потеряется). Команды в обратных
+    кавычках — моноширинным: копируются нажатием."""
     import html
-    safe = [html.escape(w) for w in warns]
+    import re
+    safe = [re.sub(r"`([^`\n]+)`", r"<code>\1</code>", html.escape(w)) for w in warns]
     return ("⚠️ <b>Замечания при запуске</b>\n\nБот работает, но обрати внимание:\n• "
             + "\n• ".join(safe))

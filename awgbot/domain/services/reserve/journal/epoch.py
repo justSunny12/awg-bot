@@ -73,7 +73,7 @@ class ReserveEpochMixin:
             return step == "released", ("передача бота" if step == "released" else "переезд ещё не передал бот")
         if state == "away":
             if out.get("guest_stopped"):
-                return False, "бот на резерве остановлен"
+                return False, "гостевой экземпляр на резерве остановлен"
             if out.get("await_merge"):
                 return False, "вернуть без резерва"
             return True, "пользователи и бот у резерва"
@@ -83,7 +83,7 @@ class ReserveEpochMixin:
             forced = str(out.get("return_why") or "") == "force"
             if step == "merge" or (step == "back_req" and not out.get("guest_stopped") and not forced):
                 return True, "возврат: ждём реплику и слияние"
-            return False, "возврат: бот на резерве остановлен"
+            return False, "возврат: гостевой экземпляр на резерве остановлен"
         # home: резерв несёт моих (переезд мимо меня; такт home переведёт и автомат в away) —
         # одним правилом с автоматом (`_peer_serving_after_home`); иначе решает слово Telegram,
         # сказанное уже дома (прежнее «away» — до возврата)

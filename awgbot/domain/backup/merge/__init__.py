@@ -56,11 +56,11 @@ def run(copy_dir: str, *, cur_db: str | None = None, conf_dir: str | None = None
     if err:
         raise MergeError(err)
     if not os.path.exists(os.path.join(copy_dir, "state", "bot.db")):
-        raise MergeError("в бэкапе нет базы")
+        raise MergeError("в резервной копии нет базы")
     p = _plan.plan_for_dir(meta, copy_dir, cur_db=cur_db, conf_dir=conf_dir, awg_dir=awg_dir,
                            root_dir=root_dir, now=now)
     if expect is not None and _plan.Plan.from_dict(expect).signature() != p.signature():
-        raise MergeError("с момента вопроса на сервере изменились шлюзы или база — бэкап не применён")
+        raise MergeError("с момента вопроса на сервере изменились шлюзы или база — резервная копия не применена")
     out = {"lost": [], "recheck": {}, "moved": {}, "dead": set()}
 
     def build(result: str, copy_db: str) -> None:

@@ -50,7 +50,7 @@ def gateway_ssh_text(st: dict, bot: str = "") -> str:
     lines.append("")
     admins = len(st.get("admin_ips") or [])
     server = f" (<code>{_e(st['server'])}</code>)" if st.get("server") else ""
-    lines.append(f"Из туннеля SSH открыт устройствам админа ({admins}) и с сервера AWG{server}")
+    lines.append(f"Из туннеля SSH открыт устройствам администратора ({admins}) и с сервера AWG{server}")
     lan = st.get("lan") or []
     lines.append("Из локальной сети: открыт всегда"
                  + (f" ({_nets_tail(lan, bot, listlink.build('sshfrom'))})" if lan else ""))

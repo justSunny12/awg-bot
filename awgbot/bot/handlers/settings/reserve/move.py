@@ -139,7 +139,7 @@ async def force_go(cb: CallbackQuery, services, **_):
 
 @router.callback_query(RsvCB.filter(F.action == "pult_give"))
 async def pult_give(cb: CallbackQuery, services, **_):
-    """«📤 Отдать Telegram резерву» (пульт у основы): слово паре, вебхук поставит гость."""
+    """«📤 Вернуть бота на «Beta»» (пульт у основы): слово паре, вебхук поставит гость."""
     try:
         actions = await call(services.reserve_pult_give)
     except ServiceError as e:

@@ -66,7 +66,7 @@ def direction_on(peer: str) -> str:
 
 
 def peer_admin_changed(peer: str) -> str:
-    return f"ℹ️ У {_n(peer)} сменился админ — его прежний аккаунт потерял доступ к экрану резерва в этом боте"
+    return f"ℹ️ У {_n(peer)} сменился администратор — его прежний аккаунт потерял доступ к экрану резерва в этом боте"
 
 
 __all__ = ["_e", "_n", "_when", "peer_down", "peer_up", "zone_tools_failed", "pair_unconfirmed", "peer_unpaired",

@@ -178,12 +178,12 @@ def reserve_tg_lines(rsv: dict) -> list[str]:
     if not rsv:
         return []
     from awgbot.util import timeutil
-    name = f"«{_e(rsv['name'])}»" if rsv.get("name") else "сервера AWG"   # без имени — без «ёлочек» (родовое слово)
+    name = f"«{_e(rsv['name'])}»" if rsv.get("name") else "серверу AWG"   # без имени — без «ёлочек» (родовое слово)
     peer = f"«{_e(rsv['peer_name'])}»" if rsv.get("peer_name") else "резерв"
     out = []
     if rsv.get("tg_via"):
         since = timeutil.iso_clock(str(rsv.get("tg_since") or ""))
-        out.append(f"📨 Telegram — через {peer}: аплинк до {name} молчит" + (f" с {since}" if since else ""))
+        out.append(f"📨 Telegram — через {peer}: прямой канал к {name} недоступен" + (f" с {since}" if since else ""))
     if rsv.get("uplink_ip"):
         out.append(f"⚠️ Аплинк смотрит на адрес <code>{_e(rsv['uplink_ip'])}</code>, а не на имя — после переезда "
                    f"пользователей на {peer} он не переключится")
@@ -196,7 +196,7 @@ def quorum_panel_line(quo: dict) -> str:
     if not quo:
         return ""
     from awgbot.util import timeutil
-    name = f"«{_e(quo.get('name') or 'сервер AWG')}»"
+    name = f"«{_e(quo['name'])}»" if quo.get("name") else "сервере AWG"   # без имени — без «ёлочек», как у строки обхода
     w = quo.get("w") or ""
     if w in ("see", "held"):
         y, v = int(quo.get("y") or 0), int(quo.get("v") or 0)
@@ -240,7 +240,7 @@ def gateway_health(st) -> str:
         # детали — с хоста (вывод скрипта, имена интерфейсов): экранируем
         lines.append(f"{mark} {_e(c.name)}" + (f" — {_e(c.detail)}" if c.detail else ""))
     if smart_bad:
-        lines.append("🔴 диск — SMART сообщает о сбое: замени носитель — настройки шлюза сохраняются в бэкап сервера AWG")
+        lines.append("🔴 диск — SMART сообщает о сбое: замени носитель — настройки шлюза сохраняются в резервную копию сервера AWG")
     # «RAM: свободно 2 345 МБ · диск: свободно 87 ГБ, SMART ОК · питание ОК»:
     # «свободно» у каждой величины — общий префикс читался бы и как «свободно: питание»
     hw = []

@@ -142,7 +142,7 @@ def test_the_report_has_the_check_lines_for_a_changed_telegram_and_an_admin_devi
     lost = duo.a.rsv_get("rsv_out")["jrn_report"]["lost"]
     assert len(lost) == 2, lost
     assert "сменён Telegram-аккаунт" in lost[0] and "7100 → 7999" in lost[0] and "Иван Петров" in lost[0], lost[0]
-    assert "У профиля админа появилось устройство «Чужой»" in lost[1], lost[1]
+    assert "У профиля администратора появилось устройство «Чужой»" in lost[1], lost[1]
 
 
 def test_a_first_telegram_on_a_new_profile_is_not_a_check_line(duo):

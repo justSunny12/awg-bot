@@ -428,9 +428,12 @@ def run(data: dict) -> int:
     why = ""
     try:
         set_record(dns, target)
-    except (dnsapi.NotSupported, dnsapi.Refused) as e:         # «вручную» или явный отказ провайдера — исход известен
+    except dnsapi.NotSupported:                                # «вручную» — не ошибка провайдера, свой исход
         _RECORD.clear()
-        return _fail(f"DNS-запись: {e}")
+        return _fail("DNS-запись меняется вручную — автоматическая смена невозможна")
+    except dnsapi.Refused as e:                                # явный отказ провайдера — исход известен
+        _RECORD.clear()
+        return _fail(f"ошибка DNS-провайдера: {e}")
     except Exception as e:                                     # noqa: BLE001 — таймаут, ответ не дошёл или не разобран
         why = str(e)[:160] or type(e).__name__
     dns = {}                                                   # токен провайдера дальше не нужен
@@ -439,7 +442,7 @@ def run(data: dict) -> int:
         _step("record_wait", name=name, ip=target, limit=limit, why=why)
         if not wait_unknown(name, target, deadline):
             _RECORD.clear()
-            return _fail(f"DNS-запись не подтвердилась за {max(1, limit // 60)} мин: {why}")
+            return _fail(f"обновление DNS-записи не подтвердилось за {max(1, limit // 60)} мин: {why}")
     _RECORD.clear()
     _RECORD.update(record="set", name=name, ip=target)
     _step("record_set", name=name, ip=target)

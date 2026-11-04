@@ -296,7 +296,7 @@ def test_env_alone_rewrites_the_unit_and_reasserts_once(svc, host):
     assert host.restarts == 1, f"реассертов {host.restarts}, нужен ровно один"
     assert host.link_runs == [], "конфиг линка тот же, а скрипт линка звали"
     assert res["ack"]["applied"] == ["env", "link"] and not res["ack"]["failed"]
-    assert res["note"] == "⚙️ Сервер AWG прислал конфигурацию шлюза — применено: устройства админа", res["note"]
+    assert res["note"] == "⚙️ Сервер AWG прислал конфигурацию шлюза — применено: устройства администратора", res["note"]
     assert svc.db.get_state(svc._CFG_GEN_KEY) == "7" and svc.db.get_state(svc._CFG_HASH_KEY) == DIGEST
     assert svc.cfg_fingerprints()["gen"] == 7
 
@@ -383,7 +383,7 @@ def test_restarted_link_that_did_not_come_up_is_rolled_back(svc, host, monkeypat
     assert set(failed) == {"env", "link"} and "не поднялся" in failed["link"], failed
     assert "env" not in res["ack"]["applied"] and "link" not in res["ack"]["applied"]
     assert "не применилась" in res["note"] and res["note"].endswith("Вернул прежнюю"), res["note"]
-    assert "устройства админа" in res["note"] and "конфиг линка" in res["note"]
+    assert "устройства администратора" in res["note"] and "конфиг линка" in res["note"]
     assert "применено:" not in res["note"]
     assert not svc.db.get_state(svc._CFG_GEN_KEY)
 

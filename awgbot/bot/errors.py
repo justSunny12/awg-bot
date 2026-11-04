@@ -24,7 +24,7 @@ from awgbot.util.textfmt.atoms import toast_cap
 
 log = logging.getLogger("awgbot.bot.errors")
 
-INTERNAL = "Внутренняя ошибка — подробности в журнале бота"
+INTERNAL = "Внутренняя ошибка — подробности записаны в журнал бота"
 
 
 def _spoken() -> tuple:

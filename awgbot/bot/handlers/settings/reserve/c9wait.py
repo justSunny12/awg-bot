@@ -17,7 +17,7 @@ from awgbot.domain.services import ServiceError
 from .._router import router
 from ..render import _render
 
-GONE_TOAST = "Отметки уже нет — изменений от бота на резерве не жду"
+GONE_TOAST = "Ожидание уже отключено — синхронизация не выполняется"
 
 
 async def c9_screen(services):
@@ -39,5 +39,5 @@ async def c9_drop(cb: CallbackQuery, services):
     if notes is None:                                         # повторное нажатие или снята фактом
         await cb.answer(GONE_TOAST)
         return
-    await cb.answer("Больше не жду")
+    await cb.answer("Ожидание изменений сброшено")
     await send_notifications(cb.bot, notes)

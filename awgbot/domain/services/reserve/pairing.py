@@ -135,7 +135,8 @@ class ReservePairingMixin:
             raise ServiceError("Это приглашение от этого же сервера")
         from awgbot.core.compat import version_key
         if version_key(tok.version) and compat.below_pair_floor(tok.version):
-            raise ServiceError(f"Второй сервер на v{tok.version} — для резерва нужен {compat.PAIR_FLOOR} или новее у обоих серверов")
+            raise ServiceError(f"Удалённый сервер работает на v{tok.version}. Для резервирования оба сервера должны "
+                               f"использовать версию не ниже v{compat.PAIR_FLOOR}")
         if not settings.get_bool("reserve.ready", False):
             raise ServiceError("Сначала включи «Готов быть резервом»")
         my_gen = self._awg_generation()

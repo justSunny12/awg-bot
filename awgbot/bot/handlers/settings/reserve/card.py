@@ -1,6 +1,6 @@
 """card.py — раздел «🛟 Резерв»: экран без пары (Т-Р1) и карточка резерва
 (Т-Р9), тумблеры «Готов быть резервом» (выключение при паре — через диалог
-Т-Р14) и «Мои шлюзы для резерва», рычаг возврата (Т-Р15), «🆘 На крайний
+Т-Р14) и «Шлюзы для резерва», рычаг возврата (Т-Р15), «🆘 На крайний
 случай» (Т-Р18: показать, сменить), «🗑 Удалить резерв» (Т-Р13)."""
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from aiogram.types import CallbackQuery
 from awgbot.bot import ui
 from awgbot.bot.callbacks import RsvCB
 from awgbot.bot.handlers.common import call, edit
-from awgbot.bot.keyboards import reserve as rkb
+from awgbot.bot.keyboards import common as kc, reserve as rkb
 from awgbot.bot.texts.reserve import notices, section as st_t
 from awgbot.core import settings
 from awgbot.domain.services import ServiceError
@@ -93,7 +93,7 @@ async def rf_mine_toggle(cb: CallbackQuery, services):
     if not await _set(cb, "reserve.rf_via_mine", not on):
         return
     await _render(cb, "rsv", services)
-    await cb.answer("Мои шлюзы для резерва: " + ("выкл" if on else "вкл"))
+    await cb.answer("Шлюзы для резерва: " + ("выкл" if on else "вкл"))
 
 
 @router.callback_query(RsvCB.filter(F.action == "rfmine_off"))
@@ -103,7 +103,7 @@ async def rf_mine_off_yes(cb: CallbackQuery, services):
     if hasattr(services, "reserve_rfpeer_offer_now"):
         await call(services.reserve_rfpeer_offer_now)         # согласие снято сразу: правило, файервол, st
     await _render(cb, "rsv", services)
-    await cb.answer("Мои шлюзы для резерва: выкл")
+    await cb.answer("Шлюзы для резерва: выкл")
 
 
 @router.callback_query(RsvCB.filter(F.action == "ret"))
@@ -143,6 +143,24 @@ async def show_code(cb: CallbackQuery, services):
         return
     await send_code(cb.bot, services)
     await cb.answer("Код отправлен отдельным сообщением")
+
+
+@router.callback_query(RsvCB.filter(F.action == "code_mail"))
+async def code_mail(cb: CallbackQuery, services):
+    """«✉️ Отправить на e-mail» под сообщением с кодом: письмо на подключённый ящик,
+    сообщение дописывается адресом; кнопка снимается (срок удаления сообщения прежний)."""
+    from awgbot.infra.mail import MailError
+    code = await call(services.reserve_code)
+    if not code:
+        await cb.answer("Кода нет — он появится после подключения резерва", show_alert=True)
+        return
+    try:
+        addr = await call(services.email_send_reserve_code, code)
+    except (MailError, ServiceError) as e:
+        await cb.answer(ui.toast_cap(str(e)), show_alert=True)
+        return
+    await edit(cb, notices.code_issued(code) + "\n\n" + notices.code_mailed(addr), kc.hide_only())
+    await cb.answer("Отправлено на e-mail")
 
 
 @router.callback_query(RsvCB.filter(F.action == "new_code"))

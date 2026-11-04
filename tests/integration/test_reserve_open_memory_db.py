@@ -273,4 +273,4 @@ def test_the_card_warns_by_the_base_size_when_the_primary_sends_it(services, rsv
     need = rsvzone.open_memory_mb(2 * MB, 100 * MB) + rsvzone.guest_memory_mb(100 * MB)
     assert need == 128 + 8 + 200 + 512, need
     assert d["pkg_mem"] == {"size": "0,1 ГБ", "need": "0,83 ГБ"}, d["pkg_mem"]
-    assert "└ ⚠️ данные для переезда «" in card_text(d) and "понадобится около 0,83 ГБ памяти" in card_text(d), card_text(d)
+    assert "└ ⚠️ данные для переезда «" in card_text(d) and "понадобится около 0,83 ГБ RAM" in card_text(d), card_text(d)

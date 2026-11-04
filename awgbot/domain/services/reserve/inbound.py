@@ -153,7 +153,7 @@ class ReserveInboundMixin:
         if step in REC_STEPS and self._rec_unknown(inn) and inn.get("rec_until") and \
                 livestep.mono_expired(float(inn.get("rec_until") or 0) + REC_GRACE_S, now):
             # процесс жив, а итога смены записи нет дольше предела — ожидание факта веду я
-            return actions + self._take_fail(f"процесс открытия не подвёл итог смены записи за "
+            return actions + self._take_fail(f"таймаут инициализации: сервис не подтвердил смену DNS-записи за "
                                              f"{max(1, int(inn.get('rec_limit') or 0) // 60)} мин")
         if step == "eph" and inn.get("sealed") and not inn.get("k_passed") and livestep.mono_due(inn.get("eph_sent"), now, EPH_RESEND_S):
             # процесс ждёт конверт: разовый ключ — основе (повтор, пока ждёт: сессия могла оборваться)

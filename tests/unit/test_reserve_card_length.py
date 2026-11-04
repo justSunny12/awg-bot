@@ -45,8 +45,8 @@ def _worst(**kw) -> dict:
                   "cand": {"own": "uns", "deadline_at": T}}}
     d = {"peer": {"name": PEER, "host": "h" * 64}, "peer_state": {"version": "4.2.0", "ready": True, "caps": []},
          "seen": "down", "down_since": T, "ready": True, "online": False, "mem_free": 100,
-         "liveness_problem": "reserve.suspect_seconds 15 меньше keepalive линка пары 25 с плюс такт 5 с — "
-                             "ложные «недоступен»; действует 30",
+         "liveness_problem": "Таймаут проверки резерва (15 с) меньше суммы такта и keepalive. Возможны ложные "
+                             "срабатывания о недоступности. Автоматически применён безопасный порог: 30 с",
          "dir_out": (True, ""), "dir_in": (False, WHY), "out": "home", "inn": "serving",
          "pkg_sent_at": T, "pkg_error": WHY, "c9_wait": {"overdue": True}, "move_why": WHY, "out_relay_until": T,
          "gw_links": [{"name": n, "rsv1": True, "seen": "down", "since": T} for n in gw],
@@ -90,7 +90,7 @@ def test_a_clipped_reason_keeps_its_markup_whole():
 
 def test_short_reasons_are_untouched():
     text = card_text(_worst(move_why="«Beta» не на связи"), "awg_bot")
-    assert "└ перевести кнопкой нельзя: «Beta» не на связи" in text, text
+    assert "└ ручной переезд недоступен: «Beta» не на связи" in text, text
 
 
 def test_gateways_out_of_touch_are_capped_with_a_count_line():

@@ -143,7 +143,7 @@ def test_after_take_home_the_clients_are_home_waiting_for_the_replica_with_one_n
     assert gone.svc.reserve_k() == k and not _pkg_due(gone.svc), "K сменён до слияния"
     texts = [n.text for n in notices(acts)]
     assert len(texts) == 1 and "Пользователи и бот снова здесь" in texts[0] and "«Beta»" in texts[0], texts
-    assert "вебхук снят" not in texts[0], "сказано про зависший вебхук вместо рычага"
+    assert "Управление ботом возвращено на этот сервер" not in texts[0], "сказано про зависший вебхук вместо рычага"
     assert not texts[0].rstrip().endswith(".")
     assert ("live",) in acts
 
@@ -185,7 +185,7 @@ def test_the_reserve_back_without_my_guest_drops_the_mark_with_a_new_k_and_one_n
     assert gone.svc.reserve_k() != k and _pkg_due(gone.svc), "реплики не будет, а K прежний — резерв его знает"
     texts = [n.text for n in notices(acts)]
     # переезд был без моего K (вид dead, `go` не отдавал): кроме «не вольются» — просьба сменить токен DNS
-    lost = [t for t in texts if "будут утеряны" in t]
+    lost = [t for t in texts if "не сохранились" in t]
     assert len(lost) == 1 and "«Beta»" in lost[0], texts
     assert not lost[0].rstrip().endswith(".")
     assert len(texts) == 2 and any("Токен API DNS" in t for t in texts), texts
@@ -216,7 +216,7 @@ def test_a_stale_view_of_the_reserve_does_not_leave_the_return_hanging(gone):
     assert not out.get("await_merge") and gone.svc.reserve_k() != k and _pkg_due(gone.svc), \
         f"возврат без слияния не снял рычаг или оставил K, который знает резерв: {out}"
     texts = [n.text for n in notices(acts)]
-    assert len([t for t in texts if "будут утеряны" in t]) == 1 and len(texts) == 2, texts   # и Т-РУ17 (токен DNS)
+    assert len([t for t in texts if "не сохранились" in t]) == 1 and len(texts) == 2, texts   # и Т-РУ17 (токен DNS)
 
 
 def test_the_end_of_the_return_drops_the_mark(gone):
@@ -231,7 +231,7 @@ def test_a_stuck_webhook_without_the_lever_still_renews_k(gone):
     k = gone.svc.reserve_k()
     acts = gone.svc.reserve_stuck_home()
     assert gone.svc.reserve_k() != k and not gone.svc.rsv_get("rsv_out").get("await_merge")
-    assert "вебхук снят" in " ".join(n.text for n in notices(acts))
+    assert "Управление ботом возвращено на этот сервер" in " ".join(n.text for n in notices(acts))
 
 
 # ── 5в: снимок слияния — финальная реплика ──────────────────────────────────

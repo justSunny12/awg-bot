@@ -67,7 +67,7 @@ def test_warnings_low_disk_and_dead_awg(tmp_path, monkeypatch):
     # awg.read_file недоступен → ещё warning
     warns = preflight.collect_warnings(Svc())
     assert any("мало места" in w for w in warns)
-    assert any("awg не отвечает" in w for w in warns)
+    assert any("интерфейс awg не ответил" in w for w in warns)
     # format не падает
     assert "Замечания при запуске" in preflight.format_warnings(warns)
 
@@ -87,6 +87,14 @@ def test_format_warnings_escapes_html():
     msg = preflight.format_warnings(["ошибка <Foo object at 0x1> & прочее"])
     assert "&lt;Foo" in msg and "&amp;" in msg
     assert "<b>" in msg                          # своя разметка осталась
+
+
+def test_format_warnings_puts_backquoted_commands_in_code():
+    """Команды в обратных кавычках приходят моноширинным (копируются нажатием), а не с
+    видимыми кавычками; сами кавычки снимаются; одиночная — остаётся текстом."""
+    msg = preflight.format_warnings(["проверь `ip link show awg0` и `awg show`", "одна ` кавычка <x>"])
+    assert "<code>ip link show awg0</code>" in msg and "<code>awg show</code>" in msg, msg
+    assert "`ip" not in msg and "одна ` кавычка &lt;x&gt;" in msg, msg
 
 
 def test_mail_warning_when_configured_and_check_fails():

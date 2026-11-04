@@ -35,7 +35,7 @@ rsv = rc.rsv
 mv = rm.mv
 __all__ = ["away"]
 
-UNKNOWN = "свой адрес не определился"
+UNKNOWN = "не удалось определить локальный адрес"
 
 
 def _ago(seconds: float) -> str:
@@ -155,7 +155,7 @@ def test_the_lever_with_no_own_address_tells_instead_of_silence(away):
 
 def test_the_notice_text():
     text = rn.record_own_unknown("vpn.example.org", "vpn.example.org")
-    assert text.startswith("⚠️ Запись <code>vpn.example.org</code> не изменена: свой адрес не определился "
-                           "(<code>vpn.example.org</code> не разрешается) — поправь её у провайдера вручную"), text
+    assert text.startswith("⚠️ Запись <code>vpn.example.org</code> не изменена: не удалось определить локальный адрес "
+                           "(домен <code>vpn.example.org</code> не резолвится) — поправь запись вручную у DNS-провайдера"), text
     assert not text.endswith(".")
     assert "(" not in rn.record_own_unknown("vpn.example.org")

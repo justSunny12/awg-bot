@@ -299,7 +299,7 @@ def test_while_the_journal_is_arriving_there_is_no_link_and_drop_waits(duo):
     v = duo.a.reserve_c9_wait_view()
     assert not v["overdue"], "срок вышел при идущем журнале"
     assert "не ждать?" not in _card(duo.a), "ссылка при идущем журнале — админ сам оборвёт доставку"
-    with pytest.raises(ServiceError, match="журнал с «Beta» приходит — подожди"):
+    with pytest.raises(ServiceError, match="Журнал событий с «Beta» принимается прямо сейчас — подожди"):
         duo.a.reserve_c9_drop()
     assert duo.a.rsv_get("rsv_c9").get("e")
 

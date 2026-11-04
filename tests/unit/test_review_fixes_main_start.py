@@ -212,7 +212,7 @@ async def test_a_backup_from_the_gateway_chat_is_restored_by_the_admin_button(st
         s.launch_restore = lambda path, release="": launched.append(("launch", path, release))
         assert await linkserver._on_restore(0, blob, "awg-bot-backup-main-x.tgz.enc") == ""
         asked = [r for r in st.bot.records if r[0] == "send_message"]
-        assert asked and asked[-1][1] == ADMIN and asked[-1][2].startswith("♻️ Восстановить бэкап от "), asked
+        assert asked and asked[-1][1] == ADMIN and asked[-1][2].startswith("♻️ Восстановить резервную копию от "), asked
         state = st.dp.real.fsm.resolve_context(bot=st.bot, chat_id=ADMIN, user_id=ADMIN)
         msg = FakeMessage(chat_id=ADMIN, user_id=ADMIN, bot=st.bot)
         cb = FakeCallback(message=msg, user_id=ADMIN, bot=st.bot)

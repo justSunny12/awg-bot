@@ -35,8 +35,8 @@ class DevicesMixin:
         if hasattr(self, "migration_restart_pending") and self.migration_restart_pending():
             # до перезапуска config.* — от погашенного интерфейса: устройство
             # родилось бы на нём и не работало бы ни секунды
-            raise ServiceError("Бот ждёт перезапуска после переезда профилей — "
-                               "перезапусти его в «🔧 Сервис» и повтори")
+            raise ServiceError("Бот ожидает перезапуска после завершения переезда — "
+                               "перезапусти его в меню «🔧 Сервис» и повтори")
         if not client.is_service:
             limit = client.device_limit
             if limit != 0 and self.db.count_devices(client_id) >= limit:  # 0 = безлимит

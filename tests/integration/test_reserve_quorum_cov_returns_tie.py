@@ -110,7 +110,7 @@ def test_the_card_while_away_shows_how_many_see_the_bot_at_the_reserve(aw):
     mine = card["mine"]
     assert (mine["y"], mine["v"], mine["leader_here"], mine.get("back")) == (2, 3, False, True), mine
     lines = quorum_mine_lines({**card, "on": True})
-    assert any("Бот на «Beta» видят 2 из 3 — пользователи вернутся сюда сами" in ln for ln in lines), lines
+    assert any("Гостевой экземпляр на «Beta» видят 2 из 3 — пользователи вернутся сюда сами" in ln for ln in lines), lines
 
 
 # ── ничья: эпизод после перезапуска ─────────────────────────────────────────

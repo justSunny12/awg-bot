@@ -217,8 +217,8 @@ def test_a_serve_failure_after_done_keeps_the_zone_and_retries_serve(host):
     acts = svc.reserve_in_tick()
     inn = svc.rsv_get("rsv_in")
     assert svc.reserve_in() == "serving" and inn.get("serve_due") and inn.get("keep_k") == "serve", inn
-    assert "порт вебхука занят" in notices(acts)[0].text and "Telegram не пропущен к гостевому серверу" in notices(acts)[0].text
-    assert "└ ⚠️ Telegram не пропущен к гостевому серверу: зона не приняла режим serve: порт вебхука занят" in \
+    assert "порт вебхука занят" in notices(acts)[0].text and "трафик Telegram не доходит до гостевого экземпляра" in notices(acts)[0].text
+    assert "└ ⚠️ Telegram не пропущен к гостевому экземпляру: зона не приняла режим serve: порт вебхука занят" in \
         card_text(svc.reserve_card_data())
     host.clock.advance(inbound_keep.KEEP_RETRY_S + 1)
     assert svc.reserve_in_tick() == [] and svc.rsv_get("rsv_in").get("serve_due"), "повтор отказа — молча, без снятия"
@@ -271,7 +271,7 @@ def test_a_serve_refused_at_tg_taken_keeps_the_zone_and_is_retried(host):
     assert svc.reserve_in() == "serving" and inn.get("tg_taken"), "Telegram гость уже взял — слово не потерять"
     assert inn.get("serve_due") and not inn.get("served") and inn.get("keep_k") == "serve", inn
     assert "down" not in sent(acts) and "taken" in sent(acts)
-    assert "Telegram не пропущен к гостевому серверу" in notices(acts)[0].text
+    assert "трафик Telegram не доходит до гостевого экземпляра" in notices(acts)[0].text
     _no_teardown(host)
     del host.zone.fail_on["serve"]
     host.clock.advance(inbound_keep.KEEP_RETRY_S + 1)
@@ -387,7 +387,7 @@ def test_without_clones_the_opening_is_relaunched_with_the_same_input_once_a_min
     _no_teardown(host)
     assert "down" not in sent(acts)
     note = notices(acts)[0]
-    assert note.force_sound and "интерфейс резерва не поднят" in note.text and "перезапускаю открытие раз в минуту" in note.text, note
+    assert note.force_sound and "интерфейс резерва не запущен" in note.text and "перезапускаю открытие раз в минуту" in note.text, note
     assert "└ ⚠️ интерфейс резерва не поднят: зона: клон awg0 не поднялся — перезапускаю открытие раз в минуту" in card_text(svc.reserve_card_data())
     host.clock.advance(inbound_keep.KEEP_RETRY_S - 5)
     assert svc.reserve_in_tick() == [] and len(host.spawn.popen) == 1, "перезапуск раньше срока"
@@ -474,7 +474,7 @@ def test_a_lost_input_after_a_bot_restart_falls_back_to_the_old_failure_without_
     acts = svc.reserve_in_tick()
     assert svc.reserve_in() == "idle" and len(host.spawn.popen) == 1
     down = [a[2] for a in acts if a[:2] == ("send", "down")]
-    assert down and not down[0].get("rec") and "открыть снова нечем" in down[0]["reason"], acts
+    assert down and not down[0].get("rec") and "не удалось перезапустить сессию" in down[0]["reason"], acts
 
 
 # ── основа: уведомление по st.in_keep и запись на себя по down{rec} ──────────
@@ -485,10 +485,10 @@ def test_the_primary_tells_its_admin_once_per_episode(mv):
                            pairproto.ACCEPTOR)["in_keep"] == keep
     notes = rm.st_in(mv.svc, **{"in": "serving", "in_keep": keep})
     loud = [n for n in notes if "VPN работает" in n.text]
-    assert len(loud) == 1 and loud[0].force_sound and "30 минут" in loud[0].text and "«Beta» повторяет сам" in loud[0].text
+    assert len(loud) == 1 and loud[0].force_sound and "30 минут" in loud[0].text and "«Beta» автоматически повторяет проверку" in loud[0].text
     assert not [n for n in rm.st_in(mv.svc, **{"in": "serving", "in_keep": keep}) if "VPN работает" in n.text]
     notes = rm.st_in(mv.svc, **{"in": "taking", "in_keep": {**keep, "k": "relaunch", "at": "2026-11-01T10:05:00+03:00"}})
-    assert [n for n in notes if "интерфейс резерва там не поднят" in n.text], "новый эпизод не сказан"
+    assert [n for n in notes if "интерфейс резерва там не запущен" in n.text], "новый эпизод не сказан"
 
 
 def _home_rec_back(mv, monkeypatch) -> None:
@@ -508,7 +508,7 @@ def test_down_with_rec_returns_the_record_on_a_live_st_after_it(mv, monkeypatch)
     acts = svc.reserve_out_tick()
     assert mv.dns.sets == [OWN_IP], mv.dns.sets
     note = [n for n in notices(acts) if "↩️" in n.text][0]
-    assert note.force_sound and rc.HOST_A in note.text and OWN_IP in note.text and "«Beta» не принял" in note.text
+    assert note.force_sound and rc.HOST_A in note.text and OWN_IP in note.text and "«Beta» не смог принять" in note.text
     svc.reserve_out_tick()
     assert mv.dns.sets == [OWN_IP], "запись возвращена дважды"
 

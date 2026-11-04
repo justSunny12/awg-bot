@@ -170,7 +170,7 @@ def test_the_lag_is_measured_by_what_the_holder_sent_not_by_a_frozen_st(duo):
     assert duo.a.reserve_follow_lag_tick() == [], "отставание сказано раньше минуты"
     duo.a.__dict__["_follow_lag_since"] = time.monotonic() - 61
     notes = rm.notices(duo.a.reserve_follow_lag_tick())
-    assert len(notes) == 1 and notes[0].text.startswith("⚠️ Данные здесь перестали догонять бот на «Beta»"), \
+    assert len(notes) == 1 and notes[0].text.startswith("⚠️ Данные здесь перестали догонять гостевой экземпляр на «Beta»"), \
         f"Т-Ж6 не пришло при застывшем st: {[n.text for n in notes]}"
 
 

@@ -143,7 +143,7 @@ def build(ifaces: list[tuple[str, str]], *, admin: list[str], dns: list[str], up
     """Часть VPN целиком: интерфейсы (имя, текст конфига) и поля зоны (адреса — только IPv4)."""
     return {
         "ifaces": [iface_part(n, t) for n, t in ifaces],
-        "admin": _ipv4_only("адрес админа", [str(a) for a in admin])[:64],
+        "admin": _ipv4_only("адрес администратора", [str(a) for a in admin])[:64],
         "dns": _ipv4_only("DNS", [str(d) for d in dns])[:8],
         "upstreams": _ipv4_only("вышестоящий DNS", [str(u) for u in upstreams])[:8],
         "tz": str(tz or ""),

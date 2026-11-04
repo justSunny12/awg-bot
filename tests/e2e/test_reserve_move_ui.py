@@ -325,7 +325,7 @@ async def test_the_dns_screen_without_a_name_says_the_record_does_not_exist(ui):
     from awgbot.core import settings
     settings.set_value("app.network.server_host", "203.0.113.5")
     e = _edits(await ui.run.press(RsvCB(action="dns")))
-    assert "Вместо доменного имени сервера — IP" in e[0].text and "без записи переезд невозможен" in e[0].text
+    assert "Не задано доменное имя сервера" in e[0].text and "без него переезд невозможен" in e[0].text
     assert _labels(e[0]) == ["⬅️ Назад"], "кнопок провайдера и токена у IP быть не должно"
 
 

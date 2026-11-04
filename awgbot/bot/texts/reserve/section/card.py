@@ -21,7 +21,7 @@ LOW_MEM_MB = 400                     # меньше — строка «мало 
 GW_DOWN_SHOWN = 3                    # шлюзов «не на связи с резервом» поимённо; дальше — «… и ещё N» (предел 4096)
 # приём сорвался после смены записи процессом открытия (inbound_keep): что не доделано — что делаю
 _KEEP_LINES = {"record": ("DNS-запись не подтвердилась", "проверяю раз в минуту"),
-               "serve": ("Telegram не пропущен к гостевому серверу", "повторяю раз в минуту"),
+               "serve": ("Telegram не пропущен к гостевому экземпляру", "повторяю раз в минуту"),
                "relaunch": ("интерфейс резерва не поднят", "перезапускаю открытие раз в минуту")}
 
 
@@ -74,8 +74,8 @@ def card_text(d: dict, bot_username: str = "") -> str:
         if fol:                                               # Т-Ж1 / Т-Ж2
             # вычитка 29.10.2026: с датой — событие могло быть вчера, одно время обманчиво
             at = f" · актуальны на {_e(_date(fol['at']))}" if fol.get("at") else ""
-            lines.append(f"└ 🟡 данные здесь догоняют бот на {_n(name)}{at}" if fol.get("lag")
-                         else f"└ данные здесь следуют за ботом на {_n(name)}{at}")
+            lines.append(f"└ 🟡 данные здесь догоняют гостевой экземпляр на {_n(name)}{at}" if fol.get("lag")
+                         else f"└ данные здесь следуют за гостевым экземпляром на {_n(name)}{at}")
         lines += pult_card_lines(d.get("pult") or {}, name)  # Telegram бота здесь, пользователи там
     elif out == "returning":
         lines.append(f"📤 Твои пользователи: возвращаются с {_n(name)}")
@@ -101,7 +101,7 @@ def card_text(d: dict, bot_username: str = "") -> str:
         lines += quorum_mine_lines(d.get("quorum") or {})
         lines += rfpeer_mine_lines(d.get("rfpeer") or {}, name)
         if d.get("move_why") and out_ok:
-            lines.append("└ перевести кнопкой нельзя: " + _why(d["move_why"]))
+            lines.append("└ ручной переезд недоступен: " + _why(d["move_why"]))
         if d.get("out_relay_until"):
             lines.append(f"└ пересылка хвоста у {_n(name)} до {_e(_date(d['out_relay_until']))}")
     if inn in ("taking", "serving", "releasing"):
@@ -111,7 +111,7 @@ def card_text(d: dict, bot_username: str = "") -> str:
         if d.get("peer_pult"):                                # её Telegram у неё (пульт), пользователи здесь
             lines.append(pult_peer_line(name))
         if d.get("in_tg_wait"):                               # VPN здесь, а бот второй стороны Telegram не взял
-            lines.append(f"└ ⚠️ гостевой бот не отвечает в Telegram: {_why(d['in_tg_wait'])} — повторяю раз в минуту")
+            lines.append(f"└ ⚠️ гостевой экземпляр не отвечает в Telegram: {_why(d['in_tg_wait'])} — повторяю раз в минуту")
         keep = d.get("in_keep") or {}                         # запись уже здесь, приём сорвался — доделываю
         if keep.get("k") in _KEEP_LINES:
             lines.append(f"└ ⚠️ {_KEEP_LINES[keep['k']][0]}: {_why(keep.get('why') or '')} — {_KEEP_LINES[keep['k']][1]}")
@@ -124,16 +124,16 @@ def card_text(d: dict, bot_username: str = "") -> str:
         mem = d.get("pkg_mem") or {}
         if mem:
             lines.append(f"└ ⚠️ данные для переезда {_n(name)} — {_e(mem['size'])}: переезду сюда понадобится "
-                         f"около {_e(mem['need'])} памяти")
+                         f"около {_e(mem['need'])} RAM")
         lines += quorum_peer_lines(d.get("quorum") or {})
         lines += rfpeer_peer_lines(d.get("rfpeer") or {}, name)
         if d.get("await_merge"):
-            lines.append(f"└ 🟡 изменения из бота на {_n(name)} придут, когда он выйдет на связь" if d.get("jrn_moved")
+            lines.append(f"└ 🟡 изменения гостевого экземпляра на {_n(name)} придут, когда он выйдет на связь" if d.get("jrn_moved")
                          else f"└ ⏳ жду реплику {_n(name)} — изменения из неё применятся, когда он выйдет на связь")
         if d.get("code_open") and d.get("code_by") == "link":
-            lines.append(f"└ 🆘 {_n(name)} не на связи, а голосование о нём не включено — жду аварийный код его админа")
+            lines.append(f"└ 🆘 {_n(name)} не на связи, и голосование о нём не включено — жду аварийный код его администратора")
         elif d.get("code_open"):
-            lines.append(f"└ 🆘 {_n(name)} не отвечает, голосов для переезда не хватает — жду аварийный код его админа")
+            lines.append(f"└ 🆘 {_n(name)} не отвечает, голосов для переезда не хватает — жду аварийный код его администратора")
         elif d.get("auto_block"):
             lines.append("└ ⚠️ автоматический аварийный переезд невозможен: " + _why(d["auto_block"]))
     dns = d.get("dns") or {}

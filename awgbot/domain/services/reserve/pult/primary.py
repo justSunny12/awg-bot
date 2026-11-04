@@ -16,7 +16,7 @@ primary.py — часть пакета pult (см. __init__): сторона о�
 
 Пока пульт здесь: в `st` — `tg_pult` (бот резерва не даёт гостю ставить вебхук),
 пользователям — «бот на техработах» (bot/middleware), в карточке — строка и
-кнопки. «📤 Отдать Telegram резерву» — `pult_back{at}` второй стороне (только при
+кнопки. «📤 Вернуть бота на «Beta»» — `pult_back{at}` второй стороне (только при
 живом линке, её `pult1` и пока она несёт моих); отметка снимается по факту 409
 поллинга (вебхук снова у гостя — `reserve_pult_webhook_back` из pollctl), а не по
 нажатию.
@@ -174,7 +174,7 @@ class ReservePultPrimaryMixin:
                                                                          PULT_GIVE_WAIT_S)
 
     def reserve_pult_give_check(self) -> str:
-        """Пусто — «📤 Отдать Telegram резерву» возможна; иначе причина (всплывашка)."""
+        """Пусто — «📤 Вернуть бота на «Beta»» возможна; иначе причина (всплывашка)."""
         name = self.reserve_peer_name()
         if not self.reserve_pult_on():
             return "Telegram бота не у этого сервера"
@@ -190,7 +190,7 @@ class ReservePultPrimaryMixin:
         return ""
 
     def reserve_pult_give(self) -> list[tuple]:
-        """«📤 Отдать Telegram резерву»: слово `pult_back` с отметкой пульта; снимет её 409."""
+        """«📤 Вернуть бота на «Beta»»: слово `pult_back` с отметкой пульта; снимет её 409."""
         why = self.reserve_pult_give_check()
         if why:
             raise ServiceError(why)

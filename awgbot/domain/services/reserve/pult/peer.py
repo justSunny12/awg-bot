@@ -30,7 +30,7 @@ class ReservePultPeerMixin:
         inn = self.rsv_get("rsv_in") if inn is None else inn
         if str(inn.get("pult_back") or "") == at:
             return ""
-        return "Telegram бота основы у неё — жду, пока отдаст"
+        return "Управление ботом удерживается основным сервером — жду, пока отдаст"
 
     def reserve_pult_back_in(self, at: str) -> list[tuple]:
         """`pult_back{at}` основы: она отдаёт Telegram — гостю поставить вебхук снова."""

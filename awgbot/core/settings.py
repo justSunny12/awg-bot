@@ -216,9 +216,10 @@ def _move_one(conf_dir: Path, src_stem: str, section: str, dst_stem: str) -> Non
                 rsec[_MOVED_MARK] = f"{dst_stem}.yaml"
                 if hasattr(src, "yaml_set_comment_before_after_key"):
                     src.yaml_set_comment_before_after_key(
-                        section, before=f"Раздел перенесён в {dst_stem}.yaml — бот читает его там; здесь копия "
-                                        f"для отката на прежний выпуск.\nПравь {dst_stem}.yaml: ключ, "
-                                        f"изменённый здесь, бот перенесёт туда при следующем старте")
+                        section, before=f"Этот раздел перенесён в {dst_stem}.yaml — конфигурация считывается оттуда. "
+                                        "Здесь оставлена копия для отката на прошлые версии.\n"
+                                        f"Редактируй {dst_stem}.yaml: параметры, изменённые здесь, перезапишут "
+                                        "целевой файл при следующем запуске бота.")
             rsec[_MOVED_SUM] = _flow(sums)
             _dump(ruamel, src_path, src)
         if aside is not None:                    # метка в копии на месте — запасная не нужна

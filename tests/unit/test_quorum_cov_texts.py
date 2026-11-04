@@ -87,15 +87,15 @@ def test_the_largest_tie_alarm_fits_one_telegram_message():
 def test_t_k21_tells_the_reserve_whether_the_primarys_admin_was_written_to():
     told = rn.quorum_code_needed_reserve("Alpha", SINCE, 1, 3, 2, True)
     not_told = rn.quorum_code_needed_reserve("Alpha", SINCE, 1, 3, 2, False)
-    assert told.startswith(f"⚠️ «Alpha» не отвечает с {CLOCK}, а голосов для переезда не хватает: не видят 1 из 3, нужно 2")
-    assert "бот написал ему" in told and "написать ему некуда" not in told
-    assert "написать ему некуда" in not_told and "бот написал ему" not in not_told
+    assert told.startswith(f"⚠️ «Alpha» не отвечает с {CLOCK}, а голосов для переезда не хватает: сбой фиксируют 1 из 3 узлов (требуется 2)")
+    assert "уже отправил ему запрос" in told and "написать ему не могу" not in told
+    assert "написать ему не могу" in not_told and "уже отправил ему запрос" not in not_told
 
 
 def test_t_k21b_names_both_servers_and_the_numbers_to_the_primarys_admin():
     text = rn.quorum_code_needed_primary("Alpha", "Beta", SINCE, 2, 5, 3)
     assert text.startswith(f"🆘 «Beta» не видит «Alpha» с {CLOCK}"), text
-    assert "не видят 2 из 5, нужно 3" in text and "пришли аварийный код" in text
+    assert "сбой фиксируют 2 из 5 узлов (требуется 3)" in text and "пришли сюда аварийный код" in text
 
 
 def test_an_unknown_tie_outcome_reads_as_stayed():

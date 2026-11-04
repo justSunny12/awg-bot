@@ -73,7 +73,7 @@ def run(mode: str, arg: str = "") -> str:
     """install|records|remove|status — через скрипт. AdminDnsError при
     ненулевом коде (кроме status: там код — состояние)."""
     return scriptrun.run_script(["bash", str(_script()), mode] + ([arg] if arg else []), error=AdminDnsError,
-                                what="скрипт резолвера админа", timeout=120,
+                                what="скрипт резолвера администратора", timeout=120,
                                 env={"ADMIN_ADDR": addr(), "ADMIN_DIR": str(ADMIN_DIR)}, check=mode != "status")
 
 

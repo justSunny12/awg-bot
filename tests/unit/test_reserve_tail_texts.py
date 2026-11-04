@@ -142,7 +142,7 @@ def test_the_head_agrees_with_the_number(n, head):
 
 def test_the_c9_head():
     text = rn.tail_disputed("c9", "Beta", ["x", "y"], 2)
-    assert text.startswith("⚠️ Не перенесены 2 изменения от бота на «Beta», сделанные после потери связи — "
+    assert text.startswith("⚠️ Не перенесены 2 изменения от гостевого экземпляра на «Beta», сделанные после потери связи — "
                            "обнаружены конфликты:\n• x\n• y"), text
 
 
@@ -162,7 +162,7 @@ def test_five_disputes_have_no_more():
 
 @pytest.mark.parametrize("variant, want", [
     ("crash", "ℹ️ Изменения, сделанные здесь перед переездом на «Beta», перенесены туда: 4"),
-    ("c9", "ℹ️ Изменения от бота на «Beta» после потери связи перенесены сюда: 12"),
+    ("c9", "ℹ️ Изменения от гостевого экземпляра на «Beta» после потери связи перенесены сюда: 12"),
     ("self", "ℹ️ Изменения, сделанные здесь перед переездом на «Beta», перенесены после возврата: 4"),
 ])
 def test_tj5_variants(variant, want):
@@ -171,9 +171,9 @@ def test_tj5_variants(variant, want):
 
 def test_tj6_texts_and_no_final_period():
     stalled = rn.follow_stalled("Beta", "здесь — по 14:02")
-    assert stalled == "⚠️ Данные здесь перестали догонять бот на «Beta»: здесь — по 14:02"
+    assert stalled == "⚠️ Данные здесь перестали догонять гостевой экземпляр на «Beta»: здесь — по 14:02"
     ok = rn.follow_ok("Beta")
-    assert ok == "🟢 Данные здесь снова следуют за ботом на «Beta»"
+    assert ok == "🟢 Данные здесь снова следуют за гостевым экземпляром на «Beta»"
     for t in (stalled, ok, rn.tail_moved("crash", "Beta", 1), rn.tail_disputed("crash", "Beta", ["a"], 1)):
         assert not t.rstrip().endswith("."), t
 
@@ -189,7 +189,7 @@ def test_tj6_texts_and_no_final_period():
 ])
 def test_lost_edits_agree_with_the_number(n, noun, verb):
     text = rn.jrn_lost("Beta", 100, 100 + n - 1)
-    assert text.startswith(f"⚠️ {noun} от бота на «Beta» {verb} — профили и устройства"), text
+    assert text.startswith(f"⚠️ {noun} от гостевого экземпляра на «Beta» {verb} — профили и устройства"), text
     assert text.endswith("проверь глазами"), f"уведомление с точкой или без совета: {text!r}"
 
 
@@ -232,14 +232,14 @@ def _utf16(s: str) -> int:
 
 def test_the_c9_refusal_with_a_long_pair_name_keeps_its_advice_within_a_toast():
     """Отказ «⬆️ Обновить» идёт всплывашкой `str(e)[:200]` (handlers/fleet.py), а
-    Telegram меряет 200 в единицах UTF-16: с именем пары в 60 знаков совет «удали
-    пару» обязан уцелеть целиком — иначе админ, чей резерв не вернётся, не узнаёт,
-    как выйти из ожидания."""
+    Telegram меряет 200 в единицах UTF-16: с именем пары в 60 знаков совет «отмени
+    ожидание» обязан уцелеть целиком — иначе администратор, чей резерв не вернётся,
+    не узнаёт, как выйти из ожидания."""
     from awgbot.domain.services.reserve.journal.tail import C9_WAIT_REFUSED
     full = C9_WAIT_REFUSED.format(name="Ж" * 60, what="обновление")
     assert _utf16(full) <= 200, f"всплывашка С9 длиннее 200 единиц UTF-16: {_utf16(full)}"
     toast = full[:200]
-    assert toast == full and toast.endswith("если не вернётся — удали пару"), toast
+    assert toast == full and toast.endswith("(либо отмени ожидание)"), toast
     assert toast.count("Ж" * 60) == 1, "имя пары в отказе дважды — съедает место совета"
 
 

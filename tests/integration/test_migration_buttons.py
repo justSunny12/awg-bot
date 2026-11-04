@@ -127,8 +127,8 @@ async def test_each_migration_event_leaves_a_record_in_the_chat(
     assert [t for kind, t, _ in msg.sent if kind == "answer"], "раздел не пришёл следом"
 
 
-@pytest.mark.parametrize("key, mark", [("finish!", "Переезд не завершён"),
-                                       ("cancel!", "Переезд не отменён")])
+@pytest.mark.parametrize("key, mark", [("finish!", "Действие отклонено"),
+                                       ("cancel!", "Не удалось отменить переезд")])
 async def test_refused_exit_is_told_in_the_chat_and_the_lever_stays(
         services, mig, fake_bot, make_active_client, monkeypatch, key, mark):
     """Отказ выхода (второе нажатие поверх идущего, пользователи на резерве) —

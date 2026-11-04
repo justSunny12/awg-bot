@@ -169,7 +169,7 @@ def test_back_to_the_own_slot_after_three_good_and_ten_minutes(rf):
 
 
 CAUSES = [
-    ("off", "его админ выключил «Мои шлюзы для резерва»"),
+    ("off", "его администратор выключил «Шлюзы для резерва»"),
     ("down", "шлюз «Beta» не отвечает"),
     ("link", "нет связи с «Beta»"),
 ]

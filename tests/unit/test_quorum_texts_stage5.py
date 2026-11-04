@@ -54,8 +54,8 @@ def test_a_blind_own_probe_is_said_instead_of_a_stale_view():
     """Свой зонд слеп дольше предела: одна строка о нём (с какого момента и что окно кода о
     пропавшем сервере откроется по линку пары) — не устаревший «не вижу» зонда."""
     lines = quorum_peer_lines(_peer(blind_since=SINCE, my_w="see"))
-    assert lines == [f"└ ⚠️ Зонд этого сервера к «Beta» не работает с {CLOCK}: сам этот сервер «Beta» не видит и в "
-                     "голосовании не участвует — пропадёт «Beta» со связи, приём аварийного кода откроется по линку "
+    assert lines == [f"└ ⚠️ Зонд к «Beta» не работает с {CLOCK}: этот сервер «Beta» не видит и в "
+                     "голосовании не участвует — если «Beta» пропадёт со связи, приём аварийного кода откроется по линку "
                      "пары"], lines
 
 
@@ -248,7 +248,7 @@ def test_tie_notices_escape_names():
 
 @pytest.mark.parametrize("outcome,mine,tail", [("stayed", False, "пользователи остались на «Alpha»"),
                                                ("moved", False, "пользователи переехали сюда"),
-                                               ("fenced", True, "«Alpha» без кворума, бот не принимает решений")])
+                                               ("fenced", True, "«Alpha» без кворума, бот не обрабатывает запросы")])
 def test_t_k6_says_how_it_ended(outcome, mine, tail):
     text = rn.quorum_tie_over("Alpha", 3, 4, outcome, mine=mine)
     assert text == f"✅ Ничьей о «Alpha» больше нет: видят 3 из 4 — {tail}", text
@@ -257,18 +257,18 @@ def test_t_k6_says_how_it_ended(outcome, mine, tail):
 # ── Т-РН2: приглашение ввести аварийный код — почему окно открыто, как на экране роли ──
 
 @pytest.mark.parametrize("code_by,want,not_want", [
-    ("link", "«Beta» не на связи с этим сервером с {c}, а голосование о нём не включено.",
-     "голосов для переезда не хватает"),
-    ("quorum", "«Beta» не отвечает этому серверу с {c}, а голосов для переезда не хватает.",
-     "голосование о нём не включено"),
-    ("", "«Beta» не отвечает этому серверу с {c}, а голосов для переезда не хватает.",
-     "голосование о нём не включено")])
+    ("link", "Сервер «Beta» недоступен с {c}. Автоматический переезд отключён.",
+     "для автоматического переезда не хватает"),
+    ("quorum", "«Beta» не отвечает этому серверу с {c}, и голосов для автоматического переезда не хватает.",
+     "Автоматический переезд отключён"),
+    ("", "«Beta» не отвечает этому серверу с {c}, и голосов для автоматического переезда не хватает.",
+     "Автоматический переезд отключён")])
 def test_code_prompt_says_why_like_the_role_screen(code_by, want, not_want):
     d = {"peer": "Beta", "me": "Alpha", "since": SINCE, "code_by": code_by, "record": "vpn.example.net"}
     text = pa_txt.code_prompt(d)
     assert want.format(c=CLOCK) in text and not_want not in text, text
     screen = pa_txt.screen({**_PA, "code_needed": True, "code_by": code_by, "code_since": SINCE})
-    phrase = "голосование о нём не включено" if code_by == "link" else "голосов для переезда не хватает"
+    phrase = "Автоматический переезд отключён" if code_by == "link" else "для автоматического переезда не хватает"
     assert phrase in screen, "экран роли и приглашение расходятся в причине"
 
 
@@ -277,9 +277,9 @@ def test_code_prompt_says_why_like_the_role_screen(code_by, want, not_want):
 def test_a_blind_probe_reason_depends_on_the_addressee():
     from awgbot.domain.services.reserve.codewin import rn_off_why
     assert rn_off_why(["blind"]) == "зонд резерва к серверу не работает"                     # админу основы
-    assert rn_off_why(["blind"], "Alpha") == "зонд этого сервера к «Alpha» не работает"     # админу резерва
+    assert rn_off_why(["blind"], "Alpha") == "локальный зонд проверки «Alpha» недоступен"     # админу резерва
     assert rn_off_why(["keys"], "Alpha") == rn_off_why(["keys"]), "прочие причины у адресатов одни"
     text = rn.quorum_code_needed_reserve("Alpha", SINCE, 0, 0, 0, True, rn_off_why(["blind"], "Alpha"))
-    assert "(зонд этого сервера к «Alpha» не работает)" in text, text
+    assert "(локальный зонд проверки «Alpha» недоступен)" in text, text
     text = rn.quorum_code_needed_reserve("<b>A", SINCE, 0, 0, 0, True, rn_off_why(["blind"], "<b>A"))
     assert "<b>A" not in text, text

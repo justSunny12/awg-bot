@@ -14,14 +14,14 @@ from awgbot.domain.services.reserve.guest import DEVICE_CONFIG_LATER, GUEST_REFU
 UNAVAILABLE = GUEST_REFUSED                         # Т-РГ2
 __all__ = ["UNAVAILABLE", "DEVICE_CONFIG_LATER", "main_line", "primary_line", "settings_text", "card_text",
            "webhook_stalled", "webhook_restored"]
-SETTINGS_ABOUT = ("Бот работает на резерве {name} — настройки сервера, шлюзы, бэкапы и обновления вернутся "
+SETTINGS_ABOUT = ("Бот работает на резерве {name} — настройки сервера, шлюзы, резервные копии и обновления вернутся "
                   "вместе с пользователями")
 
 _REASONS = {
     "dead": "сервер AWG не отвечает",
     "button": "ты перевёл пользователей кнопкой",
     "rf": "сервер AWG недоступен из РФ",
-    "code": "ты перевёл пользователей аварийным кодом",
+    "code": "переключён вручную по твоему аварийному коду",
 }
 
 
@@ -77,7 +77,7 @@ def card_text(d: dict) -> str:
     if q and "y" in q:                                        # Т-К1: голоса о боте здесь (гость — лидер)
         rows.append(f"🗳 Бот здесь видят {int(q['y'])} из {int(q['v'])} — пользователи вернутся сами, если не увидят {int(q.get('t') or 0)}")
     elif d.get("quorum_phase") == "waiting":                  # Т-К1б: состав ещё не пришёл — решений нет
-        rows.append("🗳 Жду состав голосующих от бота резерва — бот не принимает решений")
+        rows.append("🗳 Жду состав голосующих от бота резерва — бот не обрабатывает запросы")
     lines.append(details("\n".join(rows)))
     return "\n".join(lines)
 
@@ -98,7 +98,7 @@ def return_dialog(d: dict) -> str:
 def webhook_stalled(reserve_name: str, since: str, error: str) -> str:
     """Т-РУ19 основе (в её чат на резерве): Telegram не доставляет обновления."""
     return (f"⚠️ Telegram не доставляет обновления твоего бота на {_n(reserve_name)} с {_when(since)}: "
-            f"<code>{_e(error)}</code> — ответы задерживаются, Telegram хранит сообщения сутки; админ "
+            f"<code>{_e(error)}</code> — ответы задерживаются, Telegram хранит сообщения сутки; администратор "
             f"{_n(reserve_name)} знает")
 
 

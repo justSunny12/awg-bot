@@ -127,7 +127,7 @@ class ReserveInboundRecWaitMixin:
         if not expired:
             return self._rec_wait_notes(self._inn())
         why = str(inn.get("rec_why") or "")
-        reason = f"DNS-запись не подтвердилась за {max(1, int(inn.get('rec_limit') or 0) // 60)} мин" + (f": {why}" if why else "")
+        reason = f"обновление DNS-записи не подтвердилось за {max(1, int(inn.get('rec_limit') or 0) // 60)} мин" + (f": {why}" if why else "")
         log.warning("резерв: факт записи %s → %s за предел не наступил — прежний срыв", name or "?", ip or "?")
         if first:
             return self._take_fail_do(reason)

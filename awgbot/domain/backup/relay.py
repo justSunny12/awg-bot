@@ -36,7 +36,7 @@ class RelayError(ValueError):
 def split(blob: bytes, name: str) -> list[dict]:
     """Тела частей одной передачи."""
     if not blob or len(blob) > MAX_BYTES:
-        raise RelayError("бэкап больше 20 МБ" if blob else "файл пуст")
+        raise RelayError("резервная копия больше 20 МБ" if blob else "файл пуст")
     tid = secrets.token_hex(6)
     sha = hashlib.sha256(blob).hexdigest()
     chunks = [blob[i:i + PART] for i in range(0, len(blob), PART)]
@@ -57,7 +57,7 @@ class Assembly:
         if not _ID_RE.fullmatch(self.id) or not _SHA_RE.fullmatch(self.sha):
             raise RelayError("передача без опознавательных знаков")
         if not isinstance(self.size, int) or isinstance(self.size, bool) or not 0 < self.size <= MAX_BYTES:
-            raise RelayError("бэкап больше 20 МБ")
+            raise RelayError("резервная копия больше 20 МБ")
         if not isinstance(self.n, int) or isinstance(self.n, bool) or self.n != -(-self.size // PART):
             raise RelayError(BROKEN_PART)
         self.parts: dict[int, bytes] = {}
@@ -89,5 +89,5 @@ class Assembly:
     def blob(self) -> bytes:
         data = b"".join(self.parts[i] for i in range(self.n))
         if len(data) != self.size or hashlib.sha256(data).hexdigest() != self.sha:
-            raise RelayError("файл бэкапа повреждён")
+            raise RelayError("файл резервной копии повреждён")
         return data

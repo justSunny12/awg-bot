@@ -32,7 +32,7 @@ class RelayMixin:
         nxt = (self._rst_next or {}).get(slot_id, 0.0)
         left = int(nxt - time.monotonic())
         if left > 0:
-            return f"файл бэкапа с этого шлюза уже приходил недавно — повтори через {max(left, 1)} с"
+            return f"файл резервной копии с этого шлюза уже приходил недавно — повтори через {max(left, 1)} с"
         return ""
 
     def _rst_mark(self, slot_id: int, refused: bool) -> None:
@@ -48,7 +48,7 @@ class RelayMixin:
                 if asm is not None and not asm.done:
                     # прежнюю вытеснили: агент ждёт её ответа — отказ сразу, а не по таймауту
                     await self.send(gw.id, "rst_done", {"id": asm.id, "ok": False,
-                                                        "error": "передачу вытеснил новый бэкап"})
+                                                        "error": "передачу вытеснила новая резервная копия"})
                 asm = sess.rst = relay.Assembly(msg)
             asm.add(msg)
             if not asm.done:
@@ -63,9 +63,9 @@ class RelayMixin:
         sess.rst = None
         error = ""
         if len(blob) < relay.MIN_BYTES:
-            error = "файл не похож на бэкап сервера AWG (слишком мал)"
+            error = "файл не похож на резервную копию сервера AWG (слишком мал)"
         elif pkg._on_restore is None:
-            error = "сервер AWG сейчас не принимает бэкапы через шлюз"
+            error = "сервер AWG сейчас не принимает резервные копии через шлюз"
         else:
             error = self._rst_gate(gw.id)
         if not error:
@@ -74,7 +74,7 @@ class RelayMixin:
                     error = await pkg._on_restore(gw.id, blob, name) or ""
                 except Exception as e:                    # noqa: BLE001
                     log.warning("канал линка: слот %s — бэкап через шлюз не осмотрен: %s", gw.id, e)
-                    error = "сервер AWG не смог разобрать бэкап"
+                    error = "сервер AWG не смог разобрать резервную копию"
             self._rst_mark(gw.id, refused=bool(error))
         del blob
         log.info("канал линка: слот %s прислал бэкап сервера (%s байт) — %s", gw.id, size,

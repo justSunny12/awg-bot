@@ -184,7 +184,7 @@ async def test_an_old_acceptor_hears_old_and_the_inviter_sees_why_in_the_invitat
     assert (first.get("t"), first.get("reason")) == ("pair_refused", "old"), first
     assert await _until(lambda: any(r[0] == "edit_message_text" for r in bot.records)), "у пригласившего тишина"
     text = [r[2] for r in bot.records if r[0] == "edit_message_text"][-1]
-    assert "⛔ Подключался «Beta» на v4.1.1 — для резерва нужен 4.2.0 или новее у обоих серверов" in text, text
+    assert "⛔ Сервер «Beta» пытался подключиться с версии <b>v4.1.1</b>. Для резервирования оба сервера должны использовать версию не ниже v4.2.0." in text, text
     assert services.reserve_invite().get("id") == res["state"]["id"], "отказ «old» закрыл приглашение"
     await gw.close()
 
@@ -286,7 +286,7 @@ async def test_st_from_the_peer_lands_and_its_notes_go_out(services, server, lin
                          "self": rc.HOST_B, "out": "home", "in": "idle", "pkg": {}, "voters": [],
                          "admin_id": 555, "admin_opened": True, "gw": True})
     assert await _until(lambda: services.reserve_peer()["peer_admin_id"] == 555)
-    assert await _until(lambda: any("сменился админ" in n.text for n in server.hooks.notes))
+    assert await _until(lambda: any("сменился администратор" in n.text for n in server.hooks.notes))
     await gw.close()
 
 

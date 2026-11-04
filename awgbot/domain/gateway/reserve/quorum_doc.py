@@ -73,7 +73,7 @@ class GatewayQuorumDocMixin:
             if not self.quorum_section():
                 return {"changed": False, "note": ""}
             self.quorum_remove()
-            return {"changed": True, "note": "🗳 Голосование о сервере AWG снято — зонды опущены"}
+            return {"changed": True, "note": "🗳 Кворум для сервера AWG отключён — зонды остановлены"}
         new = {"l": str(checked.get("l") or ""), "g": int(checked.get("g") or 0),
                "members": list(checked.get("members") or []), "t": int(checked.get("t") or 0),
                "port": int(checked.get("port") or 0), "probes": dict(checked.get("probes") or {}),
@@ -93,7 +93,7 @@ class GatewayQuorumDocMixin:
             self._quorum_epoch_in(new["e"])
         note = ""
         if not cur.get("l"):
-            note = "🗳 Голосование о сервере AWG включено — зонд к нему поднят"
+            note = "🗳 Кворум для сервера AWG активирован — зонд доступности запущен"
         self.quorum_probes_apply(force=True)
         return {"changed": changed, "note": note}
 

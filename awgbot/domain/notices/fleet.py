@@ -109,9 +109,9 @@ def restore_version_line(kind: str, cur: str, ver: str) -> str:
     """Строка версии в плане восстановления (первой после заголовка). kind — down | up."""
     cur, ver = _e(_ver(cur)), _e(_ver(ver))
     if kind == "down":
-        return (f"♻️ Версия: сейчас {cur}, бэкап снят на {ver} — сервер AWG сначала вернётся на {ver} "
-                f"(выпуск с GitHub, sha256 сверю с бэкапом), затем восстановится; шлюзы перейдут на {ver} следом")
-    return (f"♻️ Версия: сейчас {cur}, бэкап снят на {ver} — сервер AWG сначала обновится до {ver}, затем "
+        return (f"♻️ Версия: сейчас {cur}, резервная копия снята на {ver} — сервер AWG сначала вернётся на {ver} "
+                f"(выпуск с GitHub, sha256 сверю с резервной копией), затем восстановится; шлюзы перейдут на {ver} следом")
+    return (f"♻️ Версия: сейчас {cur}, резервная копия снята на {ver} — сервер AWG сначала обновится до {ver}, затем "
             f"восстановится; шлюзы перейдут на {ver} следом")
 
 
@@ -123,16 +123,16 @@ def restore_withdrawn_line(ver: str, reason: str) -> str:
 
 # отказы осмотра бэкапа (после «⚠️ Файл не принят: »)
 def restore_not_release(ver: str) -> str:
-    return f"бэкап снят на сборке не из выпуска ({_ver(ver)}) — восстановить его можно только на той же версии"
+    return f"резервная копия снята на сборке не из выпуска ({_ver(ver)}) — восстановить её можно только на той же версии"
 
 
 def restore_no_release(ver: str) -> str:
     v = _ver(ver)
-    return f"выпуска {v} на GitHub нет — восстановить этот бэкап можно только на {v}, поставив её вручную"
+    return f"выпуска {v} на GitHub нет — восстановить эту резервную копию можно только на {v}, поставив её вручную"
 
 
 def restore_other_digest(ver: str) -> str:
-    return (f"выпуск {_ver(ver)} на GitHub не совпадает с тем, на котором снят бэкап (sha256 другой) — "
+    return (f"выпуск {_ver(ver)} на GitHub не совпадает с тем, на котором снята резервная копия (sha256 другой) — "
             "переходить на него не буду")
 
 
@@ -154,7 +154,7 @@ def restore_not_launched(reason: str) -> str:
 def restore_up_requires(ver: str, req: str) -> str:
     """Отказ: выпуск бэкапа новее, но ставится только с минимума выше текущей."""
     return (f"выпуск {_ver(ver)} ставится только с {_ver(req)} и новее — сначала обнови сервер AWG до "
-            f"{_ver(req)} кнопкой «⬆️ Обновить», затем восстанови бэкап")
+            f"{_ver(req)} кнопкой «⬆️ Обновить», затем восстанови резервную копию")
 
 
 def restore_other_generation(ver: str, gen: int, here: int) -> str:
@@ -169,7 +169,7 @@ def restore_meta_bad(ver: str) -> str:
 
 def restore_version_done(ver: str) -> str:
     """Строка в отчёте после восстановления с переходом."""
-    return f"Версия: {_e(_ver(ver))} — как в бэкапе"
+    return f"Версия: {_e(_ver(ver))} — как в резервной копии"
 
 
 def restore_version_failed(ver: str, reason: str, cur: str) -> str:

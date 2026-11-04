@@ -436,6 +436,6 @@ class ReservePackageMixin:
         except pairproto.ProtocolError:
             limit = pairproto.MAX_CHUNKS * pairproto.MAX_BLOB // 2
             mb = 1048576                                  # числа — как везде в текстах: запятая, без хвостовых нулей
-            return (f"база больше предела передачи ({textfmt.amount(len(blob), mb)} из {textfmt.amount(limit, mb)} МБ) — "
-                    f"сожми базу (архивы, истории) или уменьши число профилей")
+            return (f"размер базы данных превышает лимит передачи ({textfmt.amount(len(blob), mb)} из "
+                    f"{textfmt.amount(limit, mb)} МБ): очисти историю, сожми таблицы или уменьши количество профилей")
         return ""

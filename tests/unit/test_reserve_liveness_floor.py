@@ -20,7 +20,8 @@ def _set(monkeypatch, suspect: int, keepalive="25-35") -> None:
 def test_a_threshold_below_keepalive_plus_tick_is_a_problem_naming_the_floor(monkeypatch):
     _set(monkeypatch, 30)
     why = lv.pair_liveness_problem()
-    assert why == "Порог подозрения резерва (30 с) меньше keepalive линка плюс такт — ложные «недоступен»; действует 40 с", why
+    assert why == ("Таймаут проверки резерва (30 с) меньше суммы такта и keepalive. Возможны ложные срабатывания о "
+                   "недоступности. Автоматически применён безопасный порог: 40 с"), why
     assert "reserve.suspect_seconds" not in why, "строка для человека — без имени ключа конфига"
 
 
@@ -54,7 +55,7 @@ def test_preflight_warns_only_when_paired(monkeypatch):
         def reserve_paired(self):
             return False
     warns = preflight._pair_liveness_warnings(Paired())
-    assert len(warns) == 1 and warns[0].startswith("порог подозрения резерва (30 с) меньше"), warns
+    assert len(warns) == 1 and warns[0].startswith("таймаут проверки резерва (30 с) меньше"), warns
     assert preflight._pair_liveness_warnings(Alone()) == []
     _set(monkeypatch, 40)                                       # умолчание — ровно планка
     assert preflight._pair_liveness_warnings(Paired()) == []

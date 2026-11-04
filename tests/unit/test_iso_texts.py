@@ -100,7 +100,7 @@ def test_gateway_and_routing_texts_show_the_moment_or_drop_it():
     assert panel.reserve_panel_line({"seen": "down", "since": "x", "name": "B"}).startswith("⚠️ Резерв «B»: нет связи — ")
     assert "на нём с 00:30" in panel.reserve_panel_line({"open": True, "since_open": LATE, "name": "B"})
     assert panel.reserve_tg_lines({"tg_via": "B", "tg_since": "x", "name": "A"}) == [
-        "📨 Telegram — через резерв: аплинк до «A» молчит"]
+        "📨 Telegram — через резерв: прямой канал к «A» недоступен"]
     assert panel.reserve_tg_lines({"tg_via": "B", "tg_since": LATE, "name": "A"})[0].endswith(" с 00:30 (UTC+5)")
     assert "не вижу с 00:30 (UTC+5)" in panel.quorum_panel_line({"w": "uns", "since": LATE, "name": "A"})
     assert "не вижу —" in panel.quorum_panel_line({"w": "uns", "since": None, "name": "A"})
@@ -108,7 +108,7 @@ def test_gateway_and_routing_texts_show_the_moment_or_drop_it():
     assert transit._lists_updated_short("x") == "обн. ?"
     assert card.cfg_more_lines({"gen": 3, "applied_at": LATE}) == ["конфигурация №3 применена 16.11 00:30 (UTC+5)"]
     assert card.cfg_more_lines({"gen": 3, "applied_at": "x"}) == card.cfg_more_lines({"applied_at": LATE}) == []
-    assert card.keep_line({"state": "saved", "at": LATE}) == "💾 Настройки бота шлюза в бэкапе: на 16.11.26 00:30 (UTC+5)"
+    assert card.keep_line({"state": "saved", "at": LATE}) == "💾 Настройки бота шлюза в резервной копии: на 16.11.26 00:30 (UTC+5)"
     assert card.keep_line({"state": "saved"}) == card.keep_line({"state": "saved", "at": "x"}) == ""
     head = card.channel_lines({"ever": True, "online": False, "seen": LATE}, True)[0]
     assert head.endswith("🔴 нет связи с 16.11 00:30 (UTC+5)")

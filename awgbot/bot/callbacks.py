@@ -326,10 +326,11 @@ class GwCB(CallbackData, prefix="gw"):
 class RsvCB(CallbackData, prefix="rsv"):
     """Раздел «🛟 Резерв»: invite («📤 Пригласить»), accept («📥 Принять
     приглашение»), code («✏️ Ввести код» у пригласившего), cancel («⬅️
-    Отменить» приглашение), rf («Мои шлюзы для резерва» в диалоге
+    Отменить» приглашение), rf («Шлюзы для резерва» в диалоге
     принятия), connect («🛟 Подключиться»), ready (тумблер готовности),
     rfmine (тумблер в карточке), ret (рычаг возврата), emerg («🆘 На крайний
-    случай»), show_code, new_code, unpair, unpair_yes. pid — id приглашения:
+    случай»), show_code, code_mail («✉️ Отправить на e-mail» под сообщением с
+    кодом), new_code, unpair, unpair_yes. pid — id приглашения:
     кнопка относится только к своему приглашению."""
     action: str
     pid: str = ""

@@ -48,7 +48,7 @@ def test_the_caption_fits_1024_and_names_the_offline_first():
     cap = nb.backup_caption("15.09.26 12:00 (UTC+5)", refs, offline)
     assert len(nb.plain(cap)) <= 1024, len(nb.plain(cap))
     lines = cap.split("\n")
-    assert lines[-1].startswith("🟡 И ещё ") and lines[-1].endswith("не на связи — их настройки в бэкапе на дату "
+    assert lines[-1].startswith("🟡 И ещё ") and lines[-1].endswith("не на связи — их настройки в резервной копии на дату "
                                                                      "последней связи"), lines[-1]
     assert sum(1 for x in lines if " не на связи с " in x) >= 3, "строки «не на связи» вытеснены перечнем"
     assert 'href="https://t.me/b?start=gw-1"' in cap, "имя шлюза — без ссылки на карточку"
@@ -70,8 +70,8 @@ def test_the_service_caption_links_live_slots_only(services, make_active_client)
 
 def test_the_rekey_toast_fits_200():
     t = nb.rekey_wait_toast("Ш" * 400)
-    assert len(t.encode("utf-16-le")) // 2 <= 200 and t.endswith("бэкап сниму сразу после неё"), t
-    assert nb.rekey_wait_toast("NASPi") == "Идёт смена ключей линка «NASPi» — бэкап сниму сразу после неё"
+    assert len(t.encode("utf-16-le")) // 2 <= 200 and t.endswith("резервную копию сниму сразу после неё"), t
+    assert nb.rekey_wait_toast("NASPi") == "Идёт смена ключей линка «NASPi» — резервную копию сниму сразу после неё"
 
 
 # ── доставка ─────────────────────────────────────────────────────────────────
@@ -99,7 +99,7 @@ async def test_a_refused_file_is_logged_and_not_retried_every_hour(services, tmp
     notes = [r[2] for r in bot.records if r[0] == "send_message"]
     if not retried:
         assert "повторяться не будет" in caplog.text
-        assert notes == ["⚠️ Бэкап сервера AWG не отправлен: message caption is too long — попробуй вручную в "
+        assert notes == ["⚠️ Резервная копия сервера AWG не отправлена: message caption is too long — попробуй вручную в "
                          "«⚙️ Настройки → 💾 Бэкапы» или забери из терминала: <code>sudo awg-bot backup</code>"], notes
         await sch.monthly_backup(services, bot, "backup", on_undelivered=lambda: again.append(1))
         assert len([r for r in bot.records if r[0] == "send_message"]) == 1, "уведомление повторилось за месяц"
@@ -122,7 +122,7 @@ async def test_a_refused_event_copy_tells_once_and_mail_does_not_duplicate(servi
     bot = Bot()
     assert await sch.event_backup(services, bot) is False
     notes = [r[2] for r in bot.records if r[0] == "send_message"]
-    assert len(notes) == 1 and notes[0].startswith("⚠️ Бэкап сервера AWG не отправлен: file is too big — ")
+    assert len(notes) == 1 and notes[0].startswith("⚠️ Резервная копия сервера AWG не отправлена: file is too big — ")
     assert done == ["2026-10-17T10:00:00+05:00"] and not notes[0].endswith(".")
     mailed = []
     monkeypatch.setattr(services, "backup_channel", lambda: "email")
@@ -148,7 +148,7 @@ async def test_backup_now_says_when_telegram_refuses_the_file(services, tmp_path
     cb = FakeCallback(message=msg, user_id=config.ADMIN_ID, bot=bot)
     await core.backup_now(cb, services, sections.hooks_for(MAIN))
     said = [t for k, t, *_ in msg.sent if k == "answer"]
-    assert "⚠️ Бэкап не отправлен в чат: Bad Request: message caption is too long" in said, msg.sent
+    assert "⚠️ Резервная копия не отправлена в чат: Bad Request: message caption is too long" in said, msg.sent
 
 
 # ── бэкап из чата сервера ────────────────────────────────────────────────────
@@ -178,7 +178,7 @@ async def _offer(services, name, blob, size=100):
 
 async def test_a_file_not_like_a_backup_stays_in_the_chat(services):
     msg, _ = await _offer(services, "photos.tgz", _tar(None))
-    assert not msg.deleted and msg.sent[-1][1] == texts.restore_rejected("не похоже на бэкап сервера AWG")
+    assert not msg.deleted and msg.sent[-1][1] == texts.restore_rejected("не похоже на резервную копию сервера AWG")
 
 
 async def test_a_rejected_backup_is_removed_from_the_chat(services):
@@ -194,14 +194,14 @@ async def test_a_rejected_backup_is_removed_from_the_chat(services):
 async def test_a_too_big_backup_points_to_the_terminal(services):
     msg, _ = await _offer(services, "awg-bot-backup-main-x.tgz.enc", b"", size=30 * 1024 * 1024)
     assert msg.deleted
-    assert msg.sent[-1][1] == ("⚠️ Файл не принят: бэкап больше 20 МБ — из чата бот его не скачает; восстанови в "
+    assert msg.sent[-1][1] == ("⚠️ Файл не принят: резервная копия больше 20 МБ — из чата бот её не скачает; восстанови в "
                                "терминале сервера: <code>sudo awg-bot restore &lt;файл&gt;</code>")
     msg, _ = await _offer(services, "video.tar.gz", b"", size=30 * 1024 * 1024)
     assert not msg.deleted, "чужой большой файл убран из чата"
 
 
 def test_another_admin_command_is_monospace():
-    text = texts.restore_rejected("бэкап другого админа — из чата его не восстановить; на сервере: "
+    text = texts.restore_rejected("резервная копия другого администратора — из чата её не восстановить; на сервере: "
                                   "sudo awg-bot restore <файл>")
     assert text.endswith("на сервере: <code>sudo awg-bot restore &lt;файл&gt;</code>"), text
 
@@ -239,7 +239,7 @@ async def test_the_report_is_followed_by_a_live_menu(services, fake_bot):
                                          "merge": {"line": "same", "slots": [], "lost": []}}
     await rs.report_restore_result(fake_bot, services)
     sent = [r for r in fake_bot.records if r[0] == "send_message"]
-    assert len(sent) == 2 and sent[0][2].startswith("✅ Восстановлено из бэкапа"), sent
+    assert len(sent) == 2 and sent[0][2].startswith("✅ Восстановлено из резервной копии"), sent
     assert services.db.get_nav_message_id(config.ADMIN_ID), "под отчётом нет живого меню"
 
 

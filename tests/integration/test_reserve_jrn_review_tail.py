@@ -478,8 +478,8 @@ def test_an_open_gap_is_told_to_the_reserve_admin_once_and_goes_to_the_keep_view
     first = duo.b._tick_taking(duo.b._inn())              # такт «пользователи основы у меня», шаг taking
     told = [n.text for n in rm.notices(first)]
     name = duo.b.reserve_peer_name()
-    assert len(told) == 1 and told[0].startswith(f"⚠️ База бота «{name}» собрана не по всему журналу"), told
-    assert "не применено изменений: 1" in told[0] and not told[0].endswith("."), told[0]
+    assert len(told) == 1 and told[0].startswith(f"⚠️ <b>База «{name}» развёрнута с частичной потерей журнала событий</b>"), told
+    assert "не применено изменений — <b>1</b>" in told[0] and not told[0].endswith("."), told[0]
     assert ("send", "up", {}) in first, first
     assert rm.notices(duo.b._tick_taking(duo.b._inn())) == [], "о разрыве сказано второй раз"
     assert duo.b.reserve_keep_view().get("gap") == 12, duo.b.reserve_keep_view()
@@ -496,6 +496,19 @@ def test_an_open_without_a_gap_tells_nothing(duo, monkeypatch):
     assert "gap" not in duo.b.reserve_keep_view()
 
 
+def test_the_open_gap_notice_hides_zero_counters_behind_one_status_line():
+    """Счётчики — одной строкой «Статус синхронизации: …» через запятую, внутри тире
+    (одно двоеточие на строку); нулевой
+    не выводится; обоих нет — строки нет (решение 04.11.2026)."""
+    from awgbot.domain.notices import reserve_tail as rn
+    assert ("\nСтатус синхронизации: пропущено записей — <b>3</b>, не применено изменений — <b>2</b>.\n"
+            in rn.open_gap("Alpha", 3, 2))
+    assert "\nСтатус синхронизации: не применено изменений — <b>2</b>.\n" in rn.open_gap("Alpha", 0, 2)
+    assert "\nСтатус синхронизации: пропущено записей — <b>3</b>.\n" in rn.open_gap("Alpha", 3, 0)
+    text = rn.open_gap("Alpha", 0, 0)
+    assert "Статус" not in text and "записей" not in text and "изменений" not in text and "\n.\n" not in text, text
+
+
 def test_the_open_gap_notice_counts_the_unread_records(duo, monkeypatch):
     """«не прочитано записей: N» — число записей, которые гость не взял (с первой
     недостающей по последнюю у резерва), а не номер первой недостающей."""
@@ -508,7 +521,7 @@ def test_the_open_gap_notice_counts_the_unread_records(duo, monkeypatch):
     jinfo = rsvopen._journal(duo.a.reserve_k(), {}, button=False)
     text = rn.open_gap("Alpha", jinfo["jgap"], jinfo["jlost"])
     unread = last - ids["x0"]
-    assert f"не прочитано записей: {unread}" in text, \
+    assert f"пропущено записей — <b>{unread}</b>" in text, \
         f"у резерва записи {ids['x0'] + 1}…{last} не взяты ({unread}), а в тексте: {text}"
 
 

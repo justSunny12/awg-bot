@@ -120,7 +120,7 @@ def test_the_section_lands_in_a_private_file_and_raises_the_probe_to_the_server(
     st = _store(gw)
     assert (st["l"], st["g"], st["members"], st["t"], st["port"], st["e"]) == ("a", 4, ["a", "b", "a1", "a2"], 2, 8789, 12)
     assert host.ups == [("awgqah", H)], "зонд к серверу не поднят (или поднят зонд к клону без переезда)"
-    assert res["changed"] and "включено" in res["note"]
+    assert res["changed"] and "активирован" in res["note"]
 
 
 def test_the_same_section_again_changes_nothing_and_says_nothing(gw, host):
@@ -144,7 +144,7 @@ def test_a_new_document_keeps_the_agents_own_marks(gw):
 def test_without_the_section_the_agent_wipes_the_probes_and_the_file(gw, host):
     gw.quorum_apply(_sec())
     res = gw.quorum_apply(None)
-    assert res["changed"] and "снято" in res["note"]
+    assert res["changed"] and "отключён" in res["note"]
     assert host.wipes == 1 and not gw._QUO_STORE.exists(), "без раздела зонды или файл с ключами остались"
     assert gw.quorum_apply(None) == {"changed": False, "note": ""}, "повторное снятие что-то делает"
     assert host.wipes == 1

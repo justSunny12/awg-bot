@@ -46,8 +46,9 @@ async def send_code(bot, services, *, renewed_why: str = "") -> None:
     if not code:
         return
     text = notices.code_renewed(code, renewed_why) if renewed_why else notices.code_issued(code)
+    email = bool(await asyncio.to_thread(getattr(services, "email_configured", lambda: False)))
     try:
-        sent = await bot.send_message(config.ADMIN_ID, text, reply_markup=kb.hide_only())
+        sent = await bot.send_message(config.ADMIN_ID, text, reply_markup=rkb.code_message(email))
     except Exception as e:                                # noqa: BLE001
         log.warning("резерв: код не отправлен: %s", e)
         return

@@ -132,7 +132,7 @@ def test_a_failed_accept_keeps_the_question_and_the_server_block(server, conf, t
     assert a.s.keep_section() == "keep" and not a.db.get_state(a.s._KEEP_ANSWERED_KEY)
     assert a.sent == [] and _keep(server) == before, "блок сервера затёрт своим"
     from awgbot.bot.texts.gateway.ask import keep_answer_text
-    assert keep_answer_text(res) == ("⚠️ Настройки из бэкапа не применены: диск только для чтения — остались "
+    assert keep_answer_text(res) == ("⚠️ Настройки из резервной копии не применены: диск только для чтения — остались "
                                      "текущие, вопрос остаётся")
     a.close()
 

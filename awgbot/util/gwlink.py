@@ -225,7 +225,7 @@ DEFAULT_PORT = 8787
 # пишет строками Environment= и которые сверяет снимок; имена — те же, что в
 # документе, поле снимка — ключ в нижнем регистре (`bundle.<ключ>`).
 BUNDLE_KEYS = ("ADMIN_IPS", "LAN_SUBNETS", "LAN_MODE", "RESOLVER", "PEER_LAN_NETS")
-KEY_HUMAN = {"ADMIN_IPS": "устройства админа", "LAN_SUBNETS": "локальные подсети",
+KEY_HUMAN = {"ADMIN_IPS": "устройства администратора", "LAN_SUBNETS": "локальные подсети",
              "LAN_MODE": "VPN-транзит", "RESOLVER": "резолвер",
              "PEER_LAN_NETS": "локальные подсети других шлюзов"}
 

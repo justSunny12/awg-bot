@@ -260,15 +260,15 @@ def keep_line(keep: dict | None, agent_bot: dict | None = None) -> str:
     чате шлюза, агент её не присылает (на связи и без keep1)."""
     keep = keep or {}
     if keep.get("state") == "outdated":
-        return "⚠️ Настройки бота шлюза не сохраняются в бэкап: агент шлюза старше 3.4.0 — обнови его"
+        return "⚠️ Настройки бота шлюза не сохраняются в резервную копию: агент шлюза старше 3.4.0 — обнови его"
     if keep.get("state") == "asked":
         what = {"device": "⏳ Настройки прежнего устройства",
-                "same": "⏳ Настройки бота шлюза с сервера AWG"}.get(keep.get("asked"), "⏳ Настройки бота шлюза из бэкапа")
+                "same": "⏳ Настройки бота шлюза с сервера AWG"}.get(keep.get("asked"), "⏳ Настройки бота шлюза из резервной копии")
         from awgbot.domain.notices.backup import chat_ref
         return f"{what} ждут решения в чате {chat_ref(agent_bot)}"
     if keep.get("state") == "saved":
         when = timeutil.iso_dt(keep.get("at"), year=True)
-        return f"💾 Настройки бота шлюза в бэкапе: на {when}" if when else ""
+        return f"💾 Настройки бота шлюза в резервной копии: на {when}" if when else ""
     return ""
 
 
@@ -314,7 +314,7 @@ def gateway_card_text(state: dict, states: list) -> str:
         if ch.get("outdated"):
             facts.append("настройки по каналу конфигурации не принимает")
         if (state.get("keep") or {}).get("state") == "outdated":
-            facts.append("настройки бота шлюза в бэкап не сохраняет")
+            facts.append("настройки бота шлюза в резервную копию не сохраняет")
         facts.append("командой сервера AWG не обновляется")
         what = ", ".join(facts[:-1]) + (" и " if len(facts) > 1 else "") + facts[-1]
         ver = _ver(_e(str(fleet["row"].get("version") or "")[:32]))

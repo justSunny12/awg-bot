@@ -165,7 +165,7 @@ async def test_the_lever_is_refused_while_the_bot_on_the_reserve_answers_in_tele
     calls = await ui.run.press(RsvCB(action="force_yes"))
     t = _toast(calls)
     assert asked, "рычаг не спросил Telegram"
-    assert t.show_alert and t.text == "Бот на «Beta» отвечает в Telegram — верни пользователей обычным путём", t.text
+    assert t.show_alert and t.text == "Гостевой экземпляр на «Beta» отвечает в Telegram — верни пользователей обычным путём", t.text
     assert not ui.svc.rsv_get("rsv_out").get("await_merge") and ui.dns.sets == [], "рычаг пошёл при живом вебхуке"
 
 
@@ -225,8 +225,8 @@ def test_the_reserve_admin_is_told_once_that_the_webhook_left_the_guest(services
     notes = [n for a in services.reserve_guest_webhook_in({"foreign": True, "stalled": False}) if a[0] == "notify"
              for n in a[1]]
     assert len(notes) == 1 and notes[0].force_sound, notes
-    assert notes[0].text == ("⚠️ Вебхук бота «Beta» указывает не на этот сервер — гостевой бот "
-                             "здесь решения больше не принимает"), notes[0].text
+    assert notes[0].text == ("⚠️ Управление ботом «Beta» вернулось на основной сервер: гостевой экземпляр остановлен и больше не "
+                             "обрабатывает запросы"), notes[0].text
     assert services.reserve_guest_webhook_in({"foreign": True, "stalled": False}) == [], "повтор на каждом надзоре"
 
 

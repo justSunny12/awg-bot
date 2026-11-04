@@ -279,7 +279,7 @@ def test_a_move_by_the_emergency_code_is_not_automatic(c):
 # ── причина переезда гостю (Q5-10) ──────────────────────────────────────────
 
 @pytest.mark.parametrize("kind,case,word", [("dead", "q", "не отвечает"), ("rf", "q", "недоступен из РФ"),
-                                            ("code", "H4", "аварийным кодом")])
+                                            ("code", "H4", "по твоему аварийному коду")])
 def test_the_guest_gets_the_kind_of_the_move_as_its_reason(c, kind, case, word):
     from awgbot.bot.texts.reserve import guest as gt
     if kind == "code":
@@ -422,7 +422,7 @@ def test_diverging_digits_switch_the_candidate_off_and_leave_the_link_signal(c):
     acts = c.run(T_UP + 10) + c.s.reserve_code_link_watch()
     assert c.s.reserve_code_window()["open"], "цифры расходятся — запасного окна кода по линку пары нет"
     texts = [n.text for n in notes(acts)]
-    assert any("цифры времени не сходятся" in t for t in texts), f"в Т-К21д нет причины: {texts}"
+    assert any("конфигурация параметров резервирования не синхронизирована" in t for t in texts), f"в Т-К21д нет причины: {texts}"
 
 
 # ── согласие лидера на просьбу — по st.out (Q8-7) ───────────────────────────

@@ -70,7 +70,7 @@ def test_the_reserve_restarts_the_guest_when_the_primary_is_away_after_released(
     assert svc.reserve_in() == "serving" and inn["tg_taken"] and not inn.get("released_at")
     assert ("fw",) in acts
     texts = [n.text for n in notices(acts)]
-    assert len(texts) == 1 and "не состоялся" in texts[0] and "Beta" in texts[0] and not texts[0].endswith(".")
+    assert len(texts) == 1 and "отклонён" in texts[0] and "Beta" in texts[0] and not texts[0].endswith(".")
     assert "wipe" not in host.zone.names(), "хранилище гостя стёрто — возобновлять нечего"
     assert svc.reserve_in_tick() == [], "serving: повторных запусков нет"
 
@@ -128,7 +128,7 @@ def test_resume_from_the_primary_restarts_the_guest_at_once(host):
     _released(host)
     acts = svc.reserve_resume_in()
     assert host.spawn.runs == [START] and svc.reserve_in() == "serving"
-    assert notices(acts) and "не состоялся" in notices(acts)[0].text
+    assert notices(acts) and "отклонён" in notices(acts)[0].text
     assert svc.reserve_resume_in() == [], "повтор слова при serving — повторный запуск"
 
 
@@ -148,9 +148,9 @@ def test_resume_restores_the_vpn_without_the_bot_when_the_guest_did_not_hold_tel
     assert not inn.get("tg_taken"), "после возврата — «бот у меня», которого не было"
     assert "не взял право отвечать" in inn.get("tg_wait", "") and svc.reserve_st_body()["in_tg"] == "wait"
     text = notices(acts)[0].text
-    assert text == ("⚠️ Возврат пользователей «Beta» не состоялся: слияние данных у «Beta» не прошло — пользователи "
-                    "«Beta» снова у тебя, VPN работает, но гостевой бот не отвечает в Telegram — повторяю раз в "
-                    "минуту; возврат повторит админ «Beta»"), text
+    assert text == ("⚠️ Возврат пользователей на «Beta» отклонён: ошибка слияния данных на основном сервере. "
+                    "Пользователи остаются на этом сервере (VPN работает, опрос гостевого экземпляра повторяется каждую "
+                    "минуту). Повторный возврат запускается администратором «Beta»"), text
     monkeypatch.setattr(inbound_tgwait, "subprocess", host.spawn)
     monkeypatch.setattr(rsvzone, "guest_unit_active", lambda: True)
     assert not host.zone.take.exists()

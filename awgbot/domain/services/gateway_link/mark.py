@@ -52,10 +52,10 @@ class MarkMixin:
         dev = self.db.get_device_by_pubkey(data["pub"])
         if dev is None:
             raise ServiceError("устройства с таким ключом нет: аплинк шлюза должен быть "
-                               "устройством админа, выпущенным этим ботом")
+                               "устройством администратора, выпущенным этим ботом")
         admin = self.admin_client()
         if admin is None or dev.client_id != admin.id:
-            raise ServiceError("шлюзом может быть только устройство профиля админа")
+            raise ServiceError("шлюзом может быть только устройство профиля администратора")
         mine = self.db.gateway_by_device(dev.id)
         if mine is not None:
             return {"status": "already", "device": dev, "gateway": mine}

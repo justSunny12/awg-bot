@@ -129,7 +129,7 @@ async def test_the_role_screen_names_the_learned_networks_of_the_pool(services, 
                    "learned": [{"prefix": "203.0.113.0/24"}, {"prefix": "198.51.100.0/24"}],
                    "pool": ["203.0.113.0/24", "198.51.100.0/24"]})
     text, _ = await _role_screen(services, fake_bot, monkeypatch)
-    assert "🟢 пул адресов Telegram для вебхука: ядро и 2 выученные сети" in text, text
+    assert "🟢 пул адресов Telegram для управления ботом: ядро и 2 выученные сети" in text, text
     assert "давно не обновлялись" not in text
 
 
@@ -138,7 +138,7 @@ async def test_the_role_screen_marks_old_announces(services, rsv, fake_bot, monk
     old = timeutil.to_iso(timeutil.shift(timeutil.now(), -5 * 86400))
     tgpool._write({"announced": {"62041": ["149.154.160.0/20"]}, "fetched_at": old, "learned": [], "pool": []})
     text, _ = await _role_screen(services, fake_bot, monkeypatch)
-    assert "⚠️ пул адресов Telegram для вебхука: ядро · анонсы давно не обновлялись" in text, text
+    assert "⚠️ пул адресов Telegram для управления ботом: ядро · анонсы давно не обновлялись" in text, text
 
 
 # ── общий админ обоих серверов ──────────────────────────────────────────────
@@ -156,7 +156,7 @@ async def test_the_role_screen_opens_inside_the_card_with_back_instead_of_hide(u
     monkeypatch.setattr(ui.svc, "server_ok", lambda: True)
     e = _edits(await ui.run.press(RsvCB(action="role")))
     assert e, "экран роли из карточки не открылся"
-    assert "Ты — админ «Beta»" in e[0].text, e[0].text
+    assert "Ты — администратор «Beta»" in e[0].text, e[0].text
     labels = _labels(e[0])
     assert "Скрыть" not in labels and any("Назад" in x or "⬅️" in x for x in labels), labels
     assert "👤 Меню пользователя" not in labels
@@ -167,7 +167,7 @@ async def test_the_refresh_of_the_role_screen_works_for_the_admin_of_both(ui, mo
     monkeypatch.setattr(ui.svc, "server_ok", lambda: True)
     calls = await ui.run.press(PeerCB(action="refresh"))
     e = _edits(calls)
-    assert e and "Ты — админ «Beta»" in e[0].text, "«🔄 Обновить» общего админа никто не взял"
+    assert e and "Ты — администратор «Beta»" in e[0].text, "«🔄 Обновить» общего админа никто не взял"
     assert not [x for x in _labels(e[0]) if x == "Скрыть"], "обновлённый экран раздела потерял «назад»"
 
 

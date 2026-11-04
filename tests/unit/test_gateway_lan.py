@@ -436,7 +436,7 @@ def test_no_avahi_is_off_but_missing_browse_is_red(svc, monkeypatch):
     _svc_on(monkeypatch, avahi=False)
     c = {c.name: c for c in svc.services_status()[1]}["SMB этой подсети"]
     assert c.ok is None and c.detail == ("avahi-daemon не запущен: SMB-серверы этой подсети по именам не "
-                                         "видны ни в подсетях других шлюзов, ни на устройствах админа в туннеле"), c.detail
+                                         "видны ни в подсетях других шлюзов, ни на устройствах администратора в туннеле"), c.detail
     _svc_on(monkeypatch, browse=False)
     c = {c.name: c for c in svc.services_status()[1]}["SMB этой подсети"]
     assert c.ok is False and c.detail == "нет avahi-browse, пакет avahi-utils (🚑 Восстановить)", c.detail

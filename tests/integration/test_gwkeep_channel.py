@@ -351,6 +351,6 @@ def test_an_agent_without_keep1_gets_no_keep_answer_and_the_card_says_so(server,
     assert server.gwkeep_card(1, agent_caps=["cfg1"], online=True)["state"] == "outdated"
     assert server.gwkeep_card(1, agent_caps=["cfg1"], online=False)["state"] == "", "не на связи — не судим"
     from awgbot.bot.texts.routing.card import keep_line
-    assert keep_line({"state": "outdated"}) == ("⚠️ Настройки бота шлюза не сохраняются в бэкап: агент шлюза "
+    assert keep_line({"state": "outdated"}) == ("⚠️ Настройки бота шлюза не сохраняются в резервную копию: агент шлюза "
                                                  "старше 3.4.0 — обнови его")
     a.close()

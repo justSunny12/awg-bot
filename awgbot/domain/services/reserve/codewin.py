@@ -250,17 +250,18 @@ def rn_off_why(codes: list, primary: str = "") -> str:
     («Зонд этого сервера к «Alpha» не работает»); пусто — админу основы."""
     for c in codes or []:
         if c == "no_gateways":
-            return "нет шлюзов с агентом v4.2.0"
+            return "нет шлюзов с агентом v4.2.0 или новее"
         if c == "not_acked":
-            return "состав голосующих не подтверждён"
+            return "состав кворума не подтверждён"
         if c == "blind":
-            return f"зонд этого сервера к «{primary}» не работает" if primary else "зонд резерва к серверу не работает"
+            return f"локальный зонд проверки «{primary}» недоступен" if primary else "зонд резерва к серверу не работает"
         if c == "keys":
-            return "ключи голосования ещё не у всех"
+            return "ключи кворума ещё не синхронизированы"
         if str(c).startswith("timing:"):
-            return "цифры времени не сходятся"
+            return "конфигурация параметров резервирования не синхронизирована"
         if str(c).startswith("overlap:"):
-            return "блок зондов пересекается с сетью"
+            return "подсеть адресов зондов конфликтует с локальной сетью"
         if str(c).startswith("slot:"):
             return "номер слота шлюза больше допустимого"
-    return "голосование не включено"
+    from awgbot.domain.notices.reserve_quorum import OFF_PLAIN
+    return OFF_PLAIN

@@ -42,7 +42,7 @@ def test_second_start_during_the_first_is_refused_and_births_nothing(services, m
     t = threading.Thread(target=lambda: out.__setitem__("res", services.migration_start()))
     t.start()
     assert inside.wait(5)
-    with pytest.raises(ServiceErrorMigration, match="уже включается"):
+    with pytest.raises(ServiceErrorMigration, match="уже запускается"):
         services.migration_start()
     go.set()
     t.join(5)
@@ -66,9 +66,9 @@ def test_finish_and_cancel_share_the_lever_with_start(services, mig, make_active
     t.start()
     assert inside.wait(5)
     try:
-        with pytest.raises(ServiceErrorMigration, match="уже включается"):
+        with pytest.raises(ServiceErrorMigration, match="уже запускается"):
             services.migration_finish()
-        with pytest.raises(ServiceErrorMigration, match="уже включается"):
+        with pytest.raises(ServiceErrorMigration, match="уже запускается"):
             services.migration_cancel()
     finally:
         go.set()

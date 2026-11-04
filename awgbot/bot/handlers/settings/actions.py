@@ -130,8 +130,9 @@ async def migration_action(cb: CallbackQuery, callback_data: SetCB, services):
     if key == "finish":
         _, dropped, twinless = await call(services.migration_finish_preview)
         old_uplink = await call(services.gwcfg_old_uplink)
+        more_t = await _snap_more(cb, services, texts.migration.TWINLESS_TITLE, twinless, texts.migration.LIST_CAP)
         await edit(cb, texts.migration_finish_confirm(dropped, old_uplink, getattr(services, "bot_username", "") or "",
-                                                     twinless=twinless),
+                                                     twinless=twinless, more_twinless=more_t),
                    kb.migration_confirm("finish"))
         await cb.answer()
         return

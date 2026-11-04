@@ -218,7 +218,7 @@ def test_space_problem_link():
 @pytest.mark.parametrize("admin,intercept,bad", [
     ("10.255.53.53", "10.255.53.1", ""),              # в служебной /16
     ("10.53.0.53", "192.168.53.1", ""),               # вне пространства
-    ("10.240.0.53", "10.255.53.1", "резолвер админа"),
+    ("10.240.0.53", "10.255.53.1", "резолвер администратора"),
     ("10.255.53.53", "10.254.53.1", "адрес перехвата DNS"),
     ("", "", ""), ("мусор", "мусор", ""),
 ])
@@ -273,4 +273,4 @@ def test_lan_space_problem_admin_resolver(services, monkeypatch):
     real = settings.get
     monkeypatch.setattr(settings, "get",
                         lambda k, d=None: "10.240.0.53" if k == "app.client_config.admin_dns" else real(k, d))
-    assert services.lan_space_problem().startswith("резолвер админа 10.240.0.53")
+    assert services.lan_space_problem().startswith("резолвер администратора 10.240.0.53")

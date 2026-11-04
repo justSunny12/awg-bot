@@ -112,18 +112,18 @@ def test_inspect_refuses_with_words(services, monkeypatch, tmp_path, v400):
     services.backup_set_passphrase(PHRASE)
     assert "ключевая фраза не подходит" in err(enc(_meta(), phrase="wrong-phrase!"))
     assert err(enc({"role": "main", "created_at": "2026-09-09T10:00:00+03:00", "version": "3.4.0"})) == \
-        "бэкап снят версией 3.4.0 — бэкапы версий до 4.0.0 не применяются"
-    assert err(enc(_meta(version="3.4.0"))) == "бэкап снят версией 3.4.0 — бэкапы версий до 4.0.0 не применяются"
+        "резервная копия снята версией 3.4.0 — резервные копии версий до 4.0.0 не применяются"
+    assert err(enc(_meta(version="3.4.0"))) == "резервная копия снята версией 3.4.0 — резервные копии версий до 4.0.0 не применяются"
     # новее кода — не отказ, а переход вверх; без digest — сборка не из выпуска (отказ)
     assert err(enc(_meta(version="4.1.0"))) == \
-        "бэкап снят на сборке не из выпуска (v4.1.0) — восстановить его можно только на той же версии"
+        "резервная копия снята на сборке не из выпуска (v4.1.0) — восстановить её можно только на той же версии"
     from awgbot.infra import awglock
     monkeypatch.setattr(awglock, "generation", lambda: 2)
     assert "другом поколении AmneziaWG" in err(enc(_meta(awg_gen=1)))
     monkeypatch.setattr(awglock, "generation", lambda: 1)
     assert err(enc(_meta(awg_gen=1), env="ADMIN_ID=4242\n")) == \
-        "бэкап другого админа — из чата его не восстановить; на сервере: sudo awg-bot restore <файл>"
-    assert "бэкап шлюза прежних версий" in err(enc({"role": "gw", "created_at": "2026-09-09T10:00:00+03:00"}))
+        "резервная копия другого администратора — из чата её не восстановить; на сервере: sudo awg-bot restore <файл>"
+    assert "резервная копия шлюза прежних версий" in err(enc({"role": "gw", "created_at": "2026-09-09T10:00:00+03:00"}))
     assert not services.inspect_backup(b"garbage", "b.tgz")["ok"]
     ok = services.inspect_backup(enc(_meta(awg_gen=1, version="4.0.0.2")), "x.bin")
     assert ok["ok"] and ok["created_at"].startswith("2026-10-09") and ok["plan"]["line"] in ("same", "clean")
@@ -139,7 +139,7 @@ def test_the_gateway_has_no_backups(services):
     from awgbot.util import secrets_util
     services.backup_set_passphrase(PHRASE)
     r = services.inspect_backup(secrets_util.encrypt(_archive(_meta(role="gw")), passphrase=PHRASE), "b.tgz.enc")
-    assert not r["ok"] and "бэкап шлюза прежних версий" in r["error"], r
+    assert not r["ok"] and "резервная копия шлюза прежних версий" in r["error"], r
 
 
 def test_db_snapshot_carries_transactions_still_in_the_wal(tmp_path):

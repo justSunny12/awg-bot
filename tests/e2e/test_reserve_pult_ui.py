@@ -43,7 +43,7 @@ __all__ = ["ui", "gui"]
 
 USER = 5000
 LEVER = "↩️ Вернуть пользователей сюда"
-GIVE = "📤 Отдать Telegram резерву"
+GIVE = "📤 Вернуть бота на «Beta»"
 FORCE = "⚠️ Вернуть без «Beta»"
 
 
@@ -146,7 +146,7 @@ async def test_the_card_shows_the_pult_line_and_its_two_buttons(ui):
     assert FORCE in labels and LEVER not in labels and GIVE not in labels, labels
     _take(ui)
     text, labels = await _card(ui)
-    assert "└ 🎛 Telegram бота здесь с " in text and "бот на «Beta» не отвечал — пользователям отвечаю «бот на техработах»" in text, text
+    assert "└ 📍 Управление ботом: здесь с " in text and "резервный экземпляр не ответил. Пользователям отвечаю «бот временно недоступен, VPN работает нормально»" in text, text
     assert LEVER in labels and GIVE in labels and FORCE not in labels, labels
     assert labels.index(LEVER) < labels.index(GIVE)
 
@@ -202,7 +202,7 @@ async def test_giving_telegram_back_sends_the_word_and_shows_giving(ui, monkeypa
     assert _toast(calls).text == pt.GIVE_TOAST
     assert sent == [("pult_back", {"at": ui.svc.rsv_get("rsv_out")["pult_at"]})], sent
     e = _edits(calls)
-    assert e and "└ ⏳ отдаю Telegram «Beta»" in e[0].text, "карточка не сказала, что Telegram отдаётся"
+    assert e and "└ ⏳ возвращаю бота на «Beta»" in e[0].text, "карточка не сказала, что Telegram отдаётся"
 
 
 async def test_giving_does_not_work_in_the_bot_on_the_reserve(gui):

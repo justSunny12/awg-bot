@@ -18,12 +18,12 @@ import logging
 
 log = logging.getLogger("awgbot.backup")
 
-OPEN_REFUSAL = "бэкап не зашифрован — восстанавливаются только шифрованные бэкапы (.tgz.enc)"
-NOT_BACKUP = "не похоже на бэкап сервера AWG"
-RANDOM_KEY = ("это бэкап прежних версий (шлюза или сервера), зашифрованный случайным ключом, — восстановиться "
-              "из него не получится")
+OPEN_REFUSAL = "резервная копия не зашифрована — восстанавливаются только шифрованные резервные копии (.tgz.enc)"
+NOT_BACKUP = "не похоже на резервную копию сервера AWG"
+RANDOM_KEY = ("это резервная копия прежних версий (шлюза или сервера), зашифрованная случайным ключом, — восстановиться "
+              "из неё не получится")
 TERMINAL = "sudo awg-bot restore <файл>"
-TOO_BIG = f"бэкап больше 20 МБ — из чата бот его не скачает; восстанови в терминале сервера: {TERMINAL}"
+TOO_BIG = f"резервная копия больше 20 МБ — из чата бот её не скачает; восстанови в терминале сервера: {TERMINAL}"
 SUFFIXES = (".tgz", ".tgz.enc", ".tar.gz", ".tar.gz.enc")
 
 
@@ -82,12 +82,12 @@ class BackupInspectMixin:
             return {"ok": False, "error": NOT_BACKUP}
         kw = self.backup_enc_kwargs()
         if kw is None:
-            return {"ok": False, "error": ("бэкап шифрованный, а ключевая фраза здесь не задана — задай её в «🔐 Шифрование» "
+            return {"ok": False, "error": ("резервная копия зашифрована, а ключевая фраза здесь не задана — задай её в «🔐 Шифрование» "
                                            "и пришли файл снова")}
         try:
             plain = secrets_util.decrypt(blob, **kw)
         except Exception:                              # noqa: BLE001
-            return {"ok": False, "error": ("не удалось расшифровать — ключевая фраза не подходит: бэкап, снятый "
+            return {"ok": False, "error": ("не удалось расшифровать — ключевая фраза не подходит: резервную копию, снятую "
                                            f"с прежней фразой, восстанови в терминале сервера: {TERMINAL}")}
         from . import meta as _meta
         label = _meta.read(plain)
@@ -107,7 +107,7 @@ class BackupInspectMixin:
             p = self._restore_plan(plain, label, getattr(getattr(self, "db", None), "path", None))
         except Exception as e:                         # noqa: BLE001 — база бэкапа не читается
             log.warning("план восстановления не построен: %s", e)
-            return {"ok": False, "error": "база в бэкапе не читается"}
+            return {"ok": False, "error": "база в резервной копии не читается"}
         p.release = fleet_restore.public(rel)
         return {"ok": True, "created_at": str(label.get("created_at") or ""), "plan": p.to_dict()}
 
@@ -133,5 +133,5 @@ class BackupInspectMixin:
                         with open(os.path.join(d, name), "wb") as out:
                             out.write(f.read())
             if not os.path.exists(os.path.join(state, "bot.db")):
-                raise ValueError("в бэкапе нет базы")
+                raise ValueError("в резервной копии нет базы")
             return _plan.plan_for_dir(label, d, cur_db=cur_db)

@@ -76,12 +76,12 @@ async def test_the_role_screen_offers_the_code_only_while_the_candidate_holds_th
     msg = FakeMessage(text="/start", chat_id=PEER_ADMIN, user_id=PEER_ADMIN, bot=fake_bot)
     await peeradmin.start(msg, box.s)
     assert "🔑 Ввести аварийный код" not in _labels(msg.sent[-1][2]), "кнопка кода без окна кода"
-    assert "пришли аварийный код" not in msg.sent[-1][1]
+    assert "Отправь аварийный код" not in msg.sent[-1][1]
     opener(c)
     msg = FakeMessage(text="/start", chat_id=PEER_ADMIN, user_id=PEER_ADMIN, bot=fake_bot)
     await peeradmin.start(msg, box.s)
     assert "🔑 Ввести аварийный код" in _labels(msg.sent[-1][2]), "окно кода открыто, а на экране роли нет кнопки кода"
-    assert "а голосов для переезда не хватает — пришли аварийный код резерва" in msg.sent[-1][1], msg.sent[-1][1]
+    assert "Голосов для автоматического переезда не хватает. Отправь аварийный код" in msg.sent[-1][1], msg.sent[-1][1]
 
 
 async def test_the_button_with_the_window_closed_is_an_alert_and_no_input(box, fake_bot):
@@ -100,7 +100,7 @@ async def test_the_button_in_h4_asks_for_the_code_with_cancel(h4, fake_bot):
     await peercode.code_start(cb, st, h4.s)
     assert await st.get_state() == PeerCode.value.state
     kind, text, markup = nav.sent[-1]
-    assert kind == "edit_text" and "Пришли аварийный код" in text and "удалю сразу" in text, \
+    assert kind == "edit_text" and "Отправь аварийный код" in text and "будет удалено сразу" in text, \
         "приглашение к вводу — не на месте экрана роли (второе сообщение в чате)"
     assert _labels(markup) == ["⬅️ Отмена"]
     assert (await st.get_data()).get("prompt") == [nav.chat.id, nav.message_id], "место приглашения не запомнено"
@@ -113,7 +113,7 @@ async def test_cancel_returns_to_the_role_screen(h4, fake_bot):
     await st.set_state(PeerCode.value)
     await peercode.code_cancel(cb, st, h4.s)
     assert await st.get_state() is None
-    assert nav.sent[-1][0] == "edit_text" and "Ты — админ «Beta»" in nav.sent[-1][1]
+    assert nav.sent[-1][0] == "edit_text" and "Ты — администратор «Beta»" in nav.sent[-1][1]
     assert "🔑 Ввести аварийный код" in _labels(nav.sent[-1][2])
 
 
@@ -153,7 +153,7 @@ async def test_a_command_instead_of_the_code_closes_the_input_without_a_try(h4, 
     await st.set_state(PeerCode.value)
     await peercode.code_command(msg, st, h4.s)
     assert await st.get_state() is None
-    assert "Ты — админ «Beta»" in msg.sent[-1][1] and "🔑 Ввести аварийный код" in _labels(msg.sent[-1][2])
+    assert "Ты — администратор «Beta»" in msg.sent[-1][1] and "🔑 Ввести аварийный код" in _labels(msg.sent[-1][2])
     assert not h4.launched and not h4.s._code_tries(dict(h4.s.rsv_get("rsv_view").get("code") or {}))
 
 
@@ -165,7 +165,7 @@ async def test_after_the_result_the_role_screen_comes_back_in_place_of_the_promp
     msg = FakeMessage(text=CODE, chat_id=PEER_ADMIN, user_id=PEER_ADMIN, bot=fake_bot)
     await peercode.code_text(msg, st, h4.s)
     edits = [r for r in fake_bot.records if r[0] == "edit_message_text"]
-    assert edits and "Ты — админ «Beta»" in edits[-1][2], f"экран роли не вернулся на место приглашения: {fake_bot.records}"
+    assert edits and "Ты — администратор «Beta»" in edits[-1][2], f"экран роли не вернулся на место приглашения: {fake_bot.records}"
 
 
 async def test_after_the_window_closes_the_text_is_answered_as_not_needed(h4, fake_bot):

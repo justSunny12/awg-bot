@@ -65,13 +65,13 @@ def test_the_same_version_needs_no_github(github):
 
 def test_other_version_without_digest_is_refused_before_the_network(github):
     r = fr.plan_release(_label("4.0.1", digest=""))
-    assert r["error"] == "бэкап снят на сборке не из выпуска (v4.0.1) — восстановить его можно только на той же версии"
+    assert r["error"] == "резервная копия снята на сборке не из выпуска (v4.0.1) — восстановить её можно только на той же версии"
     assert github["calls"] == 0
 
 
 @pytest.mark.parametrize("case, want", [
-    ("none", "выпуска v4.0.1 на GitHub нет — восстановить этот бэкап можно только на v4.0.1, поставив её вручную"),
-    ("digest", "выпуск v4.0.1 на GitHub не совпадает с тем, на котором снят бэкап (sha256 другой) — "
+    ("none", "выпуска v4.0.1 на GitHub нет — восстановить эту резервную копию можно только на v4.0.1, поставив её вручную"),
+    ("digest", "выпуск v4.0.1 на GitHub не совпадает с тем, на котором снята резервная копия (sha256 другой) — "
                "переходить на него не буду"),
     ("down", "не удалось проверить выпуск v4.0.1 на GitHub — попробуй позже"),
     ("meta", "метаданные выпуска v4.0.1 на GitHub не прочитаны — переходить на него не буду"),
@@ -93,11 +93,11 @@ def test_down_and_up_lines_t_v1(github):
     down = fr.plan_release(_label("4.0.1"))
     assert down["kind"] == fr.DOWN and not down["error"] and down["release"].tag == "v4.0.1"
     assert fr.version_lines(down) == [
-        "♻️ Версия: сейчас v4.0.2, бэкап снят на v4.0.1 — сервер AWG сначала вернётся на v4.0.1 "
-        "(выпуск с GitHub, sha256 сверю с бэкапом), затем восстановится; шлюзы перейдут на v4.0.1 следом"]
+        "♻️ Версия: сейчас v4.0.2, резервная копия снята на v4.0.1 — сервер AWG сначала вернётся на v4.0.1 "
+        "(выпуск с GitHub, sha256 сверю с резервной копией), затем восстановится; шлюзы перейдут на v4.0.1 следом"]
     up = fr.plan_release(_label("4.1.0"))
     assert up["kind"] == fr.UP and fr.version_lines(up) == [
-        "♻️ Версия: сейчас v4.0.2, бэкап снят на v4.1.0 — сервер AWG сначала обновится до v4.1.0, затем "
+        "♻️ Версия: сейчас v4.0.2, резервная копия снята на v4.1.0 — сервер AWG сначала обновится до v4.1.0, затем "
         "восстановится; шлюзы перейдут на v4.1.0 следом"]
     assert "release" not in fr.public(up) and json.dumps(fr.public(up))     # в план вопроса — без объекта
 
@@ -129,7 +129,7 @@ def test_inspect_carries_the_version_line_and_the_newer_refusal_is_gone(services
     assert info["plan"]["release"]["kind"] == "up" and info["plan"]["release"]["tag"] == "v4.1.0"
     text = texts.restore_offer_plan(Plan.from_dict(info["plan"]), "")
     first, second = text.split("\n")[:2]
-    assert first.startswith("♻️ Восстановить бэкап от ") and second.startswith("♻️ Версия: сейчас v4.0.2")
+    assert first.startswith("♻️ Восстановить резервную копию от ") and second.startswith("♻️ Версия: сейчас v4.0.2")
     github["down"] = True
     assert services.inspect_backup(blob, "b.tgz.enc")["error"] == \
         "не удалось проверить выпуск v4.1.0 на GitHub — попробуй позже"
@@ -174,7 +174,7 @@ async def test_the_reports_t_v3(services, fake_bot, monkeypatch):
     monkeypatch.setattr(services, "restore_wait_start", lambda *a, **kw: None, raising=False)
     await report_restore_result(fake_bot, services)
     text = next(r[2] for r in fake_bot.records if r[0] == "send_message")
-    assert text.split("\n")[1] == "Версия: v4.0.1 — как в бэкапе"
+    assert text.split("\n")[1] == "Версия: v4.0.1 — как в резервной копии"
     assert services.fleet_run() == {}, "ход прежнего выпуска пережил переход на выпуск бэкапа"
 
 
@@ -200,7 +200,7 @@ def test_the_terminal_tool(github, tmp_path, capsys):
     meta.write_text(json.dumps(_label("4.0.1")), encoding="utf-8")
     assert tool.main(["--meta", str(meta), "--out", str(out)]) == 0
     lines = capsys.readouterr().out.splitlines()
-    assert lines[0] == "4.0.1" and lines[1].startswith("♻️ Версия: сейчас v4.0.2, бэкап снят на v4.0.1")
+    assert lines[0] == "4.0.1" and lines[1].startswith("♻️ Версия: сейчас v4.0.2, резервная копия снята на v4.0.1")
     assert out.read_bytes() == BLOB
     given = tmp_path / "given.tgz"
     given.write_bytes(BLOB)
@@ -231,7 +231,7 @@ async def test_the_gateway_chat_entry_gets_the_same_version_line(services, githu
                                          env=f"ADMIN_ID={cfg.ADMIN_ID}\n", db=db), passphrase=PHRASE)
     assert await rs.relay_restore(fake_bot, services, FakeState(), blob, "b.tgz.enc") == ""
     asked = [r for r in fake_bot.records if r[0] == "send_message"][-1][2]
-    assert asked.split("\n")[1].startswith("♻️ Версия: сейчас v4.0.2, бэкап снят на v4.0.1 — сервер AWG сначала "
+    assert asked.split("\n")[1].startswith("♻️ Версия: сейчас v4.0.2, резервная копия снята на v4.0.1 — сервер AWG сначала "
                                            "вернётся на v4.0.1")
 
 
@@ -271,7 +271,7 @@ def test_an_upgrade_below_the_release_minimum_is_refused(github):
                           _rel("v4.2.0", meta={"awg_gen": 1, "roles": {"main": {"requires": "4.1.0"}}})]
     r = fr.plan_release(_label("4.2.0"))
     assert r["error"] == ("выпуск v4.2.0 ставится только с v4.1.0 и новее — сначала обнови сервер AWG до v4.1.0 "
-                          "кнопкой «⬆️ Обновить», затем восстанови бэкап"), r["error"]
+                          "кнопкой «⬆️ Обновить», затем восстанови резервную копию"), r["error"]
     github["releases"][-1] = _rel("v4.2.0", meta={"awg_gen": 1, "roles": {"main": {"requires": "4.0.0"}}})
     assert fr.plan_release(_label("4.2.0"))["error"] == ""
 

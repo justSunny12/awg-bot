@@ -52,7 +52,7 @@ def test_every_obstacle_gives_its_own_reason_and_no_start(mv):
     assert "у «Beta» выключено «Готов быть резервом»" in svc.reserve_move_check(), "причина не называет сторону"
     rm.st_in(svc)
     settings.set_value("app.network.server_host", "203.0.113.5")
-    assert "DNS-записи нет" in svc.reserve_move_check(), "адрес для пользователей — IP: менять нечего"
+    assert "не настроен домен сервера" in svc.reserve_move_check(), "адрес для пользователей — IP: менять нечего"
     settings.set_value("app.network.server_host", rc.HOST_A)
     svc.rsv_update("rsv_in", state="serving")
     assert "возврат" in svc.reserve_move_check(), "у меня пользователи резерва — переезд поверх них невозможен"
@@ -497,10 +497,10 @@ def test_a_replica_too_big_for_the_channel_is_known_before_the_step_changes_and_
     assert svc.reserve_release_build() is None
     out = svc.rsv_get("rsv_out")
     assert out["step"] == "release" and svc.reserve_poll() == "mine", "шаг сменился до проверки предела"
-    assert "предела передачи" in out["release_error"]
+    assert "лимит передачи" in out["release_error"]
     acts = svc.reserve_out_tick()
     assert svc.reserve_out() == "home" and "back" in sent(acts) and ("wake_poll",) in acts
-    assert any("предела передачи" in n.text for n in notices(acts))
+    assert any("лимит передачи" in n.text for n in notices(acts))
     svc.reserve_move_start()
     assert not svc.rsv_get("rsv_out").get("release_error"), "новый переезд унаследовал отметку"
 
@@ -513,7 +513,7 @@ def test_a_package_too_big_for_the_channel_is_a_card_line_not_a_failed_move(mv, 
     svc.reserve_pkg_mark()
     mv.clock.advance(11)
     assert svc.reserve_pkg_tick() is None
-    assert "предела передачи" in svc.rsv_get("rsv_view")["pkg_error"]
+    assert "лимит передачи" in svc.rsv_get("rsv_view")["pkg_error"]
     assert not svc.rsv_get("rsv_pkg_sent").get("pending_gen"), "пакет, который не уйдёт, отмечен как отправляемый"
 
 

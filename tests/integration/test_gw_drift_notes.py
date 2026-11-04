@@ -195,7 +195,7 @@ def _admin_note(services) -> str:
     _refuse(services)
     notes = services.gw_bundle_drift_notes()
     assert len(notes) == 1, [n.text for n in notes]
-    assert notes[0].text.splitlines()[0].endswith("конфигурация неактуальна — устройства админа"), notes[0].text
+    assert notes[0].text.splitlines()[0].endswith("конфигурация неактуальна — устройства администратора"), notes[0].text
     return notes[0].text
 
 
@@ -208,7 +208,7 @@ def test_admin_devices_missing_on_the_gateway_are_named(services, slot):
     b = services.add_device(_admin(services).id, "Телефон")
     _snap(services, _installed(services, admin_ips=before))
     lines = _admin_note(services).splitlines()
-    i = lines.index("На шлюзе не помечены админскими устройства:")
+    i = lines.index("На шлюзе не помечены как устройства администратора:")
     assert lines[i + 1:i + 3] == [f" · Ноутбук (<code>{a.address}</code>)",
                                   f" · Телефон (<code>{b.address}</code>)"], lines
     assert not any("удалённ" in x for x in lines), "лишних адресов на шлюзе нет, а группа есть"
@@ -219,7 +219,7 @@ def test_a_single_missing_admin_device_reads_in_singular(services, slot):
     a = services.add_device(_admin(services).id, "<i>Ноут</i>")
     _snap(services, _installed(services, admin_ips=before))
     lines = _admin_note(services).splitlines()
-    i = lines.index("На шлюзе не помечено админским устройство:")
+    i = lines.index("На шлюзе не помечено как устройство администратора:")
     assert lines[i + 1] == f" · &lt;i&gt;Ноут&lt;/i&gt; (<code>{a.address}</code>)", (
         "имя устройства задаёт человек: без экранирования Telegram отверг бы сообщение")
 
@@ -233,7 +233,7 @@ def test_a_removed_admin_device_left_on_the_gateway_is_named_from_history(servic
     services.remove_device(old.device_id)
     _snap(services, _installed(services, admin_ips=with_old))
     lines = _admin_note(services).splitlines()
-    i = lines.index("На шлюзе помечено админским удалённое устройство:")
+    i = lines.index("На шлюзе как устройство администратора помечено удалённое устройство:")
     assert lines[i + 1] == f" · Старый планшет (<code>{old.address}</code>)", lines
     assert not any("не помечен" in x for x in lines), "недостающих нет, а группа есть"
 
@@ -267,7 +267,7 @@ def test_unknown_and_many_addresses_are_listed_whole_from_the_snapshot(services,
     assert services.gwlink_config_drift_items(slot)[0][3].endswith("…"), "строка не обрезана — сценарий не тот"
     text = _admin_note(services)
     lines = text.splitlines()
-    i = lines.index("На шлюзе помечены админскими удалённые устройства:")
+    i = lines.index("На шлюзе как устройства администратора помечены удалённые устройства:")
     assert lines[i + 1:] == [f" · <code>{a}</code>" for a in extra], lines[i:]
     assert "<b>x</b>" not in text, "разметка со шлюза дошла до сообщения"
 
@@ -367,7 +367,7 @@ def test_an_address_handed_to_another_profile_is_named_as_such_not_as_removed(se
     dev = services.add_device(other.id, "Чужой ноутбук")
     _snap(services, _installed(services, admin_ips=services.gwlink_issued_env(slot)["ADMIN_IPS"] + f" {dev.address}"))
     lines = _admin_note(services).splitlines()
-    i = lines.index("На шлюзе помечено админским устройство другого профиля:")
+    i = lines.index("На шлюзе как устройство администратора помечено устройство другого профиля:")
     assert lines[i + 1] == f" · Чужой ноутбук (<code>{dev.address}</code>)", lines
     assert not any("удалённ" in x for x in lines), "живое устройство подписано как удалённое"
 
@@ -380,7 +380,7 @@ def test_a_long_group_is_cut_with_a_tail_count(services, slot):
     extra = [f"10.8.1.{n}" for n in range(100, 125)]
     _snap(services, _installed(services, admin_ips=" ".join([mine, *extra])))
     lines = _admin_note(services).splitlines()
-    i = lines.index("На шлюзе помечены админскими удалённые устройства:")
+    i = lines.index("На шлюзе как устройства администратора помечены удалённые устройства:")
     assert lines[i + 1:] == [f" · <code>{a}</code>" for a in extra[:20]] + [" · … и ещё 5"], lines[i:]
 
 
@@ -590,7 +590,7 @@ def test_the_whole_drift_view_lists_every_address_and_uncut_values(services, slo
     want = drift_lines([x for x in whole if x[0] != "ADMIN_IPS"], html=True)
     assert want[0] in lines and "…" not in want[0] and "192.168.129.0/24" in want[0], (
         "строка значения на экране обрезана или не та")
-    i = lines.index("На шлюзе помечены админскими удалённые устройства:")
+    i = lines.index("На шлюзе как устройства администратора помечены удалённые устройства:")
     assert lines[i + 1:i + 1 + len(extra)] == [f" · <code>{a}</code>" for a in extra], lines[i:]
     assert not any("и ещё" in x for x in lines), "на экране всего списка — снова хвост"
 

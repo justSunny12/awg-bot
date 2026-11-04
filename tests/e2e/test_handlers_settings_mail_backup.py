@@ -119,7 +119,7 @@ async def test_backup_channel_email_requires_mailbox_and_encryption(services, fa
     monkeypatch.setattr(services, "email_send_backup", lambda paths, caption="": mailed.append((paths, caption)))
     await sh.do_action(cb, SetCB(sec="backup", act="do", key="now"), services)
     assert mailed and mailed[0][0] == ["/tmp/a.enc", "/tmp/b.enc"], "копия не ушла письмом"
-    assert mailed[0][1].startswith("💾 Бэкап сервера AWG от "), "письмо без подписи копии"
+    assert mailed[0][1].startswith("💾 Резервная копия сервера AWG от "), "письмо без подписи копии"
     # итог отправки — снимок adm.set.backup.now.email
 
 

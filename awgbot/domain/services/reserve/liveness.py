@@ -61,8 +61,8 @@ def pair_liveness_problem() -> str:
     suspect = settings.get_int("reserve.suspect_seconds", 40)
     floor = pair_suspect_floor_s()
     if suspect < floor:
-        return (f"Порог подозрения резерва ({suspect} с) меньше keepalive линка плюс такт — ложные «недоступен»; "
-                f"действует {floor} с")
+        return (f"Таймаут проверки резерва ({suspect} с) меньше суммы такта и keepalive. Возможны ложные срабатывания "
+                f"о недоступности. Автоматически применён безопасный порог: {floor} с")
     return ""
 
 

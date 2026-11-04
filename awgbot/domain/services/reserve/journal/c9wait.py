@@ -81,10 +81,10 @@ class ReserveC9WaitMixin:
         name = self.reserve_peer_name()
         c9 = self._c9_wait_mark()
         if c9 and self._c9_progressing(c9):
-            return f"журнал с «{name}» приходит — подожди"
+            return f"Журнал событий с «{name}» принимается прямо сейчас — подожди"
         peer = self.reserve_peer_state()
         if self._peer_alive(peer) and str(peer.get("inn") or "idle") in HOSTING:
-            return f"«{name}» на связи и несёт твой бот — его правки придут сами"
+            return f"«{name}» на связи и управляет ботом — изменения поступят автоматически"
         return ""
 
     def reserve_c9_wait_view(self) -> dict:

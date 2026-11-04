@@ -174,7 +174,7 @@ def test_the_gateway_device_of_the_admin_keeps_the_common_dns(services, two_slot
     monkeypatch.setattr(config, "CLIENT_ALLOWED_IPS", SPLIT)
     gw = services.db.gateway(1)
     conf = services.generate_config(gw.device_id, for_bundle=True)["conf"]
-    assert ADDR not in conf, "шлюзовому устройству — резолвер админа"
+    assert ADDR not in conf, "шлюзовому устройству — резолвер администратора"
     assert _lines(conf, "AllowedIPs") == [SPLIT]
 
 
@@ -321,8 +321,8 @@ def test_a_failed_records_file_is_reported_by_the_toggle(services, two_slots, ad
 
 _WHY = {
     "no_client_resolver": "Нужен свой резолвер: ⚙️ → 🖥 Сервер AWG → «🔒 Свой резолвер»",
-    "no_resolver": "Резолвер админа не поднят — на сервере: awg-bot resolver admin status",
-    "dead_resolver": "Резолвер админа не поднят — на сервере: awg-bot resolver admin status",
+    "no_resolver": "Резолвер администратора не поднят — на сервере: awg-bot resolver admin status",
+    "dead_resolver": "Резолвер администратора не поднят — на сервере: awg-bot resolver admin status",
     "no_firewall": "Нужен фильтр снаружи: ⚙️ → 🛡 SSH-доступ → «☑️ Фильтр снаружи» — без него имена увидят все пользователи",
 }
 
@@ -418,15 +418,15 @@ def test_the_monitor_says_once_when_the_admin_resolver_dies_and_once_when_back(s
     assert services.admin_dns_health_tick() == [], "после переустановки первый отказ — не тревога"
     notes = services.admin_dns_health_tick()
     assert [n.text for n in notes] == [
-        f"🔴 Резолвер админа <code>{ADDR}</code> не отвечает — у устройств админа нет DNS и имён SMB в туннеле"]
+        f"🔴 Резолвер администратора <code>{ADDR}</code> не отвечает — у устройств администратора нет DNS и имён SMB в туннеле"]
     assert notes[0].tg_id == ADMIN and not notes[0].critical and not notes[0].force_sound, \
-        "ломает DNS только устройствам админа — без звука, не авария для всех"
+        "ломает DNS только устройствам администратора — без звука, не авария для всех"
     assert len(services.admin_dns_health_tick()) == 1, "не доставленное уведомление потеряно"
     _deliver(notes)
     assert services.admin_dns_health_tick() == [], "повторный отказ — повторное уведомление"
     adm.alive = True
     back = services.admin_dns_health_tick()
-    assert [n.text for n in back] == ["✅ Резолвер админа снова отвечает"]
+    assert [n.text for n in back] == ["✅ Резолвер администратора снова отвечает"]
     _deliver(back)
     assert services.admin_dns_health_tick() == []
 
@@ -466,9 +466,9 @@ def test_start_installs_the_admin_resolver_and_redraws_the_firewall_once(service
     monkeypatch.setattr(services, "_gw_firewall_refresh", lambda: redraws.append(1))
     services.admin_dns_ensure()
     assert a.calls[0] == ("install", "10.8.1.1") and redraws == [1]
-    assert a.exempt == [["10.8.1.0/24"]], "адрес резолвера админа не выведен из перехвата :53 обвязки"
+    assert a.exempt == [["10.8.1.0/24"]], "адрес резолвера администратора не выведен из перехвата :53 обвязки"
     services.admin_dns_ensure()
-    assert redraws == [1], "уже стоящий резолвер админа перерисовывал файервол на каждом старте"
+    assert redraws == [1], "уже стоящий резолвер администратора перерисовывал файервол на каждом старте"
 
 
 def test_start_does_nothing_without_the_client_resolver(services, two_slots, monkeypatch, tmp_path):
@@ -512,7 +512,7 @@ async def test_a_changed_svc_from_a_gateway_reaches_the_admin_resolver_once(pair
     x = await _hello(pair, 1)
     await x.send("svc", {"items": [NAS]})
     assert await _until(lambda: adm.records and "naspi5.awg.internal" in adm.records), \
-        f"svc не дошёл до резолвера админа: {adm.calls}"
+        f"svc не дошёл до резолвера администратора: {adm.calls}"
     n = len(adm.calls)
     await x.send("svc", {"items": [NAS]})
     await x.send("svc", {"items": [NAS, {**NAS, "n": "Media", "h": "media", "a": "192.168.1.11"}]})

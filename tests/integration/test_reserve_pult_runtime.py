@@ -168,7 +168,7 @@ async def test_a_conflict_while_the_pult_is_here_drops_the_mark(lab, services):
     lab.webhook()                                            # гость поставил вебхук снова
     assert await lab.until(lambda: not services.reserve_pult_on()), "409 не снял отметку пульта"
     assert await lab.until(lambda: services.reserve_poll() == "away")
-    assert await lab.until(lambda: [n.text for n in lab.sent] == ["📤 Telegram бота снова у «Beta» — бот отвечает оттуда"])
+    assert await lab.until(lambda: [n.text for n in lab.sent] == ["📤 Управление ботом передано на «Beta»"])
 
 
 async def test_a_webhook_found_at_the_start_drops_the_mark_too(lab, services):

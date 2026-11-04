@@ -127,7 +127,7 @@ GitHub `vX.Y.Z.P — …`.
 - `#requires_main_…` — релиз адресован основному боту (ВПС);
   `#requires_gw_…` — агенту шлюза. **Строка ставится только той роли, чей
   код релиз меняет.** Только основной бот (механика пользователей, резолвер
-  пользователей, резолвер админа — `install/awg-admin-dns-setup.sh` и
+  пользователей, резолвер администратора — `install/awg-admin-dns-setup.sh` и
   `infra/admindns.py`, переезд, файервол ВПС — `infra/nftguard/`, пакеты
   сервисного слоя `domain/services/gateway_link/` (слоты, линк, смена ключей
   линка и токена бота шлюза) и `domain/services/traffic/` (опрос трафика,
@@ -234,7 +234,7 @@ GitHub `vX.Y.Z.P — …`.
   Взаимный резерв серверов AWG (с 4.0.0) разложен так. Только основной бот —
   строка `main`: сервисный слой `domain/services/reserve/`, канал пары
   `runtime/pairlink/`, задания `runtime/scheduler/reserve.py`, раздел
-  «🛟 Резерв» `handlers/settings/reserve/`, экран админа второго сервера
+  «🛟 Резерв» `handlers/settings/reserve/`, экран администратора второго сервера
   `handlers/peeradmin.py`, тексты `bot/texts/reserve/` и клавиатуры
   `keyboards/reserve.py`, слияние `domain/backup/merge/reserve.py`,
   `domain/services/selfhost.py` (собственный адрес сервера для линков
@@ -264,12 +264,12 @@ GitHub `vX.Y.Z.P — …`.
   `domain/services/reserve/{gwside,zonelinks,gwguest,opening,codewin,codewait}.py` (ключи шлюзовых сторон, `slots`/`slots_ok`,
   стороны зоны, гостевой канал у резерва, предусловия открытия, окно и приём аварийного кода),
   слушатель гостевого канала в зоне `runtime/pairlink/guest.py`, ввод кода в
-  роли админа второго сервера `handlers/peercode.py`, ключи без `awg genkey`
+  роли администратора второго сервера `handlers/peercode.py`, ключи без `awg genkey`
   `util/wgkeys.py` (его зовёт только сервер). Туда же — РФ-доступ в зоне и
   пул адресов Telegram: `domain/services/reserve/{rfzone,tgpool,peeradmin}.py`,
   запасной слот в маршрутизации (`domain/services/gateway_link/slots.py`,
   `domain/services/routing/`), кэш списков в пакете (`util/rsvpkg/bot.py`),
-  экран роли общего админа (`bot/filters.py` — `PeerAdminFilter`,
+  экран роли общего администратора (`bot/filters.py` — `PeerAdminFilter`,
   `handlers/settings/reserve/card.py`). Туда же — РФ-доступ через второй сервер
   (с 4.2.0): `domain/services/reserve/rfpeer/` (согласие транзитного, виртуальный
   слот 29 просящего, строки карточки), `infra/routing/rfpeer.py` (файл согласия
@@ -289,7 +289,7 @@ GitHub `vX.Y.Z.P — …`.
   ставятся на каждое соединение `infra/db` и у агента, поэтому их правка, как
   всякий `db/*`, адресуется обеим ролям. Правка `jobs.py` задевает и обычный основной бот (те же
   задания), но не агента. `bot/middleware.py` и `core/access_cache.py` (роль
-  админа второго сервера и его «👤 Меню пользователя» на полчаса) собирают обе роли —
+  администратора второго сервера и его «👤 Меню пользователя» на полчаса) собирают обе роли —
   их правка, как всякий общий код, адресуется обеим, даже когда меняет только
   поведение основного бота. **Только агент** — строка `gw`: скрипт линка к
   резерву `install/reserve-gw-setup.sh` (на ВПС его не зовут; на шлюзе юнит

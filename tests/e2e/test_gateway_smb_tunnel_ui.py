@@ -27,7 +27,7 @@ NAS = {"t": "_smb._tcp", "n": "NASPi5", "h": "naspi5", "p": 445, "a": "192.168.1
 NAS2 = {"t": "_smb._tcp", "n": "Backup", "h": "backup", "p": 445, "a": "192.168.68.20"}
 WHY = {
     "no_client_resolver": "Нужен свой резолвер: ⚙️ → 🖥 Сервер AWG → «🔒 Свой резолвер»",
-    "no_resolver": "Резолвер админа не поднят — на сервере: awg-bot resolver admin status",
+    "no_resolver": "Резолвер администратора не поднят — на сервере: awg-bot resolver admin status",
     "no_firewall": "Нужен фильтр снаружи: ⚙️ → 🛡 SSH-доступ → «☑️ Фильтр снаружи» — без него имена увидят все пользователи",
 }
 

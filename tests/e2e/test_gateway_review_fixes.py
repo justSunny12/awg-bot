@@ -93,7 +93,7 @@ def test_the_card_names_what_the_question_waits_for():
     from awgbot.bot.texts.routing.card import keep_line
     assert keep_line({"state": "asked", "asked": "device"}) == ("⏳ Настройки прежнего устройства ждут решения "
                                                                 "в чате бота шлюза")
-    assert keep_line({"state": "asked", "asked": "restore"}) == ("⏳ Настройки бота шлюза из бэкапа ждут "
+    assert keep_line({"state": "asked", "asked": "restore"}) == ("⏳ Настройки бота шлюза из резервной копии ждут "
                                                                  "решения в чате бота шлюза")
     assert keep_line({"state": "asked", "asked": "same"}) == ("⏳ Настройки бота шлюза с сервера AWG ждут "
                                                               "решения в чате бота шлюза")

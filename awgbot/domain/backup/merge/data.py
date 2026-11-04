@@ -184,7 +184,7 @@ def _admin_client(con, cur) -> int:
     cols = _common(cur, con, "clients", skip=("id",))
     src = cur.execute(f"SELECT id, {','.join(cols)} FROM clients WHERE tg_id = ?", (config.ADMIN_ID,)).fetchone()
     if src is None:
-        raise RuntimeError("профиля админа нет ни в бэкапе, ни в текущей базе")
+        raise RuntimeError("профиля администратора нет ни в резервной копии, ни в текущей базе")
     con.execute(f"INSERT INTO clients ({','.join(cols)}) VALUES ({','.join('?' * len(cols))})",
                 [src[c] for c in cols])
     cid = int(con.execute("SELECT last_insert_rowid()").fetchone()[0])

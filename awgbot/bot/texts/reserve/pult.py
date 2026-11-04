@@ -1,13 +1,13 @@
 """pult.py — «пульт у основы» (domain/services/reserve/pult): ответ пользователям,
 пока Telegram бота у основы, а они на резерве; строки карточки резерва у обеих
-сторон; всплывашка «📤 Отдать Telegram резерву»."""
+сторон; всплывашка «📤 Вернуть бота на «Beta»»."""
 from __future__ import annotations
 
 from ..fmt import _e
 from .common import _n, _when
 
-USER_MAINTENANCE = "🔧 Бот на техработах — VPN работает"
-GIVE_TOAST = "Отдаю Telegram резерву"
+USER_MAINTENANCE = "🔧 Бот временно недоступен, VPN работает нормально"
+GIVE_TOAST = "Возвращаю бота на резерв"
 
 
 def card_lines(v: dict, name: str) -> list[str]:
@@ -15,10 +15,10 @@ def card_lines(v: dict, name: str) -> list[str]:
     if not v:
         return []
     at = _when(v.get("at") or "")
-    lines = ["└ 🎛 Telegram бота здесь" + (f" с {_e(at)}" if at else "")
-             + f": бот на {_n(name)} не отвечал — пользователям отвечаю «бот на техработах»"]
+    lines = ["└ 📍 Управление ботом: здесь" + (f" с {_e(at)}" if at else "")
+             + " — резервный экземпляр не ответил. Пользователям отвечаю «бот временно недоступен, VPN работает нормально»"]
     if v.get("giving"):
-        lines.append(f"└ ⏳ отдаю Telegram {_n(name)}")
+        lines.append(f"└ ⏳ возвращаю бота на {_n(name)}")
     return lines
 
 

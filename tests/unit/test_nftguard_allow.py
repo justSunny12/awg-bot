@@ -79,7 +79,7 @@ def test_names_without_dns_and_without_a_previous_table_open_ssh_and_say_so(host
     scr = settings_firewall_text({"enabled": True, "raw_allow": ["dyn.nowhere.example"], "allow": [],
                                   "unresolved": ["dyn.nowhere.example"], "ssh_port": 2222})
     line = next(ln for ln in scr.splitlines() if "Снаружи" in ln)
-    assert "SSH открыт всем" in line and "🟢" not in line, line
+    assert "SSH доступен отовсюду" in line and "🟢" not in line, line
 
 
 def test_an_enabled_filter_with_an_empty_list_is_shown_open(host_mode, monkeypatch):
@@ -90,7 +90,7 @@ def test_an_enabled_filter_with_an_empty_list_is_shown_open(host_mode, monkeypat
     assert spec.ssh_open and "tcp dport 2222 accept" in _ssh_lines(nftguard.render(spec))
     scr = settings_firewall_text({"enabled": True, "raw_allow": [], "allow": [], "ssh_port": 2222})
     line = next(ln for ln in scr.splitlines() if "Снаружи" in ln)
-    assert "SSH открыт всем" in line and "закрыт" not in line, line
+    assert "SSH доступен отовсюду" in line and "закрыт" not in line, line
 
 
 def test_held_lines_in_the_file_are_parsed_strictly(rules):

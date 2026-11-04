@@ -25,12 +25,12 @@ BOT = {"username": "naspi_gw_bot", "name": "NASPi"}
 
 def test_the_key_phrase_is_the_one_name():
     assert texts.backup_encryption_text("", MAIN).startswith(
-        "🔐 <b>Шифрование бэкапов</b> 🔓 ключевая фраза не задана — бэкапы не делаются")
+        "🔐 <b>Шифрование резервных копий</b> 🔓 ключевая фраза не задана — резервные копии не делаются")
     assert "🔐 ключевая фраза задана" in texts.backup_encryption_text("passphrase", MAIN)
     details = texts.backup_encryption_text("passphrase", MAIN)
-    assert ("Смена ключевой фразы не перешифровывает старые бэкапы: из чата бот расшифровывает только текущей "
-            "фразой, а из бэкапа с прежней фразой можно восстановиться в терминале сервера — "
-            "<code>sudo awg-bot restore &lt;файл&gt;</code>. Не теряй прежнюю фразу, пока такие бэкапы нужны") in details
+    assert ("Смена ключевой фразы не перешифровывает старые резервные копии: из чата бот расшифровывает только текущей "
+            "фразой, а из резервной копии с прежней фразой можно восстановиться в терминале сервера — "
+            "<code>sudo awg-bot restore &lt;файл&gt;</code>. Не теряй прежнюю фразу, пока такие резервные копии нужны") in details
     assert "выбрасыва" not in details
     assert texts.BACKUP_ASK_PASSPHRASE.startswith("🔐 <b>Ключевая фраза</b>")
     assert texts.BACKUP_PASSPHRASE_SET.startswith("✅ Ключевая фраза задана")
@@ -44,14 +44,14 @@ def test_the_plan_and_refusals_are_word_for_word():
                         "slots": [], "empty": False, "expired_now": 0, "host_copy": "", "host_cur": "",
                         "first_slot_back": False})
     text = nb.restore_plan(p)
-    assert ("⚠️ Бэкап снят на другом сервере: текущие профили (3) будут удалены и потеряют доступ, их место займут "
-            "профили и устройства из бэкапа. Шлюзы этого сервера останутся как есть") in text, text
+    assert ("⚠️ Резервная копия снята на другом сервере: текущие профили (3) будут удалены и потеряют доступ, их место займут "
+            "профили и устройства из резервной копии. Шлюзы этого сервера останутся как есть") in text, text
     u = Plan.from_dict({**p.to_dict(), "line": "unreadable"})
-    assert "⚠️ Текущая база не читается — сопоставлять не с чем: всё возьму из бэкапа" in nb.restore_plan(u)
-    assert "из бэкапа." not in nb.restore_plan(u), "точка в конце строки без слотов"
-    assert meta.check({"schema": 1, "role": "main"}) == "бэкап снят версией до 4.0.0 — восстановиться из него не получится"
-    assert texts.restore_failed("x") == "⚠️ Восстановление из бэкапа не удалось: x"
-    assert nb.backup_refused_notice("r").startswith("⚠️ Бэкап сервера AWG не отправлен: r — попробуй вручную в ")
+    assert "⚠️ Текущая база не читается — сопоставлять не с чем: всё возьму из резервной копии" in nb.restore_plan(u)
+    assert "из резервной копии." not in nb.restore_plan(u), "точка в конце строки без слотов"
+    assert meta.check({"schema": 1, "role": "main"}) == "резервная копия снята версией до 4.0.0 — восстановиться из неё не получится"
+    assert texts.restore_failed("x") == "⚠️ Восстановление из резервной копии не удалось: x"
+    assert nb.backup_refused_notice("r").startswith("⚠️ Резервная копия сервера AWG не отправлена: r — попробуй вручную в ")
 
 
 def test_chat_references_are_links_to_the_gateway_bot():
@@ -86,7 +86,7 @@ async def test_a_new_file_turns_the_previous_question_into_a_finisher(services, 
         await rs.offer_restore(msg, services, state)
         first = first or (await state.get_data())["restore_qmid"]
     assert first and len(edits) == 1 and edits[0][0] == first, (first, edits)
-    assert edits[0][1].startswith("<b>Не актуально: прислан новый файл бэкапа</b>\n\n<blockquote expandable>♻️ ")
+    assert edits[0][1].startswith("<b>Не актуально: прислан новый файл резервной копии</b>\n\n<blockquote expandable>♻️ ")
     assert [b.text for r in edits[0][2].inline_keyboard for b in r] == ["Скрыть"]
     assert (await state.get_data())["restore_qmid"] != first, "новый вопрос не запомнен"
 
@@ -102,7 +102,7 @@ def test_a_withdrawn_keep_question_becomes_a_finisher(tmp_path, monkeypatch):
     d = Database(str(tmp_path / "gw.db")); d.init_schema()
     s = GatewayServices(d)
     s.db.set_state(s._KEEP_ASK_KEY, json.dumps({"why": "restore", "hash": "ab" * 8, "items": {}}))
-    s.keep_mark_msg(config.ADMIN_ID, 77, "💾 <b>Настройки шлюза из бэкапа</b>\n\nСервер AWG восстановлен")
+    s.keep_mark_msg(config.ADMIN_ID, 77, "💾 <b>Настройки шлюза из резервной копии</b>\n\nСервер AWG восстановлен")
     edits = []
 
     async def edit(chat, mid, text, hide=False):
@@ -116,8 +116,8 @@ def test_a_withdrawn_keep_question_becomes_a_finisher(tmp_path, monkeypatch):
         return True
     c._send = send
     asyncio.run(c._keep_reply({"t": "keep_ok", "hash": "cd" * 8}))
-    assert edits == [(config.ADMIN_ID, 77, "<b>Не актуально: восстановление из бэкапа отменено. Текущие настройки "
-                      "шлюза сохранены на сервере.</b>\n\n<blockquote expandable>💾 <b>Настройки шлюза из бэкапа</b>"
+    assert edits == [(config.ADMIN_ID, 77, "<b>Не актуально: восстановление из резервной копии отменено. Текущие настройки "
+                      "шлюза сохранены на сервере.</b>\n\n<blockquote expandable>💾 <b>Настройки шлюза из резервной копии</b>"
                       "\n\nСервер AWG восстановлен</blockquote>", True)], edits
     assert s.keep_section() == "" and WITHDRAWN.startswith("Не актуально: ")
     d.close()
@@ -129,7 +129,7 @@ def test_a_finisher_fits_the_message_limit():
     import html
     import re
     long = "<b>x</b> " + "строка вопроса " * 400
-    out = texts.stale_finisher("Не актуально: прислан новый файл бэкапа", long)
+    out = texts.stale_finisher("Не актуально: прислан новый файл резервной копии", long)
     visible = html.unescape(re.sub(r"<[^>]+>", "", out))
     assert len(visible) <= 4096 and out.endswith("…</blockquote>") and out.startswith("<b>Не актуально")
     nested = texts.stale_finisher("Не актуально", "текст<blockquote expandable>подробнее</blockquote>")

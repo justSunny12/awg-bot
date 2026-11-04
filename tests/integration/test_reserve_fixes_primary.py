@@ -209,7 +209,7 @@ def test_the_stuck_home_brings_the_clients_home_with_a_new_k_and_one_notice(stuc
     assert svc.reserve_poll() == "mine" and svc.reserve_out() == "home"
     assert svc.reserve_k() != k and _pkg_due(svc), "резерв держал бот основы — K прежний"
     texts = [n.text for n in notices(acts)]
-    assert len(texts) == 1 and "вебхук снят" in texts[0] and "Beta" in texts[0], texts
+    assert len(texts) == 1 and "Управление ботом возвращено на этот сервер" in texts[0], texts
     assert not texts[0].rstrip().endswith("."), "уведомление с точкой в конце"
 
 
@@ -353,7 +353,7 @@ def test_a_device_added_to_the_admin_profile_on_the_reserve_is_named_in_the_repo
         db.create_device(adm.id, "Ноут чужой", "DUMMY-pub-adm", "DUMMY-psk", "10.8.1.78")
     w.svc.reserve_released_in(rm.snapshot_blob(w.svc, edit))
     lost = w.svc.rsv_get("rsv_out")["merge_report"]["lost"]
-    assert [x for x in lost if "админа" in x and "Ноут чужой" in x], lost
+    assert [x for x in lost if "администратора" in x and "Ноут чужой" in x], lost
 
 
 # ── мимо основы и проверка записи в away ────────────────────────────────────

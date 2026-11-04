@@ -54,7 +54,7 @@ def test_password_hints_cover_all_known_providers():
 def test_backup_mailed_text_and_subject(services, monkeypatch):
     from awgbot.bot import texts
     from awgbot.util import timeutil
-    assert texts.backup_mailed("a@b.co") == "📨 Бэкап отправлен на <code>a@b.co</code>"
+    assert texts.backup_mailed("a@b.co") == "📨 Резервная копия отправлена на <code>a@b.co</code>"
     sent = []
     monkeypatch.setattr(mail, "send_mail", lambda acc, to, subject, body, **kw: sent.append(subject))
     services.email_save("box@icloud.com", "pw", "imap.mail.me.com", 993, "smtp.mail.me.com", 587)
@@ -62,7 +62,7 @@ def test_backup_mailed_text_and_subject(services, monkeypatch):
     services.email_send_backup([])
     yy = timeutil.now().strftime("%d.%m.%y")
     # тема — заголовок подписи копии; копии шлюза по почте больше не уходят
-    assert sent[0].startswith("💾 Бэкап сервера AWG от ")
+    assert sent[0].startswith("💾 Резервная копия сервера AWG от ")
     assert f"от {yy} " in sent[0] and sent[0].endswith(" (UTC+5)"), "год — всегда (письмо лежит годами), время с меткой"
 
 

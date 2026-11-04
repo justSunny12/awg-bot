@@ -165,5 +165,5 @@ class PeerCode(StatesGroup):
 
 class ReserveAcceptToken(StatesGroup):
     """Строка приглашения AWGP1 (принявший): сообщение удаляется после приёма;
-    в данных диалога — token и rf (Мои шлюзы для резерва)."""
+    в данных диалога — token и rf (Шлюзы для резерва)."""
     value = State()

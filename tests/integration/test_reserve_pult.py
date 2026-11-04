@@ -213,10 +213,13 @@ def test_taking_marks_the_pult_tells_the_admin_loudly_and_keeps_following(away):
     notes = notices(acts)
     assert len(notes) == 1 and notes[0].force_sound and notes[0].tg_id == int(config.ADMIN_ID), notes
     assert notes[0].text == (
-        "🎛 Telegram бота снова у этого сервера\n"
-        "Бот на «Beta» не отвечал в Telegram 5 минут, связи с «Beta» нет.\n"
-        "Пользователи по-прежнему на «Beta» — VPN у них работает, в боте им отвечаю «бот на техработах».\n"
-        "Дальше решаешь ты — «🛟 Резерв»: «↩️ Вернуть пользователей сюда» или «📤 Отдать Telegram резерву»"), notes[0].text
+        "📍 Управление ботом возвращено на этот сервер\n"
+        "Гостевой экземпляр на «Beta» не отвечал 5 минут, прямая связь с сервером отсутствует.\n\n"
+        "Пользователи пока остаются на «Beta» (соединение работает штатно). При обращении в бот им "
+        "отдаётся сообщение «Бот временно недоступен, VPN работает нормально».\n\n"
+        "Дальнейшие действия в меню «🛟 Резерв»:\n"
+        "• ↩️ Вернуть пользователей сюда — запустить обратный переезд\n"
+        "• 📤 Вернуть бота на «Beta» — снова передать управление ботом на резерв"), notes[0].text
     assert svc.reserve_out() == "away", "пульт сдвинул пользователей"
     assert svc._follow_wanted()[0] is True, "пульт сделал основу держателем — правки разойдутся с ботом на резерве"
     assert svc.reserve_st_body()["tg_pult"] == svc.rsv_get("rsv_out")["pult_at"]
@@ -286,7 +289,7 @@ def test_a_webhook_back_at_the_reserve_drops_the_mark_and_says_so(away):
     _take(svc)
     acts = svc.reserve_pult_webhook_back()
     assert not svc.reserve_pult_on()
-    assert [n.text for n in notices(acts)] == ["📤 Telegram бота снова у «Beta» — бот отвечает оттуда"]
+    assert [n.text for n in notices(acts)] == ["📤 Управление ботом передано на «Beta»"]
     assert svc.reserve_pult_webhook_back() == [], "второе 409 — второе уведомление"
 
 
@@ -339,7 +342,7 @@ def test_the_pult_mark_of_the_primary_holds_the_guest_webhook_until_given_back(h
     notes = rm.st_in(svc, out="away", tg_pult=AT)
     assert svc.reserve_pult_hold_why(), "отметка в st основы не запретила гостю вебхук"
     assert svc.reserve_guest_state_view()["tg_hold"], "гость о запрете не узнает"
-    assert [n.text for n in notes] == ["⚠️ Telegram бота «Beta» на своём сервере — пользователи здесь"]
+    assert [n.text for n in notes] == ["⚠️ Управление ботом «Beta» перехвачено основным сервером.\nВходящие сообщения уходят на «Beta», но его пользователи продолжают обслуживаться здесь"]
     assert notes[0].force_sound
     assert rm.st_in(svc, out="away", tg_pult=AT) == [], "уведомление на каждый st"
     assert svc.reserve_card_data()["peer_pult"]

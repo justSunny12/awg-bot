@@ -3,8 +3,6 @@
 Отдельно — самый ветвистый кусок карточки, его тесты бьют сюда напрямую."""
 from __future__ import annotations
 
-from awgbot.util.textfmt.tail import more_count
-
 from ...fmt import _e
 from ..common import _n, _when
 
@@ -15,6 +13,20 @@ VOTERS_SHOWN = 8                    # голосующих поимённо в �
 _W = {"see": "видит", "held": "видит", "uns": "не видит", "sus": "сомневается", "new": "ещё не смотрел", "silent": "молчит"}
 
 
+def _voter_w(vt: dict) -> str:
+    return "silent" if vt.get("silent") and vt.get("w") not in ("uns", "sus") else (vt.get("w") or "silent")
+
+
+def _sees(vt: dict) -> bool:
+    return _voter_w(vt) in ("see", "held")
+
+
+def _more_split(seen: int, unseen: int) -> str:
+    """Хвост за VOTERS_SHOWN: « [+N видит] [+M не видит]» — каждая часть, только если есть кого
+    считать (общее « [+N]» ничего не говорило)."""
+    return (f" [+{seen} видит]" if seen > 0 else "") + (f" [+{unseen} не видит]" if unseen > 0 else "")
+
+
 def _qn(name: str) -> str:
     """Имя узла кворума: чужой шлюз приходит уже с кавычками («шлюз 3 «Beta»») — не удваивать."""
     return _e(name) if "«" in str(name) else _n(name)
@@ -23,9 +35,10 @@ def _qn(name: str) -> str:
 def _quorum_off_why(codes: list, peer: str) -> str:
     for c in codes or []:
         if c == "no_gateways":
-            return "у этого сервера нет шлюзов с агентом v4.2.0 — переезд кнопкой и по аварийному коду, автоматического нет"
+            return ("у этого сервера нет шлюзов с агентом v4.2.0 — переезд кнопкой и по аварийному коду, "
+                    "автоматический переезд недоступен")
         if c.startswith("timing:"):
-            return "цифры времени не сходятся (раздел quorum в reserve.yaml)"
+            return "настройки резервирования не сходятся (раздел quorum в reserve.yaml)"
         if c.startswith("overlap:"):
             return f"блок зондов <code>169.254.88.0/24</code> пересекается с <code>{_e(c[8:])}</code>"
         if c.startswith("slot:"):
@@ -54,17 +67,17 @@ def quorum_mine_lines(q: dict) -> list[str]:
     if v < 2:                                                 # Т-К1а: голосующий один — второй сервер
         if mine.get("leader_here") and "y" in mine:
             out.append(f"└ 🗳 Этот сервер видят {int(mine.get('y') or 0)} из {v} — голосует только {peer}: "
-                       "переезд кнопкой и по аварийному коду, автоматического нет")
+                       "переезд кнопкой и по аварийному коду, автоматический переезд недоступен")
         else:
             out.append(f"└ 🗳 Голосует только {peer}: шлюзов с агентом v4.2.0 нет — переезд кнопкой и по аварийному коду, "
-                       "автоматического нет")
+                       "автоматический переезд недоступен")
         return out
     if mine.get("leader_here") and "y" in mine:
         y = int(mine.get("y") or 0)
         if mine.get("role") == "fenced":
             since = _when(mine.get("fenced_since") or "")
-            out.append(f"└ ⚠️ Без кворума{(' с ' + _e(since)) if since else ''} — этот сервер видят {y} из {v}: бот не принимает "
-                       "решений и не отвечает пользователям, VPN работает")
+            out.append(f"└ ⚠️ Без кворума{(' с ' + _e(since)) if since else ''} — этот сервер видят {y} из {v}: бот не обрабатывает "
+                       "запросы пользователей, VPN работает")
         elif mine.get("tie_since"):
             since = _when(mine.get("tie_since") or "")
             out.append(f"└ ⚠️ Ничья{(' с ' + _e(since)) if since else ''}: этот сервер видят {y}, не видят {v - y} — сам бот "
@@ -72,18 +85,20 @@ def quorum_mine_lines(q: dict) -> list[str]:
         else:
             out.append(f"└ 🗳 Этот сервер видят {y} из {v} — пользователи переедут, если не увидят {t}")
     elif not mine.get("leader_here") and "y" in mine:
-        out.append(f"└ 🗳 Бот на {peer} видят {int(mine.get('y') or 0)} из {v}"
+        out.append(f"└ 🗳 Гостевой экземпляр на {peer} видят {int(mine.get('y') or 0)} из {v}"
                    + (" — пользователи вернутся сюда сами, если его не увидят большинство" if mine.get("back") else ""))
     else:
         out.append(f"└ 🗳 Голосующих об этом сервере: {v}, порог переезда — {t}")
     rows = []
-    voters = mine.get("voters") or []
+    voters = sorted(mine.get("voters") or [], key=_sees)        # сначала те, кто не видит (устойчиво)
     for vt in voters[:VOTERS_SHOWN]:
-        w = "silent" if vt.get("silent") and vt.get("w") not in ("uns", "sus") else (vt.get("w") or "silent")
+        w = _voter_w(vt)
         since = _when(vt.get("since") or "")
         rows.append(f"{_qn(vt.get('name') or vt.get('node') or '?')} — {_W.get(w, w)}" + (f" с {_e(since)}" if since and w in ("uns", "silent") else ""))
     if rows:
-        out.append("└ " + " · ".join(rows) + more_count(len(voters) - VOTERS_SHOWN))
+        rest = voters[VOTERS_SHOWN:]
+        seen = sum(1 for vt in rest if _sees(vt))
+        out.append("└ " + " · ".join(rows) + _more_split(seen, len(rest) - seen))
     for names, net in mine.get("correlation") or []:          # Т-К15
         out.append(f"└ ⚠️ {' и '.join(_n(n) for n in names)} выходят в интернет из одной сети <code>{_e(net)}</code> — "
                    "её отказ снимет " + ("оба голоса" if len(names) == 2 else "все их голоса"))
@@ -107,8 +122,8 @@ def quorum_peer_lines(q: dict) -> list[str]:
                 f"не видят {int(cand.get('no') or 0)} — сам бот пользователей не переведёт"]
     if p.get("blind_since"):                                  # свой зонд слеп: своего взгляда нет
         since = _when(p.get("blind_since") or "")
-        return [f"└ ⚠️ Зонд этого сервера к {peer} не работает{(' с ' + _e(since)) if since else ''}: сам этот сервер "
-                f"{peer} не видит и в голосовании не участвует — пропадёт {peer} со связи, приём аварийного кода "
+        return [f"└ ⚠️ Зонд к {peer} не работает{(' с ' + _e(since)) if since else ''}: этот сервер "
+                f"{peer} не видит и в голосовании не участвует — если {peer} пропадёт со связи, приём аварийного кода "
                 "откроется по линку пары"]
     if unseen and cand.get("deadline_at") and w in ("see", "held"):   # Т-К3б: случай 3
         first = min((g.get("since") or "" for g in unseen), default="")

@@ -110,7 +110,7 @@ class ReserveReturnMixin:
         name = self.reserve_peer_name()
         log.warning("резерв: рычаг «вернуть без «%s»» отклонён — Telegram доставляет боту на нём (очередь %s)",
                     name, info.get("pending_update_count"))
-        raise ServiceError(f"бот на «{name}» отвечает в Telegram — верни пользователей обычным путём")
+        raise ServiceError(f"гостевой экземпляр на «{name}» отвечает в Telegram — верни пользователей обычным путём")
 
     def reserve_force_dialog_data(self) -> dict:
         back = self.reserve_quorum_back_view() if hasattr(self, "reserve_quorum_back_view") else {}

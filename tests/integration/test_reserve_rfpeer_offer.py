@@ -240,7 +240,7 @@ def test_the_peer_using_my_gateways_is_told_once_without_sound(rf):
         [(rn.rf_peer_use("Beta", since), True, False, config.ADMIN_ID)], notes
     assert notes[0].text == ("🇷🇺 РФ-доступ пользователей «Beta» идёт через шлюзы этого сервера с 14:06 (UTC+5): "
                              "шлюзы «Beta» не отвечают\nИсходящий адрес у них — адрес твоего шлюза. "
-                             "Выключить — «🛟 Резерв» → «Мои шлюзы для резерва»")
+                             "Выключить — «🛟 Резерв» → «✅ Шлюзы для резерва»")
     assert not rp.ticks(rf, 5), "Т-РТ10 повторилось в том же эпизоде"
 
 

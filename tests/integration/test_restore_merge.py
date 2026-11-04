@@ -110,7 +110,7 @@ def test_same_line_time_stays_current_and_settings_come_from_the_copy(world, tmp
     assert _one(res, "SELECT name, device_limit, routing_allowed, block_reason FROM clients WHERE id = ?",
                 world.ivan.id) == ("Иван (бэкап)", 5, 1, int(ClientBlock.TRAFFIC_CLIENT))
     assert _one(res, "SELECT period_end, notified_thresholds FROM client_subscription WHERE client_id = ?",
-                world.ivan.id) == ("2027-10-01T00:00:00+03:00", "43200"), "продление после бэкапа потеряно"
+                world.ivan.id) == ("2027-10-01T00:00:00+03:00", "43200"), "продление после создания резервной копии потеряно"
     # лимиты трафика — текущие вместе с блоками по ним (решение пользователя)
     assert _one(res, "SELECT traffic_limit, bonus_bytes, bonus_granted_month FROM client_quota WHERE client_id = ?",
                 world.ivan.id) == (222, 5, 1)
@@ -135,7 +135,7 @@ def test_same_line_composition_stays_current(world, services, make_active_client
     res = str(copy / "state" / "bot.db")
     assert _one(res, "SELECT name FROM clients WHERE id = ?", piotr.id) == "Пётр"
     assert _one(res, "SELECT public_key FROM devices WHERE id = ?", tab) == services.db.get_device(tab).public_key
-    assert _one(res, "SELECT id FROM devices WHERE id = ?", world.laptop) is None, "удалённое после бэкапа вернулось"
+    assert _one(res, "SELECT id FROM devices WHERE id = ?", world.laptop) is None, "удалённое после создания резервной копии вернулось"
     conf = (copy / "awg" / "awg0.conf").read_text(encoding="utf-8")
     assert services.db.get_device(tab).public_key in conf
 
@@ -315,7 +315,7 @@ def test_the_plan_names_a_different_server_address(world, tmp_path):
                               awg_dir=str(world.awg), root_dir=str(world.gwroot))
     assert (p.host_copy, p.host_cur) == ("vpn.example.org", "moved.example.org")
     text = nb.plain(nb.restore_plan(p))
-    assert "В бэкапе адрес сервера vpn.example.org, сейчас — moved.example.org" in text
+    assert "В резервной копии адрес сервера vpn.example.org, сейчас — moved.example.org" in text
 
 
 def test_a_merge_refusal_leaves_the_live_state_untouched(world, tmp_path):
@@ -337,7 +337,7 @@ def test_the_cli_tool_merges_and_plans(world, tmp_path, monkeypatch, capsys):
     from tools import restore_merge
     assert restore_merge.main(["--plan", str(copy)]) == 0
     out = capsys.readouterr().out
-    assert out.startswith("♻️ Восстановить бэкап от ") and "<" not in out, out
+    assert out.startswith("♻️ Восстановить резервную копию от ") and "<" not in out, out
     from awgbot.domain.backup import merge
     blocked = []
     from awgbot.infra import awg

@@ -87,7 +87,7 @@ async def test_the_link_window_is_told_in_the_job_run_when_t_up_passes(box, wire
     to_peer = [r for r in msgs if r[1] == PEER_ADMIN]
     to_admin = [r for r in msgs if r[1] == ADMIN]
     assert len(to_peer) == 1 and "аварийный код" in to_peer[0][2], f"Т-К21д админу основы не в задании T_up: {msgs}"
-    assert len(to_admin) == 1 and "голосование о нём не включено" in to_admin[0][2], f"Т-К21д админу резерва: {to_admin}"
+    assert len(to_admin) == 1 and "кворум отключён" in to_admin[0][2], f"Т-К21д админу резерва: {to_admin}"
     before = len(wired.bot.records)
     for _ in range(6):
         box.advance(5)

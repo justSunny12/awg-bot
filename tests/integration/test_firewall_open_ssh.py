@@ -46,7 +46,7 @@ def test_names_that_open_ssh_are_told_once_and_the_mark_clears(services, fw, dns
     store["app.firewall.enabled"] = True
     store["app.firewall.ssh_allow"] = ["dyn.example.org"]
     notes = services.firewall_open_notes()
-    assert len(notes) == 1 and "открыт всем" in notes[0].text and "dyn.example.org" in notes[0].text
+    assert len(notes) == 1 and "временно открыт для любых адресов" in notes[0].text and "dyn.example.org" in notes[0].text
     assert not notes[0].text.endswith(".")
     assert services.firewall_open_notes() == [], "тот же состав имён — второй раз не говорим"
     dns["dyn.example.org"] = ["203.0.113.9"]

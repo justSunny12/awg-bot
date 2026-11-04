@@ -92,7 +92,7 @@ def test_a_copy_waits_for_a_device_replacement_and_names_the_slot(services, vps)
     busy = services.backup_rekey_busy()
     assert busy is not None and busy.slot == 1 and busy.joining
     assert nb.rekey_wait_toast(busy.name, joining=busy.joining) == \
-        "Идёт подключение шлюза «NASPi» — бэкап сниму сразу после него"
+        "Идёт подключение шлюза «NASPi» — резервную копию сниму сразу после него"
     services.gwjoin_cancel(1, res["state"]["id"])
     services.gwjoin_revert(1, "cancel")
     assert services.backup_rekey_busy() is None
@@ -110,7 +110,7 @@ async def test_the_backup_button_says_the_gateway_is_being_joined(services, vps,
     msg = FakeMessage(chat_id=config.ADMIN_ID, user_id=config.ADMIN_ID, bot=fake_bot)
     cb = FakeCallback(message=msg, user_id=config.ADMIN_ID, bot=fake_bot)
     await actions.backup_now(cb, services, None)
-    assert cb.answers == [("Идёт подключение шлюза «NASPi» — бэкап сниму сразу после него", True)], cb.answers
+    assert cb.answers == [("Идёт подключение шлюза «NASPi» — резервную копию сниму сразу после него", True)], cb.answers
     assert made == [], "копия снята посреди сопряжения"
 
 

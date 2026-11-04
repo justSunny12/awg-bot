@@ -1,5 +1,5 @@
 """РФ-доступ через второй сервер на экранах: карточка «🛟 Резерв» обеих сторон
-(Т-РТ1, Т-РТ2, Т-РТ2б, Т-РТ3, «▸ подробнее» Т-РТ13), тумблер «Мои шлюзы для
+(Т-РТ1, Т-РТ2, Т-РТ2б, Т-РТ3, «▸ подробнее» Т-РТ13), тумблер «Шлюзы для
 резерва» в эпизоде — диалог Т-РТ4 («Отмена» первой, «Выключить» снимает
 согласие тем же нажатием), диалог удаления пары с Т-РТ5 у обеих сторон, экран
 роли админа второго сервера (Т-РТ12).
@@ -87,8 +87,8 @@ async def test_the_switch_outside_an_episode_turns_off_at_once(ui, fake_bot):
     cb = _cb(nav, fake_bot)
     await card_h.rf_mine_toggle(cb, ui)
     assert settings.get_bool("reserve.rf_via_mine", True) is False
-    assert cb.answers[-1][0] == "Мои шлюзы для резерва: выкл", cb.answers
-    assert "Выключить «Мои шлюзы для резерва»?" not in last_screen(nav)[0]
+    assert cb.answers[-1][0] == "Шлюзы для резерва: выкл", cb.answers
+    assert "Выключить «Шлюзы для резерва»?" not in last_screen(nav)[0]
 
 
 async def test_the_switch_in_an_episode_asks_first_with_cancel_first(ui, fake_bot):
@@ -96,7 +96,7 @@ async def test_the_switch_in_an_episode_asks_first_with_cancel_first(ui, fake_bo
     nav = _nav(fake_bot)
     await card_h.rf_mine_toggle(_cb(nav, fake_bot), ui)
     text, labels = last_screen(nav)
-    assert text == ("🇷🇺 <b>Выключить «Мои шлюзы для резерва»?</b>\n\n"
+    assert text == ("🇷🇺 <b>Выключить «Шлюзы для резерва»?</b>\n\n"
                     f"Сейчас через шлюзы этого сервера идёт РФ-доступ пользователей «Beta» — с {_at(since)}, "
                     "шлюзы «Beta» не отвечают. После выключения российские сервисы у них откроются с зарубежного "
                     "адреса и могут ругаться"), text
@@ -126,7 +126,7 @@ async def test_turn_off_in_the_dialog_withdraws_the_offer_in_the_same_press(ui, 
     assert ui.k.rules == [] and ui.fw[-1] == {}, "правило 151 или таблица транзита пережили «Выключить»"
     body = ui.reserve_st_if_changed()
     assert body is not None and body["rfp"]["offer"] is False, "отзыв не ушёл второй стороне"
-    assert cb.answers[-1][0] == "Мои шлюзы для резерва: выкл"
+    assert cb.answers[-1][0] == "Шлюзы для резерва: выкл"
     assert "Резерв «Beta»" in last_screen(nav)[0], "после «Выключить» не карточка"
 
 
@@ -182,7 +182,7 @@ def test_the_episode_line_names_the_peer_and_the_moment():
 
 
 @pytest.mark.parametrize("code, reason", [
-    ("off", "его админ выключил «Мои шлюзы для резерва»"),
+    ("off", "его администратор выключил «Шлюзы для резерва»"),
     ("no_gw", "у «Beta» нет шлюзов"),
     ("rt_off", "у «Beta» не задействован РФ-доступ"),
     ("down", "шлюз «Beta» сейчас не отвечает"),
@@ -229,6 +229,6 @@ async def test_the_card_tells_when_the_peer_slot_does_not_answer(ui):
 
 def test_more_explains_the_rf_path_without_the_view_matrix():
     more = st_t.more_text()
-    assert "РФ-доступ пользователей идёт через шлюзы резерва, пока его админ это разрешает" in more
+    assert "РФ-доступ пользователей идёт через шлюзы резерва, пока его администратор это разрешает" in more
     assert "не раньше чем через 10 минут после переключения" in more
     assert "15 минут" not in more and "хотя бы одному твоему шлюзу" not in more, "случаи матрицы взглядов остались"

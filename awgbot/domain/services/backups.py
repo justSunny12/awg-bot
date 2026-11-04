@@ -52,7 +52,7 @@ class BackupsMixin:
         if acc is None:
             raise mail.MailError("ящик не настроен")
         if not self.backup_encryption_enabled():
-            raise mail.MailError("бэкап без шифрования по почте не отправляется — "
+            raise mail.MailError("резервная копия без шифрования по почте не отправляется — "
                                  "задай ключевую фразу: 💾 Бэкапы → 🔐 Шифрование")
         import os
         att = []
@@ -61,7 +61,7 @@ class BackupsMixin:
                 att.append((os.path.basename(p), f.read()))
         stamp = timeutil.fmt_dt_ui(timeutil.now(), year=True)   # «17.10.26 08:08 (UTC+5)»: письмо лежит годами
         from awgbot.domain.notices import backup as nb
-        text = nb.plain(caption) if caption else f"💾 Бэкап сервера AWG от {stamp}"
+        text = nb.plain(caption) if caption else f"💾 Резервная копия сервера AWG от {stamp}"
         head, _, rest = text.partition("\n")
         mail.send_mail(acc, acc.login, head, nb.MAIL_BODY + (f"\n\n{rest}" if rest else ""),
                        attachments=att)

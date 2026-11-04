@@ -74,7 +74,7 @@ class _Lever:
     @contextmanager
     def __call__(self, verb: str):
         if not self._lock.acquire(blocking=False):
-            raise ServiceErrorMigration(f"переезд уже {self.busy or 'меняется'} — дождись итога")
+            raise ServiceErrorMigration(f"процесс переезда уже {self.busy or 'меняется'} — дождись окончания операции")
         self.busy = verb
         try:
             yield

@@ -162,7 +162,7 @@ class ReserveMergeOpsMixin:
             if admin is not None:
                 for d in self.db.list_all_devices():
                     if int(getattr(d, "client_id", 0) or 0) == int(admin.id) and int(d.id) not in before["dev"]:
-                        lines.append(f"⚠️ У профиля админа появилось устройство «{_e(d.name)}», заведённое на "
+                        lines.append(f"⚠️ У профиля администратора появилось устройство «{_e(d.name)}», заведённое на "
                                      f"«{_e(self.reserve_peer_name())}» — проверь, что это твоё")
         except Exception as e:                                # noqa: BLE001
             log.info("резерв: сверка правок резерва не прошла: %s", e)

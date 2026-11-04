@@ -180,7 +180,7 @@ class SlotsMixin:
         wait — ждать замок сколько надо (снятие активного слота: отменять его
         из-за такта нельзя); иначе — SWITCH_WAIT_S, дальше отказ человеку."""
         if not routing.switch_lock.acquire(timeout=-1 if wait else self.SWITCH_WAIT_S):
-            raise ServiceError("Идёт автоматическое переключение шлюза — повтори через несколько секунд")
+            raise ServiceError("Выполняется автоматическое переключение шлюза — повтори через несколько секунд")
         try:
             return self._gateway_switch(slot_id, manual=manual)
         finally:

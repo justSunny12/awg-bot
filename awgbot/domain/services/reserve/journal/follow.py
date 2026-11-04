@@ -236,7 +236,7 @@ class ReserveFollowMixin:
                 if ev.op == "I":
                     rep["devices"] += 1
                     if before.get("admin") and int((ev.c or {}).get("client_id") or 0) == before["admin"]:
-                        lost.append(f"⚠️ У профиля админа появилось устройство «{_e((ev.c or {}).get('name'))}», "
+                        lost.append(f"⚠️ У профиля администратора появилось устройство «{_e((ev.c or {}).get('name'))}», "
                                     f"заведённое на «{_e(name)}» — проверь, что это твоё")
                 rep["peers_added"] += self._follow_peer(awg, ev)
                 rep["peers_removed"] += self._follow_peer_gone(awg, ev)

@@ -111,7 +111,7 @@ def test_a_process_killed_before_the_record_shows_waits_once_a_minute_then_finis
     assert "down" not in sent(acts) and not host.zone.take.exists()
     texts = _texts(acts)
     assert len(texts) == 1 and texts[0].startswith("⏳ Запись <code>vpn.example.net</code>"), texts
-    assert "исход смены на <code>203.0.113.20</code> неизвестен" in texts[0] and "до 5 мин" in texts[0], texts
+    assert "успешность смены на <code>203.0.113.20</code> не подтверждена" in texts[0] and "до 5 мин" in texts[0], texts
     assert "код 137" in texts[0], "причина входа в ожидание не сказана"
     reads = host.dns.auth_reads
     host.clock.advance(inbound_keep.KEEP_RETRY_S - 5)
@@ -122,7 +122,7 @@ def test_a_process_killed_before_the_record_shows_waits_once_a_minute_then_finis
     host.clock.advance(inbound_keep.KEEP_RETRY_S + 1)
     acts = svc.reserve_in_tick()
     texts = _texts(acts)
-    assert len(texts) == 1 and texts[0].startswith("✅ Запись <code>vpn.example.net</code> подтвердилась"), texts
+    assert len(texts) == 1 and texts[0].startswith("✅ Авторитетный DNS-сервер подтвердил адрес <code>203.0.113.20</code> для <code>vpn.example.net</code>"), texts
     assert host.zone.take.exists() and svc.rsv_get("rsv_in").get("rec_done")
     svc.reserve_in_tick()
     assert "serve" in host.zone.names() and svc.reserve_in() == "taking"
@@ -145,10 +145,10 @@ def test_a_record_that_never_shows_fails_as_before_at_the_limit(host, monkeypatc
     assert host.dns.auth_reads == reads + 1, "на пределе — последнее чтение, не срыв вслепую"
     assert svc.reserve_in() == "idle" and {"teardown", "wipe"} <= set(host.zone.names()), host.zone.calls
     down = [a[2] for a in acts if a[:2] == ("send", "down")]
-    assert down and down[0]["reason"].startswith("DNS-запись не подтвердилась за 5 мин"), acts
+    assert down and down[0]["reason"].startswith("обновление DNS-записи не подтвердилось за 5 мин"), acts
     assert not down[0].get("rec"), "запись не сменена — основе возвращать нечего"
     texts = _texts(acts)
-    assert any("принять не удалось: DNS-запись не подтвердилась за 5 мин" in t for t in texts), texts
+    assert any("принять не удалось: обновление DNS-записи не подтвердилось за 5 мин" in t for t in texts), texts
     inn = svc.rsv_get("rsv_in")
     assert not any(inn.get(k) for k in ("rec_try", "rec_wait", "rec_done", "rec_told")), inn
 
@@ -199,7 +199,7 @@ def test_a_waiting_process_is_told_once_and_its_confirmation_once(host, monkeypa
     assert _texts(svc.reserve_in_tick()) == [], "вход в ожидание сказан дважды"
     host.zone.status = {"step": "record_fact", "name": NAME, "ip": IP}
     texts = _texts(svc.reserve_in_tick())
-    assert len(texts) == 1 and "подтвердилась" in texts[0], texts
+    assert len(texts) == 1 and "подтвердил" in texts[0], texts
     assert svc.rsv_get("rsv_in").get("rec_moved")
     host.zone.status = {"step": "done"}
     assert _texts(svc.reserve_in_tick()) == [] and "serve" in host.zone.names()
@@ -212,7 +212,7 @@ def test_a_waiting_process_that_gives_up_ends_the_hosting_as_before(host, monkey
     _open(host, monkeypatch)
     host.zone.status = {"step": "record_wait", "name": NAME, "ip": IP, "limit": "300", "why": "timed out"}
     svc.reserve_in_tick()
-    host.zone.status = {"step": "fail", "reason": "DNS-запись не подтвердилась за 5 мин: timed out", "pre_m": ""}
+    host.zone.status = {"step": "fail", "reason": "обновление DNS-записи не подтвердилось за 5 мин: timed out", "pre_m": ""}
     acts = svc.reserve_in_tick()
     assert svc.reserve_in() == "idle" and {"teardown", "wipe"} <= set(host.zone.names())
     assert any("за 5 мин" in t for t in _texts(acts))

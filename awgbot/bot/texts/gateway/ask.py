@@ -13,8 +13,8 @@ QUESTION_STALE = {"mail": "ℹ️ Вопрос снят: ящик на шлюз�
                   "uplink": "ℹ️ Вопрос снят: аплинк на шлюзе поменяли вручную"}
 LINK_KEYS_ACCEPTED = "🔑 Новые ключи приняты — линк переключится по команде сервера AWG"
 UPLINK_APPLYING = "⏳ Применяю конфиг аплинка — бот шлюза пропадёт из Telegram на секунды"
-MAIL_CHECKING_TOAST = "Проверяю почту…"
-MAIL_CHECKING = "⏳ Проверяю почту с сервера AWG: вход по IMAP и SMTP"
+MAIL_CHECKING_TOAST = "Проверяю подключение к почте…"
+MAIL_CHECKING = "⏳ Проверяю параметры почты с сервера AWG: вход по IMAP и SMTP"
 UPLINK_BUSY = "⏳ Обвязка шлюза сейчас применяется — нажми «🔐 Применить» через минуту"
 QUESTION_ANSWERED = "Вопрос уже решён"
 QUESTIONS_NONE = "Вопросы уже решены"
@@ -50,10 +50,10 @@ def keep_question_text(q: dict) -> str:
                           "сервер AWG сохранит текущие настройки"])
     if q["section"] == "keep":
         frm = _date(q.get("from", ""))
-        lead = (f"Сервер AWG восстановлен из бэкапа от {frm} — тогда в этом слоте было другое устройство, и "
+        lead = (f"Сервер AWG восстановлен из резервной копии от {frm} — тогда в этом слоте было другое устройство, и "
                 f"настройки у него другие: {what}." if q.get("other") else
-                f"Сервер AWG восстановлен из бэкапа от {frm}. Настройки этого шлюза в нём другие: {what}.")
-        return "\n".join([ui.head("💾 Настройки шлюза из бэкапа"), "", lead, "",
+                f"Сервер AWG восстановлен из резервной копии от {frm}. Настройки этого шлюза в нём другие: {what}.")
+        return "\n".join([ui.head("💾 Настройки шлюза из резервной копии"), "", lead, "",
                           f"«{RESTORE_ACCEPT_LABEL}» — применятся настройки от {_date(q.get('at', ''))}; "
                           "«Оставить текущие» — сервер AWG сохранит текущие"])
     return "\n".join([ui.head("💾 Настройки прежнего устройства"), "",
@@ -63,7 +63,7 @@ def keep_question_text(q: dict) -> str:
                       "на настройках по умолчанию, сервер AWG сохранит их"])
 
 
-_KEEP_WHAT = {"restore": "из бэкапа", "device": "прежнего устройства", "same": "с сервера AWG"}
+_KEEP_WHAT = {"restore": "из резервной копии", "device": "прежнего устройства", "same": "с сервера AWG"}
 
 
 def keep_answer_text(answer: dict) -> str:
@@ -75,7 +75,7 @@ def keep_answer_text(answer: dict) -> str:
     if not answer.get("accepted"):
         return "ℹ️ Настройки шлюза остались текущими — сервер AWG сохранил их"
     if why == "restore":
-        return f"✅ Настройки шлюза вернулись к бэкапу от {_date(answer.get('from', ''))}"
+        return f"✅ Настройки шлюза вернулись к резервной копии от {_date(answer.get('from', ''))}"
     if why == "same":
         return f"✅ Настройки шлюза вернулись к сохранённым на сервере AWG от {_date(answer.get('at', ''))}"
     return "✅ Настройки прежнего устройства перенесены"

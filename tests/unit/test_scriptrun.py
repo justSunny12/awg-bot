@@ -89,7 +89,7 @@ def _wrappers():
         (lambda m: rsvzone.run(m), rsvzone.ZoneError, "скрипт зоны не запустился", 4, False),
         (lambda m: quoprobe.run(m), quoprobe.QuoError, "скрипт зондов не запустился", 3, False),
         (lambda m: rsv.run(m), rsv.RsvError, "скрипт линка к резерву не запустился", 3, False),
-        (lambda m: admindns.run(m), admindns.AdminDnsError, "скрипт резолвера админа не запустился", 3, True),
+        (lambda m: admindns.run(m), admindns.AdminDnsError, "скрипт резолвера администратора не запустился", 3, True),
         (lambda m: resolver.run(m), resolver.ResolverError, "скрипт резолвера не запустился", 4, True),
     ]
 

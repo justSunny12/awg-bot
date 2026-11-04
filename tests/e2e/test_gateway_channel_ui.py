@@ -355,7 +355,7 @@ async def test_an_up_to_date_cfg1_card_has_no_file_button(services, cfg1, fake_b
     _cfg_snap(services)
     text, labels = await _card(services, fake_bot)
     assert "🔧 Канал конфигурации 🟢 · v3.3.0\n" in text and "актуальн" not in text, text
-    assert ("⚠️ Агент v3.3.0 устарел: настройки бота шлюза в бэкап не сохраняет и командой сервера AWG "
+    assert ("⚠️ Агент v3.3.0 устарел: настройки бота шлюза в резервную копию не сохраняет и командой сервера AWG "
             "не обновляется — обнови его в чате бота шлюза: «⚙️ Настройки» → «⬆️ Обновления»") in text, text
     assert text.count("устарел") == 1 and text.count("обнови") == 1 and "перевыпусти" not in text, text
     assert "📤 Конфигурация" not in labels, labels
@@ -456,7 +456,7 @@ async def test_an_agent_32_card_asks_to_update_and_has_no_file_button(services, 
     принимает, файла перевыпуска больше нет — одна строка: чего не умеет и «обнови»."""
     _snap(services, agent_version="3.2.1", caps=[])
     text, labels = await _card(services, fake_bot)
-    assert ("⚠️ Агент v3.2.1 устарел: настройки по каналу конфигурации не принимает, настройки бота шлюза в бэкап "
+    assert ("⚠️ Агент v3.2.1 устарел: настройки по каналу конфигурации не принимает, настройки бота шлюза в резервную копию "
             "не сохраняет и командой сервера AWG не обновляется — обнови его в чате бота шлюза: "
             "«⚙️ Настройки» → «⬆️ Обновления»") in text, text
     assert text.count("устарел") == 1 and text.count("обнови") == 1, text

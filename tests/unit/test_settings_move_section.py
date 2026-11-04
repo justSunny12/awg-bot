@@ -154,7 +154,7 @@ def test_a_failed_move_is_told_to_the_admin(tmp_path, caplog):
         assert any("не перенесён" in r.getMessage() for r in caplog.records)
         assert "moved" not in (d / "app.yaml").read_text(encoding="utf-8"), "метка без переноса"
         warns = preflight._settings_move_warnings()
-        assert len(warns) == 1 and "раздел reserve из conf/app.yaml не перенесён в conf/reserve.yaml" in warns[0], warns
+        assert len(warns) == 1 and "секция reserve из conf/app.yaml не перенесена в conf/reserve.yaml" in warns[0], warns
         assert "found duplicate key" in warns[0], warns
     finally:
         restore_settings()

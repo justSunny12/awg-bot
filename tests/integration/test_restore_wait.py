@@ -38,7 +38,7 @@ def test_hello_after_a_restore_is_reported_once_without_sound(services):
     assert len(notes) == 1 and notes[0].silent
     assert notes[0].text == "🟢 «Pi4» (дача) на связи после восстановления"
     assert services.restore_wait_hello(2) == [], "второе «на связи»"
-    assert services.restore_wait_hello(3) == [], "снятый после бэкапа слот ждали"
+    assert services.restore_wait_hello(3) == [], "снятый после создания резервной копии слот ждали"
 
 
 def test_after_fifteen_minutes_one_notice_per_silent_slot(services):
@@ -62,7 +62,7 @@ def test_on_an_empty_server_the_notice_names_the_reconnect_path(services):
     _late(services, 16)
     texts = [n.text for n in services.restore_wait_tick()]
     assert texts[1] == ("⚠️ «Pi4» (дача) не вышел на связь за 15 минут после восстановления. Если на шлюзе ключи "
-                        "линка новее бэкапа — подключи его заново: карточка шлюза → «✏️ Изменить» → «🔁 Заменить» "
+                        "линка новее резервной копии — подключи его заново: карточка шлюза → «✏️ Изменить» → «🔁 Заменить» "
                         "→ «🔁 Настроить заново»")
     assert all("gw-bundle" not in t and "awg-gw-bundle" not in t for t in texts), texts
 

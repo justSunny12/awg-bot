@@ -131,6 +131,20 @@ class MailMixin:
         return (settings.get_bool("notifications.email_fallback", False)
                 and self.email_account() is not None)
 
+    def email_send_reserve_code(self, code: str) -> str:
+        """Аварийный код резерва — письмом на сам ящик (кнопка под сообщением с кодом);
+        возвращает адрес. Код в письме — решение админа: ящик его же."""
+        acc = self.email_account()
+        if acc is None:
+            raise mail.MailError("ящик не подключён")
+        mail.send_mail(acc, acc.login, "awg-bot: аварийный код резерва",
+                       "Аварийный код резерва:\n\n" + code + "\n\n"
+                       "Нужен, только если голосов для переезда не хватит: его вводит администратор основного сервера в боте "
+                       "резерва. Код меняется после переезда по коду и по кнопке «🔄 Сменить код» — тогда это письмо "
+                       f"устарело\n\n{timeutil.fmt_dt_ui(timeutil.now(), year=True)}")
+        self._email_mark_ok()
+        return acc.login
+
     def email_send_alert(self, text: str) -> None:
         """Критичный алерт админу письмом — когда Telegram не отвечает."""
         acc = self.email_account()

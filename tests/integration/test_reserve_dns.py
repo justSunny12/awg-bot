@@ -153,7 +153,7 @@ def test_the_envelope_names_the_record_the_reserve_will_change(mv):
 def test_the_check_of_an_ip_address_says_there_is_no_record(mv):
     settings.set_value("app.network.server_host", "203.0.113.5")
     res = mv.svc.reserve_dns_check()
-    assert res["ok"] is False and "IP" in res["text"]
+    assert res["ok"] is False and "не задано доменное имя сервера" in res["text"]
 
 
 def test_the_manual_check_reads_the_authoritative_server(mv):

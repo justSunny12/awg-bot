@@ -44,7 +44,7 @@ class SmbTunnelMixin:
         if not resolver.installed():
             return "Нужен свой резолвер: ⚙️ → 🖥 Сервер AWG → «🔒 Свой резолвер»"
         if not admindns.serving():
-            return "Резолвер админа не поднят — на сервере: awg-bot resolver admin status"
+            return "Резолвер администратора не поднят — на сервере: awg-bot resolver admin status"
         if not nftguard.enabled():
             return "Нужен фильтр снаружи: ⚙️ → 🛡 SSH-доступ → «☑️ Фильтр снаружи» — без него имена увидят все пользователи"
         return ""
@@ -183,10 +183,10 @@ class SmbTunnelMixin:
             log.warning("резолвер админа не ответил — проверю на следующем тике")
             return []
         if alive and said:
-            return [Notification(config.ADMIN_ID, "✅ Резолвер админа снова отвечает",
+            return [Notification(config.ADMIN_ID, "✅ Резолвер администратора снова отвечает",
                                  on_sent=armer(self.db, _ALERT_KEY, "0"))]
         if not alive and not said:
-            return [Notification(config.ADMIN_ID, f"🔴 Резолвер админа <code>{admindns.addr()}</code> не отвечает — "
-                                                  "у устройств админа нет DNS и имён SMB в туннеле",
+            return [Notification(config.ADMIN_ID, f"🔴 Резолвер администратора <code>{admindns.addr()}</code> не отвечает — "
+                                                  "у устройств администратора нет DNS и имён SMB в туннеле",
                                  on_sent=armer(self.db, _ALERT_KEY, "1"))]
         return []

@@ -208,6 +208,17 @@ def test_finish_without_a_twin_for_someone_does_not_promote(services, mig, make_
     assert services.db.twins_by_origin() == {}, "строка двойника без пира осталась"
 
 
+def test_the_twinless_tail_links_the_full_list_when_given():
+    """Больше LIST_CAP без двойника: хвост «и ещё N» — ссылкой на снимок всех (хендлер
+    собирает его и отдаёт more_twinless); без него — текстом, как прежде."""
+    from awgbot.bot.texts.migration import LIST_CAP, migration_finish_confirm
+    names = [f"Ксюша — iPhone{i}" for i in range(LIST_CAP + 3)]
+    link = ' <a href="https://t.me/bot?start=ls-x">и ещё 3</a>'
+    text = migration_finish_confirm([], twinless=names, more_twinless=link)
+    assert f"({LIST_CAP + 3}):</b> " in text and text.count("Ксюша — iPhone") == LIST_CAP and link + "." in text, text
+    assert "и ещё 3" in migration_finish_confirm([], twinless=names) and "href" not in migration_finish_confirm([], twinless=names)
+
+
 def test_finish_confirm_names_the_twinless_once(services, mig, make_active_client):
     """Подтверждение «🚚 Завершить переезд?»: устройство без двойника названо одной
     строкой «⚠️ Без новой конфигурации», а не ещё и в «Потеряют связь сейчас» — одно
@@ -226,8 +237,8 @@ def test_finish_confirm_names_the_twinless_once(services, mig, make_active_clien
     assert dropped == ["Ксюша — A"] and twinless == ["Ксюша — B"], (dropped, twinless)
     text = migration_finish_confirm(dropped, twinless=twinless)
     assert text.count("Ксюша — B") == 1 and text.count("Ксюша — A") == 1, text
-    assert "Потеряют связь сейчас (1): Ксюша — A." in text, text
-    assert "⚠️ Без новой конфигурации (1): Ксюша — B." in text, text
+    assert "<b>Потеряют связь после завершения (1):</b> Ксюша — A." in text, text
+    assert "⚠️ <b>Без новой конфигурации (1):</b> Ксюша — B." in text, text
 
     # уронённых нет, а без двойника есть — «все уже на новом интерфейсе» было бы неправдой
     _seen(services, _twin(services, a.device_id).id, ago_days=0)

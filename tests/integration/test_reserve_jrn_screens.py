@@ -67,7 +67,7 @@ def test_tj1_the_card_says_the_data_follow_the_reserves_bot_with_the_time(duo):
     text = _screen(duo.a)
     lines = text.split("\n")
     i = next(n for n, ln in enumerate(lines) if ln.startswith("📤 Твои пользователи: на «Beta»"))
-    assert lines[i + 1].startswith("└ данные здесь следуют за ботом на «Beta» · актуальны на "), lines[i:i + 2]
+    assert lines[i + 1].startswith("└ данные здесь следуют за гостевым экземпляром на «Beta» · актуальны на "), lines[i:i + 2]
     assert "🟡" not in lines[i + 1]
 
 
@@ -78,7 +78,7 @@ def test_tj2_a_lag_over_a_minute_replaces_tj1(duo):
     duo.a.rsv_update("rsv_peer_state", jrn_keep=keep)
     duo.a.__dict__["_follow_lag_since"] = time.monotonic() - 61
     text = _screen(duo.a)
-    assert "└ 🟡 данные здесь догоняют бот на «Beta» · актуальны на " in text, text
+    assert "└ 🟡 данные здесь догоняют гостевой экземпляр на «Beta» · актуальны на " in text, text
     assert "следуют за ботом" not in text
 
 
@@ -92,7 +92,7 @@ def test_tj3_waiting_for_the_reserves_edits_with_the_journal(duo):
     _following(duo)
     duo.a.rsv_update("rsv_out", await_merge=True)
     text = _screen(duo.a)
-    assert "└ 🟡 изменения из бота на «Beta» придут, когда он выйдет на связь" in text, text
+    assert "└ 🟡 изменения гостевого экземпляра на «Beta» придут, когда он выйдет на связь" in text, text
     assert "жду реплику" not in text
 
 
@@ -125,7 +125,7 @@ def test_tj8_a_peer_without_the_journal_gets_the_old_path_with_the_reason(mv):
 def test_tj7_the_force_dialog_with_the_journal(duo):
     _following(duo)
     text = st_t.force_dialog(duo.a.reserve_force_dialog_data())
-    assert "Изменения от бота на «Beta» за это время придут, когда он выйдет на связь; если здесь успеешь внести " \
+    assert "Изменения от гостевого экземпляра на «Beta» за это время придут, когда он выйдет на связь; если здесь успеешь внести " \
            "конфликтующие со снимком с «Beta» правки — останутся они, список пришлю" in text, text
     assert "вольётся" not in text
 

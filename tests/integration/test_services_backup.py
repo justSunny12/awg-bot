@@ -139,9 +139,9 @@ def test_the_caption_names_gateways_and_the_offline_one(services, slot, monkeypa
     services.db.set_state("gwlink_seen_1", "2026-10-12T09:00:00+03:00")
     services.db.set_state("gwkeep_1", '{"v": 1, "at": "2026-10-12T08:40:00+03:00"}')
     lines = services.backup_caption().split("\n")
-    assert lines[0].startswith("💾 Бэкап сервера AWG от ") and lines[0].endswith(")")
+    assert lines[0].startswith("💾 Резервная копия сервера AWG от ") and lines[0].endswith(")")
     assert lines[1:] == ["🛰 Шлюзы: «NASPi» (дача)",
-                         "🟡 «NASPi» (дача) не на связи с 12.10.26 — его настройки в бэкапе на 12.10.26"]
+                         "🟡 «NASPi» (дача) не на связи с 12.10.26 — его настройки в резервной копии на 12.10.26"]
     assert "после" not in lines[0]
 
 
@@ -163,7 +163,7 @@ def test_without_a_phrase_there_is_no_backup_anywhere(services, slot, fake_bot, 
     asyncio.run(sch.monthly_backup(services, fake_bot, "backup"))
     assert not (tmp_path / "backups").exists() or not list((tmp_path / "backups").glob("*"))
     assert [n.text for n in sent] == [
-        "⚠️ Плановый бэкап сервера AWG не сделан: ключевая фраза шифрования не задана, а в бэкапе ключи линков "
+        "⚠️ Плановая резервная копия сервера AWG не сделана: ключевая фраза шифрования не задана, а в резервной копии ключи линков "
         "шлюзов. Задай ключевую фразу в «💾 Бэкапы» → «🔐 Шифрование»"]
     assert services.db.get_state("last_backup") == "2000-01"
 

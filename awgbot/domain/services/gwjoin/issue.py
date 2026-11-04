@@ -101,7 +101,7 @@ class GwJoinIssueMixin:
         if admin is None or dev is None:
             raise ServiceError("Устройство не найдено")
         if dev.client_id != admin.id:
-            raise ServiceError("Шлюзом может быть только устройство профиля админа")
+            raise ServiceError("Шлюзом может быть только устройство профиля администратора")
         if not dev.private_key:
             raise ServiceError("Это устройство создавал не бот — шлюзом его не сделать")
         other = self.db.gateway_by_device(dev.id)
@@ -116,7 +116,7 @@ class GwJoinIssueMixin:
         устройство). {"state", "token", "command", "stale": сообщение прежней
         команды слота или None}."""
         if self.admin_client() is None:
-            raise ServiceError("Профиль админа ещё не создан")
+            raise ServiceError("Профиль администратора ещё не создан")
         self._gwjoin_check_fleet()
         with _LOCK:
             gw = self.db.gateway(slot_id) if slot_id else None

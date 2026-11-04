@@ -117,8 +117,8 @@ def validate() -> None:
     missing_secrets = [n for n, v in (("BOT_TOKEN", BOT_TOKEN), ("ADMIN_ID", ADMIN_ID)) if not v]
     if missing_secrets:
         raise RuntimeError(
-            "Не заданы обязательные секреты: " + ", ".join(missing_secrets) +
-            ". Задай их в /etc/awg-bot/env (или .env).")
+            "Не заданы обязательные переменные окружения: " + ", ".join(missing_secrets) +
+            ". Укажи их в /etc/awg-bot/env (или в файле .env).")
 
     if ROLE not in ("client", "gateway"):
         raise RuntimeError(

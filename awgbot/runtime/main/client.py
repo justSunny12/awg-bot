@@ -91,8 +91,8 @@ async def main() -> None:
         services.bot_name = me.first_name or me.username or ""
     except TelegramUnauthorizedError as e:
         raise preflight.PreflightError(
-            f"Bot API отверг токен (getMe: {e}). Проверь BOT_TOKEN в "
-            f"/etc/awg-bot/env и перезапусти бота (`systemctl restart awg-bot`)") from e
+            f"Ошибка авторизации в Telegram Bot API (getMe: {e}). Проверь BOT_TOKEN в "
+            f"/etc/awg-bot/env и перезапусти бота (`systemctl restart awg-bot`).") from e
     except Exception as e:                               # noqa: BLE001
         log.warning("getMe на старте не прошёл (сеть ещё не готова?): %s — "
                     "продолжаю, polling дождётся сети", e)

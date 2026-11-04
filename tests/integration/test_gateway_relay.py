@@ -68,7 +68,7 @@ def test_limits_and_checksum():
     parts = relay.split(_blob(100), "b")
     asm = relay.Assembly({**parts[0], "sha": "cd" * 32})
     asm.add({**parts[0], "sha": "cd" * 32})
-    with pytest.raises(relay.RelayError, match="файл бэкапа повреждён"):
+    with pytest.raises(relay.RelayError, match="файл резервной копии повреждён"):
         asm.blob()
 
 
@@ -140,18 +140,18 @@ def test_a_backup_goes_in_parts_and_the_server_takes_it_on_its_rails(tmp_path, h
     assert a.parts == [0, 1, 2] and got == [(1, blob, "awg-bot-backup-main-x.tgz.enc")]
     assert a.srv.sess.rst is None, "собранное осталось в сессии"
     text = texts.gw_relay_result(res, a.s.link_server_bot())
-    assert text == '✅ Бэкап передан: продолжи в чате <a href="https://t.me/awg_srv_bot">бота сервера AWG</a>'
+    assert text == '✅ Резервная копия передана: продолжи в чате <a href="https://t.me/awg_srv_bot">бота сервера AWG</a>'
     a.db.close()
 
 
 def test_a_server_refusal_comes_back_in_its_words(tmp_path, hook):
     on_restore, got = hook
-    on_restore.answer = "бэкап снят версией до 3.4.0 — восстановиться из него не получится"
+    on_restore.answer = "резервная копия снята версией до 3.4.0 — восстановиться из неё не получится"
     a = _Agent(tmp_path)
     res = asyncio.run(a.c.send_backup(_blob(), "b.tgz.enc"))
     assert res["why"] == "refused" and res["error"] == on_restore.answer
-    assert texts.gw_relay_result(res, {}) == ("⚠️ Бэкап не принят сервером AWG: бэкап снят версией до 3.4.0 — "
-                                              "восстановиться из него не получится")
+    assert texts.gw_relay_result(res, {}) == ("⚠️ Резервная копия не принята сервером AWG: резервная копия снята версией до 3.4.0 — "
+                                              "восстановиться из неё не получится")
     a.db.close()
 
 
@@ -162,8 +162,8 @@ def test_a_break_mid_transfer_says_send_again_and_leaves_nothing(tmp_path, hook)
     res = asyncio.run(a.c.send_backup(_blob(relay.PART * 3), "b.tgz.enc"))
     assert res["why"] == "broken" and got == [], "сервер получил недособранный бэкап"
     assert texts.gw_relay_result(res, SERVER_BOT).startswith(
-        "⚠️ Передать бэкап не удалось: связь с сервером AWG оборвалась — пришли файл снова (или напрямую в чат ")
-    assert not list(tmp_path.glob("*.tgz*")), "на шлюзе остался файл бэкапа"
+        "⚠️ Передать резервную копию не удалось: связь с сервером AWG оборвалась — пришли файл снова (или напрямую в чат ")
+    assert not list(tmp_path.glob("*.tgz*")), "на шлюзе остался файл резервной копии"
     a.srv.sess = _Session(writer=None, key=b"")                    # новая сессия — с чистого листа
     assert a.srv.sess.rst is None
     a.break_at, a.c._writer, a.parts = None, object(), []
@@ -202,7 +202,7 @@ def test_a_server_without_restore1_is_not_asked(tmp_path, hook):
     a = _Agent(tmp_path, caps=("cfg1", "keep1"))
     res = asyncio.run(a.c.send_backup(_blob(), "b.tgz.enc"))
     assert res["why"] == "no_cap" and a.parts == []
-    assert ("версия сервера AWG старше 3.4.0 и бэкапы через шлюз не принимает"
+    assert ("версия сервера AWG старше 3.4.0 и резервные копии через шлюз не принимает"
             in texts.gw_relay_result(res, SERVER_BOT))
     a.db.close()
 
@@ -213,7 +213,7 @@ def test_without_a_session_or_a_client_it_is_offline(tmp_path):
     assert asyncio.run(a.c.send_backup(b"x", "b"))["why"] == "offline"
     assert asyncio.run(linkclient.relay_backup(b"x", "b"))["why"] == "offline"
     text = texts.gw_relay_result({"ok": False, "why": "offline"}, SERVER_BOT)
-    assert text.startswith("⚠️ Передать бэкап не удалось: сервер AWG сейчас не на связи — пришли бэкап в чат ")
+    assert text.startswith("⚠️ Передать резервную копию не удалось: сервер AWG сейчас не на связи — пришли резервную копию в чат ")
     assert text.endswith("или восстанови на сервере: <code>sudo awg-bot restore &lt;файл&gt;</code>")
     a.db.close()
 
@@ -222,7 +222,7 @@ def test_a_server_without_the_hook_refuses(tmp_path, monkeypatch):
     monkeypatch.setattr(linkserver, "_on_restore", None)
     a = _Agent(tmp_path)
     res = asyncio.run(a.c.send_backup(_blob(), "b.tgz.enc"))
-    assert res["why"] == "refused" and "не принимает бэкапы через шлюз" in res["error"]
+    assert res["why"] == "refused" and "не принимает резервные копии через шлюз" in res["error"]
     a.db.close()
 
 
@@ -275,7 +275,7 @@ async def test_the_gateway_chat_says_sending_then_the_outcome(tmp_path, monkeypa
     assert msg.deleted, "бэкап с ключами остался в чате шлюза"
     assert sent == [(b"AWGBK1DUMMY", "awg-bot-backup-main-20261017_120000.tgz.enc")]
     said = [r for r in bot.records if r[0] in ("answer", "edit_text")]
-    assert said[0] == ("answer", config.ADMIN_ID, "⏳ Передаю бэкап серверу AWG…")
+    assert said[0] == ("answer", config.ADMIN_ID, "⏳ Передаю резервную копию серверу AWG…")
     assert said[-1] == ("edit_text", config.ADMIN_ID, texts.gw_relay_result(res, SERVER_BOT)), said
     if res["why"] == "refused":
         assert said[-1][2].endswith("на сервере: <code>sudo awg-bot restore &lt;файл&gt;</code>")
@@ -296,7 +296,7 @@ async def test_a_too_big_server_backup_is_refused_without_download(tmp_path):
     await gh.gw_bundle_document(msg, GatewayServices(d), FakeState())
     assert msg.deleted and msg.sent[-1][1] == texts.GW_RELAY_SENDING, "итог — не правкой «⏳ Передаю…»"
     edits = [r for r in msg.bot.records if r[0] == "edit_text"]
-    assert edits == [("edit_text", config.ADMIN_ID, "⚠️ Передать бэкап не удалось: он больше 20 МБ — восстанови на "
+    assert edits == [("edit_text", config.ADMIN_ID, "⚠️ Передать резервную копию не удалось: она больше 20 МБ — восстанови на "
                       "сервере: <code>sudo awg-bot restore &lt;файл&gt;</code>")], edits
     d.close()
 
@@ -321,7 +321,7 @@ async def test_the_server_asks_in_its_own_chat_and_replaces_a_previous_question(
     services.inspect_backup = lambda blob, name="": {"ok": True, "created_at": "2026-10-05T14:00:00+03:00",
                                                      "plan": {"line": "same", "slots": [], "created_at": ""}}
     state = FakeState()
-    await state.update_data(restore_qmid=4242, restore_qtext="♻️ Восстановить бэкап от 01.10.26?")
+    await state.update_data(restore_qmid=4242, restore_qtext="♻️ Восстановить резервную копию от 01.10.26?")
     edits = []
 
     async def edit(text, chat_id=None, message_id=None, **kw):
@@ -332,11 +332,11 @@ async def test_the_server_asks_in_its_own_chat_and_replaces_a_previous_question(
     assert data["restore_fp"] and data["restore_qmid"] != 4242
     assert services.restore_stashed(data["restore_fp"])["blob"] == b"AWGBK1DUMMY", "файл вопроса не на диске"
     assert len(edits) == 1 and edits[0][0] == 4242
-    assert edits[0][1] == ("<b>Не актуально: прислан новый файл бэкапа</b>\n\n<blockquote expandable>"
-                           "♻️ Восстановить бэкап от 01.10.26?</blockquote>"), edits
+    assert edits[0][1] == ("<b>Не актуально: прислан новый файл резервной копии</b>\n\n<blockquote expandable>"
+                           "♻️ Восстановить резервную копию от 01.10.26?</blockquote>"), edits
     assert [b.text for r in edits[0][2].inline_keyboard for b in r] == ["Скрыть"]
     asked = [r for r in fake_bot.records if r[0] == "send_message"]
-    assert asked and asked[-1][1] == config.ADMIN_ID and asked[-1][2].startswith("♻️ Восстановить бэкап от ")
+    assert asked and asked[-1][1] == config.ADMIN_ID and asked[-1][2].startswith("♻️ Восстановить резервную копию от ")
 
 
 async def test_a_server_refusal_says_nothing_in_its_own_chat(services, fake_bot):
@@ -353,7 +353,7 @@ def test_a_blob_too_small_for_a_backup_is_refused_before_inspection(tmp_path, ho
     on_restore, got = hook
     a = _Agent(tmp_path)
     res = asyncio.run(a.c.send_backup(b"AWGBK1P" + b"x" * 100, "b.tgz.enc"))
-    assert res["why"] == "refused" and res["error"] == "файл не похож на бэкап сервера AWG (слишком мал)" and got == []
+    assert res["why"] == "refused" and res["error"] == "файл не похож на резервную копию сервера AWG (слишком мал)" and got == []
     a.db.close()
 
 
@@ -362,7 +362,7 @@ def test_one_slot_is_inspected_at_most_once_a_minute_and_paused_after_a_refusal(
     a = _Agent(tmp_path)
     assert asyncio.run(a.c.send_backup(_blob(), "b.tgz.enc"))["ok"]
     res = asyncio.run(a.c.send_backup(_blob(), "b.tgz.enc"))
-    assert res["why"] == "refused" and res["error"].startswith("файл бэкапа с этого шлюза уже приходил недавно — "
+    assert res["why"] == "refused" and res["error"].startswith("файл резервной копии с этого шлюза уже приходил недавно — "
                                                                 "повтори через ") and len(got) == 1
     from awgbot.runtime.linkserver import relay as srv_relay
     a.srv._rst_next = {}
@@ -420,7 +420,7 @@ async def test_a_second_file_while_relaying_says_already_and_is_removed(tmp_path
     await first
     assert calls == ["one.tgz.enc"], "вторая передача пошла параллельно"
     assert m2.deleted and m2.sent[-1][1] == texts.GW_RELAY_BUSY
-    assert "убран из чата" in texts.GW_RELAY_BUSY and "пришли его снова" in texts.GW_RELAY_BUSY
+    assert "удалён из чата" in texts.GW_RELAY_BUSY and "Отправь его повторно" in texts.GW_RELAY_BUSY
     assert "дождись" not in texts.GW_RELAY_BUSY, "текст обещает ожидание файла, которого уже нет"
     assert len(texts.GW_RELAY_BUSY) <= 4096
     assert [b.text for r in m2.sent[-1][2].inline_keyboard for b in r] == ["Скрыть"]
@@ -436,7 +436,7 @@ def test_a_displaced_transfer_is_answered_at_once(tmp_path, hook):
     new = relay.split(_blob(), "new.tgz.enc")
     asyncio.run(a.srv._rst_part(_Gw(), a.srv.sess, new[0]))
     first = a.srv.answers[0]
-    assert first == ("rst_done", {"id": old[0]["id"], "ok": False, "error": "передачу вытеснил новый бэкап"})
+    assert first == ("rst_done", {"id": old[0]["id"], "ok": False, "error": "передачу вытеснила новая резервная копия"})
     a.db.close()
 
 
@@ -543,17 +543,17 @@ async def test_the_question_names_the_gateway_and_a_telegram_error_is_not_a_bad_
                                                      "plan": {"line": "same", "slots": [], "created_at": ""}}
     assert await rs.relay_restore(fake_bot, services, FakeState(), b"AWGBK1P", "b.tgz.enc", 1) == ""
     asked = [r for r in fake_bot.records if r[0] == "send_message"][-1][2]
-    assert asked.startswith('📥 Бэкап получен от шлюза «<a href="https://t.me/awg_test_bot?start=gw-1">NASPi</a>»'
-                            '\n\n♻️ Восстановить бэкап от '), asked
+    assert asked.startswith('📥 Резервная копия получена от шлюза «<a href="https://t.me/awg_test_bot?start=gw-1">NASPi</a>»'
+                            '\n\n♻️ Восстановить резервную копию от '), asked
 
     async def down(*a, **k):
         raise RuntimeError("Telegram не ответил")
     fake_bot.send_message = down
     err = await rs.relay_restore(fake_bot, services, FakeState(), b"AWGBK1P", "b.tgz.enc", 1)
-    assert err == ("файл бэкапа подходящий, но вопрос в чат бота сервера AWG не отправлен: Telegram не ответил — "
-                   "пришли бэкап в чат бота сервера")
+    assert err == ("файл резервной копии подходящий, но вопрос в чат бота сервера AWG не отправлен: Telegram не ответил — "
+                   "пришли резервную копию в чат бота сервера")
     shown = texts.gw_relay_result({"ok": False, "why": "refused", "error": err}, SERVER_BOT)
-    assert shown.endswith('пришли бэкап в чат <a href="https://t.me/awg_srv_bot">бота сервера</a>'), shown
+    assert shown.endswith('пришли резервную копию в чат <a href="https://t.me/awg_srv_bot">бота сервера</a>'), shown
 
 
 async def test_a_random_key_backup_and_a_running_restore_are_refused_at_once(services, fake_bot):
@@ -589,5 +589,5 @@ async def test_every_outcome_edits_the_sending_message_with_hide(monkeypatch):
     await gb._relay(msg, Svc(), b"AWGBK1P", "b.tgz.enc")
     assert len(sending) == 1 and sending[0].text == texts.GW_RELAY_SENDING
     kind, text, markup = sending[0].sent[-1]
-    assert kind == "edit_text" and text.startswith("⚠️ Передать бэкап не удалось: сервер AWG сейчас не на связи")
+    assert kind == "edit_text" and text.startswith("⚠️ Передать резервную копию не удалось: сервер AWG сейчас не на связи")
     assert [b.text for r in markup.inline_keyboard for b in r] == ["Скрыть"]

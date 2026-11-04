@@ -67,8 +67,8 @@ def test_own_uns_with_silent_gateways_opens_the_code_window_and_tells_both_admin
     by = {n.tg_id: n for n in ns}
     assert set(by) == {int(config.ADMIN_ID), rc.PEER_ADMIN}, ns
     mine = by[int(config.ADMIN_ID)]
-    assert mine.text.startswith("⚠️ «Beta» не отвечает с ") and "не видят 1 из 3, нужно 2" in mine.text, mine.text
-    assert "бот написал ему" in mine.text
+    assert mine.text.startswith("⚠️ «Beta» не отвечает с ") and "сбой фиксируют 1 из 3 узлов (требуется 2)" in mine.text, mine.text
+    assert "уже отправил ему запрос" in mine.text
     peer = by[rc.PEER_ADMIN]
     assert peer.keyboard == "peer_code" and peer.force_sound and peer.text.startswith("🆘 «Alpha» не видит «Beta»"), peer
     assert notes(c.run(60)) == [], "Т-К21 повторяется на каждом такте"
@@ -79,7 +79,7 @@ def test_without_the_peer_admin_only_my_admin_is_told_that_nobody_can_be_written
     c.own("uns")
     ns = notes(c.tick())
     assert [n.tg_id for n in ns] == [int(config.ADMIN_ID)], ns
-    assert "написать ему некуда" in ns[0].text
+    assert "написать ему не могу" in ns[0].text
     assert _code(c).get("open") and not _code(c).get("told")
 
 

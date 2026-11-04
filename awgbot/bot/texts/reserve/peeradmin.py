@@ -10,7 +10,7 @@ from .common import _n, _when
 def screen(d: dict) -> str:
     me, peer = str(d.get("me") or "этот сервер"), str((d.get("peer") or {}).get("name") or "твой сервер")
     lines = [f"🛟 <b>Резерв {_n(me)} для {_n(peer)}</b> · v{_e(str(d.get('version') or ''))}", "",
-             f"Ты — админ {_n(peer)}. Здесь видно, как {_n(me)} страхует твой сервер; управлять {_n(me)} отсюда нельзя", ""]
+             f"Ты — администратор {_n(peer)}. Здесь видно, как {_n(me)} страхует твой сервер; управлять {_n(me)} отсюда нельзя", ""]
     ok, why = d.get("direction_in") or (False, "")
     if ok:
         lines.append("✅ Твои пользователи переедут сюда, если сервер упадёт")
@@ -28,7 +28,7 @@ def screen(d: dict) -> str:
     if d.get("has_gateway"):
         use_since = _when(((d.get("rfpeer") or {}).get("peer_use") or {}).get("since") or "")
         lines.append((f"🟢 РФ-доступ через шлюзы {_n(me)}: разрешён" + (f" · сейчас идёт через них с {_e(use_since)}" if use_since else ""))
-                     if d.get("rf_via_mine") else f"☑️ РФ-доступ через шлюзы {_n(me)}: выключен его админом")
+                     if d.get("rf_via_mine") else f"☑️ РФ-доступ через шлюзы {_n(me)}: выключен его администратором")
     mem = int(d.get("mem_free") or 0)
     if mem and mem < 400:
         lines.append(f"⚠️ у {_n(me)} мало свободной памяти ({mem} МБ) — твоих пользователей он может не потянуть")
@@ -36,7 +36,7 @@ def screen(d: dict) -> str:
     if tp:
         learned = int(tp.get("learned") or 0)
         tail = f" и {learned} выученн{'ая сеть' if learned == 1 else ('ые сети' if 2 <= learned <= 4 else 'ых сетей')}" if learned else ""
-        lines.append(("⚠️" if tp.get("stale") else "🟢") + f" пул адресов Telegram для вебхука: ядро{tail}"
+        lines.append(("⚠️" if tp.get("stale") else "🟢") + f" пул адресов Telegram для управления ботом: ядро{tail}"
                      + (" · анонсы давно не обновлялись" if tp.get("stale") else ""))
     gws = list(d.get("gw_views") or [])
     known = {int(g.get("slot") or 0) for g in gws}
@@ -78,11 +78,13 @@ def screen(d: dict) -> str:
         lines.append(f"🗳 Твой {_n(peer)} видят {int(q.get('y') or 0)} из {int(q.get('v') or 0)} · этот сервер — {mine}")
     inn = d.get("inn") or "idle"
     if d.get("code_needed") and d.get("code_by") == "link":
-        lines.append(f"🆘 {_n(me)} не на связи с твоим сервером с {_e(_when(d.get('code_since') or ''))}, а голосование о нём "
-                     "не включено — пришли аварийный код резерва, и пользователи переедут сюда")
+        lines.append(f"🆘 <b>Сервер {_n(peer)} недоступен с {_e(_when(d.get('code_since') or ''))}</b>\n"
+                     "Автоматический переезд отключён. Отправь аварийный код, чтобы вручную перевести пользователей "
+                     "на этот сервер")
     elif d.get("code_needed"):
-        lines.append(f"🆘 {_n(me)} не видит твой сервер с {_e(_when(d.get('code_since') or ''))}, а голосов для переезда "
-                     "не хватает — пришли аварийный код резерва, и пользователи переедут сюда")
+        lines.append(f"🆘 <b>Сервер {_n(peer)} не отвечает этому серверу с {_e(_when(d.get('code_since') or ''))}</b>\n"
+                     "Голосов для автоматического переезда не хватает. Отправь аварийный код, чтобы вручную перевести "
+                     "пользователей на этот сервер")
     if inn in ("taking", "serving"):
         why = {"dead": " — сервер не отвечал", "button": " — ты перевёл их кнопкой", "rf": " — сервер недоступен из РФ",
                "code": " — по твоему аварийному коду"}.get(str(d.get("in_kind") or ""), "")
@@ -100,13 +102,14 @@ def screen(d: dict) -> str:
 def code_prompt(d: dict) -> str:
     """Т-РН2: приглашение ввести аварийный код."""
     peer, me = _n(str(d.get("peer") or "")), _n(str(d.get("me") or ""))
-    rec = f" запись <code>{_e(d['record'])}</code> бот сменит сам." if d.get("record") else " запись для пользователей бот сменит сам."
+    rec = (f" и переключит DNS-запись <code>{_e(d['record'])}</code>." if d.get("record")
+           else " и автоматически переключит адрес для подключения пользователей.")
     since = _e(_when(d.get('since') or ''))
     # почему окно открыто — как на экране роли (Т-РН1): линк пары молчит без кворума или голосов не хватает
-    why = (f"{peer} не на связи с этим сервером с {since}, а голосование о нём не включено" if d.get("code_by") == "link"
-           else f"{peer} не отвечает этому серверу с {since}, а голосов для переезда не хватает")
-    return (f"🔑 <b>Переезд {peer} на {me}</b>\n\n{why}. Пришли аварийный код — пользователи и бот {peer} переедут сюда,{rec} "
-            "Сообщение с кодом удалю сразу")
+    why = (f"Сервер {peer} недоступен с {since}. Автоматический переезд отключён" if d.get("code_by") == "link"
+           else f"{peer} не отвечает этому серверу с {since}, и голосов для автоматического переезда не хватает")
+    return (f"🔑 <b>Переезд: {peer} ➔ {me}</b>\n\n{why}.\n\nОтправь аварийный код подтверждения — бот развернёт "
+            f"пользователей {peer} на этом сервере{rec}\n\n🔒 Сообщение с кодом будет удалено сразу после отправки.")
 
 
 def code_result(res: dict, peer: str) -> str:
@@ -130,7 +133,7 @@ def code_result(res: dict, peer: str) -> str:
     if why == "limit":
         return "⚠️ Код не подошёл три раза — следующие попытки через час"
     if why == "busy":
-        return f"⚠️ Код подошёл, но пользователей {_n(peer)} поднять не удалось — админ этого сервера получил причину"
+        return f"⚠️ Код подошёл, но пользователей {_n(peer)} поднять не удалось — администратор этого сервера получил причину"
     return f"ℹ️ {_n(peer)} снова на связи — переезд не нужен"
 
 

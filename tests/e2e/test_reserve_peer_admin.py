@@ -175,7 +175,7 @@ async def test_start_shows_the_role_screen_and_marks_the_bot_opened(services, rs
     msg = FakeMessage(text="/start", chat_id=PEER_ADMIN, user_id=PEER_ADMIN, bot=fake_bot)
     await peeradmin.start(msg, services)
     text, markup = msg.sent[-1][1], msg.sent[-1][2]
-    assert "Ты — админ «Beta»" in text and "управлять «Alpha» отсюда нельзя" in text
+    assert "Ты — администратор «Beta»" in text and "управлять «Alpha» отсюда нельзя" in text
     labels = [b.text for row in markup.inline_keyboard for b in row]
     assert labels == ["🔄 Обновить", "Скрыть"], "в этапе пары кнопки аварийного кода быть не должно (только в Н4)"
     assert services.rsv_get("rsv_peer_admin")["opened"] is True

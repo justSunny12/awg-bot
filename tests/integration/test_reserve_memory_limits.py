@@ -97,4 +97,4 @@ def test_a_package_over_64_mb_is_a_warning_on_the_reserve_card(services, rsv):
     services.rsv_put("rsv_pkg_in", {"gen": 7, "fp": "DUMMY-fp", "size": 100 * MB})
     d = services.reserve_card_data()
     assert d["pkg_mem"] == {"size": "0,1 ГБ", "need": "1,02 ГБ"}, d["pkg_mem"]
-    assert "└ ⚠️ данные для переезда «" in card_text(d) and "понадобится около 1,02 ГБ памяти" in card_text(d), card_text(d)
+    assert "└ ⚠️ данные для переезда «" in card_text(d) and "понадобится около 1,02 ГБ RAM" in card_text(d), card_text(d)

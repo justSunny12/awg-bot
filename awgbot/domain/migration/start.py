@@ -78,18 +78,18 @@ class MigrationStartMixin:
         """
         if hasattr(self, "reserve_refuse_if_away"):
             self.reserve_refuse_if_away()
-        with LEVER("включается"):
+        with LEVER("запускается"):
             return self._migration_start_locked()
 
     def _migration_start_locked(self) -> MigrationStart:
         if not self.migration_available():
-            raise ServiceErrorMigration("Переезд не настроен: пустые ключи в app.yaml")
+            raise ServiceErrorMigration("Переезд не настроен: не заполнены ключи в app.yaml")
         # Свой DNS двойников — ДО рождения: конфиг двойника рождается с этим
         # адресом, и выдать его раньше, чем на нём кто-то отвечает, нельзя.
         try:
             self.private_dns_on_migration_start(config.MIGRATION_SUBNET_PREFIX)
         except Exception as e:                            # noqa: BLE001
-            raise ServiceErrorMigration(f"резолвер пользователей на новом интерфейсе не поднят: {e}")
+            raise ServiceErrorMigration(f"резолвер пользователей на новом интерфейсе не запущен: {e}")
 
         origins = self._migratable()
         existing = self.db.twins_by_origin()
@@ -183,7 +183,7 @@ class MigrationStartMixin:
                 refused = self.reserve_refusal(e) if hasattr(self, "reserve_refusal") else None
                 if refused is not None:                    # следование: решения пишет бот на резерве
                     raise refused from e
-                raise ServiceErrorMigration(f"конфликт адресов: {e}")
+                raise ServiceErrorMigration(f"конфликт сетевых адресов: {e}")
             try:
                 # флаг маршрутизации — внутри блока отката: отказ записи оставлял
                 # строку двойника без пира, и повторное включение считало её «есть»

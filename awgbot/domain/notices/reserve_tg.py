@@ -14,7 +14,7 @@ def tg_pool_stale(since: str) -> str:
     """Т-РУ25: анонсы сетей Telegram не обновлялись."""
     at = _date(since)
     return ("⚠️ Анонсы сетей Telegram не обновлялись" + (f" с {at}" if at else "")
-            + ": источник не отвечает — пул вебхука прежний")
+            + ": источник не отвечает — пул адресов для управления ботом прежний")
 
 
 def tg_pool_core_lost(prefix: str) -> str:
@@ -41,8 +41,8 @@ def webhook_stalled_reserve(primary: str, since: str, error: str, port: int) -> 
 
 def webhook_foreign_reserve(primary: str) -> str:
     """Админу резерва: вебхук бота основы больше не у её бота здесь — Telegram забрала основа."""
-    return (f"⚠️ Вебхук бота {_n(primary)} указывает не на этот сервер — гостевой бот здесь "
-            "решения больше не принимает")
+    return (f"⚠️ Управление ботом {_n(primary)} вернулось на основной сервер: гостевой экземпляр остановлен и больше не "
+            "обрабатывает запросы")
 
 
 def webhook_restored_reserve(primary: str) -> str:

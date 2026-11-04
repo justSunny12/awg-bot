@@ -63,7 +63,7 @@ def test_after_a_crash_the_snapshot_says_the_rest_is_in_the_reserves_bot_log(tj4
         text.split("\n")[-1]
     rows = _snap_rows(tj4, text)
     assert len(rows) == 10, len(rows)
-    assert rows[-1] == "… и ещё 3 — в журнале бота на «Beta»", rows[-1]
+    assert rows[-1] == "… и ещё 3 — в журнале гостевого экземпляра на «Beta»", rows[-1]
 
 
 def test_after_a_crash_with_every_row_given_the_snapshot_has_no_tail(tj4):
@@ -76,7 +76,7 @@ def test_in_c9_the_snapshot_does_not_send_to_the_reserves_log(tj4):
     """С9 — правки бота на резерве, перенесённые сюда: «в журнале бота на «Beta»» тут
     неправда; недоданное — честным «в снимок не вошли»."""
     rows = _snap_rows(tj4, _note(tj4, "c9", 9, 12))
-    assert not any("в журнале бота на" in r for r in rows), rows[-1]
+    assert not any("в журнале гостевого экземпляра на" in r for r in rows), rows[-1]
     assert rows[-1] == "… и ещё 3 — в снимок не вошли", rows[-1]
 
 
