@@ -61,6 +61,12 @@ class _Handler(FileSystemEventHandler):
         if not event.is_directory and self._is_yaml(event.src_path):
             self._schedule()
 
+    def on_attrib(self, event):
+        # watchdog ≥ 7: touch и chmod приходят сюда, а не в on_modified; перечитка без изменений
+        # ключей — пустая (settings.reload() отдаёт только изменившиеся)
+        if not event.is_directory and self._is_yaml(event.src_path):
+            self._schedule()
+
     def on_created(self, event):
         if not event.is_directory and self._is_yaml(event.src_path):
             self._schedule()

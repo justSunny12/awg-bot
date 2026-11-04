@@ -86,7 +86,9 @@ class _Q:
 
     def restart(self) -> None:
         """Перезапуск процесса: память сервисов — заново, диск (`rsv_*`, журнал) — тот же."""
-        for k in [k for k in self.s.__dict__ if k.startswith(("_quo", "_rsv_q", "_guest_q"))]:
+        # заглушка _quorum_info — подмена теста (monkeypatch), не память сервисов: остаётся, иначе
+        # откат monkeypatch в pytest ≥ 9.2 снимает атрибут, которого уже нет, — ошибка на teardown
+        for k in [k for k in self.s.__dict__ if k.startswith(("_quo", "_rsv_q", "_guest_q")) and k != "_quorum_info"]:
             self.s.__dict__.pop(k, None)
 
 
